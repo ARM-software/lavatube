@@ -1,0 +1,8 @@
+set(CMAKE_SYSTEM_NAME Linux CACHE STRING "System Name")
+set(CMAKE_C_COMPILER gcc)
+set(CMAKE_CXX_COMPILER g++)
+set(CMAKE_SYSTEM_PROCESSOR "i686")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -m32" CACHE STRING "c flags")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -m32" CACHE STRING "c++ flags")
+set(CMAKE_SYSTEM_LIBRARY_PATH /lib32 /usr/lib32 /usr/lib/i386-linux-gnu /usr/local/lib32)
+set(CMAKE_IGNORE_PATH /lib /usr/lib /usr/lib/x86_64-linux-gnu /usr/lib64 /usr/local/lib)
