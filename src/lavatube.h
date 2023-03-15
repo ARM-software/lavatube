@@ -307,7 +307,7 @@ struct trackedcmdbuffer_trace : trackable
 
 	void self_test() const
 	{
-		for (const auto pair : touched) { assert(pair.first->accessible); pair.first->self_test(); pair.second.self_test(); }
+		for (const auto& pair : touched) { assert(pair.first->accessible); pair.first->self_test(); pair.second.self_test(); }
 		assert(pool != VK_NULL_HANDLE);
 		assert(pool_index != CONTAINER_INVALID_INDEX);
 		assert(level != VK_COMMAND_BUFFER_LEVEL_MAX_ENUM);
@@ -333,7 +333,7 @@ struct trackeddescriptorset_trace : trackable
 	{
 		assert(pool != VK_NULL_HANDLE);
 		assert(pool_index != CONTAINER_INVALID_INDEX);
-		for (const auto pair : touched) { pair.first->self_test(); pair.second.self_test(); }
+		for (const auto& pair : touched) { pair.first->self_test(); pair.second.self_test(); }
 		trackable::self_test();
 	}
 };
