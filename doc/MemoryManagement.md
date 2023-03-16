@@ -10,6 +10,22 @@ an object-based memory tracing, which means we ignore how the traced application
 does memory allocation and instead create our own memory pools from which we
 suballocate memory for Vulkan objects (images or buffers).
 
+What the problem is
+-------------------
+
+The allocation based memory management approach seems impossible in theory to work
+reliably in a cross-platform manner. Consider the following example:
+
+![This is an image](memorytypes_why_not_allocation_based.png)
+
+Here objects cannot remain in the same device memory objects during replay as they
+were during tracing, since the replay platform requires them to be split into
+multiple memory types, whereas the trace platform does not permit them to be split.
+
+In addition, images and buffers may be larger on the replay system, so if they are
+suballocated into the same VkDeviceMemory area by the traced app, they will overlap
+each other on replay. They can also have different alignment restrictions.
+
 How it works - basics
 ---------------------
 
@@ -46,7 +62,8 @@ features. For example, if a user has picked a memory type with both device local
 and host visible flags on one platform, which is possible on some platforms,
 then we cannot know which is these is actually needed (you never need both).
 To figure this out, we intercept and split such feature-rich memory types while
-tracing, forcing the user to tell us which feature that is important.
+tracing, presenting the app with virtual memory types and forcing the user to
+tell us which feature that is important.
 
 Memory pools
 ------------
@@ -58,6 +75,13 @@ will create objects in its own memory pool, while other threads are free to acce
 and change the memory, memory access must be handled by the traced application as
 usual, while destruction of the memory suballocations are put on a free list that
 waits for further allocations before actually carrying out the free.
+
+Memory Tracking
+===============
+
+Where most other Vulkan tracers use guard pages, lavatube uses tracking and diffing
+any memory actually used as determined on queue submit. There is no need for thread
+synchronization except at the point of queue submission.
 
 Making it fast
 --------------
@@ -71,11 +95,12 @@ buffer memory objects. Any memory that is memory mapped become exposed, and are 
 made not exposed again if scanned for changes while it is no longer mapped. Such
 scanning happens at queue submit time, when all touched memory ranges owned by
 objects touched by the submitted command buffer are scanned. The lists of touched
-ranges are created along with the command buffers and are immutable.
+ranges are created along with command buffers and are immutable.
 
 This dual structure of memory ranges tries to sure we only scan the minimum of memory
 that we need to scan. However, suballocations from giant VkBuffers can still be very
-slow.
+slow as we may need to make pessimistic assumptions about which memory areas are going
+to be read from. Much more work could be done here to speed things up.
 
 Memory usage
 ------------
