@@ -25,7 +25,7 @@ void suballoc_setup(VkPhysicalDevice physicaldevice);
 suballoc_location suballoc_add_image(uint16_t tid, VkDevice device, VkImage image, uint32_t image_index, VkMemoryPropertyFlags flags, VkImageTiling tiling, VkDeviceSize min_size);
 
 /// Add a buffer to our memory pools. See above.
-suballoc_location suballoc_add_buffer(uint16_t tid, VkDevice device, VkBuffer buffer, uint32_t buffer_index, VkMemoryPropertyFlags flags);
+suballoc_location suballoc_add_buffer(uint16_t tid, VkDevice device, VkBuffer buffer, uint32_t buffer_index, VkMemoryPropertyFlags memory_flags, VkBufferUsageFlags buffer_flags);
 
 /// Delete an image from our memory pools. Thread safe because the internal data structure is preallocated and never resized,
 /// and deleted entries are never reused.

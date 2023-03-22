@@ -698,7 +698,8 @@ class parameter(object):
 			z.do('suballoc_location loc = suballoc_add_image(reader.thread_index(), device, %s, image_index, special_flags, tiling, min_size);' % varname)
 		elif self.funcname in ['vkBindBufferMemory', 'VkBindBufferMemoryInfo', 'VkBindBufferMemoryInfoKHR'] and self.name == 'buffer':
 			z.do('const VkMemoryPropertyFlags special_flags = static_cast<VkMemoryPropertyFlags>(reader.read_uint32_t()); // fetch memory flags especially added')
-			z.do('suballoc_location loc = suballoc_add_buffer(reader.thread_index(), device, %s, buffer_index, special_flags);' % varname)
+			z.do('trackedbuffer& buffer_data = VkBuffer_index.at(buffer_index);')
+			z.do('suballoc_location loc = suballoc_add_buffer(reader.thread_index(), device, %s, buffer_index, special_flags, buffer_data.usage);' % varname)
 
 		if self.funcname in ['vkBindImageMemory', 'vkBindBufferMemory', 'VkBindBufferMemoryInfo', 'VkBindBufferMemoryInfoKHR', 'VkBindImageMemoryInfoKHR', 'VkBindImageMemoryInfo']:
 			if self.name == 'memory':

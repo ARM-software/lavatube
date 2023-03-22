@@ -1601,6 +1601,7 @@ static trackedbuffer trackedbuffer_json(const Json::Value& v)
 	t.req.size = v["req_size"].asUInt64();
 	t.req.alignment = v["req_alignment"].asUInt();
 	t.req.memoryTypeBits = 0;
+	t.type = VK_OBJECT_TYPE_BUFFER;
 	return t;
 }
 
@@ -1617,6 +1618,7 @@ static trackedimage trackedimage_json(const Json::Value& v)
 	t.req.size = v["req_size"].asUInt64();
 	t.req.alignment = v["req_alignment"].asUInt();
 	t.req.memoryTypeBits = 0;
+	t.type = VK_OBJECT_TYPE_IMAGE;
 	return t;
 }
 

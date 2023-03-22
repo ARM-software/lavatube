@@ -425,7 +425,7 @@ set_tests_properties(pack_test_6 PROPERTIES FIXTURES_REQUIRED tracing_2)
 # --- layer tests ---
 
 function(layer_test test_name test_exe)
-	add_test(NAME layer_test_${ARGV0} COMMAND ${CMAKE_CURRENT_BINARY_DIR}/tracetooltests/vulkan_${ARGV1} ${ARGV2} ${ARGV3})
+	add_test(NAME layer_test_${ARGV0} COMMAND ${CMAKE_CURRENT_BINARY_DIR}/tracetooltests/vulkan_${ARGV1} ${ARGV2} ${ARGV3} ${ARGV4} ${ARGV5} ${ARGV6} ${ARGV7})
 	set_tests_properties(layer_test_${ARGV0} PROPERTIES
 		FIXTURES_SETUP ${ARGV0}
 		ENVIRONMENT "LAVATUBE_DESTINATION=vulkan_${ARGV0};VK_LAYER_PATH=${CMAKE_CURRENT_BINARY_DIR}/implicit_layer.d;VK_INSTANCE_LAYERS=VK_LAYER_ARM_lavatube;LD_LIBRARY_PATH=${CMAKE_CURRENT_BINARY_DIR}/implicit_layer.d"
@@ -453,6 +453,7 @@ layer_test(copying_1_q4 copying_1 -q 4)
 layer_test(copying_1_q5 copying_1 -q 5)
 layer_test(copying_1_m1 copying_1 -m 1)
 layer_test(copying_1_m2 copying_1 -m 2)
+layer_test(copying_1_bda copying_1 -B -D -V 2)
 layer_test(copying_2 copying_2 -q 1)
 layer_test(copying_2_vulkan13 copying_2 -V 3 -q 1)
 layer_test(copying_3 copying_3)

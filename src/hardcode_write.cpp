@@ -1436,7 +1436,7 @@ VKAPI_ATTR uint32_t VKAPI_CALL trace_vkAssertBufferTRACETOOLTEST(VkDevice device
 		VkResult result = wrap_vkMapMemory(device, buffer_data->backing, buffer_data->offset, buffer_data->size, 0, (void**)&ptr);
 		assert(result == VK_SUCCESS);
 		checksum = adler32((unsigned char*)ptr, buffer_data->size);
-		DLOG2("branch2 buffer=%u size=%u checksum=%u first byte=%u", buffer_data->index, (unsigned)buffer_data->size, checksum, (unsigned)ptr[0]);
+		DLOG2("branch2 buffer=%u offset=%u size=%u checksum=%u first byte=%u", buffer_data->index, (unsigned)buffer_data->offset, (unsigned)buffer_data->size, checksum, (unsigned)ptr[0]);
 		wrap_vkUnmapMemory(device, buffer_data->backing);
 		result = wrap_vkMapMemory(device, memory_data->backing, memory_data->offset, memory_data->size, 0, (void**)&ptr); // restore back
 		assert(result == VK_SUCCESS);
@@ -1447,7 +1447,7 @@ VKAPI_ATTR uint32_t VKAPI_CALL trace_vkAssertBufferTRACETOOLTEST(VkDevice device
 		VkResult result = wrap_vkMapMemory(device, buffer_data->backing, buffer_data->offset, buffer_data->size, 0, (void**)&ptr);
 		assert(result == VK_SUCCESS);
 		checksum = adler32((unsigned char*)ptr, buffer_data->size);
-		DLOG2("branch3 buffer=%u size=%u checksum=%u first byte=%u", buffer_data->index, (unsigned)buffer_data->size, checksum, (unsigned)ptr[0]);
+		DLOG2("branch3 buffer=%u offset=%u size=%u checksum=%u first byte=%u", buffer_data->index, (unsigned)buffer_data->offset, (unsigned)buffer_data->size, checksum, (unsigned)ptr[0]);
 		wrap_vkUnmapMemory(device, buffer_data->backing);
 	}
 	writer.write_uint32_t(checksum);
