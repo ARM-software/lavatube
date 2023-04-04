@@ -287,7 +287,30 @@ struct trackedcmdbuffer_trace : trackable
 	VkCommandPool pool = VK_NULL_HANDLE;
 	uint32_t pool_index = CONTAINER_INVALID_INDEX;
 	VkCommandBufferLevel level = VK_COMMAND_BUFFER_LEVEL_MAX_ENUM;
+	struct
+	{
+		trackedbuffer* buffer_data = nullptr;
+		VkDeviceSize offset = 0;
+		VkIndexType indexType = VK_INDEX_TYPE_MAX_ENUM; // VK_INDEX_TYPE_UINT16, VK_INDEX_TYPE_UINT32 or VK_INDEX_TYPE_UINT8_EXT
+	} indexBuffer;
 	std::unordered_map<trackedobject*, exposure> touched; // track memory updates
+
+	void touch_index_buffer(VkDeviceSize firstIndex, VkDeviceSize indexCount)
+	{
+		VkDeviceSize size = indexCount;
+		VkDeviceSize multiplier = 1;
+
+		if (indexBuffer.indexType == VK_INDEX_TYPE_UINT16) multiplier = 2;
+		else if (indexBuffer.indexType == VK_INDEX_TYPE_UINT32) multiplier = 4;
+
+		VkDeviceSize offset = indexBuffer.offset + firstIndex * multiplier;
+
+		if (size == VK_WHOLE_SIZE) size = indexBuffer.buffer_data->size - offset; // indirect indexed draw
+		else size *= multiplier;
+
+		assert(offset + size <= indexBuffer.buffer_data->size);
+		touch(indexBuffer.buffer_data, offset, size, __LINE__);
+	}
 
 	void touch(trackedobject* data, VkDeviceSize offset, VkDeviceSize size, unsigned source)
 	{

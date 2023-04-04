@@ -119,6 +119,7 @@ def struct_impl_write(w, selected = None):
 				param.print_save(param.name, 'sptr->')
 			if name in spec.feature_detection_structs:
 				z.do('writer.parent->usage_detection.check_%s(sptr);' % name)
+			util.save_add_tracking(name)
 			z.struct_end()
 			z.dump()
 		print >> w, '}'

@@ -837,17 +837,21 @@ class parameter(object):
 				z.do('writer.write_handle(%s);' % totrackable(self.type))
 
 				if self.funcname in [ 'vkCmdBindIndexBuffer' ] and self.name == 'buffer':
-					z.do('commandbuffer_data->touch(buffer_data, offset, buffer_data->size - offset, __LINE__);')
+					z.do('commandbuffer_data->indexBuffer.offset = offset;')
+					z.do('commandbuffer_data->indexBuffer.buffer_data = buffer_data;')
+					z.do('commandbuffer_data->indexBuffer.indexType = indexType;')
 				elif self.funcname in [ 'vkCmdDispatchIndirect' ] and self.name == 'buffer':
 					z.do('commandbuffer_data->touch(buffer_data, offset, sizeof(%s), __LINE__);' % command_names[self.funcname])
 				elif self.funcname in [ 'vkCmdDrawIndirect', 'vkCmdDrawIndexedIndirect', 'vkCmdDrawMeshTasksIndirectEXT' ] and self.name == 'buffer':
 					z.do('if (drawCount == 1) commandbuffer_data->touch(buffer_data, offset, sizeof(%s), __LINE__);' % command_names[self.funcname])
 					z.do('else if (drawCount > 1) commandbuffer_data->touch(buffer_data, offset, stride * drawCount, __LINE__);')
+					if 'Indexed' in name: z.do('commandbuffer_data->touch_index_buffer(0, VK_WHOLE_SIZE); // must check whole buffer here since we do not know yet what will be used')
 				elif self.funcname in [ 'vkCmdDrawIndirectCount', 'vkCmdDrawIndirectCountKHR', 'vkCmdDrawIndirectCountAMD' ] and self.name == 'countBuffer':
 					z.do('commandbuffer_data->touch(buffer_data, countBufferOffset, 4 * maxDrawCount, __LINE__);')
 				elif self.funcname in [ 'vkCmdDrawIndirectCount', 'vkCmdDrawIndirectCountKHR', 'vkCmdDrawIndexedIndirectCount', 'vkCmdDrawIndexedIndirectCountKHR',
 				                        'vkCmdDrawMeshTasksIndirectCountEXT', 'vkCmdDrawIndexedIndirectCount' ] and self.name == 'buffer':
 					z.do('if (maxDrawCount > 0) commandbuffer_data->touch(buffer_data, offset, stride * maxDrawCount, __LINE__);')
+					if 'Indexed' in name: z.do('commandbuffer_data->touch_index_buffer(0, VK_WHOLE_SIZE); // must check whole buffer here since we do not know yet what will be used')
 				elif self.funcname in [ 'vkCmdCopyBuffer', 'VkCopyBufferInfo2', 'VkCopyBufferInfo2KHR' ] and self.name == 'srcBuffer':
 					if self.funcname[0] == 'V': z.decl(trackable_type_map_trace['VkCommandBuffer'] + '*', totrackable('VkCommandBuffer'), custom='writer.parent->records.VkCommandBuffer_index.at(writer.commandBuffer);')
 					prefix = 'sptr->' if self.funcname[0] == 'V' else ''
@@ -980,7 +984,15 @@ def save_add_pre(name): # need to include the resource-creating or resource-dest
 
 def save_add_tracking(name):
 	z = getspool()
-	if name == 'vkResetCommandPool':
+
+	if name == 'vkCmdDrawMultiIndexedEXT':
+		z.do('for (unsigned ii = 0; ii < drawCount; ii++)')
+		z.loop_begin()
+		z.do('commandbuffer_data->touch_index_buffer(pIndexInfo[ii].firstIndex, pIndexInfo[ii].indexCount);')
+		z.loop_end()
+	elif 'vkCmdDraw' in name and 'Indexed' in name and not 'Indirect' in name:
+		z.do('commandbuffer_data->touch_index_buffer(firstIndex, indexCount);')
+	elif name == 'vkResetCommandPool':
 		z.do('if (flags & VK_COMMAND_POOL_RESET_RELEASE_RESOURCES_BIT) commandpool_data->commandbuffers.clear();')
 		z.do('else for (auto* i : commandpool_data->commandbuffers) i->touched.clear();')
 	elif name == 'vkResetCommandBuffer' or name == 'vkBeginCommandBuffer':
@@ -998,7 +1010,7 @@ def save_add_tracking(name):
 	elif name in [ 'vkCmdCopyBufferToImage', 'vkCmdCopyImageToBuffer', 'VkCopyBufferToImageInfo2', 'VkCopyBufferToImageInfo2KHR', 'VkCopyImageToBufferInfo2', 'VkCopyImageToBufferInfo2KHR' ]:
 		if name[0] == 'V': z.decl(trackable_type_map_trace['VkCommandBuffer'] + '*', totrackable('VkCommandBuffer'), custom='writer.parent->records.VkCommandBuffer_index.at(writer.commandBuffer);')
 		prefix = 'sptr->' if name[0] == 'V' else ''
-		z.do('for (unsigned ii = 0; ii < %sregionCount; ii++) commandbuffer_data->touch(buffer_data, %spRegions[ii].bufferOffset, image_data->size, __LINE__);' % (prefix, prefix))
+		z.do('for (unsigned ii = 0; ii < %sregionCount; ii++) commandbuffer_data->touch(buffer_data, %spRegions[ii].bufferOffset, std::min(image_data->size, buffer_data->size - %spRegions[ii].bufferOffset), __LINE__);' % (prefix, prefix, prefix))
 	elif name in spec.functions_create and spec.functions_create[name][1] == '1':
 		(param, count, type) = get_create_params(name)
 		z.do('auto* add = writer.parent->records.%s_index.add(*%s, lava_writer::instance().global_frame);' % (type, param))

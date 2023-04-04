@@ -75,7 +75,7 @@ target_link_libraries(density ${SANITIZER})
 
 # --- common ---
 
-find_package(TBB REQUIRED HINTS /usr/aarch64-linux-gnu/lib/cmake/TBB /usr/arm-linux-gnueabihf/lib/cmake/TBB)
+find_package(TBB REQUIRED HINTS /usr/lib/x86_64-linux-gnu/cmake/TBB /usr/aarch64-linux-gnu/lib/cmake/TBB /usr/arm-linux-gnueabihf/lib/cmake/TBB)
 
 # Debug Release RelWithDebInfo MinSizeRel
 set(COMMON_FLAGS ${SANITIZER} -std=c++11 -Werror -Wall -fvisibility=hidden ${XCB_ENABLE} -Wshadow)

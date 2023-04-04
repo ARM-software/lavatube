@@ -136,8 +136,7 @@ void check_retval(VkResult stored_retval, VkResult retval)
 	if (stored_retval == VK_SUCCESS && retval != VK_SUCCESS)
 	{
 		const char* err = errorString(retval);
-		FELOG("LAVATUBE ERROR: Returncode does not match stored value, got error: %s (code %u)", err, (unsigned)retval);
-		assert(false);
+		ABORT("LAVATUBE ERROR: Returncode does not match stored value, got error: %s (code %u)", err, (unsigned)retval);
 	}
 }
 
