@@ -823,9 +823,9 @@ class parameter(object):
 					z.do('data->call = writer.local_call_number;')
 
 				if self.funcname in [ 'vkCmdBindVertexBuffers2', 'vkCmdBindVertexBuffers2EXT' ] and self.name == 'pBuffers':
-					z.do('if (pBuffers[hi]) commandbuffer_data->touch(data, pOffsets[hi], pSizes ? pSizes[hi] : (data->size - pOffsets[hi]));') # TBD handle pStrides
+					z.do('if (pBuffers[hi]) commandbuffer_data->touch(data, pOffsets[hi], pSizes ? pSizes[hi] : (data->size - pOffsets[hi]), __LINE__);') # TBD handle pStrides
 				if self.funcname in [ 'vkCmdBindVertexBuffers' ] and self.name == 'pBuffers':
-					z.do('if (pBuffers[hi]) commandbuffer_data->touch(data, pOffsets[hi], data->size - pOffsets[hi]);')
+					z.do('if (pBuffers[hi]) commandbuffer_data->touch(data, pOffsets[hi], data->size - pOffsets[hi], __LINE__);')
 
 				z.loop_end()
 			else:
@@ -837,35 +837,30 @@ class parameter(object):
 				z.do('writer.write_handle(%s);' % totrackable(self.type))
 
 				if self.funcname in [ 'vkCmdBindIndexBuffer' ] and self.name == 'buffer':
-					z.do('commandbuffer_data->touch(buffer_data, offset, buffer_data->size - offset);')
+					z.do('commandbuffer_data->touch(buffer_data, offset, buffer_data->size - offset, __LINE__);')
 				elif self.funcname in [ 'vkCmdDispatchIndirect' ] and self.name == 'buffer':
-					z.do('commandbuffer_data->touch(buffer_data, offset, sizeof(%s));' % command_names[self.funcname])
+					z.do('commandbuffer_data->touch(buffer_data, offset, sizeof(%s), __LINE__);' % command_names[self.funcname])
 				elif self.funcname in [ 'vkCmdDrawIndirect', 'vkCmdDrawIndexedIndirect', 'vkCmdDrawMeshTasksIndirectEXT' ] and self.name == 'buffer':
-					z.do('if (drawCount == 1) commandbuffer_data->touch(buffer_data, offset, sizeof(%s));' % command_names[self.funcname])
-					z.do('else if (drawCount > 1) commandbuffer_data->touch(buffer_data, offset, stride * drawCount);')
+					z.do('if (drawCount == 1) commandbuffer_data->touch(buffer_data, offset, sizeof(%s), __LINE__);' % command_names[self.funcname])
+					z.do('else if (drawCount > 1) commandbuffer_data->touch(buffer_data, offset, stride * drawCount, __LINE__);')
 				elif self.funcname in [ 'vkCmdDrawIndirectCount', 'vkCmdDrawIndirectCountKHR', 'vkCmdDrawIndirectCountAMD' ] and self.name == 'countBuffer':
-					z.do('commandbuffer_data->touch(buffer_data, countBufferOffset, 4 * maxDrawCount);')
+					z.do('commandbuffer_data->touch(buffer_data, countBufferOffset, 4 * maxDrawCount, __LINE__);')
 				elif self.funcname in [ 'vkCmdDrawIndirectCount', 'vkCmdDrawIndirectCountKHR', 'vkCmdDrawIndexedIndirectCount', 'vkCmdDrawIndexedIndirectCountKHR',
 				                        'vkCmdDrawMeshTasksIndirectCountEXT', 'vkCmdDrawIndexedIndirectCount' ] and self.name == 'buffer':
-					z.do('if (maxDrawCount > 0) commandbuffer_data->touch(buffer_data, offset, stride * maxDrawCount);')
+					z.do('if (maxDrawCount > 0) commandbuffer_data->touch(buffer_data, offset, stride * maxDrawCount, __LINE__);')
 				elif self.funcname in [ 'vkCmdCopyBuffer', 'VkCopyBufferInfo2', 'VkCopyBufferInfo2KHR' ] and self.name == 'srcBuffer':
 					if self.funcname[0] == 'V': z.decl(trackable_type_map_trace['VkCommandBuffer'] + '*', totrackable('VkCommandBuffer'), custom='writer.parent->records.VkCommandBuffer_index.at(writer.commandBuffer);')
 					prefix = 'sptr->' if self.funcname[0] == 'V' else ''
-					z.do('for (unsigned ii = 0; ii < %sregionCount; ii++) commandbuffer_data->touch(buffer_data, %spRegions[ii].srcOffset, %spRegions[ii].size);' % (prefix, prefix, prefix))
+					z.do('for (unsigned ii = 0; ii < %sregionCount; ii++) commandbuffer_data->touch(buffer_data, %spRegions[ii].srcOffset, %spRegions[ii].size, __LINE__);' % (prefix, prefix, prefix))
 				elif self.funcname in [ 'vkCmdCopyBuffer', 'VkCopyBufferInfo2', 'VkCopyBufferInfo2KHR' ] and self.name == 'dstBuffer':
 					if self.funcname[0] == 'V': z.decl(trackable_type_map_trace['VkCommandBuffer'] + '*', totrackable('VkCommandBuffer'), custom='writer.parent->records.VkCommandBuffer_index.at(writer.commandBuffer);')
 					prefix = 'sptr->' if self.funcname[0] == 'V' else ''
-					z.do('for (unsigned ii = 0; ii < %sregionCount; ii++) commandbuffer_data->touch(buffer_data, %spRegions[ii].dstOffset, %spRegions[ii].size);' % (prefix, prefix, prefix))
+					z.do('for (unsigned ii = 0; ii < %sregionCount; ii++) commandbuffer_data->touch(buffer_data, %spRegions[ii].dstOffset, %spRegions[ii].size, __LINE__);' % (prefix, prefix, prefix))
 				elif self.funcname in [ 'vkCmdCopyImage', 'vkCmdBlitImage', 'vkCmdCopyBufferToImage', 'vkCmdCopyImageToBuffer', 'vkCmdResolveImage', 'VkCopyImageInfo2',
 							'VkCopyImageInfo2KHR', 'VkCopyBufferToImageInfo2', 'VkCopyBufferToImageInfo2KHR', 'VkCopyImageToBufferInfo2', 'VkCopyImageToBufferInfo2KHR',
-							'VkBlitImageInfo2', 'VkBlitImageInfo2KHR', 'VkResolveImageInfo2', 'VkResolveImageInfo2KHR' ] and self.type == 'VkImage':
+							'VkBlitImageInfo2', 'VkBlitImageInfo2KHR', 'VkResolveImageInfo2', 'VkResolveImageInfo2KHR' ] and self.type == 'VkImage' and 'src' in self.name:
 					if self.funcname[0] == 'V': z.decl(trackable_type_map_trace['VkCommandBuffer'] + '*', totrackable('VkCommandBuffer'), custom='writer.parent->records.VkCommandBuffer_index.at(writer.commandBuffer);')
-					z.do('commandbuffer_data->touch(image_data, 0, image_data->size);') # TBD can calculate smaller area for some images but maybe not worth it
-				elif self.funcname in [ 'vkCmdCopyBufferToImage', 'vkCmdCopyImageToBuffer', 'VkCopyBufferToImageInfo2', 'VkCopyBufferToImageInfo2KHR', 'VkCopyImageToBufferInfo2',
-							'VkCopyImageToBufferInfo2KHR' ] and self.type == 'VkBuffer':
-					if self.funcname[0] == 'V': z.decl(trackable_type_map_trace['VkCommandBuffer'] + '*', totrackable('VkCommandBuffer'), custom='writer.parent->records.VkCommandBuffer_index.at(writer.commandBuffer);')
-					prefix = 'sptr->' if self.funcname[0] == 'V' else ''
-					z.do('for (unsigned ii = 0; ii < %sregionCount; ii++) commandbuffer_data->touch(buffer_data, %spRegions[ii].bufferOffset, buffer_data->size - %spRegions[ii].bufferOffset);' % (prefix, prefix, prefix)) # TBD restrict more
+					z.do('commandbuffer_data->touch(image_data, 0, image_data->size, __LINE__);') # TBD can calculate smaller area for some images but maybe not worth it
 				elif self.funcname in [ 'vkCmdExecuteCommands' ]:
 					z.do('for (unsigned ii = 0; ii < commandBufferCount; ii++) // copy over touched ranges from secondary to primary')
 					z.loop_begin()
@@ -879,7 +874,7 @@ class parameter(object):
 					z.brace_begin()
 					z.do('auto* imageview_data = writer.parent->records.VkImageView_index.at(pRenderingInfo->pColorAttachments[ii].imageView);')
 					z.do('auto* image_data = writer.parent->records.VkImage_index.at(imageview_data->image);')
-					z.do('commandbuffer_data->touch(image_data, 0, image_data->size);')
+					z.do('commandbuffer_data->touch(image_data, 0, image_data->size, __LINE__);')
 					z.brace_end()
 					z.loop_end()
 				elif self.funcname in [ 'vkCmdBeginRenderPass', 'vkCmdBeginRenderPass2', 'vkCmdBeginRenderPass2KHR' ]:
@@ -890,7 +885,7 @@ class parameter(object):
 					z.do('if (renderpass_data->attachments[ii].loadOp == VK_ATTACHMENT_LOAD_OP_LOAD || renderpass_data->attachments[ii].stencilLoadOp == VK_ATTACHMENT_LOAD_OP_LOAD)')
 					z.brace_begin()
 					z.do('auto* image_data = writer.parent->records.VkImage_index.at(framebuffer_data->imageviews.at(ii)->image);')
-					z.do('commandbuffer_data->touch(image_data, 0, image_data->size);')
+					z.do('commandbuffer_data->touch(image_data, 0, image_data->size, __LINE__);')
 					z.brace_end()
 					z.loop_end()
 
@@ -1000,6 +995,10 @@ def save_add_tracking(name):
 		z.do('tf->tid = writer.thread_index();')
 		z.do('tf->call = writer.local_call_number;')
 		z.brace_end()
+	elif name in [ 'vkCmdCopyBufferToImage', 'vkCmdCopyImageToBuffer', 'VkCopyBufferToImageInfo2', 'VkCopyBufferToImageInfo2KHR', 'VkCopyImageToBufferInfo2', 'VkCopyImageToBufferInfo2KHR' ]:
+		if name[0] == 'V': z.decl(trackable_type_map_trace['VkCommandBuffer'] + '*', totrackable('VkCommandBuffer'), custom='writer.parent->records.VkCommandBuffer_index.at(writer.commandBuffer);')
+		prefix = 'sptr->' if name[0] == 'V' else ''
+		z.do('for (unsigned ii = 0; ii < %sregionCount; ii++) commandbuffer_data->touch(buffer_data, %spRegions[ii].bufferOffset, image_data->size, __LINE__);' % (prefix, prefix))
 	elif name in spec.functions_create and spec.functions_create[name][1] == '1':
 		(param, count, type) = get_create_params(name)
 		z.do('auto* add = writer.parent->records.%s_index.add(*%s, lava_writer::instance().global_frame);' % (type, param))

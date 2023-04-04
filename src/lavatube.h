@@ -113,6 +113,7 @@ struct trackedobject : trackable
 	uint64_t written = 0; // bytes written out for this object
 	uint32_t updates = 0; // number of times it was updated
 	bool accessible = false; // whether our backing memory is host visible and understandable
+	int source = 0; // code line that is the last source for us to be scanned, only for debugging
 
 	void self_test() const
 	{
@@ -288,9 +289,10 @@ struct trackedcmdbuffer_trace : trackable
 	VkCommandBufferLevel level = VK_COMMAND_BUFFER_LEVEL_MAX_ENUM;
 	std::unordered_map<trackedobject*, exposure> touched; // track memory updates
 
-	void touch(trackedobject* data, VkDeviceSize offset, VkDeviceSize size)
+	void touch(trackedobject* data, VkDeviceSize offset, VkDeviceSize size, unsigned source)
 	{
 		if (!data->accessible) return;
+		data->source = source;
 		if (size == VK_WHOLE_SIZE) size = data->size - offset;
 		touched[data].add_os(offset, size);
 	}
@@ -320,10 +322,12 @@ struct trackeddescriptorset_trace : trackable
 	VkDescriptorPool pool = VK_NULL_HANDLE;
 	uint32_t pool_index = CONTAINER_INVALID_INDEX;
 	std::unordered_map<trackedobject*, exposure> touched; // track memory updates
+	std::vector<VkDescriptorBufferInfo> dynamic_buffers; // must be resolved on bind
 
-	void touch(trackedobject* data, VkDeviceSize offset, VkDeviceSize size)
+	void touch(trackedobject* data, VkDeviceSize offset, VkDeviceSize size, unsigned source)
 	{
 		if (!data->accessible) return;
+		data->source = -(int)source;
 		if (size == VK_WHOLE_SIZE) size = data->size - offset;
 		touched[data].add_os(offset, size);
 	}

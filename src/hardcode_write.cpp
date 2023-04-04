@@ -405,12 +405,23 @@ static void trace_post_vkCmdBindDescriptorSets(lava_file_writer& writer,
 	uint32_t                                    dynamicOffsetCount,
 	const uint32_t*                             pDynamicOffsets)
 {
-	// TBD handle pDynamicOffsets here!
+	uint32_t dynamic_index = 0;
 	auto* cmdbuf_data = writer.parent->records.VkCommandBuffer_index.at(commandBuffer);
 	for (unsigned i = 0; i < descriptorSetCount; i++)
 	{
 		const auto* tds = writer.parent->records.VkDescriptorSet_index.at(pDescriptorSets[i]);
 		cmdbuf_data->touch_merge(tds->touched);
+		for (unsigned j = 0; j < tds->dynamic_buffers.size(); j++)
+		{
+			if (tds->dynamic_buffers.at(j).buffer == VK_NULL_HANDLE) continue;
+			auto* buffer_data = writer.parent->records.VkBuffer_index.at(tds->dynamic_buffers.at(j).buffer);
+			VkDeviceSize size = tds->dynamic_buffers.at(j).range;
+			VkDeviceSize offset = tds->dynamic_buffers.at(j).offset + pDynamicOffsets[dynamic_index + j];
+			if (size == VK_WHOLE_SIZE) size = buffer_data->size - offset;
+			cmdbuf_data->touch(buffer_data, offset, size, __LINE__);
+		}
+		dynamic_index += tds->dynamic_buffers.size();
+		assert(dynamic_index <= dynamicOffsetCount);
 	}
 }
 
@@ -422,7 +433,7 @@ static void handle_VkWriteDescriptorSets(lava_file_writer& writer, uint32_t desc
 		auto* tds = writer.parent->records.VkDescriptorSet_index.at(pDescriptorWrites[i].dstSet);
 		// TBD I do not think this is correct. We are allowed to keep descriptor state for bindings not touched here from a previous call.
 		// Not sure how to handle this well, and not seen any content where this breaks anything, but should fix it...
-		if (clear) tds->touched.clear();
+		if (clear) { tds->touched.clear(); tds->dynamic_buffers.clear(); }
 	}
 	for (unsigned i = 0; i < descriptorWriteCount; i++)
 	{
@@ -441,21 +452,25 @@ static void handle_VkWriteDescriptorSets(lava_file_writer& writer, uint32_t desc
 				if (pDescriptorWrites[i].pImageInfo[j].imageView == VK_NULL_HANDLE) continue;
 				auto* imageview_data = writer.parent->records.VkImageView_index.at(pDescriptorWrites[i].pImageInfo[j].imageView);
 				auto* image_data = writer.parent->records.VkImage_index.at(imageview_data->image);
-				tds->touch(image_data, 0, image_data->size);
+				tds->touch(image_data, 0, image_data->size, __LINE__);
 			}
 			break;
 		case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
 		case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
-		case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC:
-		case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC:
 			for (unsigned j = 0; j < pDescriptorWrites[i].descriptorCount; j++)
 			{
 				if (pDescriptorWrites[i].pBufferInfo[j].buffer == VK_NULL_HANDLE) continue;
 				auto* buffer_data = writer.parent->records.VkBuffer_index.at(pDescriptorWrites[i].pBufferInfo[j].buffer);
 				VkDeviceSize size = pDescriptorWrites[i].pBufferInfo[j].range;
-				if (type == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC || type == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC) size = VK_WHOLE_SIZE; // TBD do properly
 				if (size == VK_WHOLE_SIZE) size = buffer_data->size - pDescriptorWrites[i].pBufferInfo[j].offset;
-				tds->touch(buffer_data, pDescriptorWrites[i].pBufferInfo[j].offset, size);
+				tds->touch(buffer_data, pDescriptorWrites[i].pBufferInfo[j].offset, size, __LINE__);
+			}
+			break;
+		case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC:
+		case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC:
+			for (unsigned j = 0; j < pDescriptorWrites[i].descriptorCount; j++)
+			{
+				tds->dynamic_buffers.push_back(pDescriptorWrites[i].pBufferInfo[j]);
 			}
 			break;
 		case VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER:
@@ -465,7 +480,7 @@ static void handle_VkWriteDescriptorSets(lava_file_writer& writer, uint32_t desc
 				if (pDescriptorWrites[i].pTexelBufferView[j] == VK_NULL_HANDLE) continue;
 				auto* bufferview_data = writer.parent->records.VkBufferView_index.at(pDescriptorWrites[i].pTexelBufferView[j]);
 				auto* buffer_data = writer.parent->records.VkBuffer_index.at(bufferview_data->buffer);
-				tds->touch(buffer_data, bufferview_data->offset, bufferview_data->range);
+				tds->touch(buffer_data, bufferview_data->offset, bufferview_data->range, __LINE__);
 			}
 			break;
 		case VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK: // Provided by VK_VERSION_1_3
@@ -613,7 +628,7 @@ static void memory_update(lava_file_writer& writer, trackedqueue_trace* queue_da
 					      (unsigned long)object_data->written, memory_data->index, binding_offset, binding_size, memory_data->ptr);
 				}
 				object_data->written += written;
-				NEVER("%s(%u) offset=%u size=%u memory=%u(total size=%u) written=%u scanned=%u cmdbuf=%u", pretty_print_VkObjectType(object_data->type), (unsigned)object_data->index, (unsigned)object_data->offset, (unsigned)object_data->size, memory_data->index, (unsigned)memory_data->allocationSize, (unsigned)written, (unsigned)scanned, cmdbuf_data->index);
+				NEVER("%s(%u) offset=%u size=%u memory=%u(total size=%u) written=%u scanned=%u cmdbuf=%u source=%d", pretty_print_VkObjectType(object_data->type), (unsigned)object_data->index, (unsigned)object_data->offset, (unsigned)object_data->size, memory_data->index, (unsigned)memory_data->allocationSize, (unsigned)written, (unsigned)scanned, cmdbuf_data->index, (int)object_data->source);
 			}
 		}
 
