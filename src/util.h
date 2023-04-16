@@ -59,6 +59,7 @@ extern uint_fast8_t p__custom_allocator;
 extern uint_fast8_t p__no_anisotropy;
 extern uint_fast8_t p__delay_fence_success_frames;
 extern FILE* p__debug_destination;
+extern int p__chunksize;
 
 /// Logging to be enable as needed by source recompilation
 #define NEVER(_format, ...)

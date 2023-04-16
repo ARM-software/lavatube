@@ -67,6 +67,7 @@ uint64_t file_writer::write_patch(char* orig, const char* const chng, uint64_t o
 
 file_writer::file_writer() : done_feeding(false), done_compressing(false)
 {
+	uncompressed_chunk_size = p__chunksize;
 	chunk = buffer(uncompressed_chunk_size);
 }
 
