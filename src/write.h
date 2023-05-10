@@ -68,6 +68,7 @@ struct trace_metadata
 {
 	/// What the device told the app it is capable of, modified by us
 	trace_capabilities device GUARDED_BY(frame_mutex);
+	VkPhysicalDeviceExternalMemoryHostPropertiesEXT external_memory = {};
 
 	/// What the app asked for, modified by us
 	trace_capabilities app GUARDED_BY(frame_mutex);
@@ -209,6 +210,10 @@ public:
 	trace_records records;
 
 	trace_metadata meta GUARDED_BY(frame_mutex);
+
+	// statistics
+	uint64_t mem_allocated = 0;
+	uint64_t mem_wasted = 0;
 
 	/// Actually used features. We use this to modify the meta_app.
 	feature_detection usage_detection; // reentrant safe

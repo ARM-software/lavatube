@@ -926,6 +926,8 @@ static void trace_pre_vkCreateDevice(VkPhysicalDevice physicalDevice, VkDeviceCr
 	// -- Modify app request --
 
 	bool has_VK_EXT_tooling_info = false;
+	bool has_VK_KHR_external_memory = false;
+	bool has_VK_EXT_external_memory_host = false;
 	uint32_t propertyCount = 0;
 	VkResult result = wrap_vkEnumerateDeviceExtensionProperties(physicalDevice, nullptr, &propertyCount, nullptr); // call first to get correct count on host
 	assert(result == VK_SUCCESS);
@@ -936,10 +938,17 @@ static void trace_pre_vkCreateDevice(VkPhysicalDevice physicalDevice, VkDeviceCr
 	{
 		std::string name = ext.extensionName;
 		if (name == VK_EXT_TOOLING_INFO_EXTENSION_NAME) has_VK_EXT_tooling_info = true;
+		if (name == VK_KHR_EXTERNAL_MEMORY_EXTENSION_NAME) has_VK_KHR_external_memory = true;
+		if (name == VK_EXT_EXTERNAL_MEMORY_HOST_EXTENSION_NAME) has_VK_EXT_external_memory_host = true;
 	}
 
+	// Extra extensions to add
+	std::vector<std::string> extra_exts;
+	if (has_VK_KHR_external_memory) { extra_exts.push_back(VK_KHR_EXTERNAL_MEMORY_EXTENSION_NAME); }
+	if (has_VK_EXT_external_memory_host) { extra_exts.push_back(VK_EXT_EXTERNAL_MEMORY_HOST_EXTENSION_NAME); }
+
 	// Remove built-in extensions before sending the requested extension list to the driver
-	char** nameptrs = writer.pool.allocate<char*>(pCreateInfo->enabledExtensionCount); // reserve space for all
+	char** nameptrs = writer.pool.allocate<char*>(pCreateInfo->enabledExtensionCount + extra_exts.size()); // reserve space for all
 	unsigned newcount = 0;
 	DLOG("Requesting enabled device extension from the driver:");
 	for (unsigned i = 0; i < pCreateInfo->enabledExtensionCount; i++)
@@ -957,8 +966,19 @@ static void trace_pre_vkCreateDevice(VkPhysicalDevice physicalDevice, VkDeviceCr
 		if (strcmp(name, VK_TRACETOOLTEST_CHECKSUM_VALIDATION_EXTENSION_NAME) == 0) continue; // do not pass to host
 		if (strcmp(name, VK_TRACETOOLTEST_OBJECT_PROPERTY_EXTENSION_NAME) == 0) continue; // do not pass to host
 		if (strcmp(name, VK_TRACETOOLTEST_FRAME_END_EXTENSION_NAME) == 0) continue; // do not pass to host
+		if (strcmp(name, VK_KHR_EXTERNAL_MEMORY_EXTENSION_NAME) == 0) has_VK_KHR_external_memory = false; // do not need to add, already there
+		if (strcmp(name, VK_EXT_EXTERNAL_MEMORY_HOST_EXTENSION_NAME) == 0) has_VK_EXT_external_memory_host = false; // ditto
 		nameptrs[newcount++] = name;
 		DLOG("    %s", name);
+	}
+	// Add extra extensions
+	for (const auto& v : extra_exts)
+	{
+		const int size = v.size() + 1;
+		char* name = writer.pool.allocate<char>(v.size() + 1);
+		strcpy(name, v.c_str());
+		nameptrs[newcount++] = name;
+		DLOG("    %s (added by us)", name);
 	}
 	frame_mutex.unlock();
 	pCreateInfo->ppEnabledExtensionNames = nameptrs;
@@ -991,14 +1011,15 @@ static void trace_post_vkCreateDevice(lava_file_writer& writer, VkResult result,
 		instance.meta.device.stored_device_properties = new VkPhysicalDeviceProperties();
 		if (VK_VERSION_MAJOR(instance.meta.device.stored_api_version) >= 1 && VK_VERSION_MINOR(instance.meta.device.stored_api_version) >= 1)
 		{
-			VkPhysicalDeviceProperties2 properties = {};
-			properties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
+			VkPhysicalDeviceProperties2 properties { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2, nullptr };
 			if (VK_VERSION_MAJOR(instance.meta.device.stored_api_version) >= 1 && VK_VERSION_MINOR(instance.meta.device.stored_api_version) >= 2)
 			{
 				instance.meta.device.stored_driver_properties = new VkPhysicalDeviceDriverProperties();
 				instance.meta.device.stored_driver_properties->sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DRIVER_PROPERTIES;
 				properties.pNext = instance.meta.device.stored_driver_properties;
 			}
+			instance.meta.external_memory = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_MEMORY_HOST_PROPERTIES_EXT, properties.pNext };
+			if (p__external_memory) properties.pNext = &instance.meta.external_memory;
 			wrap_vkGetPhysicalDeviceProperties2(physicalDevice, &properties);
 			*instance.meta.device.stored_device_properties = properties.properties; // struct copy
 		}
@@ -1545,6 +1566,10 @@ void trace_pre_vkFreeMemory(VkDevice device, VkDeviceMemory memory, const VkAllo
 		{
 			free(memory_data->clone);
 			memory_data->clone = nullptr;
+		}
+		if (p__external_memory && (memory_data->propertyFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT))
+		{
+			free(memory_data->ptr);
 		}
 		memory_data->ptr = nullptr;
 		memory_data->exposed.clear();

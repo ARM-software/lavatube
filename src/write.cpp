@@ -260,6 +260,12 @@ void lava_writer::finish()
 {
 	frame_mutex.lock();
 
+	if ((p__external_memory || p__debug_level >= 1) && mem_allocated > 0)
+	{
+		ILOG("Memory allocated %lu, wasted %lu", (unsigned long)mem_allocated, (unsigned long)mem_wasted);
+	}
+	mem_allocated = 0;
+	mem_wasted = 0;
 	meta.device.reset();
 	meta.app.reset();
 	should_serialize = false;
