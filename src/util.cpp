@@ -369,7 +369,30 @@ const char* pretty_print_VkObjectType(VkObjectType val)
 	case VK_OBJECT_TYPE_DESCRIPTOR_SET: return "DescriptorSet";
 	case VK_OBJECT_TYPE_FRAMEBUFFER: return "Framebuffer";
 	case VK_OBJECT_TYPE_COMMAND_POOL: return "CommandPool";
-	default: return "Unhandled enum";
+	case VK_OBJECT_TYPE_SAMPLER_YCBCR_CONVERSION: return "YcbcrConversion";
+	case VK_OBJECT_TYPE_DESCRIPTOR_UPDATE_TEMPLATE: return "DescriptorUpdateTemplate";
+	case VK_OBJECT_TYPE_PRIVATE_DATA_SLOT: return "PrivateDataSlot";
+	case VK_OBJECT_TYPE_SURFACE_KHR: return "Surface";
+	case VK_OBJECT_TYPE_SWAPCHAIN_KHR: return "Swapchain";
+	case VK_OBJECT_TYPE_DISPLAY_KHR: return "Display";
+	case VK_OBJECT_TYPE_DISPLAY_MODE_KHR: return "DisplayMode";
+	case VK_OBJECT_TYPE_DEBUG_REPORT_CALLBACK_EXT: return "DebugReportCallback";
+	case VK_OBJECT_TYPE_CU_FUNCTION_NVX: return "CuFunctionNVX";
+	case VK_OBJECT_TYPE_DEBUG_UTILS_MESSENGER_EXT: return "DebugUtilsMessenger";
+	case VK_OBJECT_TYPE_ACCELERATION_STRUCTURE_KHR: return "AccelerationStructure";
+	case VK_OBJECT_TYPE_VALIDATION_CACHE_EXT: return "ValidationCache";
+	case VK_OBJECT_TYPE_ACCELERATION_STRUCTURE_NV: return "AccelerationStructureNV";
+	case VK_OBJECT_TYPE_PERFORMANCE_CONFIGURATION_INTEL: return "PerformanceConfigurationINTEL";
+	case VK_OBJECT_TYPE_DEFERRED_OPERATION_KHR: return "DeferredOperation";
+	case VK_OBJECT_TYPE_INDIRECT_COMMANDS_LAYOUT_NV: return "IndirectComamndsLayoutNV";
+	case VK_OBJECT_TYPE_CU_MODULE_NVX: return "CuModuleNVX";
+	case VK_OBJECT_TYPE_BUFFER_COLLECTION_FUCHSIA: return "BufferCollectionFUCHSIA";
+	case VK_OBJECT_TYPE_MICROMAP_EXT: return "Micromap";
+	case VK_OBJECT_TYPE_OPTICAL_FLOW_SESSION_NV: return "OpticalFlowSessionNV";
+	case VK_OBJECT_TYPE_MAX_ENUM: assert(false); return "Error";
+	case VK_OBJECT_TYPE_VIDEO_SESSION_KHR: return "VideoSession";
+	case VK_OBJECT_TYPE_VIDEO_SESSION_PARAMETERS_KHR: return "VideoSessionParameters";
+	case VK_OBJECT_TYPE_SHADER_EXT: return "Shader";
 	}
 	return "Error";
 }

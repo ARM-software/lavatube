@@ -219,6 +219,16 @@ target_link_libraries(featuretest ${MOST_COMMON_LIBRARIES} pthread)
 target_compile_options(featuretest PRIVATE ${COMMON_FLAGS})
 add_test(NAME feature_test COMMAND ${CMAKE_CURRENT_BINARY_DIR}/featuretest)
 
+add_executable(mprotect tests/mprotect.cpp src/util.cpp src/util.h)
+target_include_directories(mprotect ${COMMON_INCLUDE})
+target_link_libraries(mprotect ${MOST_COMMON_LIBRARIES} pthread)
+target_compile_options(mprotect PRIVATE ${COMMON_FLAGS})
+
+add_executable(userfaultfd tests/userfaultfd.cpp src/util.cpp src/util.h)
+target_include_directories(userfaultfd ${COMMON_INCLUDE})
+target_link_libraries(userfaultfd ${MOST_COMMON_LIBRARIES} pthread)
+target_compile_options(userfaultfd PRIVATE ${COMMON_FLAGS})
+
 add_executable(containers tests/container_test.cpp)
 target_include_directories(containers ${COMMON_INCLUDE})
 target_link_libraries(containers ${MOST_COMMON_LIBRARIES} tbb pthread)
