@@ -1146,17 +1146,6 @@ def save_add_tracking(name):
 		z.do('meta->self_test();')
 		if type == 'VkCommandBuffer':
 			z.do('commandpool_data->commandbuffers.erase(meta);')
-		if type in ['VkBuffer', 'VkImage']:
-			z.do('if (meta->backing != VK_NULL_HANDLE && writer.parent->records.VkDeviceMemory_index.contains(meta->backing))')
-			z.brace_begin()
-			z.do('memory_mutex.lock();')
-			z.do('auto* mem = writer.parent->records.VkDeviceMemory_index.at(meta->backing);')
-		if type == 'VkBuffer':
-			z.do('memory_mutex.unlock();')
-			z.brace_end()
-		elif type == 'VkImage':
-			z.do('memory_mutex.unlock();')
-			z.brace_end()
 		z.brace_end()
 
 # Run before execute

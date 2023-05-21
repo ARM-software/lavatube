@@ -27,9 +27,6 @@ static bool enabled_VK_EXT_tooling_info GUARDED_BY(frame_mutex) = false;
 static VkPhysicalDeviceMemoryProperties virtual_memory_properties GUARDED_BY(frame_mutex) = {};
 static uint32_t remap_memory_types_to_real[VK_MAX_MEMORY_TYPES] GUARDED_BY(frame_mutex);
 
-/// We cannot allow the app to map or unmap memory while we are scanning it.
-static lava::mutex memory_mutex;
-
 static trackable* debug_object_trackable(trace_records& r, VkDebugReportObjectTypeEXT type, uint64_t object)
 {
 	switch (type)
@@ -331,7 +328,7 @@ static void trace_post_vkGetDeviceImageMemoryRequirementsKHR(lava_file_writer& w
 
 static void trace_post_vkBindImageMemory(lava_file_writer& writer, VkResult result, VkDevice device, VkImage image, VkDeviceMemory memory, VkDeviceSize memoryOffset)
 {
-	memory_mutex.lock();
+	writer.parent->memory_mutex.lock();
 	assert(memory != VK_NULL_HANDLE);
 	assert(result == VK_SUCCESS);
 	auto* image_data = writer.parent->records.VkImage_index.at(image);
@@ -345,12 +342,12 @@ static void trace_post_vkBindImageMemory(lava_file_writer& writer, VkResult resu
 	}
 	image_data->size = image_data->req.size; // we do not try to second guess this for images
 	image_data->accessible = ((image_data->tiling != VK_IMAGE_TILING_OPTIMAL) && (memory_data->propertyFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT));
-	memory_mutex.unlock();
+	writer.parent->memory_mutex.unlock();
 }
 
 static void trace_post_vkBindBufferMemory(lava_file_writer& writer, VkResult result, VkDevice device, VkBuffer buffer, VkDeviceMemory memory, VkDeviceSize memoryOffset)
 {
-	memory_mutex.lock();
+	writer.parent->memory_mutex.lock();
 	assert(memory != VK_NULL_HANDLE);
 	assert(result == VK_SUCCESS);
 	auto* buffer_data = writer.parent->records.VkBuffer_index.at(buffer);
@@ -364,7 +361,7 @@ static void trace_post_vkBindBufferMemory(lava_file_writer& writer, VkResult res
 	}
 	// we pass in size recorded from vkCreateBuffer, which is the actually used size, rather than required allocation size
 	buffer_data->accessible = (memory_data->propertyFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
-	memory_mutex.unlock();
+	writer.parent->memory_mutex.unlock();
 }
 
 static void trace_post_vkBindImageMemory2(lava_file_writer& writer, VkResult result, VkDevice device, uint32_t bindInfoCount, const VkBindImageMemoryInfo* pBindInfos)
@@ -648,7 +645,7 @@ static void trace_pre_vkQueueSubmit2(VkQueue queue, uint32_t submitCount, const 
 	assert(queue != VK_NULL_HANDLE);
 	auto* queue_data = writer.parent->records.VkQueue_index.at(queue);
 
-	memory_mutex.lock();
+	instance.memory_mutex.lock();
 	std::unordered_map<VkDeviceMemory, range> ranges_by_memory;
 	std::unordered_set<trackedcmdbuffer_trace*> cmdbufs;
 	for (unsigned i = 0; i < submitCount; i++)
@@ -660,7 +657,7 @@ static void trace_pre_vkQueueSubmit2(VkQueue queue, uint32_t submitCount, const 
 	}
 	memory_update(writer, queue_data, ranges_by_memory, cmdbufs);
 	writer.debug.flushes_queue++;
-	memory_mutex.unlock();
+	instance.memory_mutex.unlock();
 }
 
 static void trace_pre_vkQueueSubmit2KHR(VkQueue queue, uint32_t submitCount, const VkSubmitInfo2* pSubmits, VkFence fence)
@@ -676,7 +673,7 @@ static void trace_pre_vkQueueSubmit(VkQueue queue, uint32_t submitCount, const V
 	assert(queue != VK_NULL_HANDLE);
 	auto* queue_data = writer.parent->records.VkQueue_index.at(queue);
 
-	memory_mutex.lock();
+	instance.memory_mutex.lock();
 	std::unordered_map<VkDeviceMemory, range> ranges_by_memory;
 	std::unordered_set<trackedcmdbuffer_trace*> cmdbufs;
 	for (unsigned i = 0; i < submitCount; i++)
@@ -688,7 +685,7 @@ static void trace_pre_vkQueueSubmit(VkQueue queue, uint32_t submitCount, const V
 	}
 	memory_update(writer, queue_data, ranges_by_memory, cmdbufs);
 	writer.debug.flushes_queue++;
-	memory_mutex.unlock();
+	instance.memory_mutex.unlock();
 }
 
 static void trace_post_vkQueuePresentKHR(lava_file_writer& writer, VkResult result, VkQueue queue, const VkPresentInfoKHR* pPresentInfo)
@@ -1492,7 +1489,7 @@ VKAPI_ATTR uint32_t VKAPI_CALL trace_vkAssertBufferTRACETOOLTEST(VkDevice device
 
 void trace_post_vkMapMemory(lava_file_writer& writer, VkResult result, VkDevice device, VkDeviceMemory memory, VkDeviceSize offset, VkDeviceSize size, VkMemoryMapFlags flags, void** ppData)
 {
-	memory_mutex.lock();
+	writer.parent->memory_mutex.lock();
 	auto* memory_data = writer.parent->records.VkDeviceMemory_index.at(memory);
 	memory_data->ptr = (char*)*ppData;
 	memory_data->offset = offset;
@@ -1516,12 +1513,12 @@ void trace_post_vkMapMemory(lava_file_writer& writer, VkResult result, VkDevice 
 		memory_data->exposed.add_os(offset, memory_data->size);
 	}
 
-	memory_mutex.unlock();
+	writer.parent->memory_mutex.unlock();
 }
 
 void trace_post_vkFlushMappedMemoryRanges(lava_file_writer& writer, VkResult result, VkDevice device, uint32_t memoryRangeCount, const VkMappedMemoryRange* pMemoryRanges)
 {
-	memory_mutex.lock();
+	writer.parent->memory_mutex.lock();
 	assert(result == VK_SUCCESS);
 	// The memory must be memory mapped
 	for (unsigned i = 0; i < memoryRangeCount; i++)
@@ -1536,13 +1533,14 @@ void trace_post_vkFlushMappedMemoryRanges(lava_file_writer& writer, VkResult res
 		assert(memory_data->ptr != nullptr && memory_data->size != 0); // the memory must be memory mapped
 		memory_data->exposed.add_os(v.offset, size);
 	}
-	memory_mutex.unlock();
+	writer.parent->memory_mutex.unlock();
 }
 
 void trace_pre_vkUnmapMemory(VkDevice device, VkDeviceMemory memory) ACQUIRE(memory_mutex)
 {
 	// Make sure we do not allow app to unmap memory while we are scanning it.
-	memory_mutex.lock();
+	lava_writer& instance = lava_writer::instance();
+	instance.memory_mutex.unlock();
 }
 
 void trace_post_vkUnmapMemory(lava_file_writer& writer, VkDevice device, VkDeviceMemory memory) RELEASE(memory_mutex)
@@ -1551,7 +1549,8 @@ void trace_post_vkUnmapMemory(lava_file_writer& writer, VkDevice device, VkDevic
 	memory_data->ptr = nullptr;
 	memory_data->offset = 0;
 	memory_data->size = 0;
-	memory_mutex.unlock();
+
+	writer.parent->memory_mutex.unlock();
 }
 
 void trace_pre_vkFreeMemory(VkDevice device, VkDeviceMemory memory, const VkAllocationCallbacks* pAllocator)
@@ -1562,6 +1561,17 @@ void trace_pre_vkFreeMemory(VkDevice device, VkDeviceMemory memory, const VkAllo
 	if (memory != VK_NULL_HANDLE)
 	{
 		auto* memory_data = writer.parent->records.VkDeviceMemory_index.at(memory);
+
+		// "If a memory object is mapped at the time it is freed, it is implicitly unmapped."
+		if (memory_data->ptr && (memory_data->propertyFlags & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT))
+		{
+			instance.memory_mutex.lock();
+			memory_data->ptr = nullptr;
+			memory_data->offset = 0;
+			memory_data->size = 0;
+			instance.memory_mutex.unlock();
+		}
+
 		if (memory_data->clone)
 		{
 			free(memory_data->clone);

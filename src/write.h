@@ -222,6 +222,9 @@ public:
 
 	trace_data<lava_file_writer*> thread_streams;
 
+	/// We cannot allow the app to map or unmap memory while we are scanning it
+	lava::mutex memory_mutex;
+
 private:
 	int mAsVersion = -1;
 	std::string mPath;
