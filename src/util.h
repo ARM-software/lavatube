@@ -144,13 +144,6 @@ static inline bool use_dedicated_allocation() { return p__dedicated_allocation; 
 static inline bool use_custom_allocator() { return p__custom_allocator; } // replay only, for now
 static inline bool no_anisotropy() { return p__no_anisotropy; } // replay only, for now
 
-static __attribute__((pure)) inline unsigned checksum(const std::vector<char>& v)
-{
-	unsigned c = 0;
-	for (unsigned a = 0; a < v.size(); a++) c += (unsigned)v.at(a);
-	return c;
-}
-
 /// Consistent top header for any extension struct. Used to iterate them and handle the ones we recognize.
 struct dummy_ext { VkStructureType sType; dummy_ext* pNext; };
 
@@ -200,10 +193,8 @@ struct buffer
 	inline void release() noexcept { free(mPtr); mPtr = nullptr; mSize = 0; }
 };
 
-static inline int aligned_size(VkDeviceSize size, VkDeviceSize alignment)
-{
-	return size + alignment - 1 - (size + alignment - 1) % alignment;
-}
+static __attribute__((const)) inline uint64_t aligned_size(uint64_t size, uint64_t alignment) { return size + alignment - 1ull - (size + alignment - 1ull) % alignment; }
+static __attribute__((const)) inline uint64_t aligned_start(uint64_t size, uint64_t alignment) { return (size & ~(alignment - 1)); }
 
 void* find_extension_parent(void* sptr, VkStructureType sType);
 void* find_extension(void* sptr, VkStructureType sType);

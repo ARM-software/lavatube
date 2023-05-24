@@ -103,11 +103,13 @@ void lava_reader::finalize(bool terminate)
 	fclose(fptr);
 	if (terminate)
 	{
+		global_mutex.lock();
 		for (auto& v : *thread_call_numbers) v = 0; // stop waiting threads from progressing
 		for (unsigned i = 0; i < threads.size(); i++)
 		{
 			if (!thread_streams[i]->terminated.load()) pthread_cancel(threads[i].native_handle());
 		}
+		global_mutex.unlock();
 	}
 }
 

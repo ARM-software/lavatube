@@ -64,9 +64,9 @@ out([r], '#include "read_auto.h"')
 out(targets_main)
 out(targets_main, '#pragma GCC diagnostic ignored "-Wunused-variable"')
 out(targets_main, '#pragma GCC diagnostic ignored "-Wunused-function"')
-out(targets_main, '#ifndef __clang__')
+out(targets_main, '#if (__clang_major__ > 12) || defined(__GNUC__)')
 out(targets_main, '#pragma GCC diagnostic ignored "-Wunused-but-set-variable"')
-out(targets_main, "#endif")
+out(targets_main, '#endif')
 out(targets_all)
 
 # Debug stuff

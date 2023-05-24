@@ -606,7 +606,7 @@ static void memory_update(lava_file_writer& writer, trackedqueue_trace* queue_da
 				if (object_data->backing != pair.first) continue; // belongs to different device memory
 				assert(object_data->frame_destroyed == -1);
 				uint64_t written = 0;
-				uint64_t scanned = 0;
+				[[maybe_unused]] uint64_t scanned = 0;
 				char* cloneptr = memory_data->clone + object_data->offset;
 				char* changedptr = ptr + object_data->offset - binding_offset;
 				for (const auto& r : objpair.second.list()) // go through list of touched ranges for our object
@@ -790,7 +790,7 @@ static void modify_instance_extensions() REQUIRES(frame_mutex)
 
 	uint32_t propertyCount = 0;
 	VkResult result = wrap_vkEnumerateInstanceExtensionProperties(nullptr, &propertyCount, nullptr); // call first to get correct count on host
-	assert(result == VK_SUCCESS);
+	if (result != VK_SUCCESS) ABORT("Failed reading instance extension property count");
 	std::vector<VkExtensionProperties> tmp_instance_extension_properties(propertyCount);
 	result = wrap_vkEnumerateInstanceExtensionProperties(nullptr, &propertyCount, tmp_instance_extension_properties.data());
 	assert(result == VK_SUCCESS);
@@ -828,7 +828,7 @@ static void modify_device_extensions(VkPhysicalDevice physicalDevice) REQUIRES(f
 
 	uint32_t propertyCount = 0;
 	VkResult result = wrap_vkEnumerateDeviceExtensionProperties(physicalDevice, nullptr, &propertyCount, nullptr); // call first to get correct count on host
-	assert(result == VK_SUCCESS);
+	if (result != VK_SUCCESS) ABORT("Failed reading device extension property count");
 	std::vector<VkExtensionProperties> tmp_device_extension_properties(propertyCount);
 	result = wrap_vkEnumerateDeviceExtensionProperties(physicalDevice, nullptr, &propertyCount, tmp_device_extension_properties.data());
 	assert(result == VK_SUCCESS);
@@ -926,7 +926,7 @@ static void trace_pre_vkCreateDevice(VkPhysicalDevice physicalDevice, VkDeviceCr
 	bool has_VK_KHR_external_memory = false;
 	bool has_VK_EXT_external_memory_host = false;
 	uint32_t propertyCount = 0;
-	VkResult result = wrap_vkEnumerateDeviceExtensionProperties(physicalDevice, nullptr, &propertyCount, nullptr); // call first to get correct count on host
+	[[maybe_unused]] VkResult result = wrap_vkEnumerateDeviceExtensionProperties(physicalDevice, nullptr, &propertyCount, nullptr); // call first to get correct count on host
 	assert(result == VK_SUCCESS);
 	std::vector<VkExtensionProperties> tmp_device_extension_properties(propertyCount);
 	result = wrap_vkEnumerateDeviceExtensionProperties(physicalDevice, nullptr, &propertyCount, tmp_device_extension_properties.data());
@@ -1176,13 +1176,14 @@ static void trace_post_vkCreateInstance(lava_file_writer& writer, VkResult resul
 	}
 	const std::string trace_out_path = get_trace_path(base_out_path);
 	instance.set(trace_out_path);
+
+	frame_mutex.lock();
+
 	if (pCreateInfo->pApplicationInfo)
 	{
 		instance.meta.device.stored_api_version = pCreateInfo->pApplicationInfo->apiVersion;
 	}
 	ILOG("Trace out path set to: %s", trace_out_path.c_str());
-
-	frame_mutex.lock();
 
 	// Save physical device references
 	uint32_t num_phys_devices = 0;
@@ -1206,7 +1207,7 @@ static inline lava_file_writer& write_header(const char* funcname, lava_function
 {
 	lava_writer& instance = lava_writer::instance();
 	lava_file_writer& writer = instance.file_writer();
-	if (thread_barrier) writer.inject_thread_barrier();
+	if (thread_barrier) { frame_mutex.lock(); writer.inject_thread_barrier(); frame_mutex.unlock(); }
 	writer.write_api_command(id);
 	DLOG("[t%02d %06d] Seq %s%s", writer.thread_index(), writer.local_call_number, funcname, thread_barrier ? " (prefaced by thread barrier)" : "");
 	return writer;
@@ -1467,7 +1468,7 @@ VKAPI_ATTR uint32_t VKAPI_CALL trace_vkAssertBufferTRACETOOLTEST(VkDevice device
 		uint8_t* ptr = nullptr;
 		wrap_vkUnmapMemory(device, memory_data->backing);
 		VkResult result = wrap_vkMapMemory(device, buffer_data->backing, buffer_data->offset, buffer_data->size, 0, (void**)&ptr);
-		assert(result == VK_SUCCESS);
+		if (result != VK_SUCCESS) ABORT("Failed to map memory in vkAssertBuffer");
 		checksum = adler32((unsigned char*)ptr, buffer_data->size);
 		DLOG2("branch2 buffer=%u offset=%u size=%u checksum=%u first byte=%u", buffer_data->index, (unsigned)buffer_data->offset, (unsigned)buffer_data->size, checksum, (unsigned)ptr[0]);
 		wrap_vkUnmapMemory(device, buffer_data->backing);
@@ -1478,7 +1479,7 @@ VKAPI_ATTR uint32_t VKAPI_CALL trace_vkAssertBufferTRACETOOLTEST(VkDevice device
 	{
 		uint8_t* ptr = nullptr;
 		VkResult result = wrap_vkMapMemory(device, buffer_data->backing, buffer_data->offset, buffer_data->size, 0, (void**)&ptr);
-		assert(result == VK_SUCCESS);
+		if (result != VK_SUCCESS) ABORT("Failed to map memory in vkAssertBuffer");
 		checksum = adler32((unsigned char*)ptr, buffer_data->size);
 		DLOG2("branch3 buffer=%u offset=%u size=%u checksum=%u first byte=%u", buffer_data->index, (unsigned)buffer_data->offset, (unsigned)buffer_data->size, checksum, (unsigned)ptr[0]);
 		wrap_vkUnmapMemory(device, buffer_data->backing);
@@ -1533,23 +1534,6 @@ void trace_post_vkFlushMappedMemoryRanges(lava_file_writer& writer, VkResult res
 		assert(memory_data->ptr != nullptr && memory_data->size != 0); // the memory must be memory mapped
 		memory_data->exposed.add_os(v.offset, size);
 	}
-	writer.parent->memory_mutex.unlock();
-}
-
-void trace_pre_vkUnmapMemory(VkDevice device, VkDeviceMemory memory) ACQUIRE(memory_mutex)
-{
-	// Make sure we do not allow app to unmap memory while we are scanning it.
-	lava_writer& instance = lava_writer::instance();
-	instance.memory_mutex.unlock();
-}
-
-void trace_post_vkUnmapMemory(lava_file_writer& writer, VkDevice device, VkDeviceMemory memory) RELEASE(memory_mutex)
-{
-	auto* memory_data = writer.parent->records.VkDeviceMemory_index.at(memory);
-	memory_data->ptr = nullptr;
-	memory_data->offset = 0;
-	memory_data->size = 0;
-
 	writer.parent->memory_mutex.unlock();
 }
 

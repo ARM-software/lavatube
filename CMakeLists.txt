@@ -78,7 +78,7 @@ target_link_libraries(density ${SANITIZER})
 find_package(TBB REQUIRED HINTS /usr/lib/x86_64-linux-gnu/cmake/TBB /usr/aarch64-linux-gnu/lib/cmake/TBB /usr/arm-linux-gnueabihf/lib/cmake/TBB)
 
 # Debug Release RelWithDebInfo MinSizeRel
-set(COMMON_FLAGS ${SANITIZER} -std=c++11 -Werror -Wall -fvisibility=hidden ${XCB_ENABLE} -Wshadow)
+set(COMMON_FLAGS ${SANITIZER} -std=c++17 -Werror -Wall -fvisibility=hidden ${XCB_ENABLE} -Wshadow)
 if(CMAKE_BUILD_TYPE STREQUAL "Debug" OR NOT CMAKE_BUILD_TYPE)
 	set(COMMON_FLAGS ${COMMON_FLAGS} -ggdb -O0 -fno-omit-frame-pointer -DDEBUG -DRELTYPE="debug")
 	message(STATUS "Debug build")

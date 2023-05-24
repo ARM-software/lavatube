@@ -169,7 +169,7 @@ public:
 		}
 	}
 
-	void inject_thread_barrier(bool do_lock = true);
+	void inject_thread_barrier() REQUIRES(frame_mutex);
 
 	/// Make other threads wait for us
 	void push_thread_barriers();
@@ -241,8 +241,10 @@ inline void lava_file_writer::write_api_command(uint16_t id)
 	commandBuffer = VK_NULL_HANDLE;
 	if (pending_barrier.load(std::memory_order_relaxed))
 	{
+		frame_mutex.lock();
 		inject_thread_barrier();
 		pending_barrier.store(false, std::memory_order_relaxed);
+		frame_mutex.unlock();
 	}
 	write_uint8_t(PACKET_API_CALL); // API call
 	write_uint16_t(id); // API call name by id

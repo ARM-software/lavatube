@@ -204,7 +204,6 @@ bool pack_directory(const std::string& pack, const std::string& directory, bool 
 	int filedesc = open(pack.c_str(), O_CREAT | O_NOATIME | O_TRUNC | O_WRONLY, S_IRWXU | S_IRGRP | S_IROTH);
 	if (filedesc == -1) FAIL("Failed to create \"%s\": %s", pack.c_str(), strerror(errno));
 	packwrite(filedesc, signature, 9);
-	uint64_t idx = 9;
 	n = scandir(directory.c_str(), &namelist, NULL, alphasort);
 	if (n < 0) FAIL("Failed to scan \"%s\": %s", directory.c_str(), strerror(errno));
 	int16_t j = 0; // real count without the .dotfiles
@@ -214,7 +213,6 @@ bool pack_directory(const std::string& pack, const std::string& directory, bool 
 		j++;
 	}
 	packwrite(filedesc, &j, sizeof(j));
-	idx += sizeof(j);
 	for (int i = 0; i < n; i++) // fill out index with dummy values for now, we'll fix it below
 	{
 		if (namelist[i]->d_name[0] == '.') continue;
@@ -225,7 +223,6 @@ bool pack_directory(const std::string& pack, const std::string& directory, bool 
 		packwrite(filedesc, &pos, sizeof(pos));
 		packwrite(filedesc, &len, sizeof(len));
 		packwrite(filedesc, filename, sizeof(filename));
-		idx += sizeof(pos) + sizeof(len) + sizeof(filename);
 	}
 	uint64_t zero = 0;
 	packwrite(filedesc, &zero, sizeof(zero)); // pointer to next index
@@ -242,7 +239,6 @@ bool pack_directory(const std::string& pack, const std::string& directory, bool 
 		if (r == -1) FAIL("Failed to stat \"%s\": %s", name.c_str(), strerror(errno));
 		r = sendfile(filedesc, fd, nullptr, st.st_size);
 		if (r == -1) FAIL("Failed to add \"%s\" to \"%s\": %s", name.c_str(), pack.c_str(), strerror(errno));
-		idx += st.st_size;
 		const uint64_t len = st.st_size;
 		const unsigned wpos = 9 + 2 + j * (sizeof(uint64_t) * 2 + filename_length);
 		lseek(filedesc, wpos, SEEK_SET);

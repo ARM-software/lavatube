@@ -117,11 +117,11 @@ ignore_on_trace = []
 replay_pre_calls = [ 'vkDestroyInstance', 'vkDestroyDevice', 'vkCreateDevice', 'vkCreateSampler', 'vkQueuePresentKHR', 'vkCreateSwapchainKHR',
 	'vkCreateSharedSwapchainsKHR' ]
 replay_post_calls = [ 'vkCreateInstance', 'vkCreateDevice', 'vkDestroyInstance', 'vkQueuePresentKHR', 'vkAcquireNextImageKHR', 'vkAcquireNextImage2KHR' ]
-trace_pre_calls = [ 'vkUnmapMemory', 'vkQueueSubmit', 'vkCreateInstance', 'vkCreateDevice', 'vkFreeMemory', 'vkQueueSubmit2', 'vkQueueSubmit2KHR' ]
+trace_pre_calls = [ 'vkQueueSubmit', 'vkCreateInstance', 'vkCreateDevice', 'vkFreeMemory', 'vkQueueSubmit2', 'vkQueueSubmit2KHR' ]
 trace_post_calls = [ 'vkCreateInstance', 'vkCreateDevice', 'vkDestroyInstance', 'vkGetPhysicalDeviceFeatures', 'vkGetPhysicalDeviceProperties',
 		'vkGetPhysicalDeviceSurfaceCapabilitiesKHR', 'vkBindImageMemory', 'vkBindBufferMemory', 'vkBindImageMemory2', 'vkBindImageMemory2KHR',
 		'vkBindBufferMemory2', 'vkUpdateDescriptorSets', 'vkFlushMappedMemoryRanges', 'vkQueuePresentKHR',
-		'vkMapMemory', 'vkUnmapMemory', 'vkCmdBindDescriptorSets', 'vkBindBufferMemory2KHR', 'vkCmdPushDescriptorSet',
+		'vkMapMemory', 'vkCmdBindDescriptorSets', 'vkBindBufferMemory2KHR', 'vkCmdPushDescriptorSet',
 		'vkGetImageMemoryRequirements', 'vkGetPipelineCacheData', 'vkAcquireNextImageKHR', 'vkAcquireNextImage2KHR',
 		'vkGetBufferMemoryRequirements', 'vkGetBufferMemoryRequirements2', 'vkGetImageMemoryRequirements2', 'vkGetPhysicalDeviceMemoryProperties',
 		'vkGetPhysicalDeviceFormatProperties', 'vkGetPhysicalDeviceFormatProperties2', 'vkCmdPushDescriptorSetKHR', 'vkCreateSwapchainKHR',
@@ -994,6 +994,8 @@ def save_add_pre(name): # need to include the resource-creating or resource-dest
 		elif name == 'vkWaitForFences':
 			z.do('if (tf->frame_delay >= 0 && timeout != UINT32_MAX) { tf->frame_delay--; writer.write_uint32_t(VK_TIMEOUT); return VK_TIMEOUT; }')
 		z.brace_end()
+	elif name == 'vkUnmapMemory':
+		z.do('writer.parent->memory_mutex.lock();')
 
 	if name == 'vkCreateSwapchainKHR': # TBD: also do vkCreateSharedSwapchainsKHR
 		z.init('pCreateInfo->minImageCount = num_swapchains();')
@@ -1006,6 +1008,11 @@ def save_add_tracking(name):
 		z.loop_begin()
 		z.do('commandbuffer_data->touch_index_buffer(pIndexInfo[ii].firstIndex, pIndexInfo[ii].indexCount);')
 		z.loop_end()
+	elif name == 'vkUnmapMemory':
+		z.do('devicememory_data->ptr = nullptr;')
+		z.do('devicememory_data->offset = 0;')
+		z.do('devicememory_data->size = 0;')
+		z.do('writer.parent->memory_mutex.unlock();')
 	elif 'vkCmdDraw' in name and 'Indexed' in name and not 'Indirect' in name:
 		z.do('commandbuffer_data->touch_index_buffer(firstIndex, indexCount);')
 	elif name == 'vkResetCommandPool':

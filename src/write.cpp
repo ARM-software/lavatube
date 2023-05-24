@@ -75,10 +75,9 @@ void lava_file_writer::push_thread_barriers()
 	frame_mutex.unlock();
 }
 
-void lava_file_writer::inject_thread_barrier(bool do_lock)
+void lava_file_writer::inject_thread_barrier()
 {
 	write_uint8_t(PACKET_THREAD_BARRIER); // packet type
-	if (do_lock) frame_mutex.lock();
 	int size = parent->thread_streams.size();
 	write_uint8_t(size); // threads to sync
 	for (int i = 0; i < size; i++)
@@ -87,7 +86,6 @@ void lava_file_writer::inject_thread_barrier(bool do_lock)
 		write_uint32_t(call);
 	}
 	DLOG2("Injected thread barrier on thread %d with %d targets", thread_index(), size);
-	if (do_lock) frame_mutex.unlock();
 }
 
 lava_file_writer::~lava_file_writer()
@@ -300,7 +298,7 @@ lava_file_writer& lava_writer::file_writer()
 		{
 			f->set(mPath);
 		}
-		f->inject_thread_barrier(false);
+		f->inject_thread_barrier();
 		thread_streams.emplace_back(std::move(f));
 		DLOG("Created thread %d, currently %d threads", (int)tid, (int)thread_streams.size());
 		frame_mutex.unlock();
