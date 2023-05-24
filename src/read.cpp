@@ -135,7 +135,7 @@ void lava_reader::init(const std::string& path, int heap_size)
 	{
 		const uint16_t trace_index = v[funcname].asInt(); // old index
 		const uint16_t retrace_index = retrace_getid(funcname.c_str()); // new index
-		if (retrace_index != UINT16_MAX) dictionary[trace_index] = retrace_getcall(retrace_index); // map old index to function call
+		if (retrace_index != UINT16_MAX) dictionary[trace_index] = retrace_index; // map old index to new
 		else DLOG("Function %s from trace dictionary not supported! If used, we will fail!", funcname.c_str());
 	}
 

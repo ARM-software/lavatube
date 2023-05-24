@@ -82,7 +82,7 @@ static void replay_thread(int thread_id)
 	{
 		if (instrtype == PACKET_API_CALL)
 		{
-			const uint16_t apicall = t.read_uint16_t();
+			const uint16_t apicall = replayer.dictionary.at(t.read_uint16_t());
 			(void)t.read_uint32_t(); // reserved for future use
 			DLOG("[t%02d %06d] %s", thread_id, (int)replayer.thread_call_numbers->at(thread_id).load(std::memory_order_relaxed) + 1, get_function_name(apicall));
 			lava_replay_func func = retrace_getcall(apicall);

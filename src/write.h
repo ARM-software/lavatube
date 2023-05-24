@@ -151,6 +151,9 @@ public:
 
 	inline void write_api_command(uint16_t id);
 
+	inline void write_VkDescriptorDataEXT(const VkDescriptorDataEXT& val) {} // TBD
+	inline void write_VkAccelerationStructureNV(VkAccelerationStructureNV val) {} // TBD
+
 	inline void write_handle(const trackable* t)
 	{
 		if (t)

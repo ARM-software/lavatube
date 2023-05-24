@@ -11,6 +11,7 @@ root = tree.getroot()
 disabled = set()
 disabled_functions = set()
 functions = [] # must be ordered, so cannot use set
+valid_functions = [] # internal
 protected_funcs = {}
 protected_types = {}
 structures = []
@@ -25,6 +26,8 @@ aliases_to_functions_map = {}
 extension_tags = []
 parents = {} # dictionary of lists
 externally_synchronized = set() # tuples with (vulkan command, parameter name)
+enums = [] # list of valid enums
+types = [] # list of valid types
 
 externally_synchronized_members = {
 	'VkDescriptorSetAllocateInfo' : [ 'descriptorPool' ],
@@ -89,7 +92,7 @@ feature_detection_funcs = []
 def str_contains_vendor(s):
 	if not s: return False
 	if 'KHR' in s or 'EXT' in s: return False # not a vendor and we want these
-	if 'GOOGLE' in s or 'ARM' in s: return False # permit these
+	if 'ANDROID' in s or 'GOOGLE' in s or 'ARM' in s: return False # permit these
 	for t in extension_tags:
 		if s.endswith(t):
 			return True
@@ -123,11 +126,39 @@ def init():
 			for dc in v.findall('require/command'):
 				disabled_functions.add(dc.attrib.get('name'))
 			disabled.add(name)
+		elif supported != 'vulkansc':
+			for req in v.findall('require'):
+				api = req.attrib.get('api')
+				if api == 'vulkansc': continue
+				for sc in req.findall('command'):
+					sname = sc.attrib.get('name')
+					if sname not in valid_functions and not str_contains_vendor(sname): valid_functions.append(sname)
+				for sc in req.findall('enum'):
+					sname = sc.attrib.get('name')
+					if not sname in enums and not str_contains_vendor(sname): enums.append(sname)
+				for sc in req.findall('type'):
+					sname = sc.attrib.get('name')
+					if not sname in types and not str_contains_vendor(sname): types.append(sname)
 		if conditional:
 			for n in v.findall('require/command'):
 				protected_funcs[n.attrib.get('name')] = platforms[conditional]
 			for n in v.findall('require/type'):
 				protected_types[n.attrib.get('name')] = platforms[conditional]
+
+	# Find all valid commands/functions/types
+	for v in root.findall("feature"):
+		apiname = v.attrib.get('name')
+		apis = v.attrib.get('api')
+		if apis != 'vulkansc': # skip these for now until Khronos sorts out this mess
+			for vv in v.findall('require/command'):
+				name = vv.attrib.get('name')
+				if not name in valid_functions and not str_contains_vendor(sname): valid_functions.append(name)
+			for vv in v.findall('require/enum'):
+				name = vv.attrib.get('name')
+				if not name in enums and not str_contains_vendor(sname): enums.append(name)
+			for vv in v.findall('require/type'):
+				name = vv.attrib.get('name')
+				if not name in types and not str_contains_vendor(sname): types.append(name)
 
 	# Find all structures and handles
 	for v in root.findall('types/type'):
@@ -145,7 +176,7 @@ def init():
 			extendstr = v.attrib.get('structextends')
 			extends = []
 			structures.append(name)
-			if str_contains_vendor(sType): continue
+			if str_contains_vendor(sType) or not name in types: continue
 			if name in detect_words:
 				feature_detection_structs.append(name)
 			if name in protected_types:
@@ -207,8 +238,10 @@ def init():
 			proto = v.find('proto')
 			name = proto.find('name').text
 
-	# Find all commands/functions
+	# Find all commands/function info
 	for v in root.findall("commands/command"):
+		api = v.attrib.get('api')
+		if api and api == 'vulkansc': continue
 		alias_name = v.attrib.get('alias')
 		targets = []
 		if not alias_name:
@@ -303,14 +336,16 @@ def init():
 					is_device_chain_command = True
 					break
 
-			if name not in functions:
+			if name in valid_functions and not name in functions:
 				functions.append(name)
-				if name in detect_words:
+				if not name in feature_detection_funcs and name in detect_words:
 					feature_detection_funcs.append(name)
+				if is_instance_chain_command:
+					if name not in instance_chain_commands: instance_chain_commands.append(name)
+				elif is_device_chain_command:
+					if name not in device_chain_commands: device_chain_commands.append(name)
+				else:
+					if name not in special_commands: special_commands.append(name)
 
-			if is_instance_chain_command:
-				if name not in instance_chain_commands: instance_chain_commands.append(name)
-			elif is_device_chain_command:
-				if name not in device_chain_commands: device_chain_commands.append(name)
-			else:
-				if name not in special_commands: special_commands.append(name)
+if __name__ == '__main__':
+	init()

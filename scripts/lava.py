@@ -6,9 +6,11 @@ import os
 import argparse
 import struct
 
+# New functions that we implement
 fake_functions = [ 'vkAssertBufferTRACETOOLTEST', 'vkSyncBufferTRACETOOLTEST', 'vkGetDeviceTracingObjectPropertyTRACETOOLTEST', 'vkFrameEndTRACETOOLTEST' ]
 fake_structs = { 'VkBenchmarkingTRACETOOLTEST': 'VK_STRUCTURE_TYPE_BENCHMARKING_TRACETOOLTEST' }
-# structs we want to save in our trace metadata as well
+
+# Structs we want to save in our trace metadata as well
 extra_tracked_structs = [ 'VkPhysicalDeviceFeatures2', 'VkPhysicalDeviceVulkan11Features', 'VkPhysicalDeviceVulkan12Features', 'VkPhysicalDeviceVulkan13Features' ]
 
 r = open('generated/read_auto.cpp', 'w')
@@ -64,7 +66,7 @@ out([r], '#include "read_auto.h"')
 out(targets_main)
 out(targets_main, '#pragma GCC diagnostic ignored "-Wunused-variable"')
 out(targets_main, '#pragma GCC diagnostic ignored "-Wunused-function"')
-out(targets_main, '#if (__clang_major__ > 12) || defined(__GNUC__)')
+out(targets_main, '#if (__clang_major__ > 12) || (!defined(__llvm__) && defined(__GNUC__))')
 out(targets_main, '#pragma GCC diagnostic ignored "-Wunused-but-set-variable"')
 out(targets_main, '#endif')
 out(targets_all)
@@ -142,7 +144,7 @@ for v in spec.root.findall('types/type'):
 		if v.find('name') == None: continue
 		name = v.find('name').text
 		if name == 'VkDeviceMemory': continue
-		if spec.str_contains_vendor(name): continue
+		if not name in spec.types: continue
 		out(targets_write, '\tr->%s_index.clear();' % name)
 		out(targets_read, '\t%s_index.clear();' % name)
 		out(targets_read, '\tindex_to_%s.clear();' % name)
@@ -240,11 +242,14 @@ for v in spec.root.findall("commands/command"):
 # Generate all functions
 for v in spec.root.findall("commands/command"):
 	name = None
+	api = v.attrib.get('api')
+	if api and api == 'vulkansc': continue
 	if v.attrib.get('alias'):
 		name = v.attrib.get('name')
 	else:
 		proto = v.find('proto')
 		name = proto.find('name').text
+	if not name in spec.functions: continue
 	util.loadfunc(name, all_funcs[name], r, rh)
 	util.savefunc(name, all_funcs[name], w, wh)
 for f in fake_functions:
@@ -277,7 +282,7 @@ for v in spec.root.findall('types/type'):
 		if v.find('name') == None or v.find('name').text == 'VkDeviceMemory': # ignore aliases
 			continue
 		name = v.find('name').text
-		if spec.str_contains_vendor(name): continue
+		if not name in spec.types: continue
 		out(targets_read, '\t\tif (p == "%s")' % name)
 		out(targets_read, '\t\t{')
 		out(targets_read, '\t\t\tindex_to_%s.resize(v[p].asInt());' % name)
@@ -304,7 +309,7 @@ for v in spec.root.findall('types/type'):
 		if v.find('name') == None: # ignore aliases
 			continue
 		name = v.find('name').text
-		if spec.str_contains_vendor(name): continue
+		if not name in spec.types: continue
 		out(targets_write, '\tv["%s"] = (unsigned)instance->records.%s_index.size();' % (name, name))
 out(targets_write, '\treturn v;')
 out(targets_write, '}')
@@ -387,7 +392,7 @@ for v in spec.root.findall('types/type'):
 		if v.find('name') == None: # ignore aliases
 			continue
 		name = v.find('name').text
-		if spec.str_contains_vendor(name): continue
+		if not name in spec.types: continue
 		out(targets_write, '\tif (instance->records.%s_index.size())' % name)
 		out(targets_write, '\t{')
 		out(targets_write, '\t\tv["%s"] = Json::arrayValue;' % name)
@@ -412,7 +417,7 @@ for v in spec.root.findall('types/type'):
 		if v.find('name') == None or v.find('name').text == 'VkDeviceMemory': # ignore aliases
 			continue
 		name = v.find('name').text
-		if spec.str_contains_vendor(name): continue
+		if not name in spec.types: continue
 		out(targets_read, '\tif (v.isMember("%s")) for (const auto& i : v["%s"]) %s_index.push_back(%s_json(i));' % (name, name, name, util.trackable_type_map_replay.get(name, 'trackable')))
 for e in extra_tracked_structs:
 	out(targets_read, '\tif (v.isMember("%s")) { has_%s = true; read%s(v["%s"], stored_%s); }' % (e, e, e, e, e))

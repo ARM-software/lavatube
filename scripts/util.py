@@ -58,17 +58,18 @@ command_names = {
 skip_opt_check = ['pAllocator', 'pUserData', 'pfnCallback', 'pfnUserCallback', 'pNext' ]
 # for these, thread barrier goes before the function call to sync us up to other threads:
 thread_barrier_funcs = [ 'vkQueueSubmit', 'vkResetDescriptorPool', 'vkResetCommandPool', 'vkUnmapMemory', 'vkFlushMappedMemoryRanges', 'vkResetQueryPool',
-	'vkResetQueryPoolEXT', 'vkQueueSubmit2', 'vkQueueSubmit2EXT', 'vkQueuePresentKHR', 'vkFrameEndTRACETOOLTEST' ]
+	'vkResetQueryPoolEXT', 'vkQueueSubmit2', 'vkQueueSubmit2EXT', 'vkQueuePresentKHR', 'vkFrameEndTRACETOOLTEST', 'vkUnmapMemory2KHR' ]
 # for these, thread barrier goes after the function call to sync other threads up to us:
 push_thread_barrier_funcs = [ 'vkQueueWaitIdle', 'vkDeviceWaitIdle', 'vkResetDescriptorPool', 'vkResetQueryPool', 'vkResetQueryPoolEXT', 'vkResetCommandPool',
 	'vkQueuePresentKHR', 'vkWaitForFences', 'vkGetFenceStatus', 'vkFrameEndTRACETOOLTEST' ]
 
 # TODO : Add support for these functions and structures
 functions_noop = [
-	"vkUpdateDescriptorSetWithTemplateKHR", "vkUpdateDescriptorSetWithTemplate", "vkCmdPushDescriptorSetWithTemplateKHR",
-	'vkGetPipelinePropertiesEXT', 'vkUpdateDescriptorSetWithTemplate', 'vkCmdUpdateBuffer',
-	'vkCmdBuildMicromapsEXT', 'vkBuildMicromapsEXT', 'vkGetMicromapBuildSizesEXT',
-	'vkGetDeviceFaultInfoEXT' # we never want to trace this, but rather inject it during tracing if device loss happens, print the info, then abort
+	"vkUpdateDescriptorSetWithTemplateKHR", "vkUpdateDescriptorSetWithTemplate", "vkCmdPushDescriptorSetWithTemplateKHR", 'vkGetImageViewOpaqueCaptureDescriptorDataEXT',
+	'vkGetPipelinePropertiesEXT', 'vkUpdateDescriptorSetWithTemplate', 'vkCmdUpdateBuffer', 'vkGetBufferOpaqueCaptureDescriptorDataEXT',
+	'vkCmdBuildMicromapsEXT', 'vkBuildMicromapsEXT', 'vkGetMicromapBuildSizesEXT', 'vkGetImageOpaqueCaptureDescriptorDataEXT', 'vkGetSamplerOpaqueCaptureDescriptorDataEXT',
+	'vkGetDeviceFaultInfoEXT', # we never want to trace this, but rather inject it during tracing if device loss happens, print the info, then abort
+	'vkGetAccelerationStructureOpaqueCaptureDescriptorDataEXT'
 ]
 struct_noop = []
 
@@ -106,7 +107,7 @@ no_sequencing = [ 'vkEnumerateInstanceVersion', 'vkGetInstanceProcAddr', 'vkEnum
 # functions we should ignore on replay
 ignore_on_read = [ 'vkGetMemoryHostPointerPropertiesEXT', 'vkCreateDebugUtilsMessengerEXT', 'vkDestroyDebugUtilsMessengerEXT', 'vkAllocateMemory',
 	'vkMapMemory', 'vkUnmapMemory', 'vkCreateDebugReportCallbackEXT', 'vkDestroyDebugReportCallbackEXT', 'vkFlushMappedMemoryRanges',
-	'vkInvalidateMappedMemoryRanges', 'vkFreeMemory', 'vkGetPhysicalDeviceXcbPresentationSupportKHR',
+	'vkInvalidateMappedMemoryRanges', 'vkFreeMemory', 'vkGetPhysicalDeviceXcbPresentationSupportKHR', 'vkMapMemory2KHR', 'vkUnmapMemory2KHR',
 	'vkGetImageMemoryRequirements2KHR', 'vkGetBufferMemoryRequirements2KHR', 'vkGetImageSparseMemoryRequirements2KHR', 'vkGetImageMemoryRequirements',
 	'vkGetBufferMemoryRequirements', 'vkGetImageSparseMemoryRequirements', 'vkGetImageMemoryRequirements2', 'vkGetBufferMemoryRequirements2',
 	'vkGetImageSparseMemoryRequirements2' ]
@@ -120,7 +121,7 @@ replay_post_calls = [ 'vkCreateInstance', 'vkCreateDevice', 'vkDestroyInstance',
 trace_pre_calls = [ 'vkQueueSubmit', 'vkCreateInstance', 'vkCreateDevice', 'vkFreeMemory', 'vkQueueSubmit2', 'vkQueueSubmit2KHR' ]
 trace_post_calls = [ 'vkCreateInstance', 'vkCreateDevice', 'vkDestroyInstance', 'vkGetPhysicalDeviceFeatures', 'vkGetPhysicalDeviceProperties',
 		'vkGetPhysicalDeviceSurfaceCapabilitiesKHR', 'vkBindImageMemory', 'vkBindBufferMemory', 'vkBindImageMemory2', 'vkBindImageMemory2KHR',
-		'vkBindBufferMemory2', 'vkUpdateDescriptorSets', 'vkFlushMappedMemoryRanges', 'vkQueuePresentKHR',
+		'vkBindBufferMemory2', 'vkUpdateDescriptorSets', 'vkFlushMappedMemoryRanges', 'vkQueuePresentKHR', 'vkMapMemory2KHR',
 		'vkMapMemory', 'vkCmdBindDescriptorSets', 'vkBindBufferMemory2KHR', 'vkCmdPushDescriptorSet',
 		'vkGetImageMemoryRequirements', 'vkGetPipelineCacheData', 'vkAcquireNextImageKHR', 'vkAcquireNextImage2KHR',
 		'vkGetBufferMemoryRequirements', 'vkGetBufferMemoryRequirements2', 'vkGetImageMemoryRequirements2', 'vkGetPhysicalDeviceMemoryProperties',
@@ -498,7 +499,7 @@ class parameter(object):
 		#	z.do('(void)reader.read_uint32_t(); // ignore stored %s' % self.name)
 		#	if not is_root:
 		#		z.do('%s = %s;' % (varname, self.name))
-		elif (self.name == 'ppData' and self.funcname == 'vkMapMemory') or self.name == 'pHostPointer':
+		elif (self.name == 'ppData' and self.funcname in ['vkMapMemory', 'vkMapMemory2KHR']) or self.name == 'pHostPointer':
 			z.decl('%s%s%s' % (self.mod, self.type, self.param_ptrstr), self.name)
 		elif self.name == 'pfnUserCallback' and self.funcname == 'VkDebugUtilsMessengerCreateInfoEXT':
 			z.do('%s = messenger_callback; // hijacking this pointer with our own callback function' % varname)
@@ -766,7 +767,7 @@ class parameter(object):
 			z.do('initialDataSize = 0;')
 		elif (self.name == 'pInitialData' and self.funcname == 'VkPipelineCacheCreateInfo'):
 			z.do('assert(false); // pInitialData')
-		elif (self.name == 'ppData' and self.funcname == 'vkMapMemory') or self.name == 'pHostPointer':
+		elif (self.name == 'ppData' and self.funcname in ['vkMapMemory', 'vkMapMemory2KHR']) or self.name == 'pHostPointer':
 			pass
 		elif self.structure:
 			self.print_struct(self.type, varname, owner, size=self.length)
@@ -968,6 +969,10 @@ class parameter(object):
 			z.brace_end()
 			z.do('else writer.parent->mem_allocated += pAllocateInfo->allocationSize;')
 			z.do('frame_mutex.unlock();')
+		if self.funcname == 'VkMemoryUnmapInfoKHR' and self.name == 'memory':
+			z.do('devicememory_data->ptr = nullptr;')
+			z.do('devicememory_data->offset = 0;')
+			z.do('devicememory_data->size = 0;')
 
 		if debugcount >= 0 and self.funcname != 'vkDestroyInstance':
 			z.do('writer.write_uint16_t(%d); // sentinel for %s' % (debugcount, varname))
@@ -994,7 +999,7 @@ def save_add_pre(name): # need to include the resource-creating or resource-dest
 		elif name == 'vkWaitForFences':
 			z.do('if (tf->frame_delay >= 0 && timeout != UINT32_MAX) { tf->frame_delay--; writer.write_uint32_t(VK_TIMEOUT); return VK_TIMEOUT; }')
 		z.brace_end()
-	elif name == 'vkUnmapMemory':
+	elif name in ['vkUnmapMemory', 'vkUnmapMemory2KHR']:
 		z.do('writer.parent->memory_mutex.lock();')
 
 	if name == 'vkCreateSwapchainKHR': # TBD: also do vkCreateSharedSwapchainsKHR
@@ -1008,10 +1013,11 @@ def save_add_tracking(name):
 		z.loop_begin()
 		z.do('commandbuffer_data->touch_index_buffer(pIndexInfo[ii].firstIndex, pIndexInfo[ii].indexCount);')
 		z.loop_end()
-	elif name == 'vkUnmapMemory':
-		z.do('devicememory_data->ptr = nullptr;')
-		z.do('devicememory_data->offset = 0;')
-		z.do('devicememory_data->size = 0;')
+	elif name in ['vkUnmapMemory', 'vkUnmapMemory2KHR']:
+		if name == 'vkUnmapMemory':
+			z.do('devicememory_data->ptr = nullptr;')
+			z.do('devicememory_data->offset = 0;')
+			z.do('devicememory_data->size = 0;')
 		z.do('writer.parent->memory_mutex.unlock();')
 	elif 'vkCmdDraw' in name and 'Indexed' in name and not 'Indirect' in name:
 		z.do('commandbuffer_data->touch_index_buffer(firstIndex, indexCount);')
@@ -1232,6 +1238,8 @@ def func_common(name, node, read, target, header, guard_header=True):
 		print >> target
 	params = []
 	for p in node.findall('param'):
+		api = p.attrib.get('api')
+		if api and api == "vulkansc": continue
 		params.append(parameter(p, read=read, funcname=name))
 	paramlist = [ x.parameter() for x in params ]
 	return retval, params, paramlist

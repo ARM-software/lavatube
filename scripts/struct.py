@@ -5,8 +5,14 @@ import util
 
 # Do not generate read/write functions for these
 skiplist = [ 'VkXlibSurfaceCreateInfoKHR', 'VkXcbSurfaceCreateInfoKHR', 'VkBaseOutStructure', 'VkBaseInStructure', 'VkAllocationCallbacks',
-	'VkDeviceFaultInfoEXT', 'VkMicromapBuildInfoEXT', 'VkAccelerationStructureTrianglesOpacityMicromapEXT' ]
+	'VkDeviceFaultInfoEXT', 'VkMicromapBuildInfoEXT', 'VkAccelerationStructureTrianglesOpacityMicromapEXT', 'VkVideoDecodeH264ProfileInfoKHR',
+	'VkVideoDecodeH264CapabilitiesKHR', 'VkVideoDecodeH264SessionParametersAddInfoKHR', 'VkVideoDecodeH264ProfileInfoKHR', 'VkVideoDecodeH264SessionParametersCreateInfoKHR',
+	'VkVideoDecodeH264PictureInfoKHR', 'VkVideoDecodeH264DpbSlotInfoKHR', 'VkVideoDecodeH265ProfileInfoKHR', 'VkVideoDecodeH265SessionParametersAddInfoKHR',
+	'VkVideoDecodeH265CapabilitiesKHR', 'VkVideoDecodeH265SessionParametersCreateInfoKHR', 'VkVideoDecodeH265PictureInfoKHR', 'VkVideoDecodeH265DpbSlotInfoKHR',
+	'VkOpaqueCaptureDescriptorDataCreateInfoEXT' ]
+
 hardcoded_read = [ 'VkAccelerationStructureBuildGeometryInfoKHR' ]
+hardcoded_write = []
 
 z = util.getspool()
 structlist = []
@@ -17,7 +23,7 @@ for v in spec.root.findall('types/type'):
 		continue
 	if name in skiplist:
 		continue
-	if spec.str_contains_vendor(name):
+	if spec.str_contains_vendor(name) or not name in spec.types:
 		continue
 	structlist.append(name)
 
@@ -72,6 +78,8 @@ def struct_impl_read(r, selected = None):
 			params = []
 			z.struct_begin(name)
 			for p in v.findall('member'):
+				api = p.attrib.get('api')
+				if api and api == 'vulkansc': continue
 				param = util.parameter(p, read=True, funcname=name)
 				param.print_load(param.name, 'sptr->')
 			z.struct_end()
@@ -84,7 +92,7 @@ def struct_impl_read(r, selected = None):
 def struct_impl_write(w, selected = None):
 	for v in spec.root.findall('types/type'):
 		name = v.attrib.get('name')
-		if not name in structlist or (selected and name != selected) or name in util.struct_noop:
+		if not name in structlist or (selected and name != selected) or name in util.struct_noop or name in hardcoded_write:
 			continue
 		if name in spec.protected_types:
 			print >> w, '#ifdef %s' % spec.protected_types[name]
@@ -115,6 +123,8 @@ def struct_impl_write(w, selected = None):
 				z.do('if (pDynamicState->pDynamicStates[df] == VK_DYNAMIC_STATE_SCISSOR /*|| pDynamicState->pDynamicStates[df] == VK_DYNAMIC_STATE_SCISSOR_WITH_COUNT*/) isDynamicScissors = true;')
 				z.loop_end()
 			for p in v.findall('member'):
+				api = p.attrib.get('api')
+				if api and api == 'vulkansc': continue
 				param = util.parameter(p, read=False, funcname=name, transitiveConst=True)
 				param.print_save(param.name, 'sptr->')
 			if name in spec.feature_detection_structs:

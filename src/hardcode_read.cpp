@@ -144,6 +144,9 @@ static uint64_t object_lookup(VkObjectType type, uint32_t index)
 	case VK_OBJECT_TYPE_PRIVATE_DATA_SLOT: return (uint64_t)index_to_VkPrivateDataSlot.at(index);
 	case VK_OBJECT_TYPE_SAMPLER_YCBCR_CONVERSION_KHR: return (uint64_t)index_to_VkSamplerYcbcrConversion.at(index);
 	// these are not supported:
+	case VK_OBJECT_TYPE_VIDEO_SESSION_KHR: // TBD
+	case VK_OBJECT_TYPE_VIDEO_SESSION_PARAMETERS_KHR: // TBD
+	case VK_OBJECT_TYPE_SHADER_EXT: // TBD
 	case VK_OBJECT_TYPE_DEBUG_REPORT_CALLBACK_EXT:
 	case VK_OBJECT_TYPE_DEBUG_UTILS_MESSENGER_EXT:
 	case VK_OBJECT_TYPE_OPTICAL_FLOW_SESSION_NV:

@@ -117,6 +117,9 @@ static trackable* object_trackable(const trace_records& r, VkObjectType type, ui
 	case VK_OBJECT_TYPE_MICROMAP_EXT: return r.VkMicromapEXT_index.at((const VkMicromapEXT)object);
 	case VK_OBJECT_TYPE_SAMPLER_YCBCR_CONVERSION_KHR: return r.VkSamplerYcbcrConversion_index.at((const VkSamplerYcbcrConversion)object);
 	// not supported:
+	case VK_OBJECT_TYPE_SHADER_EXT: // TBD
+	case VK_OBJECT_TYPE_VIDEO_SESSION_KHR:
+	case VK_OBJECT_TYPE_VIDEO_SESSION_PARAMETERS_KHR:
 	case VK_OBJECT_TYPE_CU_MODULE_NVX:
 	case VK_OBJECT_TYPE_CU_FUNCTION_NVX:
 	case VK_OBJECT_TYPE_DEBUG_REPORT_CALLBACK_EXT:
@@ -1515,6 +1518,11 @@ void trace_post_vkMapMemory(lava_file_writer& writer, VkResult result, VkDevice 
 	}
 
 	writer.parent->memory_mutex.unlock();
+}
+
+void trace_post_vkMapMemory2KHR(lava_file_writer& writer, VkResult result, VkDevice device, const VkMemoryMapInfoKHR* pMemoryMapInfo, void** ppData)
+{
+	trace_post_vkMapMemory(writer, result, device, pMemoryMapInfo->memory, pMemoryMapInfo->offset, pMemoryMapInfo->size, pMemoryMapInfo->flags, ppData);
 }
 
 void trace_post_vkFlushMappedMemoryRanges(lava_file_writer& writer, VkResult result, VkDevice device, uint32_t memoryRangeCount, const VkMappedMemoryRange* pMemoryRanges)
