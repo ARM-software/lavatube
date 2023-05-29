@@ -56,7 +56,7 @@ static int get_env_bool(const char* name, int v)
 		if (tmpstr[0] == 'F' || tmpstr[0] == 'f') return 0;
 		else if (tmpstr[0] == 'T' || tmpstr[0] == 't') return 1;
 		v = atoi(tmpstr);
-		if (v > 1) ABORT("Invalid value for parameter %s: %s", name, tmpstr);
+		if (v > 1 || v < 0) DIE("Invalid value for parameter %s: %s", name, tmpstr);
 	}
 	return v;
 }
@@ -72,11 +72,12 @@ static FILE* get_env_file(const char* name, FILE* fallback)
 	return fallback;
 }
 
+FILE* p__debug_destination = get_env_file("LAVATUBE_DEBUG_FILE", stdout); // must be defined first here
 uint_fast8_t p__blackhole = get_env_bool("LAVATUBE_BLACKHOLE", 0);
 uint_fast8_t p__dedicated_buffer = get_env_bool("LAVATUBE_DEDICATED_BUFFER", 0);
 uint_fast8_t p__dedicated_image = get_env_bool("LAVATUBE_DEDICATED_IMAGE", 0);
 uint_fast8_t p__gpu = get_env_int("LAVATUBE_GPU", 0);
-uint_fast8_t p__debug_level = get_env_bool("LAVATUBE_DEBUG", 0);
+uint_fast8_t p__debug_level = get_env_int("LAVATUBE_DEBUG", 0);
 uint_fast8_t p__validation = get_env_bool("LAVATUBE_VALIDATION", 0);
 uint_fast8_t p__swapchains = get_env_int("LAVATUBE_SWAPCHAINS", 3); // zero means do not override
 uint_fast8_t p__noscreen = get_env_bool("LAVATUBE_NOSCREEN", 0);
@@ -90,7 +91,6 @@ uint_fast8_t p__dedicated_allocation = get_env_bool("LAVATUBE_DEDICATED_ALLOCATI
 uint_fast8_t p__custom_allocator = get_env_bool("LAVATUBE_CUSTOM_ALLOCATOR", 0);
 uint_fast8_t p__no_anisotropy = get_env_bool("LAVATUBE_NO_ANISOTROPY", 0);
 uint_fast8_t p__delay_fence_success_frames = get_env_int("LAVATUBE_DELAY_FENCE_SUCCESS_FRAMES", 0); // off by default
-FILE* p__debug_destination = get_env_file("LAVATUBE_DEBUG_FILE", stdout);
 int p__chunksize = get_env_int("LAVATUBE_CHUNK_SIZE", 64 * 1024 * 1024);
 uint_fast8_t p__external_memory = get_env_bool("LAVATUBE_EXTERNAL_MEMORY", 0);
 
