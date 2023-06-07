@@ -122,7 +122,7 @@ public:
 	inline void write_double(double value) { uint64_t t; memcpy(&t, &value, sizeof(uint64_t)); write_uint64_t(t); }
 
 	/// Write out diff of memory area. Returns number of bytes written out.
-	uint64_t write_patch(char* orig, const char* const chng, uint64_t offset, uint64_t size); // returns bytes changed
+	uint64_t write_patch(char* __restrict__ orig, const char* __restrict__ chng, uint32_t offset, uint64_t size); // returns bytes changed
 	void write_memory(const char* const ptr, uint64_t offset, uint64_t size);
 
 	void set(const std::string& path);

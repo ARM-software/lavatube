@@ -23,39 +23,40 @@ void file_writer::write_memory(const char* const ptr, uint64_t offset, uint64_t 
 
 // memory areas should be 64bit aligned
 // size is number of bytes to scan for changes
-uint64_t file_writer::write_patch(char* orig, const char* const chng, uint64_t offset, uint64_t size)
+uint64_t file_writer::write_patch(char* __restrict__ orig, const char* __restrict__ chng, uint32_t offset, uint64_t size)
 {
 	uint64_t total_left = size;
-	uint32_t c = offset;
-	uint32_t offset_to_write = 0;
+	uint32_t c;
 	uint64_t changed = 0;
-	uint64_t* origalias = (uint64_t*)(orig + offset);
-	uint64_t* chngalias = (uint64_t*)(chng + offset);
+	orig += offset;
+	chng += offset;
+	const char* startchng;
 	while (total_left)
 	{
-		for (; total_left >= 8 && *origalias == *chngalias; origalias++, chngalias++, c += 8, total_left -= 8) {} // Skip identical sequence
-		offset_to_write = c;
-		char* startchange = (char*)chngalias;
-		char* startoriginal = (char*)origalias;
-		for (c = 0; total_left >= 8 && *origalias != *chngalias; origalias++, chngalias++, c += 8, total_left -= 8) {} // Skip difference sequence
+		// Skip identical sequence
+		for (; total_left >= 8 && *((uint64_t*)orig) == *((uint64_t*)chng); orig += 8, offset += 8, chng += 8, total_left -= 8) {}
 
-		if (c == 0 && total_left < 8 && memcmp(startchange, startoriginal, total_left) == 0) total_left = 0; // check if we have no changes, then we can skip some work altogether
-		else if (total_left < 8) { c += total_left; total_left = 0; } // write out remainder
+		// Process difference sequence and update the clone
+		startchng = chng;
+		for (c = 0; total_left >= 8 && *((uint64_t*)orig) != *((uint64_t*)chng); orig += 8, chng += 8, c += 8, total_left -= 8) { *((uint64_t*)orig) = *((uint64_t*)chng); }
+
+		// Check remainder
+		if (total_left < 8 && memcmp(chng, orig, total_left) == 0) total_left = 0;
+		else if (total_left < 8) { memcpy(orig, chng, total_left); c += total_left; total_left = 0; }
 
 		if (c)
 		{
 			check_space(8 + c);
 			char* uptr = chunk.data() + uidx; // pointer into current uncompressed chunk
-			memcpy(uptr, &offset_to_write, 4); // write offset
+			memcpy(uptr, &offset, 4); // write offset
 			uptr += 4;
 			memcpy(uptr, &c, 4); // write size of patch
 			uptr += 4;
-			memcpy(uptr, startchange, c); // write payload
-			memcpy(startoriginal, startchange, c); // update the clone
+			memcpy(uptr, startchng, c); // write payload
 			uidx += 8 + c;
 			uncompressed_bytes += 8 + c;
 			changed += c;
-			c = 0;
+			offset = 0; // offset is relative
 		}
 	}
 	// terminate with zero offset, zero size

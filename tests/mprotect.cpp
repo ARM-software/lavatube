@@ -49,7 +49,7 @@ static void memory_register(uint64_t address, uint64_t size)
 	sigemptyset(&sa.sa_mask);
 	sa.sa_sigaction = sighandler;
 	int r = sigaction(SIGSEGV, &sa, nullptr);
-	assert(r == 0);
+	if (r != 0) ABORT("Failed to setup signal handler: %s", strerror(errno));
 
 	memory_protect(address, size);
 }
