@@ -396,10 +396,8 @@ static void trace_4()
 	trace_vkDestroyFence(vulkan.device, fence, nullptr);
 	for (unsigned i = 0; i < num_buffers; i++)
 	{
-		trace_vkAssertBufferTRACETOOLTEST(vulkan.device, origin_buffers.at(i));
-		trace_vkAssertBufferTRACETOOLTEST(vulkan.device, target_buffers.at(i));
-		trace_vkDestroyBuffer(vulkan.device, origin_buffers.at(i), nullptr);
-		trace_vkDestroyBuffer(vulkan.device, target_buffers.at(i), nullptr);
+		test_destroy_buffer(vulkan, i, origin_memory, origin_buffers.at(i), i * aligned_size, buffer_size);
+		test_destroy_buffer(vulkan, i, target_memory, target_buffers.at(i), i * aligned_size, buffer_size);
 	}
 
 	trace_vkFreeMemory(vulkan.device, origin_memory, nullptr);
