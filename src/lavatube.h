@@ -78,8 +78,11 @@ struct trackedmemory : trackable
 	/// are mapped at least once.
 	char* clone = nullptr;
 
-	/// Original memory area
+	/// Mapped memory area
 	char* ptr = nullptr;
+
+	/// If we use external memory, keep track of our allocation
+	char* extmem = nullptr;
 
 	/// Tracking all memory exposed to client through memory mapping.
 	exposure exposed;
@@ -93,6 +96,7 @@ struct trackedmemory : trackable
 		assert(exposed.span().last <= allocationSize);
 		assert(allocationSize != VK_WHOLE_SIZE);
 		trackable::self_test();
+		assert(p__external_memory == 1 || extmem == nullptr);
 	}
 };
 

@@ -534,6 +534,7 @@ static void trace_post_vkUpdateDescriptorSets(lava_file_writer& writer, VkDevice
 	assert(descriptorCopyCount == 0);
 }
 
+// combine all updates for each memory into one update list for each device memory object, so we keep the number of map operations to a minimum
 static void queue_update(lava_file_writer& writer, trackedqueue_trace* t, VkCommandBuffer cmdbuf, std::unordered_map<VkDeviceMemory, range>& ranges_by_memory, std::unordered_set<trackedcmdbuffer_trace*>& cmdbufs)
 {
 	auto* cmdbuf_data = writer.parent->records.VkCommandBuffer_index.at(cmdbuf);
@@ -1569,10 +1570,13 @@ void trace_pre_vkFreeMemory(VkDevice device, VkDeviceMemory memory, const VkAllo
 			free(memory_data->clone);
 			memory_data->clone = nullptr;
 		}
-		if (p__external_memory && (memory_data->propertyFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT))
+
+		if (p__external_memory && memory_data->extmem)
 		{
-			free(memory_data->ptr);
+			free(memory_data->extmem);
+			memory_data->extmem = nullptr;
 		}
+
 		memory_data->ptr = nullptr;
 		memory_data->exposed.clear();
 	}

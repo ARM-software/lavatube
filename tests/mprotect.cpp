@@ -13,8 +13,11 @@
 #include <inttypes.h>
 #include <string.h>
 #include <signal.h>
+#include <atomic>
 
 #include "util.h"
+
+static std::atomic_bool done { false };
 
 static inline uint64_t mygettime()
 {
@@ -27,6 +30,7 @@ static unsigned char* shadow_memory = nullptr;
 
 static void sighandler(int id, siginfo_t* info, void* data)
 {
+	assert(!done.load());
 	if (id == SIGSEGV && info->si_addr != nullptr)
 	{
 		size_t size = getpagesize();
@@ -111,6 +115,18 @@ int main()
 
 	// wrapping up
 	memory_unregister((uint64_t)mymem, len);
+	done.store(true);
+	mymem[100] = 111; // this should _not_ trigger signal handler
+	mymem[1] = 1;
+
+	// test again
+	done.store(false);
+	memory_protect((uint64_t)mymem, len);
+	memory_unregister((uint64_t)mymem, len);
+	done.store(true);
+	mymem[100] = 113; // this should _not_ trigger signal handler
+	mymem[1] = 13;
+
 	free(mymem);
 
 	return 0;

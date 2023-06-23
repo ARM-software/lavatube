@@ -4,6 +4,7 @@
 //  Header hacks
 //
 
+#include <stdarg.h>
 #include <sys/stat.h>
 #include <sys/syscall.h>
 #include <linux/unistd.h>

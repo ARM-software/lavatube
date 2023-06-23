@@ -141,6 +141,17 @@ LAVATUBE_DELAY_FENCE_SUCCESS_FRAMES will delay the returned success of vkGetFenc
 and vkWaitForFences for the given number of frames to try to stagger the reuse of
 content assets.
 
+LAVATUBE_DEDICATED_BUFFER and LAVATUBE_DEDICATED_IMAGE will request dedicated memory
+usage when available.
+
+LAVATUBE_GPU lets you pick which GPU to use, by index. See vulkaninfo to see which
+index value to use.
+
+LAVATUBE_CHUNK_SIZE lets you choose the compression chunk size, by default it is 64mb.
+
+LAVATUBE_EXTERNAL_MEMORY set it to 1 to experiment with replacing your GPU host memory
+allocations with external memory allocations.
+
 Further reading
 ===============
 
