@@ -277,6 +277,8 @@ add_test(NAME trace_test_2_dedicbuf1 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/tracing
 set_tests_properties(trace_test_2_dedicbuf1 PROPERTIES ENVIRONMENT "LAVATUBE_DEDICATED_BUFFER=1")
 add_test(NAME trace_test_2_chunksize COMMAND ${CMAKE_CURRENT_BINARY_DIR}/tracing2)
 set_tests_properties(trace_test_2_chunksize PROPERTIES ENVIRONMENT "LAVATUBE_CHUNK_SIZE=32767")
+add_test(NAME trace_test_2_virtqueue COMMAND ${CMAKE_CURRENT_BINARY_DIR}/tracing2)
+set_tests_properties(trace_test_2_virtqueue PROPERTIES ENVIRONMENT "LAVATUBE_VIRTUAL_QUEUES=1")
 
 add_executable(tracing3 tests/tracing3.cpp ${VULKAN_TESTS_SRC})
 target_include_directories(tracing3 ${COMMON_INCLUDE})
@@ -314,6 +316,9 @@ add_test(NAME trace_test_4_replay_3 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/replay t
 add_test(NAME trace_test_4_replay_4 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/replay -N tracing_4_q4_m1_F0.vk)
 add_test(NAME trace_test_4_replay_5 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/replay -B tracing_4_q4_m1_F0.vk)
 add_test(NAME trace_test_4_replay_6 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/replay -v -w none -B tracing_4_q4_m1_F0.vk)
+add_test(NAME trace_test_4_virtqueue COMMAND ${CMAKE_CURRENT_BINARY_DIR}/tracing4)
+set_tests_properties(trace_test_4_virtqueue PROPERTIES ENVIRONMENT "LAVATUBE_DESTINATION=tracing_4_virtqueue;LAVATUBE_VIRTUAL_QUEUES=1")
+add_test(NAME trace_test_4_virtqueue_replay COMMAND ${CMAKE_CURRENT_BINARY_DIR}/replay tracing_4_virtqueue.vk)
 
 add_executable(tracing5 tests/tracing5.cpp ${VULKAN_TESTS_SRC})
 target_include_directories(tracing5 ${COMMON_INCLUDE})
@@ -442,7 +447,7 @@ function(layer_test test_name test_exe)
 	add_test(NAME layer_test_${ARGV0} COMMAND ${CMAKE_CURRENT_BINARY_DIR}/tracetooltests/vulkan_${ARGV1} ${ARGV2} ${ARGV3} ${ARGV4} ${ARGV5} ${ARGV6} ${ARGV7})
 	set_tests_properties(layer_test_${ARGV0} PROPERTIES
 		FIXTURES_SETUP ${ARGV0}
-		ENVIRONMENT "LAVATUBE_DESTINATION=vulkan_${ARGV0};VK_LAYER_PATH=${CMAKE_CURRENT_BINARY_DIR}/implicit_layer.d;VK_INSTANCE_LAYERS=VK_LAYER_ARM_lavatube;LD_LIBRARY_PATH=${CMAKE_CURRENT_BINARY_DIR}/implicit_layer.d"
+		ENVIRONMENT "LAVATUBE_VIRTUAL_QUEUES=1;LAVATUBE_DESTINATION=vulkan_${ARGV0};VK_LAYER_PATH=${CMAKE_CURRENT_BINARY_DIR}/implicit_layer.d;VK_INSTANCE_LAYERS=VK_LAYER_ARM_lavatube;LD_LIBRARY_PATH=${CMAKE_CURRENT_BINARY_DIR}/implicit_layer.d"
 		SKIP_RETURN_CODE 77
 	)
 	add_test(NAME layer_test_${ARGV0}_replay COMMAND ${CMAKE_CURRENT_BINARY_DIR}/replay -V vulkan_${ARGV0}.vk)

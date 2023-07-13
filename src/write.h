@@ -69,6 +69,7 @@ struct trace_metadata
 	/// What the device told the app it is capable of, modified by us
 	trace_capabilities device GUARDED_BY(frame_mutex);
 	VkPhysicalDeviceExternalMemoryHostPropertiesEXT external_memory = {};
+	std::vector<VkQueueFamilyProperties> stored_VkQueueFamilyProperties;
 
 	/// What the app asked for, modified by us
 	trace_capabilities app GUARDED_BY(frame_mutex);
@@ -211,6 +212,7 @@ public:
 	std::atomic_int global_frame;
 	std::atomic_int mCallNo;
 	trace_records records;
+	trackedqueue* get_queue_data(VkQueue q) const { if (p__virtualqueues) return (trackedqueue*)q; else return records.VkQueue_index.at(q); }
 
 	trace_metadata meta GUARDED_BY(frame_mutex);
 

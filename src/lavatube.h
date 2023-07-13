@@ -16,11 +16,14 @@
 
 #include <unordered_set>
 #include <list>
+#include <vulkan/vk_icd.h>
 
 class lava_file_reader;
 class lava_file_writer;
 
 using lava_trace_func = PFN_vkVoidFunction;
+
+#define LAVATUBE_VIRTUAL_QUEUE 0xbeefbeef
 
 /// pending memory checking, wait on fence
 enum QueueState
@@ -39,6 +42,8 @@ enum
 
 struct trackable
 {
+	uintptr_t magic = ICD_LOADER_MAGIC; // in case we want to pass this around as a vulkan object
+
 	uint32_t index = 0;
 	int frame_created = 0;
 	int frame_destroyed = -1;
@@ -368,18 +373,27 @@ struct trackeddescriptorset_trace : trackable
 	}
 };
 
-struct trackedqueue_trace : trackable
+struct trackedqueue : trackable
 {
 	using trackable::trackable; // inherit constructor
 	VkDevice device = VK_NULL_HANDLE;
-	uint32_t queueIndex = 0;
-	uint32_t queueFamily = 0;
+	uint32_t queueIndex = UINT32_MAX;
+	uint32_t queueFamily = UINT32_MAX;
+	uint32_t realIndex = UINT32_MAX;
+	uint32_t realFamily = UINT32_MAX;
+	VkQueue realQueue = VK_NULL_HANDLE;
 	VkQueueFlags queueFlags = VK_QUEUE_FLAG_BITS_MAX_ENUM;
 
 	void self_test() const
 	{
 		assert(device != VK_NULL_HANDLE);
 		assert(queueFlags != VK_QUEUE_FLAG_BITS_MAX_ENUM);
+		assert(realQueue != VK_NULL_HANDLE);
+		assert(queueFlags != VK_QUEUE_FLAG_BITS_MAX_ENUM);
+		assert(queueIndex != UINT32_MAX);
+		assert(realIndex != UINT32_MAX);
+		assert(queueFamily != UINT32_MAX);
+		assert(realFamily != UINT32_MAX);
 		trackable::self_test();
 	}
 };

@@ -7,6 +7,9 @@
 #include "jsoncpp/json/reader.h"
 #include "read_auto.h"
 
+/// Mutex to enforce additional external synchronization
+lava::mutex sync_mutex;
+
 // --- misc
 
 Json::Value readJson(const std::string& filename, const std::string packedfile)

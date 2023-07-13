@@ -40,7 +40,7 @@ static __attribute__((pure)) inline pid_t lava_gettid()
 	return syscall(__NR_gettid);
 }
 
-// These are deliberately made ugly to dis-incentivize anyone from using them directly
+extern uint_fast8_t p__virtualqueues;
 extern uint_fast8_t p__blackhole;
 extern uint_fast8_t p__dedicated_buffer;
 extern uint_fast8_t p__dedicated_image;

@@ -16,6 +16,7 @@ static VkPhysicalDeviceFeatures2 stored_VkPhysicalDeviceFeatures2 = { VK_STRUCTU
 static VkPhysicalDeviceVulkan11Features stored_VkPhysicalDeviceVulkan11Features = {};
 static VkPhysicalDeviceVulkan12Features stored_VkPhysicalDeviceVulkan12Features = {};
 static VkPhysicalDeviceVulkan13Features stored_VkPhysicalDeviceVulkan13Features = {};
+static std::vector<VkQueueFamilyProperties> device_VkQueueFamilyProperties;
 static bool has_VkPhysicalDeviceFeatures2 = false;
 static bool has_VkPhysicalDeviceVulkan11Features = false;
 static bool has_VkPhysicalDeviceVulkan12Features = false;
@@ -291,7 +292,7 @@ static VkSwapchainKHR remake_swapchain(lava_file_reader& reader, VkQueue queue, 
 	s.imageArrayLayers = data->info.imageArrayLayers;
 	s.imageUsage = data->info.imageUsage;
 	s.imageSharingMode = data->info.imageSharingMode;
-	s.queueFamilyIndexCount = selected_queue_family_index;
+	s.queueFamilyIndexCount = 0;
 	s.pQueueFamilyIndices = nullptr;
 	s.preTransform = data->info.preTransform;
 	s.compositeAlpha = data->info.compositeAlpha;
@@ -506,18 +507,6 @@ void replay_pre_vkCreateDevice(lava_file_reader& reader, VkPhysicalDevice physic
 {
 	pCreateInfo->enabledLayerCount = 0; // even though implementation should ignore it as per the spec, that is not always the case, so help it along
 
-	uint32_t families = 0;
-	wrap_vkGetPhysicalDeviceQueueFamilyProperties(selected_physical_device, &families, nullptr);
-	std::vector<VkQueueFamilyProperties> props(families);
-	wrap_vkGetPhysicalDeviceQueueFamilyProperties(selected_physical_device, &families, props.data());
-	for (unsigned i = 0; i < props.size(); i++)
-	{
-		const VkQueueFamilyProperties& p = props.at(i);
-		if ((p.queueFlags & VK_QUEUE_GRAPHICS_BIT) && (p.queueFlags & VK_QUEUE_COMPUTE_BIT) && (p.queueFlags & VK_QUEUE_TRANSFER_BIT)) selected_queue_family_index = i;
-		DLOG("Selected queue family: %d", selected_queue_family_index);
-	}
-	if (selected_queue_family_index == -1) ABORT("No valid queue family found!");
-
 	// Replace stored features with a pruned feature list
 	bool uses_ext_features = false;
 	VkBaseOutStructure *ext = (VkBaseOutStructure*)find_extension_parent(pCreateInfo, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES);
@@ -599,6 +588,18 @@ void replay_post_vkCreateInstance(lava_file_reader& reader, VkResult result, con
 		wrap_vkGetPhysicalDeviceProperties(physical_devices[i], &devprops);
 		ILOG("\t%u : %s (API %u.%u)", i, devprops.deviceName, VK_VERSION_MAJOR(devprops.apiVersion), VK_VERSION_MINOR(devprops.apiVersion));
 	}
+
+	uint32_t families = 0;
+	wrap_vkGetPhysicalDeviceQueueFamilyProperties(selected_physical_device, &families, nullptr);
+	device_VkQueueFamilyProperties.resize(families);
+	wrap_vkGetPhysicalDeviceQueueFamilyProperties(selected_physical_device, &families, device_VkQueueFamilyProperties.data());
+	for (unsigned i = 0; i < device_VkQueueFamilyProperties.size(); i++)
+	{
+		const VkQueueFamilyProperties& p = device_VkQueueFamilyProperties.at(i);
+		if ((p.queueFlags & VK_QUEUE_GRAPHICS_BIT) && (p.queueFlags & VK_QUEUE_COMPUTE_BIT) && (p.queueFlags & VK_QUEUE_TRANSFER_BIT)) selected_queue_family_index = i;
+		DLOG("Selected queue family: %d", selected_queue_family_index);
+	}
+	if (selected_queue_family_index == -1) ABORT("No valid queue family found!");
 
 	if (!callback_initialized && wrap_vkCreateDebugReportCallbackEXT && has_debug_report)
 	{
@@ -1362,35 +1363,77 @@ void retrace_vkCreateMetalSurfaceEXT(lava_file_reader& reader)
 
 void retrace_vkGetDeviceQueue2(lava_file_reader& reader)
 {
-	VkQueue pQueue;
+	VkQueue queue = VK_NULL_HANDLE;
 	const uint32_t device_index = reader.read_handle();
 	VkDevice device = index_to_VkDevice.at(device_index);
 	VkDeviceQueueInfo2 info_real = {};
 	read_VkDeviceQueueInfo2(reader, &info_real);
-	wrap_vkGetDeviceQueue2(device, &info_real, &pQueue);
+	bool virtual_family = false;
+	uint32_t realIndex = info_real.queueIndex;
+	uint32_t realFamily = info_real.queueFamilyIndex;
+	if (info_real.queueFamilyIndex == LAVATUBE_VIRTUAL_QUEUE)
+	{
+		virtual_family = true;
+		info_real.queueFamilyIndex = selected_queue_family_index;
+		const VkQueueFamilyProperties& props = device_VkQueueFamilyProperties.at(info_real.queueFamilyIndex);
+		if (info_real.queueIndex >= props.queueCount) // we don't have enough queues
+		{
+			info_real.queueIndex = 0; // map to first queue
+		}
+	}
+	wrap_vkGetDeviceQueue2(device, &info_real, &queue);
+	assert(queue != VK_NULL_HANDLE);
 	const uint32_t stored_queue_index = reader.read_handle();
 	if (!index_to_VkQueue.contains(stored_queue_index))
 	{
-		index_to_VkQueue.set(stored_queue_index, pQueue);
+		const VkQueueFamilyProperties& props = device_VkQueueFamilyProperties.at(info_real.queueFamilyIndex);
+		index_to_VkQueue.set(stored_queue_index, queue);
 		auto& queue_data = VkQueue_index.at(stored_queue_index);
 		queue_data.device = device;
+		queue_data.queueIndex = info_real.queueIndex;
+		queue_data.queueFamily = info_real.queueFamilyIndex;
+		queue_data.realIndex = realIndex;
+		queue_data.realFamily = realFamily;
+		queue_data.realQueue = queue;
+		queue_data.queueFlags = props.queueFlags;
 	}
 }
 
 void retrace_vkGetDeviceQueue(lava_file_reader& reader)
 {
-	VkQueue pQueue;
+	VkQueue queue = VK_NULL_HANDLE;
 	const uint32_t device_index = reader.read_handle();
 	VkDevice device = index_to_VkDevice.at(device_index);
-	const uint32_t queueFamilyIndex = reader.read_uint32_t();
-	const uint32_t queueIndex = reader.read_uint32_t();
-	wrap_vkGetDeviceQueue(device, selected_queue_family_index, queueIndex, &pQueue);
+	uint32_t queueFamilyIndex = reader.read_uint32_t();
+	uint32_t queueIndex = reader.read_uint32_t();
+	bool virtual_family = false;
+	uint32_t realIndex = queueIndex;
+	uint32_t realFamily = queueFamilyIndex;
+	if (queueFamilyIndex == LAVATUBE_VIRTUAL_QUEUE)
+	{
+		virtual_family = true;
+		queueFamilyIndex = selected_queue_family_index;
+		const VkQueueFamilyProperties& props = device_VkQueueFamilyProperties.at(queueFamilyIndex);
+		if (queueIndex >= props.queueCount) // we don't have enough queues
+		{
+			queueIndex = 0; // map to first queue
+		}
+	}
+	wrap_vkGetDeviceQueue(device, queueFamilyIndex, queueIndex, &queue);
+	assert(queue != VK_NULL_HANDLE);
 	const uint32_t stored_queue_index = reader.read_handle();
 	if (!index_to_VkQueue.contains(stored_queue_index))
 	{
-		index_to_VkQueue.set(stored_queue_index, pQueue);
+		const VkQueueFamilyProperties& props = device_VkQueueFamilyProperties.at(queueFamilyIndex);
+		index_to_VkQueue.set(stored_queue_index, queue);
 		auto& queue_data = VkQueue_index.at(stored_queue_index);
 		queue_data.device = device;
+		queue_data.queueIndex = queueIndex;
+		queue_data.queueFamily = queueFamilyIndex;
+		queue_data.realIndex = realIndex;
+		queue_data.realFamily = realFamily;
+		queue_data.realQueue = queue;
+		queue_data.queueFlags = props.queueFlags;
 	}
 }
 
@@ -1674,9 +1717,9 @@ static trackeddescriptorset_replay trackeddescriptorset_replay_json(const Json::
 	return t;
 }
 
-static trackedqueue_replay trackedqueue_replay_json(const Json::Value& v)
+static trackedqueue trackedqueue_json(const Json::Value& v)
 {
-	trackedqueue_replay t(v["frame_created"].asInt());
+	trackedqueue t(v["frame_created"].asInt());
 	t.frame_destroyed = v["frame_destroyed"].asInt();
 	if (v.isMember("name")) t.name = v["name"].asString();
 	return t;

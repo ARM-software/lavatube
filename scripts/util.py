@@ -59,6 +59,9 @@ extra_optionals = {
 	},
 }
 
+# Need to make extra sure these are externally synchronized
+extra_sync = [ 'vkQueueSubmit', 'vkQueueSubmit2', 'vkQueueWaitIdle', 'vkQueueBindSparse', 'vkDestroyDevice' ]
+
 skip_opt_check = ['pAllocator', 'pUserData', 'pfnCallback', 'pfnUserCallback', 'pNext' ]
 # for these, thread barrier goes before the function call to sync us up to other threads:
 thread_barrier_funcs = [ 'vkQueueSubmit', 'vkResetDescriptorPool', 'vkResetCommandPool', 'vkUnmapMemory', 'vkFlushMappedMemoryRanges', 'vkResetQueryPool',
@@ -98,7 +101,7 @@ hardcoded = [ 'vkGetSwapchainImagesKHR', 'vkCreateAndroidSurfaceKHR', 'vkGetDevi
 	'vkDestroySurfaceKHR', 'vkGetDeviceQueue', 'vkGetDeviceQueue2', "vkGetAndroidHardwareBufferPropertiesANDROID", "vkGetMemoryAndroidHardwareBufferANDROID",
 	'vkEnumerateInstanceLayerProperties', 'vkEnumerateInstanceExtensionProperties', 'vkEnumerateDeviceLayerProperties', 'vkEnumerateDeviceExtensionProperties',
 	'vkGetPhysicalDeviceXlibPresentationSupportKHR', 'vkCreateWin32SurfaceKHR', 'vkCreateDirectFBSurfaceEXT', 'vkCreateMetalSurfaceEXT' ]
-hardcoded_write = [ 'vkGetPhysicalDeviceToolPropertiesEXT', 'vkGetPhysicalDeviceToolProperties' ]
+hardcoded_write = [ 'vkGetPhysicalDeviceToolPropertiesEXT', 'vkGetPhysicalDeviceToolProperties', 'vkGetPhysicalDeviceQueueFamilyProperties' ]
 hardcoded_read = [ 'vkCmdBuildAccelerationStructuresIndirectKHR' ]
 # For these functions it is ok if the function pointer is missing, since we implement them ourselves
 layer_implemented = [ 'vkCreateDebugReportCallbackEXT', 'vkDestroyDebugReportCallbackEXT', 'vkDebugReportMessageEXT', 'vkDebugMarkerSetObjectTagEXT',
@@ -142,13 +145,12 @@ deconstify = {
 # Subclassing of trackable
 trackable_type_map_general = { 'VkBuffer': 'trackedbuffer', 'VkImage': 'trackedimage', 'VkCommandBuffer': 'trackedcmdbuffer', 'VkDescriptorSet': 'trackeddescriptorset',
 	'VkDeviceMemory': 'trackedmemory', 'VkFence': 'trackedfence', 'VkPipeline': 'trackedpipeline', 'VkImageView': 'trackedimageview', 'VkBufferView': 'trackedbufferview',
-	'VkDevice': 'trackeddevice', 'VkFramebuffer': 'trackedframebuffer', 'VkRenderPass': 'trackedrenderpass' }
+	'VkDevice': 'trackeddevice', 'VkFramebuffer': 'trackedframebuffer', 'VkRenderPass': 'trackedrenderpass', 'VkQueue': 'trackedqueue' }
 trackable_type_map_trace = trackable_type_map_general.copy()
 trackable_type_map_trace.update({ 'VkCommandBuffer': 'trackedcmdbuffer_trace', 'VkSwapchainKHR': 'trackedswapchain_trace', 'VkDescriptorSet': 'trackeddescriptorset_trace',
-	'VkQueue': 'trackedqueue_trace', 'VkEvent': 'trackedevent_trace', 'VkDescriptorPool': 'trackeddescriptorpool_trace', 'VkCommandPool': 'trackedcommandpool_trace' })
+	'VkEvent': 'trackedevent_trace', 'VkDescriptorPool': 'trackeddescriptorpool_trace', 'VkCommandPool': 'trackedcommandpool_trace' })
 trackable_type_map_replay = trackable_type_map_general.copy()
-trackable_type_map_replay.update({ 'VkCommandBuffer': 'trackedcmdbuffer_replay', 'VkDescriptorSet': 'trackeddescriptorset_replay', 'VkSwapchainKHR': 'trackedswapchain_replay',
-	'VkQueue': 'trackedqueue_replay' })
+trackable_type_map_replay.update({ 'VkCommandBuffer': 'trackedcmdbuffer_replay', 'VkDescriptorSet': 'trackeddescriptorset_replay', 'VkSwapchainKHR': 'trackedswapchain_replay' })
 
 # Parse element size, which can be weird
 def getraw(val):
@@ -494,12 +496,11 @@ class parameter(object):
 			z.do('%s = reader.pool.allocate<VkAccelerationStructureBuildRangeInfoKHR*>(infoCount);' % varname)
 			z.do('for (unsigned i = 0; i < infoCount; i++) %s[i] = reader.pool.allocate<VkAccelerationStructureBuildRangeInfoKHR>(pInfos[i].geometryCount);' % varname)
 			z.do('for (unsigned i = 0; i < infoCount; i++) for (unsigned j = 0; j < pInfos[i].geometryCount; j++) { auto* p = %s[i]; read_VkAccelerationStructureBuildRangeInfoKHR(reader, &p[j]); }' % varname)
-		#elif self.name == 'queueFamilyIndex':
-		#	z.decl('uint32_t', self.name)
-		#	z.do('%s = selected_queue_family_index;' % self.name)
-		#	z.do('(void)reader.read_uint32_t(); // ignore stored %s' % self.name)
-		#	if not is_root:
-		#		z.do('%s = %s;' % (varname, self.name))
+		elif self.name == 'queueFamilyIndex':
+			z.decl('uint32_t', self.name)
+			z.do('%s = reader.read_uint32_t();' % self.name)
+			z.do('if (%s == LAVATUBE_VIRTUAL_QUEUE) %s = selected_queue_family_index;' % (self.name, self.name))
+			if not is_root: z.do('%s = %s;' % (varname, self.name))
 		elif (self.name == 'ppData' and self.funcname in ['vkMapMemory', 'vkMapMemory2KHR']) or self.name == 'pHostPointer':
 			z.decl('%s%s%s' % (self.mod, self.type, self.param_ptrstr), self.name)
 		elif self.name == 'pfnUserCallback' and self.funcname == 'VkDebugUtilsMessengerCreateInfoEXT':
@@ -813,6 +814,7 @@ class parameter(object):
 				assert not self.funcname in extra_optionals
 				pass # handled elsewhere
 			elif self.length:
+				assert self.type != 'VkQueue', '%s has array queues' % self.funcname
 				if 'VK_MAX_' not in self.length:
 					z.do('for (unsigned hi = 0; hi < %s; hi++)' % (owner + self.length))
 				else: # define variant
@@ -832,10 +834,18 @@ class parameter(object):
 				z.loop_end()
 			else:
 				z.decl(trackable_type_map_trace.get(self.type, 'trackable') + '*', totrackable(self.type))
-				z.do('%s = writer.parent->records.%s_index.at(%s%s);' % (totrackable(self.type), self.type, deref, varname))
+				if self.type == 'VkQueue':
+					assert not self.ptr, '%s has pointer queues' % self.funcname
+					assert self.name == 'queue', '%s has queue not named queue' % self.funcname
+					z.declarations.insert(0, 'queue = (p__virtualqueues && queue != VK_NULL_HANDLE) ? ((trackedqueue*)queue)->realQueue : queue;')
+					z.declarations.insert(0, 'VkQueue original_queue = queue;') # this goes first
+					z.do('%s = (p__virtualqueues) ? ((trackedqueue*)original_queue) : writer.parent->records.VkQueue_index.at(queue);' % totrackable(self.type))
+				else:
+					z.do('%s = writer.parent->records.%s_index.at(%s%s);' % (totrackable(self.type), self.type, deref, varname))
 				if self.funcname in extra_optionals and self.name in extra_optionals[self.funcname]:
 					z.do('if (%s)' % extra_optionals[self.funcname][self.name])
 					z.brace_begin()
+				z.do('if (%s) %s->self_test();' % (totrackable(self.type), totrackable(self.type)))
 				z.do('writer.write_handle(%s);' % totrackable(self.type))
 
 				if self.funcname in [ 'vkCmdBindIndexBuffer' ] and self.name == 'buffer':
@@ -914,6 +924,9 @@ class parameter(object):
 			z.do('writer.write_%s(*%s);' % (self.type, varname))
 		elif self.type in spec.type_mappings and self.length: # type mapped array
 			z.do('writer.write_array(reinterpret_cast<%s%s*>(%s), %s);' % (self.mod, spec.type_mappings[self.type], varname, self.length))
+		elif self.name == 'queueFamilyIndex':
+			z.do('const bool virtual_family = (writer.parent->meta.stored_VkQueueFamilyProperties.at(%s).queueFlags & VK_QUEUE_GRAPHICS_BIT) && p__virtualqueues;' % varname)
+			z.do('writer.write_uint32_t(virtual_family ? LAVATUBE_VIRTUAL_QUEUE : %s);' % varname)
 		elif self.type in spec.type_mappings:
 			z.do('writer.write_%s(%s);' % (spec.type_mappings[self.type], varname))
 		elif self.ptr and self.length: # arrays
@@ -1291,6 +1304,8 @@ def loadfunc(name, node, target, header):
 	if name in spec.special_count_funcs: # functions that work differently based on whether last param is a nullptr or not
 		z.do('uint8_t do_call = reader.read_uint8_t();')
 	z.do('// -- Execute --')
+	if name in extra_sync:
+		z.do('sync_mutex.lock();')
 	for param in params:
 		if not param.inparam and param.ptr and param.type != 'void' and not name in ignore_on_read and not name in spec.special_count_funcs and not name in spec.functions_create:
 			vname = z.backing(param.type, param.name, size=param.length, struct=param.structure)
@@ -1433,6 +1448,8 @@ def loadfunc(name, node, target, header):
 				z.do('(void)reader.read_uint32_t(); // also ignore result return value')
 	if debugstats:
 		z.do('apiTime = gettime() - apiTime;')
+	if name in extra_sync:
+		z.do('sync_mutex.unlock();')
 	z.do('// -- Post --')
 	if not name in spec.special_count_funcs and not name in skip_post_calls:
 		for param in params:
@@ -1501,6 +1518,8 @@ def savefunc(name, node, target, header):
 			parlist.append(vv[0])
 		z.do('writer.write_uint8_t((%s) ? 1 : 0);' % ' && '.join(parlist))
 	z.do('// -- Execute --')
+	if name in extra_sync:
+		z.do('frame_mutex.lock();')
 	save_add_pre(name)
 	if debugstats:
 		z.do('uint64_t apiTime = gettime();')
@@ -1534,6 +1553,8 @@ def savefunc(name, node, target, header):
 			z.do('wrap_%s(%s);' % (name, ', '.join(call_list)))
 	if debugstats:
 		z.do('apiTime = gettime() - apiTime;')
+	if name in extra_sync:
+		z.do('frame_mutex.unlock();')
 	z.do('// -- Post --')
 	save_add_tracking(name)
 	if retval == 'VkBool32' or retval == 'VkResult' or retval == 'uint32_t':

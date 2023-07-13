@@ -72,6 +72,7 @@ static FILE* get_env_file(const char* name, FILE* fallback)
 	return fallback;
 }
 
+uint_fast8_t p__virtualqueues = get_env_bool("LAVATUBE_VIRTUAL_QUEUES", 0);
 FILE* p__debug_destination = get_env_file("LAVATUBE_DEBUG_FILE", stdout); // must be defined first here
 uint_fast8_t p__blackhole = get_env_bool("LAVATUBE_BLACKHOLE", 0);
 uint_fast8_t p__dedicated_buffer = get_env_bool("LAVATUBE_DEDICATED_BUFFER", 0);

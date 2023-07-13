@@ -24,13 +24,9 @@
 using lava_replay_func = std::function<void(lava_file_reader&)>;
 class lava_file_reader;
 
-// these are implemented differently for trace and replay cases
+extern lava::mutex sync_mutex;
 
-struct trackedqueue_replay : trackable
-{
-	using trackable::trackable; // inherit constructor
-	VkDevice device = VK_NULL_HANDLE;
-};
+// these are implemented differently for trace and replay cases
 
 struct trackedcmdbuffer_replay : trackable
 {
