@@ -8,6 +8,18 @@ import spec
 
 spec.init()
 
+feature_detection_structs = []
+feature_detection_funcs = []
+detect_words = []
+with open('include/feature_detect.h', 'r') as f:
+	for line in f:
+		m = re.search('check_(\w+)', line)
+		if m:
+			detect_words.append(m.group(1))
+for name in spec.structures:
+	if name in detect_words:
+		feature_detection_structs.append(name)
+
 # Set this to zero to enable injecting sentinel values between each real value.
 debugcount = -1
 
@@ -42,17 +54,6 @@ extra_optionals = {
 	'VkCommandBufferBeginInfo': {
 		'pInheritanceInfo': '(tcmd->level == VK_COMMAND_BUFFER_LEVEL_SECONDARY)', # "If this is a primary command buffer, then this value is ignored."
 	},
-}
-
-command_names = {
-	'vkCmdDispatchIndirect': 'VkDispatchIndirectCommand',
-	'vkCmdDrawIndirect': 'VkDrawIndirectCommand',
-	'vkCmdDrawIndexedIndirect': 'VkDrawIndexedIndirectCommand',
-	'vkCmdDrawMeshTasksIndirectEXT': 'VkDrawMeshTasksIndirectCommandEXT',
-	'vkCmdDrawIndirectCount': 'VkDrawIndirectCommand',
-	'vkCmdDrawIndirectCountAMD': 'VkDrawIndirectCommand',
-	'vkCmdDrawIndexedIndirectCount': 'VkDrawIndexedIndirectCommand',
-	'vkCmdDrawIndexedIndirectCountAMD': 'VkDrawIndexedIndirectCommand',
 }
 
 skip_opt_check = ['pAllocator', 'pUserData', 'pfnCallback', 'pfnUserCallback', 'pNext' ]
@@ -102,8 +103,6 @@ layer_implemented = [ 'vkCreateDebugReportCallbackEXT', 'vkDestroyDebugReportCal
 	'vkSetDebugUtilsObjectTagEXT',	'vkQueueBeginDebugUtilsLabelEXT', 'vkQueueEndDebugUtilsLabelEXT', 'vkQueueInsertDebugUtilsLabelEXT',
 	'vkCmdBeginDebugUtilsLabelEXT', 'vkCmdEndDebugUtilsLabelEXT', 'vkCmdInsertDebugUtilsLabelEXT', 'vkCreateDebugUtilsMessengerEXT',
 	'vkDestroyDebugUtilsMessengerEXT', 'vkSubmitDebugUtilsMessageEXT', 'vkGetPhysicalDeviceToolPropertiesEXT', 'vkGetPhysicalDeviceToolProperties' ]
-# Functions that can run before instance creation, and must not try to order their execution sequence for this reason
-no_sequencing = [ 'vkEnumerateInstanceVersion', 'vkGetInstanceProcAddr', 'vkEnumerateInstanceLayerProperties', 'vkEnumerateInstanceExtensionProperties' ]
 # functions we should ignore on replay
 ignore_on_read = [ 'vkGetMemoryHostPointerPropertiesEXT', 'vkCreateDebugUtilsMessengerEXT', 'vkDestroyDebugUtilsMessengerEXT', 'vkAllocateMemory',
 	'vkMapMemory', 'vkUnmapMemory', 'vkCreateDebugReportCallbackEXT', 'vkDestroyDebugReportCallbackEXT', 'vkFlushMappedMemoryRanges',
@@ -111,7 +110,6 @@ ignore_on_read = [ 'vkGetMemoryHostPointerPropertiesEXT', 'vkCreateDebugUtilsMes
 	'vkGetImageMemoryRequirements2KHR', 'vkGetBufferMemoryRequirements2KHR', 'vkGetImageSparseMemoryRequirements2KHR', 'vkGetImageMemoryRequirements',
 	'vkGetBufferMemoryRequirements', 'vkGetImageSparseMemoryRequirements', 'vkGetImageMemoryRequirements2', 'vkGetBufferMemoryRequirements2',
 	'vkGetImageSparseMemoryRequirements2' ]
-no_sequencing.extend(ignore_on_read) # no need to sequence these
 # functions we should not call natively when tracing - let pre or post calls handle it
 ignore_on_trace = []
 # these functions have hard-coded post-execute callbacks
@@ -842,9 +840,9 @@ class parameter(object):
 					z.do('commandbuffer_data->indexBuffer.buffer_data = buffer_data;')
 					z.do('commandbuffer_data->indexBuffer.indexType = indexType;')
 				elif self.funcname in [ 'vkCmdDispatchIndirect' ] and self.name == 'buffer':
-					z.do('commandbuffer_data->touch(buffer_data, offset, sizeof(%s), __LINE__);' % command_names[self.funcname])
+					z.do('commandbuffer_data->touch(buffer_data, offset, sizeof(%s), __LINE__);' % spec.indirect_command_c_struct_names[self.funcname])
 				elif self.funcname in [ 'vkCmdDrawIndirect', 'vkCmdDrawIndexedIndirect', 'vkCmdDrawMeshTasksIndirectEXT' ] and self.name == 'buffer':
-					z.do('if (drawCount == 1) commandbuffer_data->touch(buffer_data, offset, sizeof(%s), __LINE__);' % command_names[self.funcname])
+					z.do('if (drawCount == 1) commandbuffer_data->touch(buffer_data, offset, sizeof(%s), __LINE__);' % spec.indirect_command_c_struct_names[self.funcname])
 					z.do('else if (drawCount > 1) commandbuffer_data->touch(buffer_data, offset, stride * drawCount, __LINE__);')
 					if 'Indexed' in name: z.do('commandbuffer_data->touch_index_buffer(0, VK_WHOLE_SIZE); // must check whole buffer here since we do not know yet what will be used')
 				elif self.funcname in [ 'vkCmdDrawIndirectCount', 'vkCmdDrawIndirectCountKHR', 'vkCmdDrawIndirectCountAMD' ] and self.name == 'countBuffer':
@@ -1231,12 +1229,11 @@ def load_add_tracking(name):
 			z.do('for (auto i : data.virtual_fences) wrap_vkDestroyFence(device, i, nullptr);')
 
 def func_common(name, node, read, target, header, guard_header=True):
-	z = getspool()
 	proto = node.find('proto')
 	retval = proto.find('type').text
 	if name in spec.protected_funcs:
 		print >> target, '#ifdef %s // %s' % (spec.protected_funcs[name], name)
-		if guard_header:
+		if header and guard_header:
 			print >> header, '#ifdef %s // %s' % (spec.protected_funcs[name], name)
 		print >> target
 	params = []
@@ -1262,7 +1259,7 @@ def func_common_end(name, target, header, add_dummy=False):
 		print >> target
 		print >> target, '#endif // %s 1' % spec.protected_funcs[name]
 		print >> target
-		if not add_dummy:
+		if not add_dummy and header:
 			if header: print >> header, '#endif // %s 2' % spec.protected_funcs[name]
 
 def loadfunc(name, node, target, header):
@@ -1561,7 +1558,7 @@ def savefunc(name, node, target, header):
 			z.do('trace_post_%s(writer, retval, %s);' % (name, ', '.join(call_list)))
 		else:
 			z.do('trace_post_%s(writer, %s);' % (name, ', '.join(call_list)))
-	if name in spec.feature_detection_funcs:
+	if name in feature_detection_funcs:
 		z.do('writer.parent->usage_detection.check_%s(%s);' % (name, ', '.join(call_list)))
 	if retval != 'void':
 		z.do('// -- Return --')
