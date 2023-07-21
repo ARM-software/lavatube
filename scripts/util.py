@@ -1,5 +1,8 @@
 #!/usr/bin/python2
 
+import sys
+sys.path.append('external/tracetooltests/scripts')
+
 import xml.etree.ElementTree as ET
 import re
 import sys

@@ -1,5 +1,7 @@
 #!/usr/bin/python2
 
+import sys
+sys.path.append('external/tracetooltests/scripts')
 import spec
 import util
 import os
