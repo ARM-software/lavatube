@@ -143,12 +143,12 @@ static uint64_t object_lookup(VkObjectType type, uint32_t index)
 	case VK_OBJECT_TYPE_MICROMAP_EXT: return (uint64_t)index_to_VkMicromapEXT.at(index);
 	case VK_OBJECT_TYPE_PRIVATE_DATA_SLOT: return (uint64_t)index_to_VkPrivateDataSlot.at(index);
 	case VK_OBJECT_TYPE_SAMPLER_YCBCR_CONVERSION_KHR: return (uint64_t)index_to_VkSamplerYcbcrConversion.at(index);
+	case VK_OBJECT_TYPE_VIDEO_SESSION_KHR: return (uint64_t)index_to_VkVideoSessionKHR.at(index);
+	case VK_OBJECT_TYPE_VIDEO_SESSION_PARAMETERS_KHR: return (uint64_t)index_to_VkVideoSessionParametersKHR.at(index);
+	case VK_OBJECT_TYPE_SHADER_EXT: return (uint64_t)index_to_VkShaderEXT.at(index);
+	case VK_OBJECT_TYPE_DEBUG_REPORT_CALLBACK_EXT: return (uint64_t)index_to_VkDebugReportCallbackEXT.at(index);
+	case VK_OBJECT_TYPE_DEBUG_UTILS_MESSENGER_EXT: return (uint64_t)index_to_VkDebugUtilsMessengerEXT.at(index);
 	// these are not supported:
-	case VK_OBJECT_TYPE_VIDEO_SESSION_KHR: // TBD
-	case VK_OBJECT_TYPE_VIDEO_SESSION_PARAMETERS_KHR: // TBD
-	case VK_OBJECT_TYPE_SHADER_EXT: // TBD
-	case VK_OBJECT_TYPE_DEBUG_REPORT_CALLBACK_EXT:
-	case VK_OBJECT_TYPE_DEBUG_UTILS_MESSENGER_EXT:
 	case VK_OBJECT_TYPE_OPTICAL_FLOW_SESSION_NV:
 	case VK_OBJECT_TYPE_BUFFER_COLLECTION_FUCHSIA:
 	case VK_OBJECT_TYPE_INDIRECT_COMMANDS_LAYOUT_NV:

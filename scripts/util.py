@@ -129,7 +129,7 @@ trace_post_calls = [ 'vkCreateInstance', 'vkCreateDevice', 'vkDestroyInstance', 
 		'vkGetPhysicalDeviceFormatProperties', 'vkGetPhysicalDeviceFormatProperties2', 'vkCmdPushDescriptorSetKHR', 'vkCreateSwapchainKHR',
 		'vkGetBufferMemoryRequirements2KHR', 'vkGetDeviceBufferMemoryRequirements', 'vkGetDeviceBufferMemoryRequirementsKHR',
 		'vkGetDeviceImageMemoryRequirements', 'vkGetDeviceImageMemoryRequirementsKHR', 'vkGetPhysicalDeviceFeatures2', 'vkGetPhysicalDeviceFeatures2KHR',
-		'vkGetPhysicalDeviceMemoryProperties2' ]
+		'vkGetPhysicalDeviceMemoryProperties2', 'vkGetDeviceImageSparseMemoryRequirementsKHR', 'vkGetDeviceImageSparseMemoryRequirements' ]
 skip_post_calls = [ 'vkGetQueryPoolResults', 'vkGetPhysicalDeviceXcbPresentationSupportKHR' ]
 # Awful workaround to be able to rewrite inputs while tracing: These input variables are copied and replaced to not be const anymore.
 deconstify = {

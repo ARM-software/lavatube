@@ -116,14 +116,14 @@ static trackable* object_trackable(const trace_records& r, VkObjectType type, ui
 	case VK_OBJECT_TYPE_DEFERRED_OPERATION_KHR: return r.VkDeferredOperationKHR_index.at((const VkDeferredOperationKHR)object);
 	case VK_OBJECT_TYPE_MICROMAP_EXT: return r.VkMicromapEXT_index.at((const VkMicromapEXT)object);
 	case VK_OBJECT_TYPE_SAMPLER_YCBCR_CONVERSION_KHR: return r.VkSamplerYcbcrConversion_index.at((const VkSamplerYcbcrConversion)object);
+	case VK_OBJECT_TYPE_SHADER_EXT: return r.VkShaderEXT_index.at((const VkShaderEXT)object);
+	case VK_OBJECT_TYPE_VIDEO_SESSION_KHR: return r.VkVideoSessionKHR_index.at((const VkVideoSessionKHR)object);
+	case VK_OBJECT_TYPE_VIDEO_SESSION_PARAMETERS_KHR: return r.VkVideoSessionParametersKHR_index.at((const VkVideoSessionParametersKHR)object);
+	case VK_OBJECT_TYPE_DEBUG_REPORT_CALLBACK_EXT: return r.VkDebugReportCallbackEXT_index.at((const VkDebugReportCallbackEXT)object);
+	case VK_OBJECT_TYPE_DEBUG_UTILS_MESSENGER_EXT: return r.VkDebugUtilsMessengerEXT_index.at((const VkDebugUtilsMessengerEXT)object);
 	// not supported:
-	case VK_OBJECT_TYPE_SHADER_EXT: // TBD
-	case VK_OBJECT_TYPE_VIDEO_SESSION_KHR:
-	case VK_OBJECT_TYPE_VIDEO_SESSION_PARAMETERS_KHR:
 	case VK_OBJECT_TYPE_CU_MODULE_NVX:
 	case VK_OBJECT_TYPE_CU_FUNCTION_NVX:
-	case VK_OBJECT_TYPE_DEBUG_REPORT_CALLBACK_EXT:
-	case VK_OBJECT_TYPE_DEBUG_UTILS_MESSENGER_EXT:
 	case VK_OBJECT_TYPE_ACCELERATION_STRUCTURE_NV:
 	case VK_OBJECT_TYPE_PERFORMANCE_CONFIGURATION_INTEL:
 	case VK_OBJECT_TYPE_INDIRECT_COMMANDS_LAYOUT_NV:
@@ -239,6 +239,8 @@ static void extend_bits(VkMemoryRequirements* pMemoryRequirements)
 			pMemoryRequirements->memoryTypeBits &= ~(1 << i); // no, clear
 		}
 	}
+	// extend alignment
+	pMemoryRequirements->alignment = std::max<VkDeviceSize>(pMemoryRequirements->alignment, 256);
 	frame_mutex.unlock();
 }
 
@@ -247,7 +249,6 @@ static void trace_post_vkGetBufferMemoryRequirements(lava_file_writer& writer, V
 	auto* buffer_data = writer.parent->records.VkBuffer_index.at(buffer);
 	buffer_data->req = *pMemoryRequirements;
 	extend_bits(pMemoryRequirements);
-	pMemoryRequirements->alignment = std::max<VkDeviceSize>(pMemoryRequirements->alignment, 256);
 }
 
 static void trace_post_vkGetImageMemoryRequirements(lava_file_writer& writer, VkDevice device, VkImage image, VkMemoryRequirements* pMemoryRequirements)
@@ -255,10 +256,9 @@ static void trace_post_vkGetImageMemoryRequirements(lava_file_writer& writer, Vk
 	auto* image_data = writer.parent->records.VkImage_index.at(image);
 	image_data->req = *pMemoryRequirements;
 	extend_bits(pMemoryRequirements);
-	pMemoryRequirements->alignment = std::max<VkDeviceSize>(pMemoryRequirements->alignment, 256);
 }
 
-static void inject_dedicated_allocation(lava_file_writer& writer, VkMemoryRequirements2* pMemoryRequirements, bool image)
+static void inject_dedicated_allocation(lava_file_writer& writer, VkBaseOutStructure* pMemoryRequirements, bool image)
 {
 	if ((p__dedicated_image == 0 && image) || (p__dedicated_buffer == 0 && !image)) return;
 
@@ -270,7 +270,7 @@ static void inject_dedicated_allocation(lava_file_writer& writer, VkMemoryRequir
 		info->pNext = pMemoryRequirements->pNext;
 		info->prefersDedicatedAllocation = VK_FALSE;
 		info->requiresDedicatedAllocation = VK_FALSE;
-		pMemoryRequirements->pNext = info;
+		pMemoryRequirements->pNext = (VkBaseOutStructure*)info;
 	}
 
 	if (image)
@@ -287,46 +287,61 @@ static void inject_dedicated_allocation(lava_file_writer& writer, VkMemoryRequir
 
 static void trace_post_vkGetBufferMemoryRequirements2(lava_file_writer& writer, VkDevice device, const VkBufferMemoryRequirementsInfo2* pInfo, VkMemoryRequirements2* pMemoryRequirements)
 {
-	inject_dedicated_allocation(writer, pMemoryRequirements, false);
+	inject_dedicated_allocation(writer, (VkBaseOutStructure*)pMemoryRequirements, false);
 	trace_post_vkGetBufferMemoryRequirements(writer, device, pInfo->buffer, &pMemoryRequirements->memoryRequirements);
 }
 
 static void trace_post_vkGetImageMemoryRequirements2(lava_file_writer& writer, VkDevice device, const VkImageMemoryRequirementsInfo2* pInfo, VkMemoryRequirements2* pMemoryRequirements)
 {
-	inject_dedicated_allocation(writer, pMemoryRequirements, true);
+	inject_dedicated_allocation(writer, (VkBaseOutStructure*)pMemoryRequirements, true);
 	trace_post_vkGetImageMemoryRequirements(writer, device, pInfo->image, &pMemoryRequirements->memoryRequirements);
 }
 
 static void trace_post_vkGetBufferMemoryRequirements2KHR(lava_file_writer& writer, VkDevice device, const VkBufferMemoryRequirementsInfo2* pInfo, VkMemoryRequirements2* pMemoryRequirements)
 {
-	inject_dedicated_allocation(writer, pMemoryRequirements, false);
-	trace_post_vkGetBufferMemoryRequirements(writer, device, pInfo->buffer, &pMemoryRequirements->memoryRequirements);
+	trace_post_vkGetBufferMemoryRequirements2(writer, device, pInfo, pMemoryRequirements);
 }
 
 static void trace_post_vkGetImageMemoryRequirements2KHR(lava_file_writer& writer, VkDevice device, const VkImageMemoryRequirementsInfo2* pInfo, VkMemoryRequirements2* pMemoryRequirements)
 {
-	inject_dedicated_allocation(writer, pMemoryRequirements, true);
-	trace_post_vkGetImageMemoryRequirements(writer, device, pInfo->image, &pMemoryRequirements->memoryRequirements);
+	trace_post_vkGetImageMemoryRequirements2(writer, device, pInfo, pMemoryRequirements);
 }
 
 static void trace_post_vkGetDeviceBufferMemoryRequirements(lava_file_writer& writer, VkDevice device, const VkDeviceBufferMemoryRequirements* pInfo, VkMemoryRequirements2* pMemoryRequirements)
 {
-	assert(false); // TBD
+	inject_dedicated_allocation(writer, (VkBaseOutStructure*)pMemoryRequirements, false);
+	extend_bits(&pMemoryRequirements->memoryRequirements);
 }
 
 static void trace_post_vkGetDeviceBufferMemoryRequirementsKHR(lava_file_writer& writer, VkDevice device, const VkDeviceBufferMemoryRequirements* pInfo, VkMemoryRequirements2* pMemoryRequirements)
 {
-	assert(false); // TBD
+	trace_post_vkGetDeviceBufferMemoryRequirements(writer, device, pInfo, pMemoryRequirements);
 }
 
 static void trace_post_vkGetDeviceImageMemoryRequirements(lava_file_writer& writer, VkDevice device, const VkDeviceImageMemoryRequirements* pInfo, VkMemoryRequirements2* pMemoryRequirements)
 {
-	assert(false); // TBD
+	inject_dedicated_allocation(writer, (VkBaseOutStructure*)pMemoryRequirements, true);
+	extend_bits(&pMemoryRequirements->memoryRequirements);
 }
 
 static void trace_post_vkGetDeviceImageMemoryRequirementsKHR(lava_file_writer& writer, VkDevice device, const VkDeviceImageMemoryRequirements* pInfo, VkMemoryRequirements2* pMemoryRequirements)
 {
-	assert(false); // TBD
+	trace_post_vkGetDeviceImageMemoryRequirements(writer, device, pInfo, pMemoryRequirements);
+}
+
+static void trace_post_vkGetDeviceImageSparseMemoryRequirements(lava_file_writer& writer, VkDevice device, const VkDeviceImageMemoryRequirements* pInfo,
+	uint32_t* pSparseMemoryRequirementCount, VkSparseImageMemoryRequirements2* pSparseMemoryRequirements)
+{
+	for (uint32_t i = 0; i < *pSparseMemoryRequirementCount && pSparseMemoryRequirements; i++)
+	{
+		// TBD
+	}
+}
+
+static void trace_post_vkGetDeviceImageSparseMemoryRequirementsKHR(lava_file_writer& writer, VkDevice device, const VkDeviceImageMemoryRequirements* pInfo,
+	uint32_t* pSparseMemoryRequirementCount, VkSparseImageMemoryRequirements2* pSparseMemoryRequirements)
+{
+	trace_post_vkGetDeviceImageSparseMemoryRequirements(writer, device, pInfo, pSparseMemoryRequirementCount, pSparseMemoryRequirements);
 }
 
 static void trace_post_vkBindImageMemory(lava_file_writer& writer, VkResult result, VkDevice device, VkImage image, VkDeviceMemory memory, VkDeviceSize memoryOffset)
