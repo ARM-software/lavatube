@@ -36,9 +36,9 @@ jobs:
           ./containers
           ./containers2
           ./containers_perf
-          ./write1
           ./write3
           ./read3
           ./write4
           ./read4
           ./rangetrack
+          ./write1

@@ -96,6 +96,7 @@ int main()
 	// populate with a number series
 	std::iota(std::begin(data), std::end(data), 0);
 
+	ILOG("write_2");
 	writer.set("write_2", 1);
 
 	write_test();
