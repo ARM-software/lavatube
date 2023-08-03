@@ -11,7 +11,7 @@ static bool has_pipeline_control = false;
 static bool has_debug_report = false;
 static bool has_debug_utils = false;
 static int has_dedicated_allocation = 0;
-static int selected_queue_family_index = -1;
+static uint32_t selected_queue_family_index = 0xdeadbeef;
 static VkPhysicalDeviceFeatures2 stored_VkPhysicalDeviceFeatures2 = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2, nullptr };
 static VkPhysicalDeviceVulkan11Features stored_VkPhysicalDeviceVulkan11Features = {};
 static VkPhysicalDeviceVulkan12Features stored_VkPhysicalDeviceVulkan12Features = {};
@@ -507,6 +507,19 @@ void replay_pre_vkCreateDevice(lava_file_reader& reader, VkPhysicalDevice physic
 {
 	pCreateInfo->enabledLayerCount = 0; // even though implementation should ignore it as per the spec, that is not always the case, so help it along
 
+	// Limit the number of requested queues to what is available
+	VkDeviceQueueCreateInfo* queueinfo = reader.pool.allocate<VkDeviceQueueCreateInfo>(pCreateInfo->queueCreateInfoCount);
+	for (uint32_t i = 0; i < pCreateInfo->queueCreateInfoCount; i++)
+	{
+		queueinfo[i] = pCreateInfo->pQueueCreateInfos[i]; // struct copy
+		if (queueinfo[i].queueFamilyIndex == selected_queue_family_index
+		    && queueinfo[i].queueCount > device_VkQueueFamilyProperties.at(selected_queue_family_index).queueCount)
+		{
+			queueinfo[i].queueCount = device_VkQueueFamilyProperties.at(selected_queue_family_index).queueCount;
+		}
+		pCreateInfo->pQueueCreateInfos = queueinfo;
+	}
+
 	// Replace stored features with a pruned feature list
 	bool uses_ext_features = false;
 	VkBaseOutStructure *ext = (VkBaseOutStructure*)find_extension_parent(pCreateInfo, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES);
@@ -599,7 +612,7 @@ void replay_post_vkCreateInstance(lava_file_reader& reader, VkResult result, con
 		if ((p.queueFlags & VK_QUEUE_GRAPHICS_BIT) && (p.queueFlags & VK_QUEUE_COMPUTE_BIT) && (p.queueFlags & VK_QUEUE_TRANSFER_BIT)) selected_queue_family_index = i;
 		DLOG("Selected queue family: %d", selected_queue_family_index);
 	}
-	if (selected_queue_family_index == -1) ABORT("No valid queue family found!");
+	if (selected_queue_family_index == 0xdeadbeef) ABORT("No valid queue family found!");
 
 	if (!callback_initialized && wrap_vkCreateDebugReportCallbackEXT && has_debug_report)
 	{
