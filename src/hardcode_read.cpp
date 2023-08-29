@@ -517,8 +517,8 @@ void replay_pre_vkCreateDevice(lava_file_reader& reader, VkPhysicalDevice physic
 		{
 			queueinfo[i].queueCount = device_VkQueueFamilyProperties.at(selected_queue_family_index).queueCount;
 		}
-		pCreateInfo->pQueueCreateInfos = queueinfo;
 	}
+	pCreateInfo->pQueueCreateInfos = queueinfo;
 
 	// Replace stored features with a pruned feature list
 	bool uses_ext_features = false;
@@ -1677,6 +1677,17 @@ static trackedimage trackedimage_json(const Json::Value& v)
 	t.req.size = v["req_size"].asUInt64();
 	t.req.alignment = v["req_alignment"].asUInt();
 	t.req.memoryTypeBits = 0;
+	t.initialLayout = (VkImageLayout)(v.get("initialLayout", 0).asUInt());
+	t.currentLayout = t.initialLayout;
+	t.samples = (VkSampleCountFlagBits)(v.get("samples", 0).asUInt());
+	t.mipLevels = (unsigned)v.get("mipLevels", 0).asUInt();
+	t.arrayLayers = (unsigned)v.get("arrayLevels", 0).asUInt();
+	if (v.isMember("extent"))
+	{
+		t.extent.width = v["extent"][0].asUInt();
+		t.extent.height = v["extent"][1].asUInt();
+		t.extent.depth = v["extent"][2].asUInt();
+	}
 	t.type = VK_OBJECT_TYPE_IMAGE;
 	return t;
 }

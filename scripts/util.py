@@ -176,7 +176,6 @@ def typetmpname(root):
 # is nice for reusing temporaries (some functions would use a lot of them).
 class spool(object):
 	def __init__(self):
-		self.loops = 0
 		self.declarations = []
 		self.instructions = []
 		self.before_instr = []
@@ -289,11 +288,9 @@ class spool(object):
 
 	def loop_begin(self):
 		self.brace_begin()
-		self.loops += 1
 
 	def loop_end(self):
 		self.brace_end()
-		self.loops -= 1
 
 	# Generate enough variants of a backing store in case of loops or struct variants
 	# Only usable in the replayer.
@@ -1075,6 +1072,12 @@ def save_add_tracking(name):
 			z.do('add->flags = pCreateInfo->flags;')
 			z.do('add->format = pCreateInfo->format;')
 			z.do('add->type = VK_OBJECT_TYPE_IMAGE;')
+			z.do('add->initialLayout = pCreateInfo->initialLayout;')
+			z.do('add->currentLayout = pCreateInfo->initialLayout;')
+			z.do('add->samples = pCreateInfo->samples;')
+			z.do('add->extent = pCreateInfo->extent;')
+			z.do('add->mipLevels = pCreateInfo->mipLevels;')
+			z.do('add->arrayLayers = pCreateInfo->arrayLayers;')
 			z.do('if (pCreateInfo->flags & VK_IMAGE_CREATE_ALIAS_BIT) ELOG("Image aliasing detected! We need to implement support for this!");')
 		elif type == 'VkRenderPass' and name == 'vkCreateRenderPass':
 			z.do('add->attachments.resize(pCreateInfo->attachmentCount);')
@@ -1220,6 +1223,10 @@ def load_add_tracking(name):
 			elif type == 'VkDevice':
 				z.do('trackeddevice& device_data = VkDevice_index.at(device_index);')
 				z.do('device_data.physicalDevice = physicalDevice; // track parentage')
+			elif type == 'VkImage':
+				z.do('trackedimage& image_data = VkImage_index.at(image_index);')
+				z.do('image_data.initialLayout = pCreateInfo->initialLayout; // duplicates info stored in json but needed for compatibility with older traces')
+				z.do('image_data.currentLayout = pCreateInfo->initialLayout;')
 		else: # multiple
 			z.do('for (unsigned i = 0; i < %s; i++)' % count)
 			z.brace_begin()

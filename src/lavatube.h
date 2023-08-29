@@ -158,6 +158,12 @@ struct trackedimage : trackedobject
 	VkImageCreateFlags flags = VK_IMAGE_CREATE_FLAG_BITS_MAX_ENUM;
 	VkFormat format = VK_FORMAT_MAX_ENUM;
 	bool is_swapchain_image = false;
+	VkImageLayout initialLayout = VK_IMAGE_LAYOUT_MAX_ENUM;
+	VkImageLayout currentLayout = VK_IMAGE_LAYOUT_MAX_ENUM;
+	VkSampleCountFlagBits samples = VK_SAMPLE_COUNT_FLAG_BITS_MAX_ENUM;
+	VkExtent3D extent {};
+	uint32_t mipLevels = 0;
+	uint32_t arrayLayers = 0;
 
 	void self_test() const
 	{
@@ -167,6 +173,9 @@ struct trackedimage : trackedobject
 		assert(imageType != VK_IMAGE_TYPE_MAX_ENUM);
 		assert(flags != VK_IMAGE_CREATE_FLAG_BITS_MAX_ENUM);
 		assert(format != VK_FORMAT_MAX_ENUM);
+		assert(initialLayout != VK_IMAGE_LAYOUT_MAX_ENUM);
+		assert(currentLayout != VK_IMAGE_LAYOUT_MAX_ENUM);
+		assert(samples != VK_SAMPLE_COUNT_FLAG_BITS_MAX_ENUM);
 		trackedobject::self_test();
 	}
 };

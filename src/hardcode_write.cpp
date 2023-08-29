@@ -1843,17 +1843,18 @@ VKAPI_ATTR void VKAPI_CALL trace_vkDestroySurfaceKHR(VkInstance instance, VkSurf
 /// family, and we only check the first one.
 static void internalGetDeviceQueue(const std::vector<VkQueueFamilyProperties>& props, uint32_t queueIndex, uint32_t& realIndex, uint32_t& realFamily)
 {
+	realFamily = 0;
 	for (const auto& f : props)
 	{
 		if (f.queueFlags & VK_QUEUE_GRAPHICS_BIT)
 		{
 			assert(queueIndex <= 1);
-			realFamily = 0; // always virtual queue family zero
 			if (queueIndex == 0) realIndex = 0; // real first queue
 			else if (queueIndex == 1 && f.queueCount == 1) realIndex = 0; // fake second queue redirecting to first real queue
 			else realIndex = 1; // real second queue
 			return;
 		}
+		realFamily++;
 	}
 }
 
@@ -2318,6 +2319,15 @@ static Json::Value trackedimage_json(const trackedimage* t)
 	v["format"] = (unsigned)t->format;
 	v["written"] = (Json::Value::UInt64)t->written;
 	v["updates"] = (unsigned)t->updates;
+	Json::Value arr = Json::arrayValue;
+	arr.append((unsigned)t->extent.width);
+	arr.append((unsigned)t->extent.height);
+	arr.append((unsigned)t->extent.depth);
+	v["extent"] = arr;
+	v["initalLayout"] = (unsigned)t->initialLayout;
+	v["samples"] = (unsigned)t->samples;
+	v["mipLevels"] = (unsigned)t->mipLevels;
+	v["arrayLayers"] = (unsigned)t->arrayLayers;
 	return v;
 }
 

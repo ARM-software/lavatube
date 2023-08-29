@@ -212,7 +212,6 @@ public:
 	std::atomic_int global_frame;
 	std::atomic_int mCallNo;
 	trace_records records;
-	trackedqueue* get_queue_data(VkQueue q) const { if (p__virtualqueues) return (trackedqueue*)q; else return records.VkQueue_index.at(q); }
 
 	trace_metadata meta GUARDED_BY(frame_mutex);
 

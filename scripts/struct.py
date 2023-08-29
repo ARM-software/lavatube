@@ -58,6 +58,17 @@ def struct_header_write(w, selected = None):
 			print >> w, '#endif // %s' % spec.protected_types[name]
 	print >> w
 
+def struct_add_tracking_read(name):
+	if name in ['VkImageMemoryBarrier2', 'VkImageMemoryBarrier']:
+		z.do('trackedimage& image_data = VkImage_index.at(image_index);')
+		z.do('assert(image_data.currentLayout == sptr->oldLayout);')
+		z.do('image_data.currentLayout = sptr->newLayout;')
+
+def struct_add_tracking_write(name):
+	if name in ['VkImageMemoryBarrier2', 'VkImageMemoryBarrier']:
+		z.do('assert(image_data->currentLayout == sptr->oldLayout);')
+		z.do('image_data->currentLayout = sptr->newLayout;')
+
 def struct_impl_read(r, selected = None):
 	for v in spec.root.findall('types/type'):
 		name = v.attrib.get('name')
@@ -85,6 +96,7 @@ def struct_impl_read(r, selected = None):
 				if api and api == 'vulkansc': continue
 				param = util.parameter(p, read=True, funcname=name)
 				param.print_load(param.name, 'sptr->')
+			struct_add_tracking_read(name)
 			z.struct_end()
 			z.dump()
 		print >> r, '}'
@@ -133,6 +145,7 @@ def struct_impl_write(w, selected = None):
 			if name in util.feature_detection_structs:
 				z.do('writer.parent->usage_detection.check_%s(sptr);' % name)
 			util.save_add_tracking(name)
+			struct_add_tracking_write(name)
 			z.struct_end()
 			z.dump()
 		print >> w, '}'
@@ -154,4 +167,3 @@ if __name__ == '__main__':
 	struct_impl_write(w)
 	r.close()
 	w.close()
-
