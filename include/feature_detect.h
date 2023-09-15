@@ -2,6 +2,7 @@
 
 #include <cassert>
 #include <atomic>
+#include <unordered_set>
 #include <vulkan/vulkan.h>
 
 // Handle actually-used feature detection for many features during tracing. Using bool atomics here
@@ -168,9 +169,26 @@ private:
 	struct atomicPhysicalDeviceVulkan11Features core11;
 	struct atomicPhysicalDeviceVulkan12Features core12;
 	struct atomicPhysicalDeviceVulkan13Features core13;
+	std::atomic_bool has_VK_EXT_swapchain_colorspace { false };
+
+	inline bool is_colorspace_ext(VkColorSpaceKHR s)
+	{
+		return (s == VK_COLOR_SPACE_ADOBERGB_LINEAR_EXT || s == VK_COLOR_SPACE_ADOBERGB_NONLINEAR_EXT
+		        || s == VK_COLOR_SPACE_BT2020_LINEAR_EXT || s == VK_COLOR_SPACE_BT709_LINEAR_EXT
+		        || s == VK_COLOR_SPACE_BT709_NONLINEAR_EXT || s == VK_COLOR_SPACE_DCI_P3_LINEAR_EXT
+		        || s == VK_COLOR_SPACE_DCI_P3_NONLINEAR_EXT || s == VK_COLOR_SPACE_DISPLAY_P3_LINEAR_EXT
+		        || s == VK_COLOR_SPACE_DISPLAY_P3_NONLINEAR_EXT || s == VK_COLOR_SPACE_DOLBYVISION_EXT
+		        || s == VK_COLOR_SPACE_EXTENDED_SRGB_LINEAR_EXT || s == VK_COLOR_SPACE_EXTENDED_SRGB_NONLINEAR_EXT
+		        || s == VK_COLOR_SPACE_HDR10_HLG_EXT || s == VK_COLOR_SPACE_HDR10_ST2084_EXT || s == VK_COLOR_SPACE_PASS_THROUGH_EXT);
+	}
 
 public:
 	// --- Checking structures Call these for all these structures after they are successfully used. ---
+
+	void check_VkSwapchainCreateInfoKHR(const VkSwapchainCreateInfoKHR* info)
+	{
+		if (is_colorspace_ext(info->imageColorSpace)) has_VK_EXT_swapchain_colorspace = true;
+	}
 
 	void check_VkPipelineShaderStageCreateInfo(const VkPipelineShaderStageCreateInfo* info)
 	{
@@ -288,6 +306,15 @@ public:
 	}
 
 	// --- Remove unused feature bits from these structures ---
+
+	void adjust_device_extensions(std::unordered_set<std::string>& exts)
+	{
+	}
+
+	void adjust_instance_extensions(std::unordered_set<std::string>& exts)
+	{
+		if (!has_VK_EXT_swapchain_colorspace) exts.erase("VK_EXT_swapchain_colorspace");
+	}
 
 	void adjust_VkPhysicalDeviceFeatures(VkPhysicalDeviceFeatures& incore10)
 	{

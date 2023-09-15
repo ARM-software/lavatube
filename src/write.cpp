@@ -217,6 +217,8 @@ void lava_writer::serialize()
 	if (meta.app.stored_VkPhysicalDeviceVulkan11Features) usage_detection.adjust_VkPhysicalDeviceVulkan11Features(*meta.app.stored_VkPhysicalDeviceVulkan11Features);
 	if (meta.app.stored_VkPhysicalDeviceVulkan12Features) usage_detection.adjust_VkPhysicalDeviceVulkan12Features(*meta.app.stored_VkPhysicalDeviceVulkan12Features);
 	if (meta.app.stored_VkPhysicalDeviceVulkan13Features) usage_detection.adjust_VkPhysicalDeviceVulkan13Features(*meta.app.stored_VkPhysicalDeviceVulkan13Features);
+	usage_detection.adjust_device_extensions(meta.app.device_extensions);
+	usage_detection.adjust_instance_extensions(meta.app.instance_extensions);
 
 	// write metadata to JSON file
 	mJson["global_frames"] = global_frame + 1; // +1 since zero-indexed
