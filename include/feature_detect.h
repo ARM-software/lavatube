@@ -2,6 +2,7 @@
 
 #include <cassert>
 #include <atomic>
+#include <string>
 #include <unordered_set>
 #include <vulkan/vulkan.h>
 
