@@ -148,6 +148,8 @@ public:
 	int local_call_number = 0;
 	lava_writer* parent;
 
+	VkDevice device = VK_NULL_HANDLE;
+	VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
 	VkCommandBuffer commandBuffer = VK_NULL_HANDLE;
 
 	inline void write_api_command(uint16_t id);
@@ -242,6 +244,8 @@ private:
 inline void lava_file_writer::write_api_command(uint16_t id)
 {
 	freeze();
+	device = VK_NULL_HANDLE;
+	physicalDevice = VK_NULL_HANDLE;
 	commandBuffer = VK_NULL_HANDLE;
 	if (pending_barrier.load(std::memory_order_relaxed))
 	{

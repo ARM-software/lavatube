@@ -729,6 +729,21 @@ class parameter(object):
 			if self.funcname not in ignore_on_read:
 				z.do('if (%s != VK_NULL_HANDLE) index_to_%s.unset(%s);' % (varname, type, toindex(type)))
 
+		# Track our currently executing device
+		if self.type == 'VkDevice' and self.funcname[0] == 'v' and self.name == 'device':
+			z.do('reader.device = device;')
+			z.do('reader.physicalDevice = VkDevice_index.at(device_index).physicalDevice;')
+		if self.type == 'VkPhysicalDevice' and self.funcname[0] == 'v' and self.name == 'physicalDevice':
+			z.do('reader.physicalDevice = physicalDevice;')
+		if self.type == 'VkQueue' and self.funcname[0] == 'v' and self.name == 'queue':
+			z.do('trackedqueue& queue_data = VkQueue_index.at(queue_index);')
+			z.do('reader.device = queue_data.device;')
+			z.do('reader.physicalDevice = queue_data.physicalDevice;')
+		if self.type == 'VkCommandBuffer' and self.name == 'commandBuffer' and self.funcname[0] == 'v':
+			z.do('trackedcmdbuffer_replay& commandbuffer_data = VkCommandBuffer_index.at(commandbuffer_index);')
+			z.do('reader.device = commandbuffer_data.device;')
+			z.do('reader.physicalDevice = commandbuffer_data.physicalDevice;')
+
 		if self.optional and not self.name in skip_opt_check:
 			z.brace_end()
 
@@ -948,8 +963,18 @@ class parameter(object):
 			z.do('object_data->name = sptr->pObjectName;')
 		if self.funcname == 'VkDebugUtilsObjectNameInfoEXT' and self.name == 'pObjectName':
 			z.do('object_data->name = sptr->pObjectName;')
-		if 'vkCmd' in self.funcname and self.type == 'VkCommandBuffer' and self.name == 'commandBuffer':
+		if self.type == 'VkDevice' and self.funcname[0] == 'v' and self.name == 'device':
+			z.do('writer.device = device;')
+			z.do('writer.physicalDevice = device_data->physicalDevice;')
+		if self.type == 'VkPhysicalDevice' and self.funcname[0] == 'v' and self.name == 'physicalDevice':
+			z.do('writer.physicalDevice = physicalDevice;')
+		if self.type == 'VkQueue' and self.funcname[0] == 'v' and self.name == 'queue':
+			z.do('writer.device = queue_data->device;')
+			z.do('writer.physicalDevice = queue_data->physicalDevice;')
+		if self.type == 'VkCommandBuffer' and self.name == 'commandBuffer':
 			z.do('writer.commandBuffer = %s;' % varname) # always earlier in the parameter list than images and buffers, fortunately
+			z.do('writer.device = commandbuffer_data->device;')
+			z.do('writer.physicalDevice = commandbuffer_data->physicalDevice;')
 		if self.funcname in ['vkBindImageMemory', 'vkBindBufferMemory', 'VkBindImageMemoryInfo', 'VkBindImageMemoryInfoKHR', 'VkBindBufferMemoryInfo', 'VkBindBufferMemoryInfoKHR'] and self.name in ['image', 'buffer']:
 			z.do('const auto* meminfo = writer.parent->records.VkDeviceMemory_index.at(%s);' % (owner + 'memory'))
 			z.do('writer.write_uint32_t(static_cast<uint32_t>(meminfo->propertyFlags)); // save memory flags')
@@ -1148,6 +1173,8 @@ def save_add_tracking(name):
 		z.do('add->call = writer.local_call_number;')
 		if type == 'VkCommandBuffer':
 			z.do('add->pool = pAllocateInfo->commandPool;')
+			z.do('add->device = device;')
+			z.do('add->physicalDevice = writer.parent->records.VkDevice_index.at(device)->physicalDevice;')
 			z.do('auto* commandpool_data = writer.parent->records.VkCommandPool_index.at(pAllocateInfo->commandPool);')
 			z.do('add->pool_index = commandpool_data->index;')
 			z.do('add->level = pAllocateInfo->level;')
@@ -1232,6 +1259,10 @@ def load_add_tracking(name):
 			z.brace_begin()
 			if type == 'VkSwapchainKHR':
 				z.do('if (is_noscreen()) pSwapchains[i] = (VkSwapchainKHR)((intptr_t)indices[i] + 1);')
+			elif type == 'VkCommandBuffer':
+				z.do('trackedcmdbuffer_replay& commandbuffer_data = VkCommandBuffer_index.at(indices[i]);')
+				z.do('commandbuffer_data.device = device;')
+				z.do('commandbuffer_data.physicalDevice = VkDevice_index.at(device_index).physicalDevice;')
 			z.do('DLOG2("insert %s into %s index %%u at pos=%%u", indices[i], i);' % (type, name))
 			z.do('if (%s[i]) index_to_%s.set(indices[i], %s[i]);' % (param, type, param))
 			if type == 'VkSwapchainKHR':

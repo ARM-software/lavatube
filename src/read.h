@@ -32,6 +32,8 @@ struct trackedcmdbuffer_replay : trackable
 {
 	using trackable::trackable; // inherit constructor
 	uint32_t pool = 0;
+	VkDevice device = VK_NULL_HANDLE;
+	VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
 };
 
 struct trackeddescriptorset_replay : trackable
@@ -137,6 +139,8 @@ public:
 	}
 
 	lava_reader* parent;
+	VkDevice device = VK_NULL_HANDLE;
+	VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
 
 	/// Current local frame
 	int local_frame = 0;

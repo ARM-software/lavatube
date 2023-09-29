@@ -106,6 +106,8 @@ static void replay_thread(int thread_id)
 			const uint32_t buffer_index = t.read_handle();
 			buffer_update(t, device_index, buffer_index);
 		}
+		t.device = VK_NULL_HANDLE;
+		t.physicalDevice = VK_NULL_HANDLE;
 	}
 }
 

@@ -303,6 +303,8 @@ struct trackedcmdbuffer_trace : trackable
 {
 	using trackable::trackable; // inherit constructor
 	VkCommandPool pool = VK_NULL_HANDLE;
+	VkDevice device = VK_NULL_HANDLE;
+	VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
 	uint32_t pool_index = CONTAINER_INVALID_INDEX;
 	VkCommandBufferLevel level = VK_COMMAND_BUFFER_LEVEL_MAX_ENUM;
 	struct
@@ -351,6 +353,8 @@ struct trackedcmdbuffer_trace : trackable
 	{
 		for (const auto& pair : touched) { assert(pair.first->accessible); pair.first->self_test(); pair.second.self_test(); }
 		assert(pool != VK_NULL_HANDLE);
+		assert(device != VK_NULL_HANDLE);
+		assert(physicalDevice != VK_NULL_HANDLE);
 		assert(pool_index != CONTAINER_INVALID_INDEX);
 		assert(level != VK_COMMAND_BUFFER_LEVEL_MAX_ENUM);
 		trackable::self_test();
@@ -386,6 +390,7 @@ struct trackedqueue : trackable
 {
 	using trackable::trackable; // inherit constructor
 	VkDevice device = VK_NULL_HANDLE;
+	VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
 	uint32_t queueIndex = UINT32_MAX;
 	uint32_t queueFamily = UINT32_MAX;
 	uint32_t realIndex = UINT32_MAX;
@@ -396,6 +401,7 @@ struct trackedqueue : trackable
 	void self_test() const
 	{
 		assert(device != VK_NULL_HANDLE);
+		assert(physicalDevice != VK_NULL_HANDLE);
 		assert(queueFlags != VK_QUEUE_FLAG_BITS_MAX_ENUM);
 		assert(realQueue != VK_NULL_HANDLE);
 		assert(queueFlags != VK_QUEUE_FLAG_BITS_MAX_ENUM);

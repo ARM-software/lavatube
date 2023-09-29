@@ -1409,6 +1409,7 @@ void retrace_vkGetDeviceQueue2(lava_file_reader& reader)
 		queue_data.realFamily = realFamily;
 		queue_data.realQueue = queue;
 		queue_data.queueFlags = props.queueFlags;
+		queue_data.physicalDevice = VkDevice_index.at(device_index).physicalDevice;
 	}
 }
 
@@ -1447,6 +1448,7 @@ void retrace_vkGetDeviceQueue(lava_file_reader& reader)
 		queue_data.realFamily = realFamily;
 		queue_data.realQueue = queue;
 		queue_data.queueFlags = props.queueFlags;
+		queue_data.physicalDevice = VkDevice_index.at(device_index).physicalDevice;
 	}
 }
 

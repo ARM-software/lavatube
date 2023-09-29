@@ -1894,6 +1894,7 @@ VKAPI_ATTR void VKAPI_CALL trace_vkGetDeviceQueue2(VkDevice device, const VkDevi
 		queue_data->realQueue = *pQueue;
 		queue_data->tid = writer.thread_index();
 		queue_data->call = writer.local_call_number;
+		queue_data->physicalDevice = writer.parent->records.VkDevice_index.at(device)->physicalDevice;
 	}
 	auto* queue_data = writer.parent->records.VkQueue_index.at(*pQueue);
 	assert(queue_data);
@@ -1941,6 +1942,7 @@ VKAPI_ATTR void VKAPI_CALL trace_vkGetDeviceQueue(VkDevice device, uint32_t queu
 		queue_data->realQueue = *pQueue;
 		queue_data->tid = writer.thread_index();
 		queue_data->call = writer.local_call_number;
+		queue_data->physicalDevice = writer.parent->records.VkDevice_index.at(device)->physicalDevice;
 	}
 	auto* queue_data = writer.parent->records.VkQueue_index.at(*pQueue);
 	assert(queue_data);

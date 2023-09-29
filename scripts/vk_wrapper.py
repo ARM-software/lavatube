@@ -102,7 +102,6 @@ def print_wrapper_header(name):
 	print >> w, '#define VK_NO_PROTOTYPES'
 	print >> w, '#include "vulkan/vulkan.h"'
 	print >> w, '#include "vulkan/vk_layer.h"'
-	print >> w, '#include "lavatube.h"'
 	print >> w
 	for name in spec.functions:
 		if name in spec.disabled_functions or spec.str_contains_vendor(name):
@@ -139,6 +138,7 @@ def print_wrapper_cpp(name):
 	print >> w, '#include <stdlib.h>'
 	print >> w, '#include <dlfcn.h>'
 	print >> w, '#include <string>'
+	print >> w, '#include "lavatube.h"'
 	print >> w
 	print >> w, '#include <vk_wrapper_auto.h>'
 	print >> w
