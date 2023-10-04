@@ -149,14 +149,21 @@ trace_post_calls = [ 'vkCreateInstance', 'vkCreateDevice', 'vkDestroyInstance', 
 		'vkGetDeviceImageMemoryRequirements', 'vkGetDeviceImageMemoryRequirementsKHR', 'vkGetPhysicalDeviceFeatures2', 'vkGetPhysicalDeviceFeatures2KHR',
 		'vkGetPhysicalDeviceMemoryProperties2', 'vkGetDeviceImageSparseMemoryRequirementsKHR', 'vkGetDeviceImageSparseMemoryRequirements' ]
 skip_post_calls = [ 'vkGetQueryPoolResults', 'vkGetPhysicalDeviceXcbPresentationSupportKHR' ]
-# Awful workaround to be able to rewrite inputs while tracing: These input variables are copied and replaced to not be const anymore.
+# Workaround to be able to rewrite parameter inputs while tracing: These input variables are copied and replaced to not be const anymore.
 deconstify = {
 	'vkAllocateMemory' : 'pAllocateInfo',
 	'vkCreateInstance' : 'pCreateInfo',
 	'vkCreateDevice' : 'pCreateInfo',
 	'vkCreateSampler' : 'pCreateInfo',
 	'vkCreateSwapchainKHR' : 'pCreateInfo',
+	'vkCreateCommandPool' : 'pCreateInfo',
+	'vkGetPhysicalDeviceQueueFamilyPerformanceQueryPassesKHR' : 'pPerformanceQueryCreateInfo',
+	'vkCreateVideoSessionKHR' : 'pCreateInfo',
 }
+# Workaround to deconstify nested structures
+deconst_struct = [
+	'VkDeviceQueueCreateInfo', 'VkDeviceQueueInfo2', 'VkQueryPoolPerformanceCreateInfoKHR', 'VkVideoSessionCreateInfoKHR', 'VkDeviceCreateInfo', 'VkCommandPoolCreateInfo'
+]
 # Subclassing of trackable
 trackable_type_map_general = { 'VkBuffer': 'trackedbuffer', 'VkImage': 'trackedimage', 'VkCommandBuffer': 'trackedcmdbuffer', 'VkDescriptorSet': 'trackeddescriptorset',
 	'VkDeviceMemory': 'trackedmemory', 'VkFence': 'trackedfence', 'VkPipeline': 'trackedpipeline', 'VkImageView': 'trackedimageview', 'VkBufferView': 'trackedbufferview',
@@ -456,6 +463,10 @@ class parameter(object):
 
 	def print_struct(self, mytype, varname, owner, size = None):
 		global z
+		side = ('reader' if self.read else 'writer')
+
+		if mytype in deconst_struct and not self.read and self.funcname[0] == 'V':
+			z.do('%s* %s_impl = %s.pool.allocate<%s>(%s);' % (mytype, self.name, side, mytype, '1' if not size else size))
 
 		accessor = varname
 		if size:
@@ -473,7 +484,20 @@ class parameter(object):
 		elif mytype == 'VkDeviceCreateInfo' and self.read: accessor += ', physicalDevice'
 		elif ('VkBindImageMemoryInfo' in mytype or 'VkBindBufferMemoryInfo' in mytype) and self.read: accessor += ', device'
 
-		z.do('%s_%s(%s, %s);' % (('read' if self.read else 'write'), mytype, ('reader' if self.read else 'writer'), accessor))
+		if self.funcname[0] == 'V' and mytype in deconst_struct and not self.read: # we cannot modify passed in memory when writing
+			if size:
+				z.do('%s_impl[sidx] = %s[sidx]; // struct copy, discarding the const' % (self.name, varname))
+				z.do('%s_%s(%s, &%s_impl[sidx]);' % (('read' if self.read else 'write'), mytype, side, self.name))
+				z.do('%s = %s_impl; // replacing pointer' % (varname, self.name))
+			else:
+				z.do('*%s_impl = *%s; // struct copy, discarding the const' % (self.name, varname))
+				z.do('%s_%s(%s, %s_impl);' % (('read' if self.read else 'write'), mytype, side, self.name))
+				z.do('%s = %s_impl; // replacing pointer' % (accessor, self.name))
+		elif mytype in deconst_struct and self.read and self.funcname[0] == 'V':
+			z.do('%s_%s(%s, (%s*)%s);' % (('read' if self.read else 'write'), mytype, side, mytype, accessor))
+		else:
+			z.do('%s_%s(%s, %s);' % (('read' if self.read else 'write'), mytype, side, accessor))
+
 		if size:
 			z.loop_end()
 

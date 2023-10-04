@@ -53,7 +53,8 @@ def struct_header_write(w, selected = None):
 			print >> w, '#ifdef %s' % spec.protected_types[name]
 		structlist.append(name)
 		accessor = '%s* sptr' % name
-		print >> w, 'static void write_%s(lava_file_writer& writer, const %s);' % (name, accessor)
+		modifier = 'const ' if not name in util.deconst_struct else ''
+		print >> w, 'static void write_%s(lava_file_writer& writer, %s%s);' % (name, modifier, accessor)
 		if name in spec.protected_types:
 			print >> w, '#endif // %s' % spec.protected_types[name]
 	print >> w
@@ -119,7 +120,8 @@ def struct_impl_write(w, selected = None):
 		if name == 'VkPipelineViewportStateCreateInfo': special = ', const VkPipelineDynamicStateCreateInfo* pDynamicState'
 		elif name == 'VkCommandBufferBeginInfo': special = ', trackedcmdbuffer_trace* tcmd'
 		elif name == 'VkWriteDescriptorSet': special = ', bool ignoreDstSet'
-		print >> w, 'static void write_%s(lava_file_writer& writer, const %s%s)' % (name, accessor, special)
+		modifier = 'const ' if not name in util.deconst_struct else ''
+		print >> w, 'static void write_%s(lava_file_writer& writer, %s%s%s)' % (name, modifier, accessor, special)
 		print >> w, '{'
 		if v.attrib.get('alias'):
 			print >> w, '\twrite_%s(writer, sptr);' % v.attrib.get('alias')

@@ -1864,7 +1864,7 @@ static void internalGetDeviceQueue(const std::vector<VkQueueFamilyProperties>& p
 	}
 }
 
-VKAPI_ATTR void VKAPI_CALL trace_vkGetDeviceQueue2(VkDevice device, const VkDeviceQueueInfo2* pQueueInfo, VkQueue* pQueue)
+VKAPI_ATTR void VKAPI_CALL trace_vkGetDeviceQueue2(VkDevice device, const VkDeviceQueueInfo2* pQueueInfo_orig, VkQueue* pQueue)
 {
 	lava_file_writer& writer = write_header("vkGetDeviceQueue2", VKGETDEVICEQUEUE2);
 	writer.write_handle(writer.parent->records.VkDevice_index.at(device));
@@ -1872,7 +1872,10 @@ VKAPI_ATTR void VKAPI_CALL trace_vkGetDeviceQueue2(VkDevice device, const VkDevi
 	trackedphysicaldevice* physicaldevice_data = writer.parent->records.VkPhysicalDevice_index.at(device_data->physicalDevice);
 	writer.physicalDevice = device_data->physicalDevice;
 	writer.device = device;
+	VkDeviceQueueInfo2* pQueueInfo = writer.pool.allocate<VkDeviceQueueInfo2>(1);
+	*pQueueInfo = *pQueueInfo_orig;
 	write_VkDeviceQueueInfo2(writer, pQueueInfo);
+
 	uint32_t realIndex = pQueueInfo->queueIndex;
 	uint32_t realFamily = pQueueInfo->queueFamilyIndex;
 
