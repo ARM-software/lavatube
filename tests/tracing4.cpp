@@ -15,6 +15,8 @@ static int flush_variant = 0;
 
 static std::string filename()
 {
+	const char* outpath = getenv("LAVATUBE_DESTINATION");
+	if (outpath) return outpath;
 	return "tracing_4_q" + _to_string(queue_variant) + "_m" + _to_string(map_variant) + "_F" + _to_string(flush_variant);
 }
 
