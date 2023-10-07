@@ -173,7 +173,6 @@ lava_writer::lava_writer() : global_frame(0)
 	// need a null terminator as it's a fixed size non-string array)
 	sntimef(fakeUUID, VK_UUID_SIZE + 1, "rdoc%y%m%d%H%M%S");
 
-	mCallNo = 0;
 	library = vkuCreateWrapper();
 	mJson["lavatube_version_major"] = LAVATUBE_VERSION_MAJOR;
 	mJson["lavatube_version_minor"] = LAVATUBE_VERSION_MINOR;
@@ -285,7 +284,6 @@ void lava_writer::finish()
 	mJson = Json::Value();
 	global_frame.exchange(0);
 	tid = -1;
-	mCallNo = 0;
 	frame_mutex.unlock();
 }
 

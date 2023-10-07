@@ -56,7 +56,7 @@ static int get_env_bool(const char* name, int v)
 		if (tmpstr[0] == 'F' || tmpstr[0] == 'f') return 0;
 		else if (tmpstr[0] == 'T' || tmpstr[0] == 't') return 1;
 		v = atoi(tmpstr);
-		if (v > 1 || v < 0) DIE("Invalid value for parameter %s: %s", name, tmpstr);
+		if (v > 1 || v < 0) { fprintf(stderr, "Invalid value for parameter %s: %s\n", name, tmpstr); exit(-1); }
 	}
 	return v;
 }

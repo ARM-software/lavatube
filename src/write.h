@@ -212,7 +212,6 @@ public:
 	void new_frame();
 
 	std::atomic_int global_frame;
-	std::atomic_int mCallNo;
 	trace_records records;
 
 	trace_metadata meta GUARDED_BY(frame_mutex);
