@@ -162,6 +162,13 @@ struct atomicPhysicalDeviceVulkan13Features
 	std::atomic_bool maintenance4 { false };
 };
 
+static __attribute__((pure)) inline const void* get_extension(const void* sptr, VkStructureType sType)
+{
+	const VkBaseOutStructure* ptr = (VkBaseOutStructure*)sptr;
+	while (ptr != nullptr && ptr->sType != sType) ptr = ptr->pNext;
+	return ptr;
+}
+
 struct feature_detection
 {
 private:
@@ -171,6 +178,7 @@ private:
 	struct atomicPhysicalDeviceVulkan12Features core12;
 	struct atomicPhysicalDeviceVulkan13Features core13;
 	std::atomic_bool has_VK_EXT_swapchain_colorspace { false };
+	std::atomic_bool has_VkPhysicalDeviceShaderAtomicInt64Features { false };
 
 	inline bool is_colorspace_ext(VkColorSpaceKHR s)
 	{
@@ -185,6 +193,13 @@ private:
 
 public:
 	// --- Checking structures Call these for all these structures after they are successfully used. ---
+
+	void check_VkDeviceCreateInfo(const VkDeviceCreateInfo* info)
+	{
+		// This also handles VK_EXT_shader_image_atomic_int64 which is an alias
+		VkPhysicalDeviceShaderAtomicInt64Features* pdsai64f = (VkPhysicalDeviceShaderAtomicInt64Features*)get_extension(info, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_ATOMIC_INT64_FEATURES);
+		if (pdsai64f && (pdsai64f->shaderBufferInt64Atomics || pdsai64f->shaderSharedInt64Atomics)) has_VkPhysicalDeviceShaderAtomicInt64Features = true;
+	}
 
 	void check_VkSwapchainCreateInfoKHR(const VkSwapchainCreateInfoKHR* info)
 	{
@@ -253,6 +268,9 @@ public:
 		if (info->flags & VK_BUFFER_CREATE_SPARSE_BINDING_BIT)
 		{
 			core10.sparseBinding = true;
+		}
+		if (info->flags & VK_BUFFER_CREATE_SPARSE_RESIDENCY_BIT)
+		{
 			core10.sparseResidencyBuffer = true;
 		}
 		if (info->flags & VK_BUFFER_CREATE_SPARSE_ALIASED_BIT) core10.sparseResidencyAliased = true;
@@ -310,6 +328,8 @@ public:
 
 	void adjust_device_extensions(std::unordered_set<std::string>& exts)
 	{
+		if (!has_VkPhysicalDeviceShaderAtomicInt64Features) exts.erase("VK_KHR_shader_atomic_int64");
+		if (!has_VkPhysicalDeviceShaderAtomicInt64Features) exts.erase("VK_EXT_shader_image_atomic_int64"); // alias of above
 	}
 
 	void adjust_instance_extensions(std::unordered_set<std::string>& exts)
