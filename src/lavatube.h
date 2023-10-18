@@ -14,16 +14,15 @@
 #include "vulkan_ext.h"
 #include "containers.h"
 
-#include <unordered_set>
-#include <list>
 #include <vulkan/vk_icd.h>
+#include <list>
+#include <unordered_map>
+#include <unordered_set>
 
 class lava_file_reader;
 class lava_file_writer;
 
 using lava_trace_func = PFN_vkVoidFunction;
-
-#define LAVATUBE_VIRTUAL_QUEUE 0xbeefbeef
 
 /// pending memory checking, wait on fence
 enum QueueState
@@ -231,18 +230,6 @@ struct trackedswapchain : trackable
 	}
 };
 
-struct trackedswapchain_trace : trackedswapchain
-{
-	using trackedswapchain::trackedswapchain; // inherit constructor
-	VkQueue queue = VK_NULL_HANDLE;
-
-	void self_test() const
-	{
-		assert(queue != VK_NULL_HANDLE);
-		trackedswapchain::self_test();
-	}
-};
-
 struct trackedswapchain_replay : trackedswapchain
 {
 	using trackedswapchain::trackedswapchain; // inherit constructor
@@ -264,6 +251,7 @@ struct trackedswapchain_replay : trackedswapchain
 	{
 		if (!initialized) return;
 		assert(swapchain != VK_NULL_HANDLE);
+		assert(device != VK_NULL_HANDLE);
 		if (p__virtualswap)
 		{
 			assert(virtual_cmdpool != VK_NULL_HANDLE);
@@ -391,24 +379,16 @@ struct trackedqueue : trackable
 	using trackable::trackable; // inherit constructor
 	VkDevice device = VK_NULL_HANDLE;
 	VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
-	uint32_t queueIndex = UINT32_MAX;
-	uint32_t queueFamily = UINT32_MAX;
-	uint32_t realIndex = UINT32_MAX;
-	uint32_t realFamily = UINT32_MAX;
-	VkQueue realQueue = VK_NULL_HANDLE;
-	VkQueueFlags queueFlags = VK_QUEUE_FLAG_BITS_MAX_ENUM;
+	uint32_t queueIndex = UINT32_MAX; // virtual pretend index
+	uint32_t queueFamily = UINT32_MAX; // virtual pretend family
+	VkQueueFlags queueFlags = VK_QUEUE_FLAG_BITS_MAX_ENUM; // tracer only
 
 	void self_test() const
 	{
 		assert(device != VK_NULL_HANDLE);
 		assert(physicalDevice != VK_NULL_HANDLE);
-		assert(queueFlags != VK_QUEUE_FLAG_BITS_MAX_ENUM);
-		assert(realQueue != VK_NULL_HANDLE);
-		assert(queueFlags != VK_QUEUE_FLAG_BITS_MAX_ENUM);
 		assert(queueIndex != UINT32_MAX);
-		assert(realIndex != UINT32_MAX);
 		assert(queueFamily != UINT32_MAX);
-		assert(realFamily != UINT32_MAX);
 		trackable::self_test();
 	}
 };
@@ -449,4 +429,162 @@ struct trackedframebuffer : trackable
 		for (const auto v : imageviews) v->self_test();
 		trackable::self_test();
 	}
+};
+
+/// Queue submission tracker. Requires a mutex to be held before use.
+struct queue_tracker
+{
+	struct submission { VkDevice device; VkQueue virtual_queue; VkFence fence; uint64_t start; uint64_t end; VkQueue real_queue; uint32_t real_index; uint32_t virtual_index; int frame; };
+
+	void register_real_queue(VkDevice device, VkQueue real_queue)
+	{
+		auto& queues = real_queues[device];
+		if (std::find(queues.cbegin(), queues.cend(), real_queue) != queues.cend()) return; // already registered
+		queues.push_back(real_queue);
+		jobcount[device].push_back(0);
+	}
+
+	/// Grab next real queue to use, optionally register it to a fence. Locks the virtual queue to a real queue until released.
+	VkQueue submit(VkDevice device, uint32_t real_index, VkQueue virtual_queue, VkFence fence, int frame)
+	{
+		uint32_t least = 0;  // least utilised
+		VkQueue least_queue = VK_NULL_HANDLE;
+		uint32_t lowest = UINT32_MAX; // lowest count
+		// Check if any is unused and on the right device
+		for (uint32_t i = 0; i < real_queues[device].size(); i++)
+		{
+			VkQueue real_queue = real_queues[device].at(i);
+			if (jobcount[device][i] == 0)
+			{
+				jobcount[device][i]++;
+				submission s { device, virtual_queue, fence, gettime(), 0, real_queue, i, real_index, frame };
+				submissions.push_back(s);
+				return real_queue;
+			}
+			if (lowest > jobcount[device][i]) { lowest = jobcount[device][i]; least = i; least_queue = real_queue; }
+		}
+		// None are unused, pick the one that had the least amount of jobs
+		assert(least_queue != VK_NULL_HANDLE);
+		jobcount[device][least]++;
+		submission s { device, virtual_queue, fence, gettime(), 0, least_queue, least, real_index, frame };
+		submissions.push_back(s);
+		return least_queue;
+	}
+
+	void release(VkFence fence)
+	{
+		for (auto& pair : jobcount)
+		{
+			for (auto it = submissions.begin(); it != submissions.end(); ++it)
+			{
+				if (it->fence == fence) // fences are unique, no need to test for device
+				{
+					it->end = gettime();
+					assert(pair.second[it->real_index] > 0);
+					pair.second[it->real_index]--;
+					history.splice(history.begin(), submissions, it);
+					return; // only ever one
+				}
+			}
+		}
+	}
+
+	VkResult waitIdleAndRelease(VkQueue virtual_queue)
+	{
+		VkResult ret = VK_ERROR_VALIDATION_FAILED_EXT;
+		VkQueue real_queue = VK_NULL_HANDLE;
+		for (auto& pair : jobcount)
+		{
+			for (auto it = submissions.begin(); it != submissions.end(); ++it)
+			{
+				if (it->virtual_queue == virtual_queue) // queues are unique, no need to test for device
+				{
+					assert(real_queue == VK_NULL_HANDLE || real_queue == it->real_queue);
+					if (real_queue == VK_NULL_HANDLE) // we need to run wait for idle _before_ release
+					{
+						real_queue = it->real_queue;
+						ret = wrap_vkQueueWaitIdle(real_queue);
+					}
+					it->end = gettime();
+					assert(pair.second[it->real_index] > 0);
+					pair.second[it->real_index]--;
+					auto splice_iter = it++;
+					history.splice(history.begin(), submissions, splice_iter);
+				}
+			}
+		}
+		return ret;
+	}
+
+	void release(VkQueue virtual_queue)
+	{
+		VkQueue real_queue = VK_NULL_HANDLE;
+		for (auto& pair : jobcount)
+		{
+			for (auto it = submissions.begin(); it != submissions.end(); ++it)
+			{
+				if (it->virtual_queue == virtual_queue) // queues are unique, no need to test for device
+				{
+					assert(real_queue == VK_NULL_HANDLE || real_queue == it->real_queue);
+					it->end = gettime();
+					assert(pair.second[it->real_index] > 0);
+					pair.second[it->real_index]--;
+					auto splice_iter = it++;
+					history.splice(history.begin(), submissions, splice_iter);
+					real_queue = it->real_queue;
+				}
+			}
+		}
+		(void)real_queue; // stop compiler complaining in release mode
+	}
+
+	void release(VkDevice device)
+	{
+		for (auto it = submissions.begin(); it != submissions.end(); ++it)
+		{
+			if (it->device == device)
+			{
+				it->end = gettime();
+				assert(jobcount[device][it->real_index] > 0);
+				jobcount[device][it->real_index]--;
+				auto splice_iter = it++;
+				history.splice(history.begin(), submissions, splice_iter);
+			}
+		}
+	}
+
+	std::list<submission> submissions;
+	std::list<submission> history;
+	std::unordered_map<VkDevice, std::vector<uint32_t>> jobcount;
+	std::unordered_map<VkDevice, std::vector<VkQueue>> real_queues;
+
+	// Queue family tracker. Requires a mutex to be held before use.
+
+	/// Create a unique number for our virtual queue
+	void register_virtual_queue(VkDevice device, uint32_t virtual_family, uint32_t virtual_queue_index, VkQueue virtual_queue) { virtual_queues[calc_queue_number(device, virtual_family, virtual_queue_index)] = virtual_queue; }
+	VkQueue get_virtual_queue(VkDevice device, uint32_t virtual_family, uint32_t virtual_queue_index) const { return virtual_queues.at(calc_queue_number(device, virtual_family, virtual_queue_index)); }
+
+	/// We pick the graphics queue family with the most queues as our selected queue family for graphics.
+	void register_queue_families(VkPhysicalDevice physicalDevice, uint32_t count, VkQueueFamilyProperties* props)
+	{
+		if (selected_queue_family_index.count(physicalDevice) > 0) return; // already registered
+		uint32_t max = 0;
+		for (uint32_t i = 0; i < count; i++)
+		{
+			if ((props[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) && props[i].queueCount > max)
+			{
+				selected_queue_family_index[physicalDevice] = i;
+				max = props[i].queueCount;
+			}
+		}
+	}
+
+	/// Translate virtual to real queue family index
+	uint32_t real_queue_family(VkPhysicalDevice physicalDevice, uint32_t virtual_family = 0) const { (void)virtual_family; return selected_queue_family_index.at(physicalDevice); }
+
+	std::unordered_map<uint64_t, VkQueue> virtual_queues;
+	std::unordered_map<VkPhysicalDevice, int> selected_queue_family_index;
+
+private:
+	uint64_t calc_queue_number(VkDevice device, uint32_t virtual_family, uint32_t virtual_queue_index) const { return (uint64_t)device + (virtual_family << 5) + virtual_queue_index + 1; }
 };

@@ -712,12 +712,6 @@ static void trace_post_vkQueuePresentKHR(lava_file_writer& writer, VkResult resu
 	assert(pPresentInfo->swapchainCount == 1); // more than one not yet supported
 	DLOG("Presenting with swapchain image index %u", pPresentInfo->pImageIndices[0]);
 	if (result != VK_SUCCESS) ILOG("vkQueuePresentKHR error: %s", errorString(result));
-	const auto* queue_data = writer.parent->records.VkQueue_index.at(queue);
-	for (unsigned i = 0; i < pPresentInfo->swapchainCount; i++)
-	{
-		auto* swapchain_data = writer.parent->records.VkSwapchainKHR_index.at(pPresentInfo->pSwapchains[i]);
-		swapchain_data->queue = queue_data->realQueue;
-	}
 	lava_writer& instance = lava_writer::instance();
 	instance.new_frame();
 }
@@ -905,6 +899,9 @@ static void trace_pre_vkCreateDevice(VkPhysicalDevice physicalDevice, VkDeviceCr
 	instance.meta.stored_VkQueueFamilyProperties.resize(families);
 	wrap_vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice, &families, instance.meta.stored_VkQueueFamilyProperties.data());
 
+	// Set up virtual queue families.
+	instance.queues.register_queue_families(physicalDevice, instance.meta.stored_VkQueueFamilyProperties.size(), instance.meta.stored_VkQueueFamilyProperties.data());
+
 	if (pCreateInfo->pEnabledFeatures)
 	{
 		instance.meta.app.stored_VkPhysicalDeviceFeatures2 = new VkPhysicalDeviceFeatures2();
@@ -1012,6 +1009,39 @@ static void trace_post_vkCreateDevice(lava_file_writer& writer, VkResult result,
 
 	frame_mutex.lock();
 	Json::Value& r = instance.json();
+
+	// Set up virtual queues. If we don't use virtual queues, we track a queue from moment of first vkGetDeviceQueue instead.
+	if (p__virtualqueues > 0)
+	{
+		uint32_t queueCount = 0;
+		for (uint32_t i = 0; i < pCreateInfo->queueCreateInfoCount; i++)
+		{
+			if (pCreateInfo->pQueueCreateInfos[i].queueFamilyIndex == 0 && p__virtualqueues > 0)
+			{
+				queueCount += pCreateInfo->pQueueCreateInfos[i].queueCount;
+			}
+		}
+		const uint32_t realFamily = writer.parent->queues.real_queue_family(physicalDevice);
+		const uint32_t queueMax = instance.meta.stored_VkQueueFamilyProperties.at(realFamily).queueCount;
+		for (uint32_t i = 0; i < queueCount; i++)
+		{
+			auto* queue_data = writer.parent->records.VkQueue_index.add_self(lava_writer::instance().global_frame);
+			writer.parent->queues.register_virtual_queue(*pDevice, realFamily, i, (VkQueue)queue_data);
+			queue_data->queueIndex = i;
+			queue_data->queueFamily = 0;
+			queue_data->queueFlags = instance.meta.stored_VkQueueFamilyProperties[realFamily].queueFlags;
+			queue_data->device = *pDevice;
+			queue_data->tid = writer.thread_index();
+			queue_data->call = writer.local_call_number;
+			queue_data->physicalDevice = writer.parent->records.VkDevice_index.at(*pDevice)->physicalDevice;
+			if (i < queueMax) // register real queues
+			{
+				VkQueue queue = VK_NULL_HANDLE;
+				wrap_vkGetDeviceQueue(*pDevice, realFamily, i, &queue);
+				writer.parent->queues.register_real_queue(*pDevice, queue);
+			}
+		}
+	}
 
 	// -- Save information on tracing device --
 #ifdef VK_USE_PLATFORM_ANDROID_KHR
@@ -1839,120 +1869,78 @@ VKAPI_ATTR void VKAPI_CALL trace_vkDestroySurfaceKHR(VkInstance instance, VkSurf
 	wrap_vkDestroySurfaceKHR(instance, surface, pAllocator);
 }
 
-/// Map virtual queue to real queue. Since we cannot reverse map from one family to two, the two graphics queues must be on the same
-/// family, and we only check the first one.
-static void internalGetDeviceQueue(const std::vector<VkQueueFamilyProperties>& props, uint32_t queueIndex, uint32_t& realIndex, uint32_t& realFamily)
-{
-	realFamily = 0;
-	for (const auto& f : props)
-	{
-		if (f.queueFlags & VK_QUEUE_GRAPHICS_BIT)
-		{
-			assert(queueIndex <= 1);
-			if (queueIndex == 0) realIndex = 0; // real first queue
-			else if (queueIndex == 1 && f.queueCount == 1) realIndex = 0; // fake second queue redirecting to first real queue
-			else realIndex = 1; // real second queue
-			return;
-		}
-		realFamily++;
-	}
-}
-
 VKAPI_ATTR void VKAPI_CALL trace_vkGetDeviceQueue2(VkDevice device, const VkDeviceQueueInfo2* pQueueInfo_orig, VkQueue* pQueue)
 {
 	lava_file_writer& writer = write_header("vkGetDeviceQueue2", VKGETDEVICEQUEUE2);
 	writer.write_handle(writer.parent->records.VkDevice_index.at(device));
 	trackeddevice* device_data = writer.parent->records.VkDevice_index.at(device);
-
+	writer.physicalDevice = device_data->physicalDevice;
+	writer.device = device;
 	VkDeviceQueueInfo2* pQueueInfo = writer.pool.allocate<VkDeviceQueueInfo2>(1);
 	*pQueueInfo = *pQueueInfo_orig;
 	write_VkDeviceQueueInfo2(writer, pQueueInfo);
-
-	uint32_t realIndex = pQueueInfo->queueIndex;
-	uint32_t realFamily = pQueueInfo->queueFamilyIndex;
-
 	if (p__virtualqueues == 0)
 	{
 		wrap_vkGetDeviceQueue2(device, pQueueInfo, pQueue);
+		if (!writer.parent->records.VkQueue_index.contains(*pQueue))
+		{
+			frame_mutex.lock();
+			auto* queue_data = writer.parent->records.VkQueue_index.add(*pQueue, lava_writer::instance().global_frame);
+			queue_data->queueIndex = pQueueInfo->queueIndex;
+			queue_data->queueFamily = pQueueInfo->queueFamilyIndex;
+			queue_data->queueFlags = pQueueInfo->flags;
+			queue_data->device = device;
+			queue_data->tid = writer.thread_index();
+			queue_data->call = writer.local_call_number;
+			queue_data->physicalDevice = writer.parent->records.VkDevice_index.at(device)->physicalDevice;
+			frame_mutex.unlock();
+		}
 	}
-	else // remap
+	else
 	{
-		assert(pQueueInfo->queueIndex < 2);
-		assert(pQueueInfo->queueFamilyIndex == 0);
-		internalGetDeviceQueue(writer.parent->meta.stored_VkQueueFamilyProperties, pQueueInfo->queueIndex, realIndex, realFamily);
-		VkDeviceQueueInfo2 info = *pQueueInfo;
-		info.queueFamilyIndex = realFamily;
-		info.queueIndex = realIndex;
-		wrap_vkGetDeviceQueue2(device, &info, pQueue);
-	}
-
-	if (!writer.parent->records.VkQueue_index.contains(*pQueue))
-	{
-		auto* queue_data = writer.parent->records.VkQueue_index.add(*pQueue, lava_writer::instance().global_frame);
-		queue_data->queueIndex = pQueueInfo->queueIndex;
-		queue_data->queueFamily = pQueueInfo->queueFamilyIndex;
-		queue_data->queueFlags = pQueueInfo->flags;
-		queue_data->device = device;
-		queue_data->realIndex = realIndex;
-		queue_data->realFamily = realFamily;
-		queue_data->realQueue = *pQueue;
-		queue_data->tid = writer.thread_index();
-		queue_data->call = writer.local_call_number;
-		queue_data->physicalDevice = writer.parent->records.VkDevice_index.at(device)->physicalDevice;
+		frame_mutex.lock();
+		*pQueue = writer.parent->queues.get_virtual_queue(device, pQueueInfo->queueFamilyIndex, pQueueInfo->queueIndex);
+		frame_mutex.unlock();
 	}
 	auto* queue_data = writer.parent->records.VkQueue_index.at(*pQueue);
-	assert(queue_data);
-	if (p__virtualqueues != 0) *pQueue = (VkQueue)queue_data;
 	queue_data->self_test();
 	writer.write_handle(queue_data);
+	frame_mutex.unlock();
 }
 
 VKAPI_ATTR void VKAPI_CALL trace_vkGetDeviceQueue(VkDevice device, uint32_t queueFamilyIndex, uint32_t queueIndex, VkQueue* pQueue)
 {
 	lava_file_writer& writer = write_header("vkGetDeviceQueue", VKGETDEVICEQUEUE);
+	frame_mutex.lock();
 	auto* device_data = writer.parent->records.VkDevice_index.at(device);
-	const bool virtual_family = (writer.parent->meta.stored_VkQueueFamilyProperties.at(queueFamilyIndex).queueFlags & VK_QUEUE_GRAPHICS_BIT) && p__virtualqueues;
-
+	writer.physicalDevice = device_data->physicalDevice;
+	writer.device = device;
 	writer.write_handle(device_data);
-	writer.write_uint32_t(virtual_family ? LAVATUBE_VIRTUAL_QUEUE : queueFamilyIndex);
+	writer.write_uint32_t(writer.parent->queues.real_queue_family(device_data->physicalDevice, queueFamilyIndex));
 	writer.write_uint32_t(queueIndex);
-
-	uint32_t realIndex = queueIndex;
-	uint32_t realFamily = queueFamilyIndex;
-
-	// Execute
 	if (p__virtualqueues == 0)
 	{
 		wrap_vkGetDeviceQueue(device, queueFamilyIndex, queueIndex, pQueue);
+		if (!writer.parent->records.VkQueue_index.contains(*pQueue))
+		{
+			auto* queue_data = writer.parent->records.VkQueue_index.add(*pQueue, lava_writer::instance().global_frame);
+			queue_data->queueIndex = queueIndex;
+			queue_data->queueFamily = queueFamilyIndex;
+			queue_data->queueFlags = writer.parent->meta.stored_VkQueueFamilyProperties[queueFamilyIndex].queueFlags;
+			queue_data->device = device;
+			queue_data->tid = writer.thread_index();
+			queue_data->call = writer.local_call_number;
+			queue_data->physicalDevice = writer.parent->records.VkDevice_index.at(device)->physicalDevice;
+		}
 	}
-	else // remap
+	else
 	{
-		assert(queueIndex < 2);
-		assert(queueFamilyIndex == 0);
-		internalGetDeviceQueue(writer.parent->meta.stored_VkQueueFamilyProperties, queueIndex, realIndex, realFamily);
-		wrap_vkGetDeviceQueue(device, realFamily, realIndex, pQueue);
-	}
-
-	// Post
-	if (!writer.parent->records.VkQueue_index.contains(*pQueue))
-	{
-		auto* queue_data = writer.parent->records.VkQueue_index.add(*pQueue, lava_writer::instance().global_frame);
-		queue_data->queueIndex = queueIndex;
-		queue_data->queueFamily = queueFamilyIndex;
-		queue_data->queueFlags = writer.parent->meta.stored_VkQueueFamilyProperties[queueFamilyIndex].queueFlags;
-		queue_data->device = device;
-		queue_data->realIndex = realIndex;
-		queue_data->realFamily = realFamily;
-		queue_data->realQueue = *pQueue;
-		queue_data->tid = writer.thread_index();
-		queue_data->call = writer.local_call_number;
-		queue_data->physicalDevice = writer.parent->records.VkDevice_index.at(device)->physicalDevice;
+		*pQueue = writer.parent->queues.get_virtual_queue(device, queueFamilyIndex, queueIndex);
 	}
 	auto* queue_data = writer.parent->records.VkQueue_index.at(*pQueue);
-	assert(queue_data);
-	if (p__virtualqueues != 0) *pQueue = (VkQueue)queue_data;
 	queue_data->self_test();
 	writer.write_handle(queue_data);
+	frame_mutex.unlock();
 }
 
 #ifdef VK_USE_PLATFORM_ANDROID_KHR // vkCreateAndroidSurfaceKHR
@@ -2231,9 +2219,11 @@ void trace_post_vkGetPipelineCacheData(lava_file_writer& writer, VkResult result
 VKAPI_ATTR VkBool32 VKAPI_CALL trace_vkGetPhysicalDeviceXlibPresentationSupportKHR(VkPhysicalDevice physicalDevice, uint32_t queueFamilyIndex, Display* dpy, VisualID visualID)
 {
 	lava_file_writer& writer = write_header("vkGetPhysicalDeviceXlibPresentationSupportKHR", VKGETPHYSICALDEVICEXLIBPRESENTATIONSUPPORTKHR);
-	const bool virtual_family = (writer.parent->meta.stored_VkQueueFamilyProperties.at(queueFamilyIndex).queueFlags & VK_QUEUE_GRAPHICS_BIT) && p__virtualqueues;
 	writer.write_handle(writer.parent->records.VkPhysicalDevice_index.at(physicalDevice));
-	writer.write_uint32_t(virtual_family ? LAVATUBE_VIRTUAL_QUEUE : queueFamilyIndex);
+	writer.write_uint32_t(queueFamilyIndex);
+	frame_mutex.lock();
+	queueFamilyIndex = writer.parent->queues.real_queue_family(physicalDevice, queueFamilyIndex);
+	frame_mutex.unlock();
 	VkBool32 retval = wrap_vkGetPhysicalDeviceXlibPresentationSupportKHR(physicalDevice, queueFamilyIndex, dpy, visualID);
 	writer.write_uint32_t(retval);
 	return retval;
@@ -2277,7 +2267,7 @@ VKAPI_ATTR void VKAPI_CALL trace_vkGetPhysicalDeviceQueueFamilyProperties(VkPhys
 			}
 
 			pQueueFamilyProperties->queueFlags = VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT | VK_QUEUE_TRANSFER_BIT | sparseBits;
-			pQueueFamilyProperties->queueCount = 2;
+			pQueueFamilyProperties->queueCount = p__virtualqueues;
 			pQueueFamilyProperties->timestampValidBits = timestampValidBits;
 			pQueueFamilyProperties->minImageTransferGranularity.width = 1;
 			pQueueFamilyProperties->minImageTransferGranularity.height = 1;
@@ -2337,7 +2327,7 @@ static Json::Value trackedimage_json(const trackedimage* t)
 	return v;
 }
 
-static Json::Value trackedswapchain_trace_json(const trackedswapchain_trace* t)
+static Json::Value trackedswapchain_json(const trackedswapchain* t)
 {
 	Json::Value v = trackable_json(t);
 	v["imageFormat"] = (unsigned)t->info.imageFormat;

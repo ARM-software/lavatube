@@ -74,6 +74,7 @@ public:
 	std::atomic_int global_frame{ 0 };
 
 	std::vector<std::thread> threads;
+	queue_tracker queues GUARDED_BY(sync_mutex);
 
 	// The dictionary is read from a JSON file and then mapped from their to our function ids.
 	std::unordered_map<uint16_t, uint16_t> dictionary;

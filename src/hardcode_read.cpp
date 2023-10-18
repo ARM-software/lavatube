@@ -11,12 +11,10 @@ static bool has_pipeline_control = false;
 static bool has_debug_report = false;
 static bool has_debug_utils = false;
 static int has_dedicated_allocation = 0;
-static uint32_t selected_queue_family_index = 0xdeadbeef;
 static VkPhysicalDeviceFeatures2 stored_VkPhysicalDeviceFeatures2 = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2, nullptr };
 static VkPhysicalDeviceVulkan11Features stored_VkPhysicalDeviceVulkan11Features = {};
 static VkPhysicalDeviceVulkan12Features stored_VkPhysicalDeviceVulkan12Features = {};
 static VkPhysicalDeviceVulkan13Features stored_VkPhysicalDeviceVulkan13Features = {};
-static std::vector<VkQueueFamilyProperties> device_VkQueueFamilyProperties;
 static bool has_VkPhysicalDeviceFeatures2 = false;
 static bool has_VkPhysicalDeviceVulkan11Features = false;
 static bool has_VkPhysicalDeviceVulkan12Features = false;
@@ -333,6 +331,9 @@ void replay_pre_vkQueuePresentKHR(lava_file_reader& reader, VkQueue queue, VkPre
 		{
 			const uint32_t swapchainkhr_index = index_to_VkSwapchainKHR.index(pPresentInfo->pSwapchains[i]);
 			auto& data = VkSwapchainKHR_index.at(swapchainkhr_index);
+			const uint32_t device_index = index_to_VkDevice.index(data.device);
+			trackeddevice& device_data = VkDevice_index.at(device_index);
+			const uint32_t queue_family_index = reader.parent->queues.real_queue_family(device_data.physicalDevice);
 			// check that commandbuffer is actually available (this SHOULD be a noop!)
 			if (data.inflight.at(data.next_stored_image))
 			{
@@ -368,10 +369,10 @@ void replay_pre_vkQueuePresentKHR(lava_file_reader& reader, VkQueue queue, VkPre
 			image_barrier_src.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
 			image_barrier_dst.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 			image_barrier_dst.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-			image_barrier_src.srcQueueFamilyIndex = selected_queue_family_index;
-			image_barrier_src.dstQueueFamilyIndex = selected_queue_family_index;
-			image_barrier_dst.srcQueueFamilyIndex = selected_queue_family_index;
-			image_barrier_dst.dstQueueFamilyIndex = selected_queue_family_index;
+			image_barrier_src.srcQueueFamilyIndex = queue_family_index;
+			image_barrier_src.dstQueueFamilyIndex = queue_family_index;
+			image_barrier_dst.srcQueueFamilyIndex = queue_family_index;
+			image_barrier_dst.dstQueueFamilyIndex = queue_family_index;
 			image_barrier_src.image = data.virtual_images[data.next_stored_image];
 			image_barrier_dst.image = data.pSwapchainImages[data.next_swapchain_image];
 			image_barrier_src.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, VK_REMAINING_MIP_LEVELS, 0, VK_REMAINING_ARRAY_LAYERS };
@@ -507,15 +508,22 @@ void replay_pre_vkCreateDevice(lava_file_reader& reader, VkPhysicalDevice physic
 {
 	pCreateInfo->enabledLayerCount = 0; // even though implementation should ignore it as per the spec, that is not always the case, so help it along
 
-	// Limit the number of requested queues to what is available
+	uint32_t families = 0;
+	wrap_vkGetPhysicalDeviceQueueFamilyProperties(selected_physical_device, &families, nullptr);
+	std::vector<VkQueueFamilyProperties> device_VkQueueFamilyProperties(families);
+	wrap_vkGetPhysicalDeviceQueueFamilyProperties(selected_physical_device, &families, device_VkQueueFamilyProperties.data());
+
+	// Enable virtual queues if necessary
 	VkDeviceQueueCreateInfo* queueinfo = reader.pool.allocate<VkDeviceQueueCreateInfo>(pCreateInfo->queueCreateInfoCount);
 	for (uint32_t i = 0; i < pCreateInfo->queueCreateInfoCount; i++)
 	{
 		queueinfo[i] = pCreateInfo->pQueueCreateInfos[i]; // struct copy
-		if (queueinfo[i].queueFamilyIndex == selected_queue_family_index
-		    && queueinfo[i].queueCount > device_VkQueueFamilyProperties.at(selected_queue_family_index).queueCount)
+		const uint32_t real_queue_family_index = reader.parent->queues.real_queue_family(physicalDevice, queueinfo[i].queueFamilyIndex);
+		const uint32_t devqueues = device_VkQueueFamilyProperties.at(real_queue_family_index).queueCount;
+		if (queueinfo[i].queueFamilyIndex == 0 && queueinfo[i].queueCount > devqueues)
 		{
-			queueinfo[i].queueCount = device_VkQueueFamilyProperties.at(selected_queue_family_index).queueCount;
+			ILOG("Requested %u queues for family index %u, but device only supports %d - virtual queues enabled", queueinfo[i].queueCount, queueinfo[i].queueFamilyIndex, devqueues);
+			p__virtualqueues = queueinfo[i].queueCount = devqueues;
 		}
 	}
 	pCreateInfo->pQueueCreateInfos = queueinfo;
@@ -573,6 +581,20 @@ void replay_post_vkCreateDevice(lava_file_reader& reader, VkResult result, VkPhy
 	{
 		ABORT("Failed to create a Vulkan device: %s", errorString(result));
 	}
+	uint32_t families = 0;
+	wrap_vkGetPhysicalDeviceQueueFamilyProperties(selected_physical_device, &families, nullptr);
+	std::vector<VkQueueFamilyProperties> device_VkQueueFamilyProperties(families);
+	wrap_vkGetPhysicalDeviceQueueFamilyProperties(selected_physical_device, &families, device_VkQueueFamilyProperties.data());
+	const uint32_t realFamily = reader.parent->queues.real_queue_family(physicalDevice);
+	for (uint32_t i = 0; i < pCreateInfo->queueCreateInfoCount; i++)
+	{
+		for (unsigned j = 0; j < device_VkQueueFamilyProperties[realFamily].queueCount && pCreateInfo->pQueueCreateInfos[i].queueFamilyIndex == 0 && p__virtualqueues > 0; j++)
+		{
+			VkQueue queue = VK_NULL_HANDLE;
+			wrap_vkGetDeviceQueue(*pDevice, pCreateInfo->pQueueCreateInfos[i].queueFamilyIndex, j, &queue);
+			reader.parent->queues.register_real_queue(*pDevice, queue);
+		}
+	}
 	suballoc_setup(selected_physical_device);
 }
 
@@ -600,19 +622,13 @@ void replay_post_vkCreateInstance(lava_file_reader& reader, VkResult result, con
 		VkPhysicalDeviceProperties devprops;
 		wrap_vkGetPhysicalDeviceProperties(physical_devices[i], &devprops);
 		ILOG("\t%u : %s (API %u.%u)", i, devprops.deviceName, VK_VERSION_MAJOR(devprops.apiVersion), VK_VERSION_MINOR(devprops.apiVersion));
-	}
 
-	uint32_t families = 0;
-	wrap_vkGetPhysicalDeviceQueueFamilyProperties(selected_physical_device, &families, nullptr);
-	device_VkQueueFamilyProperties.resize(families);
-	wrap_vkGetPhysicalDeviceQueueFamilyProperties(selected_physical_device, &families, device_VkQueueFamilyProperties.data());
-	for (unsigned i = 0; i < device_VkQueueFamilyProperties.size(); i++)
-	{
-		const VkQueueFamilyProperties& p = device_VkQueueFamilyProperties.at(i);
-		if ((p.queueFlags & VK_QUEUE_GRAPHICS_BIT) && (p.queueFlags & VK_QUEUE_COMPUTE_BIT) && (p.queueFlags & VK_QUEUE_TRANSFER_BIT)) selected_queue_family_index = i;
-		DLOG("Selected queue family: %d", selected_queue_family_index);
+		uint32_t families = 0;
+		wrap_vkGetPhysicalDeviceQueueFamilyProperties(physical_devices[i], &families, nullptr);
+		std::vector<VkQueueFamilyProperties> device_VkQueueFamilyProperties(families);
+		wrap_vkGetPhysicalDeviceQueueFamilyProperties(physical_devices[i], &families, device_VkQueueFamilyProperties.data());
+		reader.parent->queues.register_queue_families(physical_devices[i], families, device_VkQueueFamilyProperties.data());
 	}
-	if (selected_queue_family_index == 0xdeadbeef) ABORT("No valid queue family found!");
 
 	if (!callback_initialized && wrap_vkCreateDebugReportCallbackEXT && has_debug_report)
 	{
@@ -1124,6 +1140,8 @@ void retrace_vkGetSwapchainImagesKHR(lava_file_reader& reader)
 	if (!data.initialized && is_virtualswapchain()) // create virtual swapchain
 	{
 		// Make virtual images
+		trackeddevice& device_data = VkDevice_index.at(device_index);
+		const uint32_t queue_family_index = reader.parent->queues.real_queue_family(device_data.physicalDevice);
 		VkImageCreateInfo pinfo = {};
 		pinfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
 		pinfo.flags = (data.info.flags & VK_SWAPCHAIN_CREATE_MUTABLE_FORMAT_BIT_KHR);
@@ -1139,7 +1157,7 @@ void retrace_vkGetSwapchainImagesKHR(lava_file_reader& reader)
 		pinfo.usage = data.info.imageUsage | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
 		pinfo.sharingMode = data.info.imageSharingMode;
 		assert(pinfo.sharingMode == VK_SHARING_MODE_EXCLUSIVE); // TBD
-		pinfo.queueFamilyIndexCount = selected_queue_family_index;
+		pinfo.queueFamilyIndexCount = queue_family_index;
 		pinfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 		data.virtual_images.resize(stored_image_count);
 		for (unsigned i = 0; i < stored_image_count; i++)
@@ -1180,7 +1198,7 @@ void retrace_vkGetSwapchainImagesKHR(lava_file_reader& reader)
 		VkCommandPoolCreateInfo command_pool_create_info = {};
 		command_pool_create_info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
 		command_pool_create_info.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
-		command_pool_create_info.queueFamilyIndex = selected_queue_family_index;
+		command_pool_create_info.queueFamilyIndex = queue_family_index;
 		result = wrap_vkCreateCommandPool(device, &command_pool_create_info, NULL, &data.virtual_cmdpool);
 		assert(result == VK_SUCCESS);
 		assert(data.virtual_cmdpool != VK_NULL_HANDLE);
@@ -1379,37 +1397,29 @@ void retrace_vkGetDeviceQueue2(lava_file_reader& reader)
 	VkQueue queue = VK_NULL_HANDLE;
 	const uint32_t device_index = reader.read_handle();
 	VkDevice device = index_to_VkDevice.at(device_index);
+	reader.physicalDevice = selected_physical_device;
+	reader.device = device;
 	VkDeviceQueueInfo2 info_real = {};
 	read_VkDeviceQueueInfo2(reader, &info_real);
-	bool virtual_family = false;
-	uint32_t realIndex = info_real.queueIndex;
-	uint32_t realFamily = info_real.queueFamilyIndex;
-	if (info_real.queueFamilyIndex == LAVATUBE_VIRTUAL_QUEUE)
+	if (p__virtualqueues == 0)
 	{
-		virtual_family = true;
-		info_real.queueFamilyIndex = selected_queue_family_index;
-		const VkQueueFamilyProperties& props = device_VkQueueFamilyProperties.at(info_real.queueFamilyIndex);
-		if (info_real.queueIndex >= props.queueCount) // we don't have enough queues
-		{
-			info_real.queueIndex = 0; // map to first queue
-		}
+		wrap_vkGetDeviceQueue2(device, &info_real, &queue);
+		assert(queue != VK_NULL_HANDLE);
 	}
-	wrap_vkGetDeviceQueue2(device, &info_real, &queue);
-	assert(queue != VK_NULL_HANDLE);
 	const uint32_t stored_queue_index = reader.read_handle();
 	if (!index_to_VkQueue.contains(stored_queue_index))
 	{
-		const VkQueueFamilyProperties& props = device_VkQueueFamilyProperties.at(info_real.queueFamilyIndex);
-		index_to_VkQueue.set(stored_queue_index, queue);
 		auto& queue_data = VkQueue_index.at(stored_queue_index);
+		if (p__virtualqueues > 0)
+		{
+			queue = (VkQueue)&queue_data;
+		}
+		index_to_VkQueue.set(stored_queue_index, queue);
 		queue_data.device = device;
 		queue_data.queueIndex = info_real.queueIndex;
 		queue_data.queueFamily = info_real.queueFamilyIndex;
-		queue_data.realIndex = realIndex;
-		queue_data.realFamily = realFamily;
-		queue_data.realQueue = queue;
-		queue_data.queueFlags = props.queueFlags;
 		queue_data.physicalDevice = VkDevice_index.at(device_index).physicalDevice;
+		reader.parent->queues.register_virtual_queue(device, info_real.queueFamilyIndex, info_real.queueIndex, (VkQueue)&queue_data);
 	}
 }
 
@@ -1418,37 +1428,29 @@ void retrace_vkGetDeviceQueue(lava_file_reader& reader)
 	VkQueue queue = VK_NULL_HANDLE;
 	const uint32_t device_index = reader.read_handle();
 	VkDevice device = index_to_VkDevice.at(device_index);
+	reader.physicalDevice = selected_physical_device;
+	reader.device = device;
 	uint32_t queueFamilyIndex = reader.read_uint32_t();
 	uint32_t queueIndex = reader.read_uint32_t();
-	bool virtual_family = false;
-	uint32_t realIndex = queueIndex;
-	uint32_t realFamily = queueFamilyIndex;
-	if (queueFamilyIndex == LAVATUBE_VIRTUAL_QUEUE)
+	if (p__virtualqueues == 0)
 	{
-		virtual_family = true;
-		queueFamilyIndex = selected_queue_family_index;
-		const VkQueueFamilyProperties& props = device_VkQueueFamilyProperties.at(queueFamilyIndex);
-		if (queueIndex >= props.queueCount) // we don't have enough queues
-		{
-			queueIndex = 0; // map to first queue
-		}
+		wrap_vkGetDeviceQueue(device, queueFamilyIndex, queueIndex, &queue);
+		assert(queue != VK_NULL_HANDLE);
 	}
-	wrap_vkGetDeviceQueue(device, queueFamilyIndex, queueIndex, &queue);
-	assert(queue != VK_NULL_HANDLE);
 	const uint32_t stored_queue_index = reader.read_handle();
 	if (!index_to_VkQueue.contains(stored_queue_index))
 	{
-		const VkQueueFamilyProperties& props = device_VkQueueFamilyProperties.at(queueFamilyIndex);
-		index_to_VkQueue.set(stored_queue_index, queue);
 		auto& queue_data = VkQueue_index.at(stored_queue_index);
+		if (p__virtualqueues > 0)
+		{
+			queue = (VkQueue)&queue_data;
+		}
+		index_to_VkQueue.set(stored_queue_index, queue);
 		queue_data.device = device;
 		queue_data.queueIndex = queueIndex;
 		queue_data.queueFamily = queueFamilyIndex;
-		queue_data.realIndex = realIndex;
-		queue_data.realFamily = realFamily;
-		queue_data.realQueue = queue;
-		queue_data.queueFlags = props.queueFlags;
 		queue_data.physicalDevice = VkDevice_index.at(device_index).physicalDevice;
+		reader.parent->queues.register_virtual_queue(device, queueFamilyIndex, queueIndex, (VkQueue)&queue_data);
 	}
 }
 

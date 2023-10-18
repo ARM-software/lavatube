@@ -86,6 +86,27 @@ static void waitfence(vulkan_setup_t& vulkan, VkFence fence)
 	}
 }
 
+static void queue_tracker_test(vulkan_setup_t& vulkan, VkQueue queue)
+{
+	queue_tracker q;
+	q.register_real_queue(vulkan.device, queue);
+	trackedqueue data;
+	q.register_virtual_queue(vulkan.device, 0, 0, (VkQueue)&data);
+	assert(q.get_virtual_queue(vulkan.device, 0, 0) == (VkQueue)&data);
+	data.device = vulkan.device;
+	data.queueIndex = 0;
+	VkQueue vqueue = (VkQueue)0xdeaddead;
+	q.submit(vulkan.device, 0, vqueue, VK_NULL_HANDLE, 10);
+	assert(q.history.size() == 0);
+	assert(q.submissions.size() == 1);
+	q.release(vqueue);
+	assert(q.history.size() == 1);
+	assert(q.submissions.size() == 0);
+	q.release(vulkan.device);
+	assert(q.history.size() == 1);
+	assert(q.submissions.size() == 0);
+}
+
 static void trace_4()
 {
 	std::string name = filename();
@@ -95,6 +116,8 @@ static void trace_4()
 
 	VkQueue queue;
 	trace_vkGetDeviceQueue(vulkan.device, 0, 0, &queue);
+
+	queue_tracker_test(vulkan, queue);
 
 	std::vector<VkBuffer> origin_buffers(num_buffers);
 	std::vector<VkBuffer> target_buffers(num_buffers);

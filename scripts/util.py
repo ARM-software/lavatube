@@ -60,7 +60,7 @@ extra_optionals = {
 }
 
 # Need to make extra sure these are externally synchronized
-extra_sync = [ 'vkQueueSubmit', 'vkQueueSubmit2', 'vkQueueWaitIdle', 'vkQueueBindSparse', 'vkDestroyDevice' ]
+extra_sync = [ 'vkQueueSubmit', 'vkQueueSubmit2', 'vkQueueSubmit2KHR', 'vkQueueWaitIdle', 'vkQueueBindSparse', 'vkDestroyDevice', 'vkQueuePresentKHR' ]
 
 skip_opt_check = ['pAllocator', 'pUserData', 'pfnCallback', 'pfnUserCallback', 'pNext' ]
 # for these, thread barrier goes before the function call to sync us up to other threads:
@@ -154,7 +154,7 @@ trackable_type_map_general = { 'VkBuffer': 'trackedbuffer', 'VkImage': 'trackedi
 	'VkDeviceMemory': 'trackedmemory', 'VkFence': 'trackedfence', 'VkPipeline': 'trackedpipeline', 'VkImageView': 'trackedimageview', 'VkBufferView': 'trackedbufferview',
 	'VkDevice': 'trackeddevice', 'VkFramebuffer': 'trackedframebuffer', 'VkRenderPass': 'trackedrenderpass', 'VkQueue': 'trackedqueue' }
 trackable_type_map_trace = trackable_type_map_general.copy()
-trackable_type_map_trace.update({ 'VkCommandBuffer': 'trackedcmdbuffer_trace', 'VkSwapchainKHR': 'trackedswapchain_trace', 'VkDescriptorSet': 'trackeddescriptorset_trace',
+trackable_type_map_trace.update({ 'VkCommandBuffer': 'trackedcmdbuffer_trace', 'VkSwapchainKHR': 'trackedswapchain', 'VkDescriptorSet': 'trackeddescriptorset_trace',
 	'VkEvent': 'trackedevent_trace', 'VkDescriptorPool': 'trackeddescriptorpool_trace', 'VkCommandPool': 'trackedcommandpool_trace' })
 trackable_type_map_replay = trackable_type_map_general.copy()
 trackable_type_map_replay.update({ 'VkCommandBuffer': 'trackedcmdbuffer_replay', 'VkDescriptorSet': 'trackeddescriptorset_replay', 'VkSwapchainKHR': 'trackedswapchain_replay' })
@@ -519,9 +519,11 @@ class parameter(object):
 			z.do('for (unsigned i = 0; i < infoCount; i++) for (unsigned j = 0; j < pInfos[i].geometryCount; j++) { auto* p = %s[i]; read_VkAccelerationStructureBuildRangeInfoKHR(reader, &p[j]); }' % varname)
 		elif self.name == 'queueFamilyIndex':
 			z.decl('uint32_t', self.name)
+			z.do('sync_mutex.lock();')
 			z.do('%s = reader.read_uint32_t();' % self.name)
-			z.do('if (%s == LAVATUBE_VIRTUAL_QUEUE) %s = selected_queue_family_index;' % (self.name, self.name))
+			z.do('%s = reader.parent->queues.real_queue_family(reader.physicalDevice, %s);' % (self.name, self.name))
 			if not is_root: z.do('%s = %s;' % (varname, self.name))
+			z.do('sync_mutex.unlock();')
 		elif (self.name == 'ppData' and self.funcname in ['vkMapMemory', 'vkMapMemory2KHR']) or self.name == 'pHostPointer':
 			z.decl('%s%s%s' % (self.mod, self.type, self.param_ptrstr), self.name)
 		elif self.name == 'pfnUserCallback' and self.funcname == 'VkDebugUtilsMessengerCreateInfoEXT':
@@ -807,6 +809,8 @@ class parameter(object):
 			z.do('assert(false); // pInitialData')
 		elif (self.name == 'ppData' and self.funcname in ['vkMapMemory', 'vkMapMemory2KHR']) or self.name == 'pHostPointer':
 			pass
+		elif self.type == 'VkSharingMode':
+			z.do('if (p__virtualqueues > 0 && %s != VK_SHARING_MODE_EXCLUSIVE) { WLOG("Unsupported sharing mode used"); assert(false); }' % varname)
 		elif self.structure:
 			self.print_struct(self.type, varname, owner, size=self.length)
 		elif self.funcname in ['VkDebugMarkerObjectNameInfoEXT', 'VkDebugMarkerObjectTagInfoEXT', 'vkDebugReportMessageEXT'] and self.name == 'object':
@@ -870,14 +874,7 @@ class parameter(object):
 				z.loop_end()
 			else:
 				z.decl(trackable_type_map_trace.get(self.type, 'trackable') + '*', totrackable(self.type))
-				if self.type == 'VkQueue':
-					assert not self.ptr, '%s has pointer queues' % self.funcname
-					assert self.name == 'queue', '%s has queue not named queue' % self.funcname
-					z.declarations.insert(0, 'queue = (p__virtualqueues && queue != VK_NULL_HANDLE) ? ((trackedqueue*)queue)->realQueue : queue;')
-					z.declarations.insert(0, 'VkQueue original_queue = queue;') # this goes first
-					z.do('%s = (p__virtualqueues) ? ((trackedqueue*)original_queue) : writer.parent->records.VkQueue_index.at(queue);' % totrackable(self.type))
-				else:
-					z.do('%s = writer.parent->records.%s_index.at(%s%s);' % (totrackable(self.type), self.type, deref, varname))
+				z.do('%s = writer.parent->records.%s_index.at(%s%s);' % (totrackable(self.type), self.type, deref, varname))
 				if self.funcname in extra_optionals and self.name in extra_optionals[self.funcname]:
 					z.do('if (%s)' % extra_optionals[self.funcname][self.name])
 					z.brace_begin()
@@ -961,8 +958,10 @@ class parameter(object):
 		elif self.type in spec.type_mappings and self.length: # type mapped array
 			z.do('writer.write_array(reinterpret_cast<%s%s*>(%s), %s);' % (self.mod, spec.type_mappings[self.type], varname, self.length))
 		elif self.name == 'queueFamilyIndex':
-			z.do('const bool virtual_family = (writer.parent->meta.stored_VkQueueFamilyProperties.at(%s).queueFlags & VK_QUEUE_GRAPHICS_BIT) && p__virtualqueues;' % varname)
-			z.do('writer.write_uint32_t(virtual_family ? LAVATUBE_VIRTUAL_QUEUE : %s);' % varname)
+			z.do('frame_mutex.lock();')
+			z.do('writer.write_uint32_t(%s);' % varname)
+			z.do('%s = writer.parent->queues.real_queue_family(writer.physicalDevice, %s);' % (varname, varname))
+			z.do('frame_mutex.unlock();')
 		elif self.type in spec.type_mappings:
 			z.do('writer.write_%s(%s);' % (spec.type_mappings[self.type], varname))
 		elif self.ptr and self.length: # arrays
@@ -1057,12 +1056,15 @@ def save_add_pre(name): # need to include the resource-creating or resource-dest
 		z.do('auto* tf = writer.parent->records.VkFence_index.at(%s);' % ('pFences[i]' if name == 'vkWaitForFences' else 'fence'))
 		z.do('if (tf->frame_delay == -1) { tf->frame_delay = p__delay_fence_success_frames - 1; }')
 		if name == 'vkGetFenceStatus':
-			z.do('if (tf->frame_delay >= 0) { tf->frame_delay--; writer.write_uint32_t(VK_NOT_READY); return VK_NOT_READY; }')
+			z.do('if (tf->frame_delay >= 0) { tf->frame_delay--; writer.write_uint32_t(VK_NOT_READY); ILOG("NOT READY"); return VK_NOT_READY; }')
 		elif name == 'vkWaitForFences':
 			z.do('if (tf->frame_delay >= 0 && timeout != UINT32_MAX) { tf->frame_delay--; writer.write_uint32_t(VK_TIMEOUT); return VK_TIMEOUT; }')
 		z.brace_end()
 	elif name in ['vkUnmapMemory', 'vkUnmapMemory2KHR']:
 		z.do('writer.parent->memory_mutex.lock();')
+	elif name in ['vkQueueSubmit', 'vkQueueSubmit2', 'vkQueueSubmit2KHR', 'vkQueueBindSparse', 'vkQueuePresentKHR']:
+		if name == 'vkQueuePresentKHR': z.do('VkFence fence = VK_NULL_HANDLE;')
+		z.do('if (p__virtualqueues) queue = writer.parent->queues.submit(writer.device, queue_data->queueIndex, queue, fence, writer.parent->global_frame.load());')
 
 	if name == 'vkCreateSwapchainKHR': # TBD: also do vkCreateSharedSwapchainsKHR
 		z.init('pCreateInfo->minImageCount = num_swapchains();')
@@ -1231,6 +1233,19 @@ def save_add_tracking(name):
 		if type == 'VkCommandBuffer':
 			z.do('commandpool_data->commandbuffers.erase(meta);')
 		z.brace_end()
+	elif name == 'vkQueuePresentKHR':
+		z.do('if (p__virtualqueues) { frame_mutex.lock(); writer.parent->queues.release(queue); frame_mutex.unlock(); }')
+	elif name == 'vkDeviceWaitIdle':
+		z.do('if (p__virtualqueues) { frame_mutex.lock(); writer.parent->queues.release(device); frame_mutex.unlock(); }')
+	elif name == 'vkGetFenceStatus':
+		z.do('if (p__virtualqueues && retval == VK_SUCCESS) { frame_mutex.lock(); writer.parent->queues.release(fence); frame_mutex.unlock(); }')
+	elif name == 'vkWaitForFences':
+		z.do('if (retval == VK_SUCCESS && p__virtualqueues)')
+		z.brace_begin()
+		z.do('frame_mutex.lock();')
+		z.do('for (uint32_t i = 0; i < fenceCount; i++) { writer.parent->queues.release(pFences[i]); }')
+		z.do('frame_mutex.unlock();')
+		z.brace_end()
 
 # Run before execute
 def load_add_pre(name):
@@ -1250,6 +1265,9 @@ def load_add_pre(name):
 		z.brace_end()
 	elif name == 'vkDestroyPipelineCache': # TBD autogenerate
 		z.do('replay_pre_vkDestroyPipelineCache(reader, device, device_index, pipelineCache, pipelinecache_index);')
+	elif name in ['vkQueueSubmit', 'vkQueueSubmit2', 'vkQueueSubmit2KHR', 'vkQueueBindSparse', 'vkQueuePresentKHR']:
+		if name == 'vkQueuePresentKHR': z.do('VkFence fence = VK_NULL_HANDLE;')
+		z.do('if (p__virtualqueues) queue = reader.parent->queues.submit(reader.device, VkQueue_index.at(queue_index).queueIndex, queue, fence, reader.parent->global_frame.load());')
 
 	if name == 'vkCreatePipelineCache': # TBD autogenerate
 		z.do('replay_pre_vkCreatePipelineCache(reader, device, device_index, pCreateInfo, pipelinecache_index);')
@@ -1305,6 +1323,19 @@ def load_add_tracking(name):
 			z.do('wrap_vkDestroyCommandPool(device, data.virtual_cmdpool, nullptr);')
 			z.do('wrap_vkDestroySemaphore(device, data.virtual_semaphore, nullptr);')
 			z.do('for (auto i : data.virtual_fences) wrap_vkDestroyFence(device, i, nullptr);')
+	elif name == 'vkQueuePresentKHR':
+		z.do('if (p__virtualqueues) { sync_mutex.lock(); reader.parent->queues.release(queue); sync_mutex.unlock(); }')
+	elif name == 'vkDeviceWaitIdle':
+		z.do('if (p__virtualqueues) { sync_mutex.lock(); reader.parent->queues.release(device); sync_mutex.unlock(); }')
+	elif name == 'vkWaitForFences':
+		z.do('if (retval == VK_SUCCESS && p__virtualqueues)')
+		z.brace_begin()
+		z.do('sync_mutex.lock();')
+		z.do('for (uint32_t i = 0; i < fenceCount; i++) { reader.parent->queues.release(pFences[i]); }')
+		z.do('sync_mutex.unlock();')
+		z.brace_end()
+	elif name == 'vkGetFenceStatus':
+		z.do('if (p__virtualqueues && retval == VK_SUCCESS) { sync_mutex.lock(); reader.parent->queues.release(fence); sync_mutex.unlock(); }')
 
 def func_common(name, node, read, target, header, guard_header=True):
 	proto = node.find('proto')
@@ -1415,6 +1446,12 @@ def loadfunc(name, node, target, header):
 	elif name == "vkCreateDevice":
 		z.do('%s retval = vkuSetupDevice(%s);' % (retval, ', '.join(call_list)))
 		z.do('VkResult stored_retval = static_cast<VkResult>(reader.read_uint32_t());')
+		z.do('check_retval(stored_retval, retval);')
+	elif name == 'vkQueueWaitIdle':
+		z.do('VkResult stored_retval = static_cast<VkResult>(reader.read_uint32_t());')
+		z.do('VkResult retval;')
+		z.do('if (p__virtualqueues == 0) retval = wrap_vkQueueWaitIdle(queue);')
+		z.do('else retval = reader.parent->queues.waitIdleAndRelease(queue);')
 		z.do('check_retval(stored_retval, retval);')
 	elif name == "vkGetFenceStatus": # loop until success to fix synchronization if originally successful
 		z.do('VkResult stored_retval = static_cast<VkResult>(reader.read_uint32_t());')
@@ -1597,6 +1634,10 @@ def savefunc(name, node, target, header):
 		z.do('#else')
 		z.do('%s retval = vkuSetupDevice(%s);' % (retval, ', '.join(call_list)))
 		z.do('#endif')
+	elif name == 'vkQueueWaitIdle':
+		z.do('VkResult retval;')
+		z.do('if (p__virtualqueues == 0) retval = wrap_vkQueueWaitIdle(queue);')
+		z.do('else retval = writer.parent->queues.waitIdleAndRelease(queue);')
 	elif name in ignore_on_trace:
 		z.do('// native call skipped')
 		if retval == 'VkResult':

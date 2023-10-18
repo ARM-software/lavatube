@@ -213,8 +213,8 @@ public:
 
 	std::atomic_int global_frame;
 	trace_records records;
-
-	trace_metadata meta GUARDED_BY(frame_mutex);
+	queue_tracker queues GUARDED_BY(frame_mutex);
+	trace_metadata meta GUARDED_BY(frame_mutex);  // TBD make per-device and move out of here, reuse for replayer
 
 	// statistics
 	uint64_t mem_allocated = 0;

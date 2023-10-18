@@ -201,6 +201,19 @@ public:
 		return p;
 	}
 
+	/// As above, but references its own data as key.
+	inline U* add_self(int frame = 0)
+	{
+		mutex.lock();
+		U* p = new U;
+		p->index = _size++;
+		p->frame_created = frame;
+		lookup[(T)p] = p;
+		storage.push_back(p);
+		mutex.unlock();
+		return p;
+	}
+
 	inline U* unset(T key, int frame = 0)
 	{
 		if (key == 0) return nullptr;

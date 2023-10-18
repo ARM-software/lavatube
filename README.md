@@ -151,10 +151,11 @@ LAVATUBE_CHUNK_SIZE lets you choose the compression chunk size, by default it is
 LAVATUBE_EXTERNAL_MEMORY set it to 1 to experiment with replacing your GPU host memory
 allocations with external memory allocations.
 
-LAVATUBE_VIRTUAL_QUEUES if set to 1 will enable a virtualized memory system with only
-one graphics queue family containing two queues. If the host system does not support
-two queues, work for the second queue will be passed to the first queue. All other
-queue families and queues will be hidden.
+LAVATUBE_VIRTUAL_QUEUES if set to more than zero will enable a virtualized memory
+system with only one graphics queue family containing the given number of virtual
+queues. If the host system does not support this number of queues, work for the excess
+queues will be passed to the least used queue. All other queue families and queues will
+be hidden.
 
 
 Further reading
