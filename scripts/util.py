@@ -50,8 +50,23 @@ extra_optionals = {
 		'pViewports': '(!isDynamicViewports)',
 		'pScissors': '(!isDynamicScissors)',
 	},
+	'VkDeviceCreateInfo': {
+		'ppEnabledLayerNames': 'false', # deprecated and ignored
+	},
 	'VkBufferCreateInfo': {
 		'pQueueFamilyIndices': '(sptr->sharingMode == VK_SHARING_MODE_CONCURRENT)',
+	},
+	'VkImageCreateInfo': {
+		'pQueueFamilyIndices': '(sptr->sharingMode == VK_SHARING_MODE_CONCURRENT)',
+	},
+	'VkSwapchainCreateInfoKHR': {
+		'pQueueFamilyIndices': '(sptr->imageSharingMode == VK_SHARING_MODE_CONCURRENT)', # implicitly regarded as ignorable
+	},
+	'VkPhysicalDeviceImageDrmFormatModifierInfoEXT': {
+		'pQueueFamilyIndices': '(sptr->sharingMode == VK_SHARING_MODE_CONCURRENT)',
+	},
+	'VkFramebufferCreateInfo': {
+		'pAttachments': '!(sptr->flags & VK_FRAMEBUFFER_CREATE_IMAGELESS_BIT)',
 	},
 	# this depends on state outside of the function parameters...
 	'VkCommandBufferBeginInfo': {
