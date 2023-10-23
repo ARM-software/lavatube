@@ -160,7 +160,7 @@ deconstify = {
 # Subclassing of trackable
 trackable_type_map_general = { 'VkBuffer': 'trackedbuffer', 'VkImage': 'trackedimage', 'VkCommandBuffer': 'trackedcmdbuffer', 'VkDescriptorSet': 'trackeddescriptorset',
 	'VkDeviceMemory': 'trackedmemory', 'VkFence': 'trackedfence', 'VkPipeline': 'trackedpipeline', 'VkImageView': 'trackedimageview', 'VkBufferView': 'trackedbufferview',
-	'VkDevice': 'trackeddevice', 'VkFramebuffer': 'trackedframebuffer', 'VkRenderPass': 'trackedrenderpass', 'VkQueue': 'trackedqueue' }
+	'VkDevice': 'trackeddevice', 'VkFramebuffer': 'trackedframebuffer', 'VkRenderPass': 'trackedrenderpass', 'VkQueue': 'trackedqueue', 'VkPhysicalDevice': 'trackedphysicaldevice' }
 trackable_type_map_trace = trackable_type_map_general.copy()
 trackable_type_map_trace.update({ 'VkCommandBuffer': 'trackedcmdbuffer_trace', 'VkSwapchainKHR': 'trackedswapchain_trace', 'VkDescriptorSet': 'trackeddescriptorset_trace',
 	'VkEvent': 'trackedevent_trace', 'VkDescriptorPool': 'trackeddescriptorpool_trace', 'VkCommandPool': 'trackedcommandpool_trace' })
@@ -952,7 +952,8 @@ class parameter(object):
 		elif self.type in spec.type_mappings and self.length: # type mapped array
 			z.do('writer.write_array(reinterpret_cast<%s%s*>(%s), %s);' % (self.mod, spec.type_mappings[self.type], varname, self.length))
 		elif self.name == 'queueFamilyIndex':
-			z.do('const bool virtual_family = (writer.parent->meta.stored_VkQueueFamilyProperties.at(%s).queueFlags & VK_QUEUE_GRAPHICS_BIT) && p__virtualqueues;' % varname)
+			if self.funcname[0] == 'V': z.do('trackedphysicaldevice* physicaldevice_data = writer.parent->records.VkPhysicalDevice_index.at(writer.physicalDevice);')
+			z.do('const bool virtual_family = (physicaldevice_data->queueFamilyProperties.at(%s).queueFlags & VK_QUEUE_GRAPHICS_BIT) && p__virtualqueues;' % varname)
 			z.do('writer.write_uint32_t(virtual_family ? LAVATUBE_VIRTUAL_QUEUE : %s);' % varname)
 		elif self.type in spec.type_mappings:
 			z.do('writer.write_%s(%s);' % (spec.type_mappings[self.type], varname))

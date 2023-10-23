@@ -1759,6 +1759,14 @@ static trackeddevice trackeddevice_json(const Json::Value& v)
 	return t;
 }
 
+static trackedphysicaldevice trackedphysicaldevice_json(const Json::Value& v)
+{
+	trackedphysicaldevice t(v["frame_created"].asInt());
+	t.frame_destroyed = v["frame_destroyed"].asInt();
+	if (v.isMember("name")) t.name = v["name"].asString();
+	return t;
+}
+
 static trackedframebuffer trackedframebuffer_json(const Json::Value& v)
 {
 	trackedframebuffer t(v["frame_created"].asInt());

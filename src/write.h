@@ -69,7 +69,6 @@ struct trace_metadata
 	/// What the device told the app it is capable of, modified by us
 	trace_capabilities device GUARDED_BY(frame_mutex);
 	VkPhysicalDeviceExternalMemoryHostPropertiesEXT external_memory = {};
-	std::vector<VkQueueFamilyProperties> stored_VkQueueFamilyProperties;
 
 	/// What the app asked for, modified by us
 	trace_capabilities app GUARDED_BY(frame_mutex);

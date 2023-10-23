@@ -105,6 +105,12 @@ struct trackedmemory : trackable
 	}
 };
 
+struct trackedphysicaldevice : trackable
+{
+	using trackable::trackable; // inherit constructor
+	std::vector<VkQueueFamilyProperties> queueFamilyProperties;
+};
+
 struct trackeddevice : trackable
 {
 	using trackable::trackable; // inherit constructor
