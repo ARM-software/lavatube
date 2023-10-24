@@ -712,12 +712,6 @@ static void trace_post_vkQueuePresentKHR(lava_file_writer& writer, VkResult resu
 	assert(pPresentInfo->swapchainCount == 1); // more than one not yet supported
 	DLOG("Presenting with swapchain image index %u", pPresentInfo->pImageIndices[0]);
 	if (result != VK_SUCCESS) ILOG("vkQueuePresentKHR error: %s", errorString(result));
-	const auto* queue_data = writer.parent->records.VkQueue_index.at(queue);
-	for (unsigned i = 0; i < pPresentInfo->swapchainCount; i++)
-	{
-		auto* swapchain_data = writer.parent->records.VkSwapchainKHR_index.at(pPresentInfo->pSwapchains[i]);
-		swapchain_data->queue = queue_data->realQueue;
-	}
 	lava_writer& instance = lava_writer::instance();
 	instance.new_frame();
 }
@@ -1614,6 +1608,9 @@ void trace_post_vkCreateSwapchainKHR(lava_file_writer& writer, VkResult result, 
 	for (unsigned i = 0; i < count; i++)
 	{
 		auto* add = writer.parent->records.VkImage_index.add(pSwapchainImages[i], lava_writer::instance().global_frame);
+		add->tid = writer.thread_index();
+		add->call = writer.local_call_number;
+		add->type = VK_OBJECT_TYPE_IMAGE;
 		add->sharingMode = pCreateInfo->imageSharingMode;
 		add->is_swapchain_image = true;
 		add->tiling = VK_IMAGE_TILING_OPTIMAL;
@@ -1621,6 +1618,8 @@ void trace_post_vkCreateSwapchainKHR(lava_file_writer& writer, VkResult result, 
 		add->imageType = VK_IMAGE_TYPE_2D;
 		add->flags = pCreateInfo->flags;
 		add->format = pCreateInfo->imageFormat;
+		add->initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+		add->currentLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 		DLOG("Image index %u is swapchain image %u", add->index, i);
 	}
 }
@@ -1663,7 +1662,9 @@ VKAPI_ATTR VkResult VKAPI_CALL trace_vkCreateHeadlessSurfaceEXT(VkInstance insta
 	VkResult retval = hack_vkCreateHeadlessSurfaceEXT(instance, pCreateInfo, pAllocator, pSurface);
 	writer.write_uint32_t(retval);
 	// Post
-	const trackable* surface_data = writer.parent->records.VkSurfaceKHR_index.add(*pSurface, lava_writer::instance().global_frame);
+	trackable* surface_data = writer.parent->records.VkSurfaceKHR_index.add(*pSurface, lava_writer::instance().global_frame);
+	surface_data->tid = writer.thread_index();
+	surface_data->call = writer.local_call_number;
 	DLOG("insert VkSurfaceKHR into vkCreateHeadlessSurfaceEXT index %u", (unsigned)surface_data->index);
 	writer.write_handle(surface_data); // id tracking
 	// Return
@@ -1722,7 +1723,9 @@ VKAPI_ATTR VkResult VKAPI_CALL trace_vkCreateXlibSurfaceKHR(VkInstance instance,
 	VkResult retval = wrap_vkCreateXlibSurfaceKHR(instance, pCreateInfo, pAllocator, pSurface);
 	writer.write_uint32_t(retval);
 	// -- Post --
-	const trackable* surface_data = writer.parent->records.VkSurfaceKHR_index.add(*pSurface, lava_writer::instance().global_frame);
+	trackable* surface_data = writer.parent->records.VkSurfaceKHR_index.add(*pSurface, lava_writer::instance().global_frame);
+	surface_data->tid = writer.thread_index();
+	surface_data->call = writer.local_call_number;
 	DLOG("insert VkSurfaceKHR into vkCreateXlibSurfaceKHR index %u", (unsigned)surface_data->index);
 	writer.write_handle(surface_data); // id tracking
 	// -- Return --
@@ -1779,7 +1782,9 @@ VKAPI_ATTR VkResult VKAPI_CALL trace_vkCreateXcbSurfaceKHR(VkInstance instance, 
 	assert(retval == VK_SUCCESS);
 
 	// Post
-	const auto* surface_data = writer.parent->records.VkSurfaceKHR_index.add(*pSurface, lava_writer::instance().global_frame);
+	auto* surface_data = writer.parent->records.VkSurfaceKHR_index.add(*pSurface, lava_writer::instance().global_frame);
+	surface_data->tid = writer.thread_index();
+	surface_data->call = writer.local_call_number;
 	DLOG("insert VkSurfaceKHR into vkCreateXcbSurfaceKHR index %u", (unsigned)surface_data->index);
 	writer.write_handle(surface_data); // id tracking
 	free(geom_reply);
@@ -1813,7 +1818,9 @@ VKAPI_ATTR VkResult VKAPI_CALL trace_vkCreateWaylandSurfaceKHR(VkInstance instan
 	writer.write_uint32_t(retval);
 	assert(retval == VK_SUCCESS);
 	// Post
-	const auto* surface_data = writer.parent->records.VkSurfaceKHR_index.add(*pSurface, lava_writer::instance().global_frame);
+	auto* surface_data = writer.parent->records.VkSurfaceKHR_index.add(*pSurface, lava_writer::instance().global_frame);
+	surface_data->tid = writer.thread_index();
+	surface_data->call = writer.local_call_number;
 	writer.write_handle(surface_data); // id tracking
 	// Return
 	return retval;

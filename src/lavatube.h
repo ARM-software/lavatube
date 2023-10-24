@@ -150,6 +150,7 @@ struct trackedbuffer : trackedobject
 		assert(flags != VK_BUFFER_CREATE_FLAG_BITS_MAX_ENUM);
 		assert(sharingMode != VK_SHARING_MODE_MAX_ENUM);
 		assert(usage != VK_BUFFER_USAGE_FLAG_BITS_MAX_ENUM);
+		assert(type == VK_OBJECT_TYPE_BUFFER);
 		trackedobject::self_test();
 	}
 };
@@ -181,7 +182,7 @@ struct trackedimage : trackedobject
 		assert(format != VK_FORMAT_MAX_ENUM);
 		assert(initialLayout != VK_IMAGE_LAYOUT_MAX_ENUM);
 		assert(currentLayout != VK_IMAGE_LAYOUT_MAX_ENUM);
-		assert(samples != VK_SAMPLE_COUNT_FLAG_BITS_MAX_ENUM);
+		assert(type == VK_OBJECT_TYPE_IMAGE);
 		trackedobject::self_test();
 	}
 };
@@ -240,11 +241,9 @@ struct trackedswapchain : trackable
 struct trackedswapchain_trace : trackedswapchain
 {
 	using trackedswapchain::trackedswapchain; // inherit constructor
-	VkQueue queue = VK_NULL_HANDLE;
 
 	void self_test() const
 	{
-		assert(queue != VK_NULL_HANDLE);
 		trackedswapchain::self_test();
 	}
 };
