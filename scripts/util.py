@@ -488,7 +488,6 @@ class parameter(object):
 			if size:
 				z.do('%s_impl[sidx] = %s[sidx]; // struct copy, discarding the const' % (self.name, varname))
 				z.do('%s_%s(%s, &%s_impl[sidx]);' % (('read' if self.read else 'write'), mytype, side, self.name))
-				z.do('%s = %s_impl; // replacing pointer' % (varname, self.name))
 			else:
 				z.do('*%s_impl = *%s; // struct copy, discarding the const' % (self.name, varname))
 				z.do('%s_%s(%s, %s_impl);' % (('read' if self.read else 'write'), mytype, side, self.name))
@@ -500,6 +499,8 @@ class parameter(object):
 
 		if size:
 			z.loop_end()
+			if self.funcname[0] == 'V' and mytype in deconst_struct and not self.read:
+				z.do('%s = %s_impl; // replacing pointer' % (varname, self.name))
 
 	def print_load(self, name, owner): # called for each parameter
 		global z
