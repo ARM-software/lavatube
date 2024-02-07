@@ -179,6 +179,7 @@ private:
 	struct atomicPhysicalDeviceVulkan13Features core13;
 	std::atomic_bool has_VK_EXT_swapchain_colorspace { false };
 	std::atomic_bool has_VkPhysicalDeviceShaderAtomicInt64Features { false };
+	std::atomic_bool has_VK_KHR_shared_presentable_image { false };
 
 	inline bool is_colorspace_ext(VkColorSpaceKHR s)
 	{
@@ -199,6 +200,12 @@ public:
 		// This also handles VK_EXT_shader_image_atomic_int64 which is an alias
 		VkPhysicalDeviceShaderAtomicInt64Features* pdsai64f = (VkPhysicalDeviceShaderAtomicInt64Features*)get_extension(info, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_ATOMIC_INT64_FEATURES);
 		if (pdsai64f && (pdsai64f->shaderBufferInt64Atomics || pdsai64f->shaderSharedInt64Atomics)) has_VkPhysicalDeviceShaderAtomicInt64Features = true;
+	}
+
+	void check_VkSurfaceCapabilities2KHR(const VkSurfaceCapabilities2KHR* info)
+	{
+		VkSharedPresentSurfaceCapabilitiesKHR* sc = (VkSharedPresentSurfaceCapabilitiesKHR*)get_extension(info, VK_STRUCTURE_TYPE_SHARED_PRESENT_SURFACE_CAPABILITIES_KHR);
+		if (sc && sc->sharedPresentSupportedUsageFlags) has_VK_KHR_shared_presentable_image = true;
 	}
 
 	void check_VkSwapchainCreateInfoKHR(const VkSwapchainCreateInfoKHR* info)
@@ -330,6 +337,7 @@ public:
 	{
 		if (!has_VkPhysicalDeviceShaderAtomicInt64Features) exts.erase("VK_KHR_shader_atomic_int64");
 		if (!has_VkPhysicalDeviceShaderAtomicInt64Features) exts.erase("VK_EXT_shader_image_atomic_int64"); // alias of above
+		if (!has_VK_KHR_shared_presentable_image) exts.erase("VK_KHR_shared_presentable_image");
 	}
 
 	void adjust_instance_extensions(std::unordered_set<std::string>& exts)
