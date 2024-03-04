@@ -1,4 +1,4 @@
-#!/usr/bin/python2
+#!/usr/bin/python3
 
 import sys
 sys.path.append('external/tracetooltests/scripts')
@@ -36,13 +36,13 @@ def struct_header_read(r, selected = None):
 		if not name in structlist or (selected and name != selected) or name in util.struct_noop:
 			continue
 		if name in spec.protected_types:
-			print >> r, '#ifdef %s' % spec.protected_types[name]
+			print('#ifdef %s' % spec.protected_types[name], file=r)
 		structlist.append(name)
 		accessor = '%s* sptr' % name
-		print >> r, 'static void read_%s(lava_file_reader& reader, %s);' % (name, accessor)
+		print('static void read_%s(lava_file_reader& reader, %s);' % (name, accessor), file=r)
 		if name in spec.protected_types:
-			print >> r, '#endif // %s' % spec.protected_types[name]
-	print >> r
+			print('#endif // %s' % spec.protected_types[name], file=r)
+	print(file=r)
 
 def struct_header_write(w, selected = None):
 	for v in spec.root.findall('types/type'):
@@ -50,14 +50,14 @@ def struct_header_write(w, selected = None):
 		if not name in structlist or (selected and name != selected) or name in util.struct_noop:
 			continue
 		if name in spec.protected_types:
-			print >> w, '#ifdef %s' % spec.protected_types[name]
+			print('#ifdef %s' % spec.protected_types[name], file=w)
 		structlist.append(name)
 		accessor = '%s* sptr' % name
 		modifier = 'const ' if not name in util.deconst_struct else ''
-		print >> w, 'static void write_%s(lava_file_writer& writer, %s%s);' % (name, modifier, accessor)
+		print('static void write_%s(lava_file_writer& writer, %s%s);' % (name, modifier, accessor), file=w)
 		if name in spec.protected_types:
-			print >> w, '#endif // %s' % spec.protected_types[name]
-	print >> w
+			print('#endif // %s' % spec.protected_types[name], file=w)
+	print(file=w)
 
 def struct_add_tracking_read(name):
 	if name in ['VkImageMemoryBarrier2', 'VkImageMemoryBarrier']:
@@ -78,17 +78,17 @@ def struct_impl_read(r, selected = None):
 		if not name in structlist or (selected and name != selected) or name in util.struct_noop or name in hardcoded_read:
 			continue
 		if name in spec.protected_types:
-			print >> r, '#ifdef %s' % spec.protected_types[name]
+			print('#ifdef %s' % spec.protected_types[name], file=r)
 		accessor = '%s* sptr' % name
 		special = ''
 		if name == 'VkDeviceCreateInfo': special = ', VkPhysicalDevice physicalDevice'
 		elif 'VkBindBufferMemoryInfo' in name or 'VkBindImageMemoryInfo' in name: special = ', VkDevice device'
-		print >> r, 'static void read_%s(lava_file_reader& reader, %s%s)' % (name, accessor, special)
-		print >> r, '{'
+		print('static void read_%s(lava_file_reader& reader, %s%s)' % (name, accessor, special), file=r)
+		print('{', file=r)
 		if v.attrib.get('alias'):
 			if 'VkDeviceCreateInfo' in name: special = ', physicalDevice'
 			elif 'VkBindBufferMemoryInfo' in name or 'VkBindImageMemoryInfo' in name: special = ', device'
-			print >> r, '\tread_%s(reader, sptr%s);' % (v.attrib.get('alias'), special)
+			print('\tread_%s(reader, sptr%s);' % (v.attrib.get('alias'), special), file=r)
 		else:
 			z.target(r)
 			z.read = True
@@ -102,10 +102,10 @@ def struct_impl_read(r, selected = None):
 			struct_add_tracking_read(name)
 			z.struct_end()
 			z.dump()
-		print >> r, '}'
+		print('}', file=r)
 		if name in spec.protected_types:
-			print >> r, '#endif // %s' % spec.protected_types[name]
-		print >> r
+			print('#endif // %s' % spec.protected_types[name], file=r)
+		print(file=r)
 
 def struct_impl_write(w, selected = None):
 	for v in spec.root.findall('types/type'):
@@ -113,7 +113,7 @@ def struct_impl_write(w, selected = None):
 		if not name in structlist or (selected and name != selected) or name in util.struct_noop or name in hardcoded_write:
 			continue
 		if name in spec.protected_types:
-			print >> w, '#ifdef %s' % spec.protected_types[name]
+			print('#ifdef %s' % spec.protected_types[name], file=w)
 		accessor = '%s* sptr' % name
 		# Write implementation
 		special = ''
@@ -121,10 +121,10 @@ def struct_impl_write(w, selected = None):
 		elif name == 'VkCommandBufferBeginInfo': special = ', trackedcmdbuffer_trace* tcmd'
 		elif name == 'VkWriteDescriptorSet': special = ', bool ignoreDstSet'
 		modifier = 'const ' if not name in util.deconst_struct else ''
-		print >> w, 'static void write_%s(lava_file_writer& writer, %s%s%s)' % (name, modifier, accessor, special)
-		print >> w, '{'
+		print('static void write_%s(lava_file_writer& writer, %s%s%s)' % (name, modifier, accessor, special), file=w)
+		print('{', file=w)
 		if v.attrib.get('alias'):
-			print >> w, '\twrite_%s(writer, sptr);' % v.attrib.get('alias')
+			print('\twrite_%s(writer, sptr);' % v.attrib.get('alias'), file=w)
 		else:
 			z.target(w)
 			z.read = False
@@ -152,11 +152,11 @@ def struct_impl_write(w, selected = None):
 			struct_add_tracking_write(name)
 			z.struct_end()
 			z.dump()
-		print >> w, '}'
+		print('}', file=w)
 		# Done
 		if name in spec.protected_types:
-			print >> w, '#endif // %s' % spec.protected_types[name]
-		print >> w
+			print('#endif // %s' % spec.protected_types[name], file=w)
+		print(file=w)
 
 if __name__ == '__main__':
 	r = open('generated/struct_read_auto.h', 'w')

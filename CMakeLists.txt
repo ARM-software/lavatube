@@ -32,7 +32,7 @@ set(CMAKE_CTEST_ARGUMENTS "--output-on-failure")
 
 set(SRC_ROOT ${CMAKE_SOURCE_DIR})
 set(THIRD_PARTY_DIR ${SRC_ROOT}/external)
-set(PYTHON_EXECUTABLE python2)
+set(PYTHON_EXECUTABLE python3)
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake")
 set(LAYER_NAME VkLayer_lavatube)
 find_package(PkgConfig REQUIRED)

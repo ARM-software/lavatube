@@ -1,4 +1,4 @@
-#!/usr/bin/python2
+#!/usr/bin/python3
 
 import sys
 sys.path.append('external/tracetooltests/scripts')
@@ -191,7 +191,7 @@ def getsize(raw):
 
 def typetmpname(root):
 	assert not '[' in root, 'Bad name %s' % root
-	return 'tmp_' + root[0] + root.translate(None, '_*-.:<> ')
+	return 'tmp_' + root[0] + root.translate(root.maketrans('', '', '_*-.:<> '))
 
 # Used to split output into declarations and instructions. This is needed because
 # we need things declared inside narrower scopes to outlive those scopes, and it
@@ -261,19 +261,19 @@ class spool(object):
 
 	def dump(self):
 		for v in self.first_lines:
-			print >> self.out, '\t' + v
+			print('\t' + v, file=self.out)
 		if len(self.declarations) > 0:
-			print >> self.out, '\t// -- Declarations --'
+			print('\t// -- Declarations --', file=self.out)
 		for v in self.declarations:
-			print >> self.out, '\t' + v
+			print('\t' + v, file=self.out)
 		if len(self.before_instr) > 0:
-			print >> self.out, '\t// -- Initializations --'
+			print('\t// -- Initializations --', file=self.out)
 		for v in self.before_instr:
-			print >> self.out, '\t' + v
+			print('\t' + v, file=self.out)
 		if len(self.instructions) > 0 and (len(self.before_instr) > 0 or len(self.declarations) > 0):
-			print >> self.out, '\t// -- Instructions --'
+			print('\t// -- Instructions --', file=self.out)
 		for v in self.instructions:
-			print >> self.out, v
+			print(v, file=self.out)
 		self.declarations = []
 		self.instructions = []
 		self.indents = 1
@@ -1327,10 +1327,10 @@ def func_common(name, node, read, target, header, guard_header=True):
 	proto = node.find('proto')
 	retval = proto.find('type').text
 	if name in spec.protected_funcs:
-		print >> target, '#ifdef %s // %s' % (spec.protected_funcs[name], name)
+		print('#ifdef %s // %s' % (spec.protected_funcs[name], name), file=target)
 		if header and guard_header:
-			print >> header, '#ifdef %s // %s' % (spec.protected_funcs[name], name)
-		print >> target
+			print('#ifdef %s // %s' % (spec.protected_funcs[name], name), file=header)
+		print(file=target)
 	params = []
 	for p in node.findall('param'):
 		api = p.attrib.get('api')
@@ -1343,19 +1343,19 @@ def func_common_end(name, target, header, add_dummy=False):
 	z = getspool()
 	if name in spec.protected_funcs:
 		if name not in hardcoded and add_dummy and name not in functions_noop and name not in spec.disabled_functions:
-			print >> target
-			print >> target, '#else // %s' % spec.protected_funcs[name]
-			print >> target
-			print >> target, 'void retrace_%s(lava_file_reader& reader)' % name
-			print >> target, '{'
-			print >> target, '\tABORT("Attempt to call unimplemented protected function: %s");' % name
-			print >> target, '}'
+			print(file=target)
+			print('#else // %s' % spec.protected_funcs[name], file=target)
+			print(file=target)
+			print('void retrace_%s(lava_file_reader& reader)' % name, file=target)
+			print('{', file=target)
+			print('\tABORT("Attempt to call unimplemented protected function: %s");' % name, file=target)
+			print('}', file=target)
 
-		print >> target
-		print >> target, '#endif // %s 1' % spec.protected_funcs[name]
-		print >> target
+		print(file=target)
+		print('#endif // %s 1' % spec.protected_funcs[name], file=target)
+		print(file=target)
 		if not add_dummy and header:
-			if header: print >> header, '#endif // %s 2' % spec.protected_funcs[name]
+			if header: print('#endif // %s 2' % spec.protected_funcs[name], file=header)
 
 def loadfunc(name, node, target, header):
 	debugcount = isdebugcount()
@@ -1368,12 +1368,12 @@ def loadfunc(name, node, target, header):
 	if name in spec.disabled or name in functions_noop or name in spec.disabled_functions or spec.str_contains_vendor(name):
 		func_common_end(name, target=target, header=header, add_dummy=True)
 		return
-	if header: print >> header, 'void retrace_%s(lava_file_reader& reader);' % name
+	if header: print('void retrace_%s(lava_file_reader& reader);' % name, file=header)
 	if name in hardcoded or name in hardcoded_read:
 		func_common_end(name, target=target, header=header, add_dummy=True)
 		return
-	print >> target, 'void retrace_%s(lava_file_reader& reader)' % name
-	print >> target, '{'
+	print('void retrace_%s(lava_file_reader& reader)' % name, file=target)
+	print('{', file=target)
 	if debugstats:
 		z.do('uint64_t startTime = gettime();')
 	z.do('// -- Load --')
@@ -1547,9 +1547,9 @@ def loadfunc(name, node, target, header):
 		z.do('__atomic_add_fetch(&setup_time_%s, gettime() - startTime - apiTime, __ATOMIC_RELAXED);' % name)
 		z.do('__atomic_add_fetch(&vulkan_time_%s, apiTime, __ATOMIC_RELAXED);' % name)
 	z.dump()
-	print >> target, '}'
+	print('}', file=target)
 	func_common_end(name, target=target, header=header, add_dummy=True)
-	print >> target
+	print(file=target)
 
 def savefunc(name, node, target, header):
 	debugcount = isdebugcount()
@@ -1562,7 +1562,7 @@ def savefunc(name, node, target, header):
 	if name in spec.disabled or name in spec.disabled_functions or spec.str_contains_vendor(name):
 		func_common_end(name, target=target, header=header)
 		return
-	print >> header, 'VKAPI_ATTR %s VKAPI_CALL trace_%s(%s);' % (retval, name, ', '.join(paramlist))
+	print('VKAPI_ATTR %s VKAPI_CALL trace_%s(%s);' % (retval, name, ', '.join(paramlist)), file=header)
 	if name in hardcoded or name in hardcoded_write:
 		func_common_end(name, target=target, header=header)
 		return
@@ -1572,14 +1572,14 @@ def savefunc(name, node, target, header):
 			paramlist[i] = paramlist[i] + '_ORIGINAL'
 			z.first('%s %s_impl = *%s_ORIGINAL; // struct copy, discarding the const' % (params[i].type, params[i].name, params[i].name))
 			z.first('%s %s = &%s_impl;' % (params[i].type + '*', params[i].name, params[i].name))
-	print >> target, 'VKAPI_ATTR %s VKAPI_CALL trace_%s(%s)' % (retval, name, ', '.join(paramlist))
-	print >> target, '{'
+	print('VKAPI_ATTR %s VKAPI_CALL trace_%s(%s)' % (retval, name, ', '.join(paramlist)), file=target)
+	print('{', file=target)
 	if name in functions_noop:
-		print >> target, '\tassert(false);'
+		print('\tassert(false);', file=target)
 		z.dump()
 		if retval != 'void':
-			print >> target, '\treturn (%s)0;' % retval
-		print >> target, '}\n'
+			print('\treturn (%s)0;' % retval, file=target)
+		print('}\n', file=target)
 		func_common_end(name, target=target, header=header)
 		return
 	if debugstats:
@@ -1667,6 +1667,6 @@ def savefunc(name, node, target, header):
 		z.do('// -- Return --')
 		z.do('return retval;')
 	z.dump()
-	print >> target, '}'
+	print('}', file=target)
 	func_common_end(name, target=target, header=header)
-	print >> target
+	print(file=target)

@@ -1,4 +1,4 @@
-#!/usr/bin/python2
+#!/usr/bin/python3
 
 import sys
 sys.path.append('external/tracetooltests/scripts')
@@ -25,7 +25,7 @@ wr = open('generated/write_resource_auto.cpp', 'w')
 wrh = open('generated/write_resource_auto.h', 'w')
 
 def out(lst, str=''):
-	for n in lst: print >> n, str
+	for n in lst: print(str, file=n)
 
 # Starts to write file output from here (w=trace, r=replay, wh=trace header, rh=replay header)
 targets_all = [w,r,wh,rh,u,uh,wr,wrh]
@@ -195,7 +195,7 @@ for v in spec.extension_structs:
 	out(targets_read, '\t\t}')
 	if v in spec.protected_types:
 		out(targets_read, '#endif')
-for k,v in fake_structs.iteritems():
+for k,v in fake_structs.items():
 	out(targets_read, '\t\tcase %s:' % v)
 	out(targets_read, '\t\t{')
 	out(targets_read, '\t\t\t%s* tmps = reader.pool.allocate<%s>(1);' % (k, k))
@@ -225,7 +225,7 @@ for v in spec.extension_structs:
 	out(targets_write, '\t\tcase %s: DLOG2("Saving extension %s (%%u)", (unsigned)sptr->sType); writer.write_uint32_t((uint32_t)sptr->sType); write_%s(writer, (%s*)sptr); break;' % (spec.type2sType[v], v, v, v))
 	if v in spec.protected_types:
 		out(targets_write, '#endif')
-for k,v in fake_structs.iteritems():
+for k,v in fake_structs.items():
 	out(targets_write, '\t\tcase %s: DLOG2("Saving fake extension %s (%%u)", (unsigned)sptr->sType); writer.write_uint32_t((uint32_t)sptr->sType); write_%s(writer, (%s*)sptr); break;' % (v, k, k, k))
 out(targets_write, '\t}')
 out(targets_write, '}')

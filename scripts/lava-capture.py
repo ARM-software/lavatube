@@ -25,7 +25,7 @@ def args():
 
 def PrintEnvVar(envVar):
 	if envVar in os.environ:
-		print(envVar, os.environ[envVar])
+		print((envVar, os.environ[envVar]))
 
 if __name__ == '__main__':
 	parser = args()

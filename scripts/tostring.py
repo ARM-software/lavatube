@@ -1,4 +1,4 @@
-#!/usr/bin/python2
+#!/usr/bin/python3
 
 import sys
 sys.path.append('external/tracetooltests/scripts')
@@ -12,17 +12,17 @@ header = open('generated/tostring.h', 'w')
 assert source, 'Could not create source file'
 assert header, 'Could not create header file'
 
-print >> header, '// This file contains only auto-generated code!'
-print >> header
-print >> header, '#pragma once'
-print >> header, '#include "util.h"'
-print >> header
+print('// This file contains only auto-generated code!', file=header)
+print(file=header)
+print('#pragma once', file=header)
+print('#include "util.h"', file=header)
+print(file=header)
 
-print >> source, '// This file contains only auto-generated code!'
-print >> source
-print >> source, '#include "tostring.h"'
-print >> source, '#include <string.h>'
-print >> source
+print('// This file contains only auto-generated code!', file=source)
+print(file=source)
+print('#include "tostring.h"', file=source)
+print('#include <string.h>', file=source)
+print(file=source)
 
 bitmask = {}
 missing = []
@@ -73,23 +73,23 @@ for v in spec.root.findall('enums'):
 		continue
 	ename = bitmask[rname]
 	if ename in protected:
-		print >> header, '#ifdef %s // %s' % (protected[ename], rname)
-		print >> source, '#ifdef %s // %s' % (protected[ename], rname)
-	print >> header, 'std::string %s_to_string(%s flags);' % (ename, ename)
-	print >> source, 'std::string %s_to_string(%s flags)' % (ename, ename)
-	print >> source, '{'
-	print >> source, '\tstd::string result;'
-	print >> source, '\twhile (flags)'
-	print >> source, '\t{'
-	print >> source, '\t\tint bit = 0;'
-	print >> source, '\t\twhile (!(flags & 1 << bit)) bit++; // find first set bit'
-	print >> source, '\t\tswitch (flags & (1 << bit))'
-	print >> source, '\t\t{'
+		print('#ifdef %s // %s' % (protected[ename], rname), file=header)
+		print('#ifdef %s // %s' % (protected[ename], rname), file=source)
+	print('std::string %s_to_string(%s flags);' % (ename, ename), file=header)
+	print('std::string %s_to_string(%s flags)' % (ename, ename), file=source)
+	print('{', file=source)
+	print('\tstd::string result;', file=source)
+	print('\twhile (flags)', file=source)
+	print('\t{', file=source)
+	print('\t\tint bit = 0;', file=source)
+	print('\t\twhile (!(flags & 1 << bit)) bit++; // find first set bit', file=source)
+	print('\t\tswitch (flags & (1 << bit))', file=source)
+	print('\t\t{', file=source)
 	for bit in v.findall('enum'):
 		name = bit.attrib.get('name')
 		pos = bit.attrib.get('bitpos')
 		if pos and not name in added_case:
-			print >> source, '\t\tcase %s: result += "%s"; break;' % (name, name)
+			print('\t\tcase %s: result += "%s"; break;' % (name, name), file=source)
 			added_case.append(name)
 	# Find and add extensions enums
 	for ext in spec.root.findall('extensions/extension'):
@@ -102,30 +102,30 @@ for v in spec.root.findall('enums'):
 					name = bit.attrib.get('name')
 					pos = bit.attrib.get('bitpos')
 					if pos and not name in added_case:
-						print >> source, '\t\tcase %s: result += "%s"; break;' % (name, name)
+						print('\t\tcase %s: result += "%s"; break;' % (name, name), file=source)
 						added_case.append(name)
-	print >> source, '\t\tdefault: result += "Bad bitfield value"; break;'
-	print >> source, '\t\t}'
-	print >> source, '\t\tflags &= ~(1 << bit); // remove bit'
-	print >> source, '\t\tif (flags) result += " | ";'
-	print >> source, '\t}'
-	print >> source, '\treturn result;'
-	print >> source, '}'
+	print('\t\tdefault: result += "Bad bitfield value"; break;', file=source)
+	print('\t\t}', file=source)
+	print('\t\tflags &= ~(1 << bit); // remove bit', file=source)
+	print('\t\tif (flags) result += " | ";', file=source)
+	print('\t}', file=source)
+	print('\treturn result;', file=source)
+	print('}', file=source)
 	if ename in protected:
-		print >> header, '#endif'
-		print >> source, '#endif'
-	print >> source
+		print('#endif', file=header)
+		print('#endif', file=source)
+	print(file=source)
 
 for name in missing: # create stubs for unused flags
 	if name in protected:
-		print >> header, '#ifdef %s // %s' % (protected[name], rname)
-	print >> header, 'static inline std::string %s_to_string(%s flags) { return std::string(); }' % (name, name)
+		print('#ifdef %s // %s' % (protected[name], rname), file=header)
+	print('static inline std::string %s_to_string(%s flags) { return std::string(); }' % (name, name), file=header)
 	if name in protected:
-		print >> header, '#endif'
+		print('#endif', file=header)
 
 # -- Enum to string --
 
-print >> header
+print(file=header)
 
 added_case = []
 for v in spec.root.findall('enums'):
@@ -134,18 +134,18 @@ for v in spec.root.findall('enums'):
 	if not type or type != 'enum' or not name in spec.types:
 		continue
 	if name in protected:
-		print >> header, '#ifdef %s // %s' % (protected[name], name)
-		print >> source, '#ifdef %s // %s' % (protected[name], name)
-	print >> header, 'std::string %s_to_string(%s val);' % (name, name)
-	print >> source, 'std::string %s_to_string(%s val)' % (name, name)
-	print >> source, '{'
-	print >> source, '\tswitch (val)'
-	print >> source, '\t{'
+		print('#ifdef %s // %s' % (protected[name], name), file=header)
+		print('#ifdef %s // %s' % (protected[name], name), file=source)
+	print('std::string %s_to_string(%s val);' % (name, name), file=header)
+	print('std::string %s_to_string(%s val)' % (name, name), file=source)
+	print('{', file=source)
+	print('\tswitch (val)', file=source)
+	print('\t{', file=source)
 	for item in v.findall('enum'):
 		itemname = item.attrib.get('name')
 		if item.attrib.get('alias', None):
 			continue
-		print >> source, '\tcase %s: return "%s";' % (itemname, itemname)
+		print('\tcase %s: return "%s";' % (itemname, itemname), file=source)
 		added_case.append(itemname)
 	# Find and add extensions enums
 		supported = ext.attrib.get('supported')
@@ -161,11 +161,11 @@ for v in spec.root.findall('enums'):
 				# FIXME need to handle deduplication of aliases, not trivial from spec
 				#print >> source, '\tcase %s: return "%s"; // from %s' % (itemname, itemname, extname)
 				added_case.append(itemname)
-	print >> source, '\tdefault: return "Unhandled enum";'
-	print >> source, '\t}'
-	print >> source, '\treturn "Error";'
-	print >> source, '}'
+	print('\tdefault: return "Unhandled enum";', file=source)
+	print('\t}', file=source)
+	print('\treturn "Error";', file=source)
+	print('}', file=source)
 	if name in protected:
-		print >> header, '#endif'
-		print >> source, '#endif'
-	print >> source
+		print('#endif', file=header)
+		print('#endif', file=source)
+	print(file=source)
