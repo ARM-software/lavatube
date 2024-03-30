@@ -139,11 +139,18 @@ const char* errorString(const VkResult errorCode)
 	STR(OPERATION_DEFERRED_KHR);
 	STR(OPERATION_NOT_DEFERRED_KHR);
 	STR(ERROR_COMPRESSION_EXHAUSTED_EXT);
-
+	STR(ERROR_IMAGE_USAGE_NOT_SUPPORTED_KHR);
+	STR(ERROR_VIDEO_PICTURE_LAYOUT_NOT_SUPPORTED_KHR);
+	STR(ERROR_VIDEO_PROFILE_OPERATION_NOT_SUPPORTED_KHR);
+	STR(ERROR_VIDEO_PROFILE_FORMAT_NOT_SUPPORTED_KHR);
+	STR(ERROR_VIDEO_PROFILE_CODEC_NOT_SUPPORTED_KHR);
+	STR(ERROR_VIDEO_STD_VERSION_NOT_SUPPORTED_KHR);
+	STR(ERROR_INCOMPATIBLE_SHADER_BINARY_EXT);
 #undef STR
-	default:
-		return "(unrecognized error code)";
+	case VK_RESULT_MAX_ENUM:
+		return "(bad error code)";
 	}
+	return "(unrecognized error code)";
 }
 
 void check_retval(VkResult stored_retval, VkResult retval)
@@ -323,21 +330,6 @@ const void* find_extension(const void* sptr, VkStructureType sType)
 	const VkBaseOutStructure* ptr = (VkBaseOutStructure*)sptr;
 	while (ptr != nullptr && ptr->sType != sType) ptr = ptr->pNext;
 	return ptr;
-}
-
-int android_hw_level(const VkPhysicalDeviceFeatures& f)
-{
-       if (!f.textureCompressionETC2)
-       {
-               return -1;
-       }
-       else if (f.fullDrawIndexUint32 && f.imageCubeArray && f.independentBlend && f.geometryShader && f.tessellationShader
-                && f.sampleRateShading && f.textureCompressionASTC_LDR && f.fragmentStoresAndAtomics && f.shaderImageGatherExtended
-                && f.shaderUniformBufferArrayDynamicIndexing && f.shaderSampledImageArrayDynamicIndexing)
-       {
-               return 1;
-       }
-       return 0;
 }
 
 const char* pretty_print_VkObjectType(VkObjectType val)

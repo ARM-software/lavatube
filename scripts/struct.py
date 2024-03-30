@@ -18,26 +18,20 @@ hardcoded_read = [ 'VkAccelerationStructureBuildGeometryInfoKHR' ]
 hardcoded_write = []
 
 z = util.getspool()
-structlist = []
-for v in spec.root.findall('types/type'):
-	name = v.attrib.get('name')
-	category = v.attrib.get('category')
-	if category != 'struct':
-		continue
+
+def skip(name, selected):
+	if not name in spec.structures or (selected and name != selected) or name in util.struct_noop:
+		return True
 	if name in skiplist:
-		continue
-	if spec.str_contains_vendor(name) or not name in spec.types:
-		continue
-	structlist.append(name)
+		return True
+	return False
 
 def struct_header_read(r, selected = None):
 	for v in spec.root.findall('types/type'):
 		name = v.attrib.get('name')
-		if not name in structlist or (selected and name != selected) or name in util.struct_noop:
-			continue
+		if skip(name, selected): continue
 		if name in spec.protected_types:
 			print('#ifdef %s' % spec.protected_types[name], file=r)
-		structlist.append(name)
 		accessor = '%s* sptr' % name
 		print('static void read_%s(lava_file_reader& reader, %s);' % (name, accessor), file=r)
 		if name in spec.protected_types:
@@ -47,11 +41,9 @@ def struct_header_read(r, selected = None):
 def struct_header_write(w, selected = None):
 	for v in spec.root.findall('types/type'):
 		name = v.attrib.get('name')
-		if not name in structlist or (selected and name != selected) or name in util.struct_noop:
-			continue
+		if skip(name, selected): continue
 		if name in spec.protected_types:
 			print('#ifdef %s' % spec.protected_types[name], file=w)
-		structlist.append(name)
 		accessor = '%s* sptr' % name
 		modifier = 'const ' if not name in util.deconst_struct else ''
 		print('static void write_%s(lava_file_writer& writer, %s%s);' % (name, modifier, accessor), file=w)
@@ -75,8 +67,7 @@ def struct_add_tracking_write(name):
 def struct_impl_read(r, selected = None):
 	for v in spec.root.findall('types/type'):
 		name = v.attrib.get('name')
-		if not name in structlist or (selected and name != selected) or name in util.struct_noop or name in hardcoded_read:
-			continue
+		if skip(name, selected) or name in hardcoded_read: continue
 		if name in spec.protected_types:
 			print('#ifdef %s' % spec.protected_types[name], file=r)
 		accessor = '%s* sptr' % name
@@ -110,8 +101,7 @@ def struct_impl_read(r, selected = None):
 def struct_impl_write(w, selected = None):
 	for v in spec.root.findall('types/type'):
 		name = v.attrib.get('name')
-		if not name in structlist or (selected and name != selected) or name in util.struct_noop or name in hardcoded_write:
-			continue
+		if skip(name, selected) or name in hardcoded_write: continue
 		if name in spec.protected_types:
 			print('#ifdef %s' % spec.protected_types[name], file=w)
 		accessor = '%s* sptr' % name

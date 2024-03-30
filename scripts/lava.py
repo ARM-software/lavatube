@@ -146,7 +146,7 @@ for v in spec.root.findall('types/type'):
 		if v.find('name') == None: continue
 		name = v.find('name').text
 		if name == 'VkDeviceMemory': continue
-		if not name in spec.types: continue
+		if spec.str_contains_vendor(name): continue
 		out(targets_write, '\tr->%s_index.clear();' % name)
 		out(targets_read, '\t%s_index.clear();' % name)
 		out(targets_read, '\tindex_to_%s.clear();' % name)
@@ -284,7 +284,7 @@ for v in spec.root.findall('types/type'):
 		if v.find('name') == None or v.find('name').text == 'VkDeviceMemory': # ignore aliases
 			continue
 		name = v.find('name').text
-		if not name in spec.types: continue
+		if spec.str_contains_vendor(name): continue
 		out(targets_read, '\t\tif (p == "%s")' % name)
 		out(targets_read, '\t\t{')
 		out(targets_read, '\t\t\tindex_to_%s.resize(v[p].asInt());' % name)
@@ -311,7 +311,7 @@ for v in spec.root.findall('types/type'):
 		if v.find('name') == None: # ignore aliases
 			continue
 		name = v.find('name').text
-		if not name in spec.types: continue
+		if spec.str_contains_vendor(name): continue
 		out(targets_write, '\tv["%s"] = (unsigned)instance->records.%s_index.size();' % (name, name))
 out(targets_write, '\treturn v;')
 out(targets_write, '}')
@@ -394,7 +394,7 @@ for v in spec.root.findall('types/type'):
 		if v.find('name') == None: # ignore aliases
 			continue
 		name = v.find('name').text
-		if not name in spec.types: continue
+		if spec.str_contains_vendor(name): continue
 		out(targets_write, '\tif (instance->records.%s_index.size())' % name)
 		out(targets_write, '\t{')
 		out(targets_write, '\t\tv["%s"] = Json::arrayValue;' % name)
@@ -419,7 +419,7 @@ for v in spec.root.findall('types/type'):
 		if v.find('name') == None or v.find('name').text == 'VkDeviceMemory': # ignore aliases
 			continue
 		name = v.find('name').text
-		if not name in spec.types: continue
+		if spec.str_contains_vendor(name): continue
 		out(targets_read, '\tif (v.isMember("%s")) for (const auto& i : v["%s"]) %s_index.push_back(%s_json(i));' % (name, name, name, util.trackable_type_map_replay.get(name, 'trackable')))
 for e in extra_tracked_structs:
 	out(targets_read, '\tif (v.isMember("%s")) { has_%s = true; read%s(v["%s"], stored_%s); }' % (e, e, e, e, e))

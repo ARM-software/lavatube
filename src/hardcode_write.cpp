@@ -1003,9 +1003,6 @@ static void trace_post_vkCreateDevice(lava_file_writer& writer, VkResult result,
 	Json::Value& r = instance.json();
 
 	// -- Save information on tracing device --
-#ifdef VK_USE_PLATFORM_ANDROID_KHR
-	r["devicePresented"]["android_hw_level"] = android_hw_level(device_features);
-#endif
 #ifdef __aarch64__
 	r["devicePresented"]["architecture"] = "arm64";
 #elif __arm__

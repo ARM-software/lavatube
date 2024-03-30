@@ -201,5 +201,4 @@ void* find_extension_parent(void* sptr, VkStructureType sType);
 void* find_extension(void* sptr, VkStructureType sType);
 const void* find_extension(const void* sptr, VkStructureType sType);
 
-int android_hw_level(const VkPhysicalDeviceFeatures& f);
 const char* pretty_print_VkObjectType(VkObjectType val);
