@@ -12,7 +12,12 @@ skiplist = [ 'VkXlibSurfaceCreateInfoKHR', 'VkXcbSurfaceCreateInfoKHR', 'VkBaseO
 	'VkVideoDecodeH264CapabilitiesKHR', 'VkVideoDecodeH264SessionParametersAddInfoKHR', 'VkVideoDecodeH264ProfileInfoKHR', 'VkVideoDecodeH264SessionParametersCreateInfoKHR',
 	'VkVideoDecodeH264PictureInfoKHR', 'VkVideoDecodeH264DpbSlotInfoKHR', 'VkVideoDecodeH265ProfileInfoKHR', 'VkVideoDecodeH265SessionParametersAddInfoKHR',
 	'VkVideoDecodeH265CapabilitiesKHR', 'VkVideoDecodeH265SessionParametersCreateInfoKHR', 'VkVideoDecodeH265PictureInfoKHR', 'VkVideoDecodeH265DpbSlotInfoKHR',
-	'VkOpaqueCaptureDescriptorDataCreateInfoEXT' ]
+	'VkOpaqueCaptureDescriptorDataCreateInfoEXT',
+	'VkPushDescriptorSetWithTemplateInfoKHR',
+	'VkMemoryMapPlacedInfoEXT',
+	'VkBindMemoryStatusKHR',
+	'VkRenderingInputAttachmentIndexInfoKHR',
+]
 
 hardcoded_read = [ 'VkAccelerationStructureBuildGeometryInfoKHR' ]
 hardcoded_write = []

@@ -91,7 +91,8 @@ functions_noop = [
 	'vkGetPipelinePropertiesEXT', 'vkUpdateDescriptorSetWithTemplate', 'vkCmdUpdateBuffer', 'vkGetBufferOpaqueCaptureDescriptorDataEXT',
 	'vkCmdBuildMicromapsEXT', 'vkBuildMicromapsEXT', 'vkGetMicromapBuildSizesEXT', 'vkGetImageOpaqueCaptureDescriptorDataEXT', 'vkGetSamplerOpaqueCaptureDescriptorDataEXT',
 	'vkGetDeviceFaultInfoEXT', # we never want to trace this, but rather inject it during tracing if device loss happens, print the info, then abort
-	'vkGetAccelerationStructureOpaqueCaptureDescriptorDataEXT'
+	'vkGetAccelerationStructureOpaqueCaptureDescriptorDataEXT', 'vkCmdPushDescriptorSetWithTemplate2KHR', 'vkCmdSetRenderingInputAttachmentIndicesKHR',
+	'vkGetEncodedVideoSessionParametersKHR',
 ]
 struct_noop = []
 
@@ -391,12 +392,10 @@ class parameter(object):
 			self.length = self.length.replace(',1', '')
 		if self.length and '::' in self.length:
 			self.length = self.length.replace('::','->')
-		if not self.length and '[' in raw: # ie fixed length array
-			length = node.find('enum')
-			if length is not None:
-				self.length = length.text
-			else: # naked numeral
-				self.length = getsize(raw)
+		if '[' in raw: # fixed length array?
+			enum_length = node.find('enum')
+			if enum_length: self.length = length.text # an enum define
+			else: self.length = getsize(raw) # a numeric value
 		if self.length and (self.length.isdigit() or self.length.isupper()):
 			self.fixedsize = True # fixed length array
 		self.structure = self.type in spec.structures
@@ -404,7 +403,7 @@ class parameter(object):
 		self.nondisphandle = self.type in spec.nondisp_handles
 		self.inparam = (not self.ptr or self.const) # else out parameter
 		self.string_array = self.length and ',null-terminated' in self.length and self.type == 'char'
-		self.string = self.length == 'null-terminated' and self.type == 'char'
+		self.string = self.length == 'null-terminated' and self.type == 'char' and not self.string_array and not self.fixedsize
 		self.read = read
 
 		# We need to be really defensive and treat all pointers as potentially optional. We cannot trust the optional XML
@@ -646,6 +645,9 @@ class parameter(object):
 				storedname = z.tmpmem('float', '%s * 4' % self.length)
 				z.do('reader.read_array(%s, %s * 4); // read VkClearValue into temporary' % (storedname, self.length))
 				z.do('%s = reinterpret_cast<VkClearValue*>(%s);' % (varname, storedname))
+		elif self.type in spec.packed_bitfields:
+			storedtype = spec.type_mappings[self.type]
+			z.do('%s = (%s)reader.read_%s_t();' % (self.type, varname, storedtype))
 		elif self.type in spec.type_mappings:
 			storedtype = spec.type_mappings[self.type]
 			nativetype = self.type if self.type != 'void' else 'char'
@@ -970,6 +972,9 @@ class parameter(object):
 				z.do('for (unsigned s = 0; s < (unsigned)(%s); s++) writer.write_%s(%s[s]);' % (self.length, spec.type_mappings[self.type], varname))
 			else: # no, just write out as is
 				z.do('writer.write_array(reinterpret_cast<const char*>(%s), %s * sizeof(%s));' % (varname, self.length, self.type if self.type != 'void' else 'char'))
+		elif self.type in spec.packed_bitfields:
+			storedtype = spec.type_mappings[self.type]
+			z.do('writer.write_%s_t((%s)%s);' % (storedtype, storedtype, varname))
 		elif self.ptr and self.type in spec.type_mappings:
 			z.do('writer.write_%s(*%s);' % (spec.type_mappings[self.type], varname))
 		elif self.ptr:

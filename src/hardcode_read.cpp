@@ -93,6 +93,8 @@ static uint64_t debug_object_lookup(VkDebugReportObjectTypeEXT type, uint32_t in
 	case VK_DEBUG_REPORT_OBJECT_TYPE_VALIDATION_CACHE_EXT: return (uint64_t)index_to_VkValidationCacheEXT.at(index);
 	case VK_DEBUG_REPORT_OBJECT_TYPE_SAMPLER_YCBCR_CONVERSION_KHR_EXT: return (uint64_t)index_to_VkSamplerYcbcrConversion.at(index);
 	// these are not supported:
+	case VK_DEBUG_REPORT_OBJECT_TYPE_CUDA_MODULE_NV_EXT:
+	case VK_DEBUG_REPORT_OBJECT_TYPE_CUDA_FUNCTION_NV_EXT:
 	case VK_DEBUG_REPORT_OBJECT_TYPE_DEBUG_REPORT_CALLBACK_EXT_EXT:
 	case VK_DEBUG_REPORT_OBJECT_TYPE_CU_MODULE_NVX_EXT:
 	case VK_DEBUG_REPORT_OBJECT_TYPE_CU_FUNCTION_NVX_EXT:
@@ -150,6 +152,8 @@ static uint64_t object_lookup(VkObjectType type, uint32_t index)
 	case VK_OBJECT_TYPE_DEBUG_REPORT_CALLBACK_EXT: return (uint64_t)index_to_VkDebugReportCallbackEXT.at(index);
 	case VK_OBJECT_TYPE_DEBUG_UTILS_MESSENGER_EXT: return (uint64_t)index_to_VkDebugUtilsMessengerEXT.at(index);
 	// these are not supported:
+	case VK_OBJECT_TYPE_CUDA_MODULE_NV:
+	case VK_OBJECT_TYPE_CUDA_FUNCTION_NV:
 	case VK_OBJECT_TYPE_OPTICAL_FLOW_SESSION_NV:
 	case VK_OBJECT_TYPE_BUFFER_COLLECTION_FUCHSIA:
 	case VK_OBJECT_TYPE_INDIRECT_COMMANDS_LAYOUT_NV:

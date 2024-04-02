@@ -146,6 +146,7 @@ const char* errorString(const VkResult errorCode)
 	STR(ERROR_VIDEO_PROFILE_CODEC_NOT_SUPPORTED_KHR);
 	STR(ERROR_VIDEO_STD_VERSION_NOT_SUPPORTED_KHR);
 	STR(ERROR_INCOMPATIBLE_SHADER_BINARY_EXT);
+	STR(ERROR_INVALID_VIDEO_STD_PARAMETERS_KHR);
 #undef STR
 	case VK_RESULT_MAX_ENUM:
 		return "(bad error code)";
@@ -386,6 +387,8 @@ const char* pretty_print_VkObjectType(VkObjectType val)
 	case VK_OBJECT_TYPE_VIDEO_SESSION_KHR: return "VideoSession";
 	case VK_OBJECT_TYPE_VIDEO_SESSION_PARAMETERS_KHR: return "VideoSessionParameters";
 	case VK_OBJECT_TYPE_SHADER_EXT: return "Shader";
+	case VK_OBJECT_TYPE_CUDA_MODULE_NV: return "CudaModule";
+	case VK_OBJECT_TYPE_CUDA_FUNCTION_NV: return "CudaFunction";
 	}
 	return "Error";
 }

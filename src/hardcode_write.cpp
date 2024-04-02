@@ -71,6 +71,8 @@ static trackable* debug_object_trackable(trace_records& r, VkDebugReportObjectTy
 	case VK_DEBUG_REPORT_OBJECT_TYPE_CU_MODULE_NVX_EXT:
 	case VK_DEBUG_REPORT_OBJECT_TYPE_BUFFER_COLLECTION_FUCHSIA_EXT:
 	case VK_DEBUG_REPORT_OBJECT_TYPE_UNKNOWN_EXT:
+	case VK_DEBUG_REPORT_OBJECT_TYPE_CUDA_MODULE_NV_EXT:
+	case VK_DEBUG_REPORT_OBJECT_TYPE_CUDA_FUNCTION_NV_EXT:
 	case VK_DEBUG_REPORT_OBJECT_TYPE_MAX_ENUM_EXT: assert(false); return nullptr;
 	}
 	return nullptr;
@@ -122,6 +124,8 @@ static trackable* object_trackable(const trace_records& r, VkObjectType type, ui
 	case VK_OBJECT_TYPE_DEBUG_REPORT_CALLBACK_EXT: return r.VkDebugReportCallbackEXT_index.at((const VkDebugReportCallbackEXT)object);
 	case VK_OBJECT_TYPE_DEBUG_UTILS_MESSENGER_EXT: return r.VkDebugUtilsMessengerEXT_index.at((const VkDebugUtilsMessengerEXT)object);
 	// not supported:
+	case VK_OBJECT_TYPE_CUDA_MODULE_NV:
+	case VK_OBJECT_TYPE_CUDA_FUNCTION_NV:
 	case VK_OBJECT_TYPE_CU_MODULE_NVX:
 	case VK_OBJECT_TYPE_CU_FUNCTION_NVX:
 	case VK_OBJECT_TYPE_ACCELERATION_STRUCTURE_NV:
