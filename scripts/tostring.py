@@ -91,19 +91,36 @@ for v in spec.root.findall('enums'):
 		if pos and not name in added_case:
 			print('\t\tcase %s: result += "%s"; break;' % (name, name), file=source)
 			added_case.append(name)
+
+	# Find and add post-1.0 variants
+	for feat in spec.root.findall('feature'):
+		api = feat.attrib.get('api', '').split(',')
+		if api and not 'vulkan' in api: continue
+		for bit in feat.findall('require/enum'):
+			extends = bit.attrib.get('extends')
+			if extends == rname:
+				name = bit.attrib.get('name')
+				pos = bit.attrib.get('bitpos')
+				if pos and not name in added_case:
+					print('\t\tcase %s: result += "%s"; break;' % (name, name), file=source)
+					added_case.append(name)
+
 	# Find and add extensions enums
 	for ext in spec.root.findall('extensions/extension'):
-		supported = ext.attrib.get('supported')
-		if supported in ['disabled', 'vulkansc']: continue
+		supported = ext.attrib.get('supported', '').split(',')
+		if supported and not 'vulkan' in supported: continue
 		for vv in ext.findall('require'):
 			for bit in vv.findall('enum'):
 				extends = bit.attrib.get('extends')
 				if extends == ename:
 					name = bit.attrib.get('name')
 					pos = bit.attrib.get('bitpos')
+					prot = bit.attrib.get('protect')
 					if pos and not name in added_case:
+						if prot: print('#ifdef %s' % prot, file=source)
 						print('\t\tcase %s: result += "%s"; break;' % (name, name), file=source)
 						added_case.append(name)
+						if prot: print('#endif', file=source)
 	print('\t\tdefault: result += "Bad bitfield value"; break;', file=source)
 	print('\t\t}', file=source)
 	print('\t\tflags &= ~(1 << bit); // remove bit', file=source)
