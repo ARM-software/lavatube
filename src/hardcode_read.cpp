@@ -638,8 +638,8 @@ const char* const* device_extensions(lava_file_reader& reader, VkPhysicalDevice 
 	const std::vector<const char*> do_not_copy = {
 		VK_KHR_SWAPCHAIN_EXTENSION_NAME, VK_KHR_GET_MEMORY_REQUIREMENTS_2_EXTENSION_NAME,
 		VK_KHR_DEDICATED_ALLOCATION_EXTENSION_NAME, VK_EXT_PIPELINE_CREATION_FEEDBACK_EXTENSION_NAME,
-		VK_EXT_PIPELINE_CREATION_CACHE_CONTROL_EXTENSION_NAME, VK_TRACETOOLTEST_BENCHMARKING_EXTENSION_NAME, VK_TRACETOOLTEST_CHECKSUM_VALIDATION_EXTENSION_NAME,
-		VK_TRACETOOLTEST_OBJECT_PROPERTY_EXTENSION_NAME, VK_EXT_TOOLING_INFO_EXTENSION_NAME, VK_TRACETOOLTEST_FRAME_END_EXTENSION_NAME
+		VK_EXT_PIPELINE_CREATION_CACHE_CONTROL_EXTENSION_NAME, VK_TRACETOOLTEST_CHECKSUM_VALIDATION_EXTENSION_NAME,
+		VK_TRACETOOLTEST_OBJECT_PROPERTY_EXTENSION_NAME, VK_EXT_TOOLING_INFO_EXTENSION_NAME
 	};
 
 	dst.clear();
@@ -932,22 +932,6 @@ static void retrace_vkFrameEndTRACETOOLTEST(lava_file_reader& reader)
 	VkDevice device = index_to_VkDevice.at(device_index);
 	DLOG("End of thread %u local frame %d signaled by vkFrameEndTRACETOOLTEST", reader.thread_index(), reader.local_frame);
 	reader.new_frame();
-}
-
-static void read_VkBenchmarkingTRACETOOLTEST(lava_file_reader& reader, VkBenchmarkingTRACETOOLTEST* sptr)
-{
-	sptr->sType = static_cast<VkStructureType>(reader.read_uint32_t());
-	assert(sptr->sType == VK_STRUCTURE_TYPE_BENCHMARKING_TRACETOOLTEST);
-	read_extension(reader, (VkBaseOutStructure**)&sptr->pNext);
-	sptr->flags = (VkFlags)reader.read_uint32_t();
-	sptr->fixedTimeStep = reader.read_uint32_t();
-	sptr->disablePerformanceAdaptation = static_cast<VkBool32>(reader.read_uint32_t());
-	sptr->disableVendorAdaptation = static_cast<VkBool32>(reader.read_uint32_t());
-	sptr->disableLoadingFrames = static_cast<VkBool32>(reader.read_uint32_t());
-	sptr->visualSettings = reader.read_uint32_t();
-	sptr->scenario = reader.read_uint32_t();
-	sptr->loopTime = reader.read_uint32_t();
-	sptr->tracingFlags = static_cast<VkTracingFlagsTRACETOOLTEST>(reader.read_uint32_t());
 }
 
 void retrace_vkGetDeviceTracingObjectPropertyTRACETOOLTEST(lava_file_reader& reader)

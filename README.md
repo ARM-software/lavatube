@@ -68,6 +68,12 @@ cmake ..
 make
 ```
 
+Then in order to verify that everything is working correctly:
+
+```
+make test
+```
+
 To build for android:
 --------------------
 

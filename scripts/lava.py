@@ -9,8 +9,8 @@ import argparse
 import struct
 
 # New functions that we implement
-fake_functions = [ 'vkAssertBufferTRACETOOLTEST', 'vkSyncBufferTRACETOOLTEST', 'vkGetDeviceTracingObjectPropertyTRACETOOLTEST', 'vkFrameEndTRACETOOLTEST' ]
-fake_structs = { 'VkBenchmarkingTRACETOOLTEST': 'VK_STRUCTURE_TYPE_BENCHMARKING_TRACETOOLTEST' }
+fake_functions = [ 'vkAssertBufferTRACETOOLTEST', 'vkSyncBufferTRACETOOLTEST', 'vkGetDeviceTracingObjectPropertyTRACETOOLTEST' ]
+fake_structs = {}
 
 # Structs we want to save in our trace metadata as well
 extra_tracked_structs = [ 'VkPhysicalDeviceFeatures2', 'VkPhysicalDeviceVulkan11Features', 'VkPhysicalDeviceVulkan12Features', 'VkPhysicalDeviceVulkan13Features' ]

@@ -65,7 +65,6 @@ static void thread_runner(int tid)
 			trace_vkDestroyBuffer(vulkan.device, buffer[j], nullptr);
 		}
 		trace_vkFreeMemory(vulkan.device, memory, nullptr);
-		trace_vkFrameEndTRACETOOLTEST(vulkan.device);
 	}
 }
 
@@ -77,8 +76,6 @@ static void trace_me()
 	auto ptr = trace_vkGetDeviceProcAddr(vulkan.device, "vkAssertBufferTRACETOOLTEST");
 	assert(ptr != nullptr);
 	ptr = trace_vkGetDeviceProcAddr(vulkan.device, "vkSyncBufferTRACETOOLTEST");
-	assert(ptr != nullptr);
-	ptr = trace_vkGetDeviceProcAddr(vulkan.device, "vkFrameEndTRACETOOLTEST");
 	assert(ptr != nullptr);
 
 	for (int i = 0; i < NUM_THREADS; i++)
@@ -101,7 +98,6 @@ static bool getnext(lava_file_reader& t)
 		DLOG("[t%02d %06d] %s", t.thread_index(), (int)t.parent->thread_call_numbers->at(t.thread_index()).load(std::memory_order_relaxed) + 1, get_function_name(apicall));
 		lava_replay_func api = retrace_getcall(apicall);
 		api(t);
-		if (apicall == VKFRAMEENDTRACETOOLTEST) ILOG("Global frame %d (local %d in thread %d) from vkFrameEndTRACETOOLTEST", t.parent->global_frame.load(), t.local_frame, t.thread_index());
 		t.parent->thread_call_numbers->at(t.thread_index()).fetch_add(1, std::memory_order_relaxed);
 		suballoc_internal_test();
 		t.pool.reset();

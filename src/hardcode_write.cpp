@@ -184,21 +184,6 @@ static void trace_post_vkGetPhysicalDeviceFeatures2(lava_file_writer& writer, Vk
 		vk11->variablePointers = VK_FALSE; // not supported yet
 		vk11->variablePointersStorageBuffer = VK_FALSE; // not supported yet
 	}
-
-	VkBenchmarkingTRACETOOLTEST* benchmarking = (VkBenchmarkingTRACETOOLTEST*)find_extension(pFeatures, VK_STRUCTURE_TYPE_BENCHMARKING_TRACETOOLTEST);
-	if (benchmarking)
-	{
-		benchmarking->flags = 0;
-		benchmarking->fixedTimeStep = 30;
-		benchmarking->disablePerformanceAdaptation = VK_TRUE;
-		benchmarking->disableVendorAdaptation = VK_TRUE;
-		benchmarking->disableLoadingFrames = VK_FALSE;
-		benchmarking->visualSettings = 0;
-		benchmarking->scenario = 0;
-		benchmarking->loopTime = 0;
-		benchmarking->tracingFlags = (VkTracingFlagsTRACETOOLTEST)(VK_TRACING_NO_COHERENT_MEMORY_BIT_TRACETOOLTEST | VK_TRACING_NO_MEMORY_ALIASING_BIT_TRACETOOLTEST
-			| VK_TRACING_NO_POINTER_OFFSETS_BIT_TRACETOOLTEST | VK_TRACING_NO_JUST_IN_TIME_REUSE_BIT_TRACETOOLTEST);
-	}
 }
 
 static void trace_post_vkGetPhysicalDeviceFeatures2KHR(lava_file_writer& writer, VkPhysicalDevice physicalDevice, VkPhysicalDeviceFeatures2* pFeatures)
@@ -818,12 +803,6 @@ static void modify_instance_extensions() REQUIRES(frame_mutex)
 		instance.meta.device.instance_extensions.insert(ext.extensionName);
 	}
 
-	// Present extensions we provide
-	VkExtensionProperties benchmarking = {};
-	strcpy(benchmarking.extensionName, VK_TRACETOOLTEST_BENCHMARKING_EXTENSION_NAME);
-	benchmarking.specVersion = 1;
-	instance_extension_properties.push_back(benchmarking);
-
 	for (const auto &ext : tmp_instance_extension_properties)
 	{
 		// Filter out extensions we don't want presented
@@ -855,11 +834,6 @@ static void modify_device_extensions(VkPhysicalDevice physicalDevice) REQUIRES(f
 	strcpy(checksumvalidation.extensionName, VK_TRACETOOLTEST_CHECKSUM_VALIDATION_EXTENSION_NAME);
 	checksumvalidation.specVersion = 1;
 	device_extension_properties.push_back(checksumvalidation);
-
-	VkExtensionProperties frame_end = {};
-	strcpy(frame_end.extensionName, VK_TRACETOOLTEST_FRAME_END_EXTENSION_NAME);
-	frame_end.specVersion = 1;
-	device_extension_properties.push_back(frame_end);
 
 	VkExtensionProperties objectproperty = {};
 	strcpy(objectproperty.extensionName, VK_TRACETOOLTEST_OBJECT_PROPERTY_EXTENSION_NAME);
@@ -979,7 +953,6 @@ static void trace_pre_vkCreateDevice(VkPhysicalDevice physicalDevice, VkDeviceCr
 		}
 		if (strcmp(name, VK_TRACETOOLTEST_CHECKSUM_VALIDATION_EXTENSION_NAME) == 0) continue; // do not pass to host
 		if (strcmp(name, VK_TRACETOOLTEST_OBJECT_PROPERTY_EXTENSION_NAME) == 0) continue; // do not pass to host
-		if (strcmp(name, VK_TRACETOOLTEST_FRAME_END_EXTENSION_NAME) == 0) continue; // do not pass to host
 		if (strcmp(name, VK_KHR_EXTERNAL_MEMORY_EXTENSION_NAME) == 0) has_VK_KHR_external_memory = false; // do not need to add, already there
 		if (strcmp(name, VK_EXT_EXTERNAL_MEMORY_HOST_EXTENSION_NAME) == 0) has_VK_EXT_external_memory_host = false; // ditto
 		nameptrs[newcount++] = name;
@@ -1086,26 +1059,6 @@ static void trace_post_vkCreateDevice(lava_file_writer& writer, VkResult result,
 		setup_virtual_memory(physicalDevice);
 	}
 
-	const VkBenchmarkingTRACETOOLTEST* benchmarking = (const VkBenchmarkingTRACETOOLTEST*)find_extension(pCreateInfo, (VkStructureType)VK_STRUCTURE_TYPE_BENCHMARKING_TRACETOOLTEST);
-	if (benchmarking)
-	{
-		printf("Application enabled VkBenchmarkingTRACETOOLTEST mode:\n");
-		printf("\tfixedTimeStep = %u\n", benchmarking->fixedTimeStep);
-		printf("\tdisablePerformanceAdaptation = %s\n", benchmarking->disablePerformanceAdaptation ? "true" : "false");
-		printf("\tdisableVendorAdaptation = %s\n", benchmarking->disableVendorAdaptation ? "true" : "false");
-		printf("\tdisableLoadingFrames = %s\n", benchmarking->disableVendorAdaptation ? "true" : "false");
-		printf("\tvisualSettings = %u\n", benchmarking->visualSettings);
-		printf("\tscenario = %u\n", benchmarking->scenario);
-		printf("\tloopTime = %u\n", benchmarking->loopTime);
-		std::string s;
-		if (benchmarking->tracingFlags & VK_TRACING_NO_COHERENT_MEMORY_BIT_TRACETOOLTEST) s += "no_coherent_memory ";
-		if (benchmarking->tracingFlags & VK_TRACING_NO_SUBALLOCATION_BIT_TRACETOOLTEST) s += "no_suballocation ";
-		if (benchmarking->tracingFlags & VK_TRACING_NO_MEMORY_ALIASING_BIT_TRACETOOLTEST) s += "no_memory_aliasing ";
-		if (benchmarking->tracingFlags & VK_TRACING_NO_POINTER_OFFSETS_BIT_TRACETOOLTEST) s += "no_pointer_offsets ";
-		if (benchmarking->tracingFlags & VK_TRACING_NO_JUST_IN_TIME_REUSE_BIT_TRACETOOLTEST) s += "no_just_in_time_reuse ";
-		printf("\ttracingFlags = %s\n", s.c_str());
-	}
-
 	frame_mutex.unlock();
 }
 
@@ -1168,7 +1121,6 @@ static void trace_pre_vkCreateInstance(VkInstanceCreateInfo* pCreateInfo, const 
 		char* name = writer.pool.allocate<char>(size);
 		memset(name, 0, size);
 		strcpy(name, pCreateInfo->ppEnabledExtensionNames[i]);
-		if (strcmp(name, VK_TRACETOOLTEST_BENCHMARKING_EXTENSION_NAME) == 0) continue; // do not pass to host
 		nameptrs[newcount++] = name;
 		DLOG("    %s", name);
 	}
@@ -1307,29 +1259,6 @@ VKAPI_ATTR VkResult vkNegotiateLoaderLayerInterfaceVersion(VkNegotiateLayerInter
 	pVersionStruct->pfnGetDeviceProcAddr = trace_vkGetDeviceProcAddr;
 	pVersionStruct->pfnGetPhysicalDeviceProcAddr = nullptr; // TBD implement this when loader issues are sorted out
 	return VK_SUCCESS;
-}
-
-static void write_VkBenchmarkingTRACETOOLTEST(lava_file_writer& writer, const VkBenchmarkingTRACETOOLTEST* sptr)
-{
-	writer.write_uint32_t(sptr->sType);
-	assert(sptr->sType == VK_STRUCTURE_TYPE_BENCHMARKING_TRACETOOLTEST);
-	write_extension(writer, (VkBaseOutStructure*)sptr->pNext);
-	writer.write_uint32_t((uint32_t)sptr->flags);
-	writer.write_uint32_t(sptr->fixedTimeStep);
-	writer.write_uint32_t(sptr->disablePerformanceAdaptation);
-	writer.write_uint32_t(sptr->disableVendorAdaptation);
-	writer.write_uint32_t(sptr->disableLoadingFrames);
-	writer.write_uint32_t(sptr->visualSettings);
-	writer.write_uint32_t(sptr->scenario);
-	writer.write_uint32_t(sptr->loopTime);
-	writer.write_uint32_t(sptr->tracingFlags);
-}
-
-VKAPI_ATTR void VKAPI_CALL trace_vkFrameEndTRACETOOLTEST(VkDevice device)
-{
-	lava_file_writer& writer = write_header("vkFrameEndTRACETOOLTEST", VKFRAMEENDTRACETOOLTEST);
-	writer.write_handle(writer.parent->records.VkDevice_index.at(device));
-	writer.parent->new_frame();
 }
 
 // This function is _not_ traced.

@@ -171,9 +171,7 @@ vulkan_setup_t test_init(const std::string& testname, size_t size)
 	printf("Found %d physical devices!\n", (int)num_devices);
 	vulkan.physical = physical_devices[0]; // just grab first one
 
-	// Check features (we should check if VkBenchmarkingTRACETOOLTEST is supported first, but here we know it is there)
-	VkBenchmarkingTRACETOOLTEST benchmarking = { VK_STRUCTURE_TYPE_BENCHMARKING_TRACETOOLTEST, nullptr };
-	VkPhysicalDeviceVulkan13Features feat13 = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES, &benchmarking };
+	VkPhysicalDeviceVulkan13Features feat13 = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES, nullptr };
 	VkPhysicalDeviceVulkan12Features feat12 = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES, &feat13 };
 	VkPhysicalDeviceVulkan11Features feat11 = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES, &feat12 };
 	VkPhysicalDeviceFeatures2 feat2 = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2, &feat11 };
@@ -212,7 +210,6 @@ vulkan_setup_t test_init(const std::string& testname, size_t size)
 		}
 		if (strcmp(s.extensionName, VK_TRACETOOLTEST_CHECKSUM_VALIDATION_EXTENSION_NAME) == 0) enabledExtensions.push_back(s.extensionName);
 		if (strcmp(s.extensionName, VK_TRACETOOLTEST_OBJECT_PROPERTY_EXTENSION_NAME) == 0) enabledExtensions.push_back(s.extensionName);
-		if (strcmp(s.extensionName, VK_TRACETOOLTEST_FRAME_END_EXTENSION_NAME) == 0) enabledExtensions.push_back(s.extensionName);
 	}
 	if (enabledExtensions.size() > 0)
 	{
