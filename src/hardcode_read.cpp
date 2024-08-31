@@ -632,6 +632,8 @@ void replay_post_vkCreateInstance(lava_file_reader& reader, VkResult result, con
 
 const char* const* device_extensions(lava_file_reader& reader, VkPhysicalDevice physicalDevice, uint32_t& len)
 {
+	bool host_has_frame_boundary = false;
+	bool trace_has_frame_boundary = false;
 	static std::vector<const char *> dst;
 	static std::vector<std::string> backing;
 	const char* const* stored = reader.read_string_array(len); // all extensions used in original
@@ -656,6 +658,12 @@ const char* const* device_extensions(lava_file_reader& reader, VkPhysicalDevice 
 				nocopy = true;
 				break;
 			}
+		}
+
+		if (strcmp(stored[i], "VK_EXT_frame_boundary") == 0)
+		{
+			trace_has_frame_boundary = true;
+			nocopy = true; // add it later
 		}
 
 		// Sanity check
@@ -685,8 +693,18 @@ const char* const* device_extensions(lava_file_reader& reader, VkPhysicalDevice 
 		if (strcmp(s.extensionName, VK_EXT_PIPELINE_CREATION_CACHE_CONTROL_EXTENSION_NAME) == 0) has_pipeline_control = true;
 		if (strcmp(s.extensionName, VK_KHR_DEDICATED_ALLOCATION_EXTENSION_NAME) == 0) has_dedicated_allocation++;
 		if (strcmp(s.extensionName, VK_KHR_GET_MEMORY_REQUIREMENTS_2_EXTENSION_NAME) == 0) has_dedicated_allocation++;
+		if (strcmp(s.extensionName, VK_EXT_FRAME_BOUNDARY_EXTENSION_NAME) == 0) host_has_frame_boundary = true;
 	}
 	if (!has_swapchain) ABORT("No swapchain extension found - cannot proceed!");
+
+	if (!host_has_frame_boundary && trace_has_frame_boundary)
+	{
+		ILOG("Replay host does not have frame boundary but trace does -- removing it from the replay!");
+	}
+	else if (trace_has_frame_boundary)
+	{
+		backing.push_back(VK_EXT_FRAME_BOUNDARY_EXTENSION_NAME);
+	}
 
 	// Add device extensions
 	backing.push_back(VK_KHR_SWAPCHAIN_EXTENSION_NAME);

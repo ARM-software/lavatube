@@ -845,14 +845,20 @@ static void modify_device_extensions(VkPhysicalDevice physicalDevice) REQUIRES(f
 	toolinfo.specVersion = 1;
 	device_extension_properties.push_back(toolinfo);
 
+	VkExtensionProperties frame_boundary_info = {};
+	strcpy(frame_boundary_info.extensionName, VK_EXT_FRAME_BOUNDARY_EXTENSION_NAME);
+	frame_boundary_info.specVersion = 1;
+	device_extension_properties.push_back(frame_boundary_info);
+
 	for (const auto &ext : tmp_device_extension_properties)
 	{
 		// Filter out extensions we don't want presented
 		std::string name = ext.extensionName;
 		instance.meta.device.device_extensions.insert(name);
 		r["devicePresented"]["extensions"].append(name);
-		if (name.find("_NV") == std::string::npos && name.find("_AMD") == std::string::npos
-		    && name.find("_INTEL") == std::string::npos && name != VK_EXT_TOOLING_INFO_EXTENSION_NAME)
+		if (name.find("_NV") == std::string::npos && name.find("_AMD") == std::string::npos && name.find("_INTEL") == std::string::npos
+		    // deduplicate in case host also provides this
+		    && name != VK_EXT_TOOLING_INFO_EXTENSION_NAME && name != VK_EXT_FRAME_BOUNDARY_EXTENSION_NAME)
 		{
 			device_extension_properties.push_back(ext); // add to list of extensions presented to app
 		}
