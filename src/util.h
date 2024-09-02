@@ -197,8 +197,11 @@ struct buffer
 static __attribute__((const)) inline uint64_t aligned_size(uint64_t size, uint64_t alignment) { return size + alignment - 1ull - (size + alignment - 1ull) % alignment; }
 static __attribute__((const)) inline uint64_t aligned_start(uint64_t size, uint64_t alignment) { return (size & ~(alignment - 1)); }
 
-void* find_extension_parent(void* sptr, VkStructureType sType);
 void* find_extension(void* sptr, VkStructureType sType);
 const void* find_extension(const void* sptr, VkStructureType sType);
+
+// "parent" methods require you to pass the owner of the pNext chain
+void* find_extension_parent(void* sptr, VkStructureType sType); // returns the parent object to the searched for type
+void purge_extension_parent(void* sptr, VkStructureType sType); // removes this extension from a pNext chain
 
 const char* pretty_print_VkObjectType(VkObjectType val);

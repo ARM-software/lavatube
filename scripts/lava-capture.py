@@ -105,4 +105,6 @@ if __name__ == '__main__':
 		result = subprocess.run(['gdb', '-q', '-ex', 'run', '--args'] + args.programAndArgs)
 	else:
 		result = subprocess.run(args.programAndArgs)
+	if result.returncode != 0:
+		print('Captured program returned an error value!')
 	sys.exit(result.returncode)

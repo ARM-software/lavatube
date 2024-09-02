@@ -326,6 +326,20 @@ void* find_extension(void* sptr, VkStructureType sType)
 	return ptr;
 }
 
+void purge_extension_parent(void* sptr, VkStructureType sType)
+{
+	VkBaseOutStructure* ptr = (VkBaseOutStructure*)sptr;
+	while (ptr != nullptr && ptr->pNext != nullptr)
+	{
+		if (ptr->pNext->sType == sType)
+		{
+			ptr->pNext = ptr->pNext->pNext;
+			return;
+		}
+		ptr = ptr->pNext;
+	}
+}
+
 const void* find_extension(const void* sptr, VkStructureType sType)
 {
 	const VkBaseOutStructure* ptr = (VkBaseOutStructure*)sptr;

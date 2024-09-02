@@ -630,7 +630,7 @@ void replay_post_vkCreateInstance(lava_file_reader& reader, VkResult result, con
 	}
 }
 
-const char* const* device_extensions(lava_file_reader& reader, VkPhysicalDevice physicalDevice, uint32_t& len)
+const char* const* device_extensions(VkDeviceCreateInfo* sptr, lava_file_reader& reader, VkPhysicalDevice physicalDevice, uint32_t& len)
 {
 	bool host_has_frame_boundary = false;
 	bool trace_has_frame_boundary = false;
@@ -700,6 +700,7 @@ const char* const* device_extensions(lava_file_reader& reader, VkPhysicalDevice 
 	if (!host_has_frame_boundary && trace_has_frame_boundary)
 	{
 		ILOG("Replay host does not have frame boundary but trace does -- removing it from the replay!");
+		purge_extension_parent(sptr, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FRAME_BOUNDARY_FEATURES_EXT);
 	}
 	else if (trace_has_frame_boundary)
 	{

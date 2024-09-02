@@ -920,8 +920,9 @@ static void trace_pre_vkCreateDevice(VkPhysicalDevice physicalDevice, VkDeviceCr
 	// -- Modify app request --
 
 	bool has_VK_EXT_tooling_info = false;
-	bool has_VK_KHR_external_memory = false;
-	bool has_VK_EXT_external_memory_host = false;
+	bool add_VK_KHR_external_memory = false;
+	bool add_VK_EXT_external_memory_host = false;
+	bool has_VK_EXT_frame_boundary = false;
 	uint32_t propertyCount = 0;
 	[[maybe_unused]] VkResult result = wrap_vkEnumerateDeviceExtensionProperties(physicalDevice, nullptr, &propertyCount, nullptr); // call first to get correct count on host
 	assert(result == VK_SUCCESS);
@@ -932,14 +933,15 @@ static void trace_pre_vkCreateDevice(VkPhysicalDevice physicalDevice, VkDeviceCr
 	{
 		std::string name = ext.extensionName;
 		if (name == VK_EXT_TOOLING_INFO_EXTENSION_NAME) has_VK_EXT_tooling_info = true;
-		if (name == VK_KHR_EXTERNAL_MEMORY_EXTENSION_NAME) has_VK_KHR_external_memory = true;
-		if (name == VK_EXT_EXTERNAL_MEMORY_HOST_EXTENSION_NAME) has_VK_EXT_external_memory_host = true;
+		if (name == VK_KHR_EXTERNAL_MEMORY_EXTENSION_NAME) add_VK_KHR_external_memory = true;
+		if (name == VK_EXT_EXTERNAL_MEMORY_HOST_EXTENSION_NAME) add_VK_EXT_external_memory_host = true;
+		if (name == VK_EXT_FRAME_BOUNDARY_EXTENSION_NAME) has_VK_EXT_frame_boundary = true;
 	}
 
 	// Extra extensions to add
 	std::vector<std::string> extra_exts;
-	if (has_VK_KHR_external_memory) { extra_exts.push_back(VK_KHR_EXTERNAL_MEMORY_EXTENSION_NAME); }
-	if (has_VK_EXT_external_memory_host) { extra_exts.push_back(VK_EXT_EXTERNAL_MEMORY_HOST_EXTENSION_NAME); }
+	if (add_VK_KHR_external_memory) { extra_exts.push_back(VK_KHR_EXTERNAL_MEMORY_EXTENSION_NAME); }
+	if (add_VK_EXT_external_memory_host) { extra_exts.push_back(VK_EXT_EXTERNAL_MEMORY_HOST_EXTENSION_NAME); }
 
 	// Remove built-in extensions before sending the requested extension list to the driver
 	char** nameptrs = writer.pool.allocate<char*>(pCreateInfo->enabledExtensionCount + extra_exts.size()); // reserve space for all
@@ -959,8 +961,9 @@ static void trace_pre_vkCreateDevice(VkPhysicalDevice physicalDevice, VkDeviceCr
 		}
 		if (strcmp(name, VK_TRACETOOLTEST_CHECKSUM_VALIDATION_EXTENSION_NAME) == 0) continue; // do not pass to host
 		if (strcmp(name, VK_TRACETOOLTEST_OBJECT_PROPERTY_EXTENSION_NAME) == 0) continue; // do not pass to host
-		if (strcmp(name, VK_KHR_EXTERNAL_MEMORY_EXTENSION_NAME) == 0) has_VK_KHR_external_memory = false; // do not need to add, already there
-		if (strcmp(name, VK_EXT_EXTERNAL_MEMORY_HOST_EXTENSION_NAME) == 0) has_VK_EXT_external_memory_host = false; // ditto
+		if (!has_VK_EXT_frame_boundary && strcmp(name, VK_EXT_FRAME_BOUNDARY_EXTENSION_NAME) == 0) continue; // do not pass to host
+		if (strcmp(name, VK_KHR_EXTERNAL_MEMORY_EXTENSION_NAME) == 0 && add_VK_KHR_external_memory) continue; // do not need to add twice
+		if (strcmp(name, VK_EXT_EXTERNAL_MEMORY_HOST_EXTENSION_NAME) == 0 && add_VK_EXT_external_memory_host) continue;; // ditto
 		nameptrs[newcount++] = name;
 		DLOG("    %s", name);
 	}
