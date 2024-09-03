@@ -55,7 +55,7 @@ Building
 
 For Ubuntu x86, install these packages:
 
-	sudo apt-get install git cmake pkg-config python2 libxcb1-dev libxrandr-dev libxcb-randr0-dev libtbb-dev libvulkan-dev
+	sudo apt-get install git cmake pkg-config python2 libxcb1-dev libxrandr-dev libxcb-randr0-dev libtbb-dev libvulkan-dev spirv-headers
 
 To build for linux desktop:
 --------------------------
