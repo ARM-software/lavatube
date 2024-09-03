@@ -139,6 +139,17 @@ static trackable* object_trackable(const trace_records& r, VkObjectType type, ui
 	return nullptr;
 }
 
+static void trace_post_vkCreateShaderModule(lava_file_writer& writer, VkResult result, VkDevice device, const VkShaderModuleCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkShaderModule* pShaderModule)
+{
+	if (result != VK_SUCCESS) return; // ignore rest on failure
+	if (shader_has_buffer_devices_addresses(pCreateInfo->pCode, pCreateInfo->codeSize))
+	{
+		auto* shader = writer.parent->records.VkShaderModule_index.at(*pShaderModule);
+		shader->enables_buffer_device_address = true;
+		ILOG("Shader %u enables buffer references!", shader->index); // remove this later
+	}
+}
+
 static void trace_post_vkAcquireNextImageKHR(lava_file_writer& writer, VkResult result, VkDevice device, VkSwapchainKHR swapchain, uint64_t timeout, VkSemaphore semaphore, VkFence fence, uint32_t* pImageIndex)
 {
 	DLOG("Acquired swapchain image index=%u", *pImageIndex);
@@ -2377,6 +2388,14 @@ static Json::Value trackeddescriptorpool_trace_json(const trackeddescriptorpool_
 static Json::Value trackeddevice_json(const trackeddevice* t)
 {
 	Json::Value v = trackable_json(t);
+	return v;
+}
+
+static Json::Value trackedshadermodule_json(const trackedshadermodule* t)
+{
+	Json::Value v = trackable_json(t);
+	if (t->enables_buffer_device_address) v["enables_buffer_device_address"] = true;
+	v["size"] = (unsigned)t->size;
 	return v;
 }
 

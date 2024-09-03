@@ -178,6 +178,9 @@ static __attribute__((pure)) inline uint64_t gettime()
 
 std::string get_vulkan_lib_path();
 
+/// Whether a SPIRV shader has enabled support for buffer device addresses
+bool shader_has_buffer_devices_addresses(const uint32_t* code, uint32_t codeSize);
+
 /// Faster than std::vector but with much the same interface. The performance improvement mostly
 /// comes from not filling memory beforehand.
 struct buffer

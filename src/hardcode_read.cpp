@@ -1782,6 +1782,16 @@ static trackedframebuffer trackedframebuffer_json(const Json::Value& v)
 	return t;
 }
 
+static trackedshadermodule trackedshadermodule_json(const Json::Value& v)
+{
+	trackedshadermodule t(v["frame_created"].asInt());
+	t.frame_destroyed = v["frame_destroyed"].asInt();
+	if (v.isMember("name")) t.name = v["name"].asString();
+	if (v.isMember("size")) t.name = v["size"].asInt();
+	if (v.isMember("enables_buffer_device_address")) t.enables_buffer_device_address = v["enables_buffer_device_address"].asBool();
+	return t;
+}
+
 static trackedrenderpass trackedrenderpass_json(const Json::Value& v)
 {
 	trackedrenderpass t(v["frame_created"].asInt());
