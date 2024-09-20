@@ -3,6 +3,7 @@
 #include <assert.h>
 #include <string>
 #include <unistd.h>
+#include <stdint.h>
 #include <errno.h>
 #include <vector>
 #include "jsoncpp/json/value.h"
