@@ -151,6 +151,7 @@ struct trackedbuffer : trackedobject
 	VkBufferCreateFlags flags = VK_BUFFER_CREATE_FLAG_BITS_MAX_ENUM;
 	VkSharingMode sharingMode = VK_SHARING_MODE_MAX_ENUM;
 	VkBufferUsageFlags usage = VK_BUFFER_USAGE_FLAG_BITS_MAX_ENUM;
+	VkDeviceAddress buffer_device_address = 0;
 
 	void self_test() const
 	{

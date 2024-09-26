@@ -139,6 +139,12 @@ static trackable* object_trackable(const trace_records& r, VkObjectType type, ui
 	return nullptr;
 }
 
+static void trace_post_vkGetBufferDeviceAddress(lava_file_writer& writer, VkDeviceAddress result, VkDevice device, const VkBufferDeviceAddressInfo* pInfo)
+{
+	auto* buffer_data = writer.parent->records.VkBuffer_index.at(pInfo->buffer);
+	buffer_data->buffer_device_address = result;
+}
+
 static void trace_post_vkCreateShaderModule(lava_file_writer& writer, VkResult result, VkDevice device, const VkShaderModuleCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkShaderModule* pShaderModule)
 {
 	if (result != VK_SUCCESS) return; // ignore rest on failure

@@ -81,7 +81,7 @@ if __name__ == '__main__':
 	if args.file: os.environ['LAVATUBE_DESTINATION'] = os.path.abspath(args.file)
 	if args.log: os.environ['LAVATUBE_DEBUG_FILE'] = args.log
 	if args.layer: os.environ['VK_LAYER_PATH'] = args.layer
-	else: os.environ['VK_LAYER_PATH'] = '/opt/lavatube/implicit_layer.d'
+	else: os.environ['VK_LAYER_PATH'] = '/opt/lavatube'
 	if args.dir is not None:
 		os.chdir(args.dir)
 	if not args.programAndArgs:

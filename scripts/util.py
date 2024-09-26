@@ -88,7 +88,7 @@ push_thread_barrier_funcs = [ 'vkQueueWaitIdle', 'vkDeviceWaitIdle', 'vkResetDes
 # TODO : Add support for these functions and structures
 functions_noop = [
 	"vkUpdateDescriptorSetWithTemplateKHR", "vkUpdateDescriptorSetWithTemplate", "vkCmdPushDescriptorSetWithTemplateKHR", 'vkGetImageViewOpaqueCaptureDescriptorDataEXT',
-	'vkGetPipelinePropertiesEXT', 'vkUpdateDescriptorSetWithTemplate', 'vkCmdUpdateBuffer', 'vkGetBufferOpaqueCaptureDescriptorDataEXT',
+	'vkGetPipelinePropertiesEXT', 'vkUpdateDescriptorSetWithTemplate', 'vkGetBufferOpaqueCaptureDescriptorDataEXT',
 	'vkCmdBuildMicromapsEXT', 'vkBuildMicromapsEXT', 'vkGetMicromapBuildSizesEXT', 'vkGetImageOpaqueCaptureDescriptorDataEXT', 'vkGetSamplerOpaqueCaptureDescriptorDataEXT',
 	'vkGetDeviceFaultInfoEXT', # we never want to trace this, but rather inject it during tracing if device loss happens, print the info, then abort
 	'vkGetAccelerationStructureOpaqueCaptureDescriptorDataEXT', 'vkCmdPushDescriptorSetWithTemplate2KHR', 'vkCmdSetRenderingInputAttachmentIndicesKHR',
@@ -137,7 +137,8 @@ ignore_on_trace = []
 # these functions have hard-coded post-execute callbacks
 replay_pre_calls = [ 'vkDestroyInstance', 'vkDestroyDevice', 'vkCreateDevice', 'vkCreateSampler', 'vkQueuePresentKHR', 'vkCreateSwapchainKHR',
 	'vkCreateSharedSwapchainsKHR' ]
-replay_post_calls = [ 'vkCreateInstance', 'vkCreateDevice', 'vkDestroyInstance', 'vkQueuePresentKHR', 'vkAcquireNextImageKHR', 'vkAcquireNextImage2KHR' ]
+replay_post_calls = [ 'vkCreateInstance', 'vkCreateDevice', 'vkDestroyInstance', 'vkQueuePresentKHR', 'vkAcquireNextImageKHR', 'vkAcquireNextImage2KHR',
+	'vkGetBufferDeviceAddress' ]
 trace_pre_calls = [ 'vkQueueSubmit', 'vkCreateInstance', 'vkCreateDevice', 'vkFreeMemory', 'vkQueueSubmit2', 'vkQueueSubmit2KHR' ]
 trace_post_calls = [ 'vkCreateInstance', 'vkCreateDevice', 'vkDestroyInstance', 'vkGetPhysicalDeviceFeatures', 'vkGetPhysicalDeviceProperties',
 		'vkGetPhysicalDeviceSurfaceCapabilitiesKHR', 'vkBindImageMemory', 'vkBindBufferMemory', 'vkBindImageMemory2', 'vkBindImageMemory2KHR',
@@ -149,7 +150,7 @@ trace_post_calls = [ 'vkCreateInstance', 'vkCreateDevice', 'vkDestroyInstance', 
 		'vkGetBufferMemoryRequirements2KHR', 'vkGetDeviceBufferMemoryRequirements', 'vkGetDeviceBufferMemoryRequirementsKHR',
 		'vkGetDeviceImageMemoryRequirements', 'vkGetDeviceImageMemoryRequirementsKHR', 'vkGetPhysicalDeviceFeatures2', 'vkGetPhysicalDeviceFeatures2KHR',
 		'vkGetPhysicalDeviceMemoryProperties2', 'vkGetDeviceImageSparseMemoryRequirementsKHR', 'vkGetDeviceImageSparseMemoryRequirements',
-		'vkCreateShaderModule' ]
+		'vkCreateShaderModule', 'vkGetBufferDeviceAddress' ]
 skip_post_calls = [ 'vkGetQueryPoolResults', 'vkGetPhysicalDeviceXcbPresentationSupportKHR' ]
 # Workaround to be able to rewrite parameter inputs while tracing: These input variables are copied and replaced to not be const anymore.
 deconstify = {

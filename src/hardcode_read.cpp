@@ -262,6 +262,12 @@ void retrace_vkDestroySurfaceKHR(lava_file_reader& reader)
 	}
 }
 
+static void replay_post_vkGetBufferDeviceAddress(lava_file_reader& reader, VkDeviceAddress result, VkDevice device, const VkBufferDeviceAddressInfo* pInfo)
+{
+	const uint32_t buffer_index = index_to_VkBuffer.index(pInfo->buffer);
+	VkBuffer_index.at(buffer_index).buffer_device_address = result;
+}
+
 void replay_post_vkAcquireNextImageKHR(lava_file_reader& reader, VkResult result, VkDevice device, VkSwapchainKHR swapchain, uint64_t timeout,
                                      VkSemaphore semaphore, VkFence fence, uint32_t* pImageIndex)
 {

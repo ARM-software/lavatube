@@ -14,8 +14,6 @@ General:
 	* Store internal Vulkan object metadata by Vulkan device
 
 Missing Vulkan call implementations:
-* vkGetDeviceBufferMemoryRequirements(KHR)
-* vkGetDeviceImageMemoryRequirements(KHR)
 * vkUpdateDescriptorSets with descriptorCopyCount > 0
 * vkUpdateDescriptorSetWithTemplate(KHR)
 * vkCmdPushDescriptorSetWithTemplate(KHR)
@@ -24,7 +22,6 @@ Missing Vulkan call implementations:
 * vkBuildMicromapsEXT
 * vkGetMicromapBuildSizesEXT
 * vkGetDeviceFaultInfoEXT
-* vkCmdUpdateBuffer
 
 Missing and desirable extension support:
 * VK_EXT_mutable_descriptor_type

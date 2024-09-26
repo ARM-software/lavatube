@@ -133,10 +133,10 @@ void lava_reader::init(const std::string& path, int heap_size)
 {
 	// read dictionary
 	mPackedFile = path;
-	Json::Value v = readJson("dictionary.json", mPackedFile);
-	for (const std::string& funcname : v.getMemberNames())
+	Json::Value dict = readJson("dictionary.json", mPackedFile);
+	for (const std::string& funcname : dict.getMemberNames())
 	{
-		const uint16_t trace_index = v[funcname].asInt(); // old index
+		const uint16_t trace_index = dict[funcname].asInt(); // old index
 		const uint16_t retrace_index = retrace_getid(funcname.c_str()); // new index
 		if (retrace_index != UINT16_MAX) dictionary[trace_index] = retrace_index; // map old index to new
 		else DLOG("Function %s from trace dictionary not supported! If used, we will fail!", funcname.c_str());
@@ -144,7 +144,22 @@ void lava_reader::init(const std::string& path, int heap_size)
 
 	// read limits and allocate the global remapping structures
 	retrace_init(readJson("limits.json", mPackedFile), heap_size);
-	trackable_read(readJson("tracking.json", mPackedFile));
+	Json::Value trackable = readJson("tracking.json", mPackedFile);
+	trackable_read(trackable);
+
+	// Set up buffer device address tracking
+	if (trackable.isMember("VkBuffer"))
+	{
+		for (uint32_t i = 0; i < VkBuffer_index.size(); i++)
+		{
+			Json::Value& buf = trackable["VkBuffer"][i];
+			if (buf.isMember("buffer_device_address"))
+			{
+				VkDeviceAddress address = buf["buffer_device_address"].asUInt64();
+				buffer_device_address_remapping[address] = &VkBuffer_index.at(i);
+			}
+		}
+	}
 
 	Json::Value meta = readJson("metadata.json", mPackedFile);
 	mGlobalFrames = meta["global_frames"].asInt();
