@@ -1,4 +1,7 @@
-#!/usr/bin/python2
+#!/usr/bin/python3
+
+import sys
+sys.path.append('external/tracetooltests/scripts')
 
 import spec
 import os
@@ -10,247 +13,251 @@ def build_instance_table(w):
 		if name in spec.disabled_functions or name == 'vkCreateInstance' or spec.str_contains_vendor(name):
 			continue
 		if name in spec.protected_funcs:
-			print >> w, '#ifdef %s' % (spec.protected_funcs[name])
+			print('#ifdef %s' % (spec.protected_funcs[name]), file=w)
 
-		print >> w, '\twrap_%s = reinterpret_cast<PFN_%s>(gipa(*pInstance, "%s"));' % (name, name, name)
-		if name in spec.function_aliases.keys():
+		print('\twrap_%s = reinterpret_cast<PFN_%s>(gipa(*pInstance, "%s"));' % (name, name, name), file=w)
+		if name in list(spec.function_aliases.keys()):
 			alias_name = spec.function_aliases[name]
-			print >> w, '\tif (!wrap_%s)' % name
-			print >> w, '\t{'
-			print >> w, '\t\twrap_%s = reinterpret_cast<PFN_%s>(gipa(*pInstance, "%s"));' % (name, alias_name, alias_name)
-			print >> w, '\t}'
+			print('\tif (!wrap_%s)' % name, file=w)
+			print('\t{', file=w)
+			print('\t\twrap_%s = reinterpret_cast<PFN_%s>(gipa(*pInstance, "%s"));' % (name, alias_name, alias_name), file=w)
+			print('\t}', file=w)
 		for alias_name in spec.aliases_to_functions_map.get(name, []):
-			print >> w, '\tif (!wrap_%s)' % name
-			print >> w, '\t{'
-			print >> w, '\t\twrap_%s = reinterpret_cast<PFN_%s>(gipa(*pInstance, "%s"));' % (name, alias_name, alias_name)
-			print >> w, '\t}'
-		print >> w, '\tif (!wrap_%s)' % name
-		print >> w, '\t{'
-		print >> w, '\t\twrap_%s = reinterpret_cast<PFN_%s>(dlsym(_private_ptr, "%s"));' % (name, name, name)
-		print >> w, '\t}'
-		if name in spec.function_aliases.keys():
+			print('\tif (!wrap_%s)' % name, file=w)
+			print('\t{', file=w)
+			print('\t\twrap_%s = reinterpret_cast<PFN_%s>(gipa(*pInstance, "%s"));' % (name, alias_name, alias_name), file=w)
+			print('\t}', file=w)
+		print('\tif (!wrap_%s)' % name, file=w)
+		print('\t{', file=w)
+		print('\t\twrap_%s = reinterpret_cast<PFN_%s>(dlsym(_private_ptr, "%s"));' % (name, name, name), file=w)
+		print('\t}', file=w)
+		if name in list(spec.function_aliases.keys()):
 			alias_name = spec.function_aliases[name]
-			print >> w, '\tif (!wrap_%s)' % name
-			print >> w, '\t{'
-			print >> w, '\t\twrap_%s = reinterpret_cast<PFN_%s>(dlsym(_private_ptr, "%s"));' % (name, alias_name, alias_name)
-			print >> w, '\t}'
+			print('\tif (!wrap_%s)' % name, file=w)
+			print('\t{', file=w)
+			print('\t\twrap_%s = reinterpret_cast<PFN_%s>(dlsym(_private_ptr, "%s"));' % (name, alias_name, alias_name), file=w)
+			print('\t}', file=w)
 		for alias_name in spec.aliases_to_functions_map.get(name, []):
-			print >> w, '\tif (!wrap_%s)' % name
-			print >> w, '\t{'
-			print >> w, '\t\twrap_%s = reinterpret_cast<PFN_%s>(dlsym(_private_ptr, "%s"));' % (name, alias_name, alias_name)
-			print >> w, '\t}'
-		print >> w, '\tif (!wrap_%s)' % name
-		print >> w, '\t{'
-		print >> w, '\t\tDLOG("LAVATUBE WARNING: Instance chain function %s failed to initialize. If used at runtime it will crash.");' % name
-		print >> w, '\t}'
+			print('\tif (!wrap_%s)' % name, file=w)
+			print('\t{', file=w)
+			print('\t\twrap_%s = reinterpret_cast<PFN_%s>(dlsym(_private_ptr, "%s"));' % (name, alias_name, alias_name), file=w)
+			print('\t}', file=w)
+		print('\tif (!wrap_%s)' % name, file=w)
+		print('\t{', file=w)
+		print('\t\tDLOG("LAVATUBE WARNING: Instance chain function %s failed to initialize. If used at runtime it will crash.");' % name, file=w)
+		print('\t}', file=w)
 		if name in spec.protected_funcs:
-			print >> w, '#endif'
+			print('#endif', file=w)
 
 def build_device_table(w):
-	print >> w, '\t// Setup dispatch table into next layer'
+	print('\t// Setup dispatch table into next layer', file=w)
 	for name in spec.device_chain_commands:
 		if name in spec.disabled_functions or spec.str_contains_vendor(name):
 			continue
 		if name in spec.protected_funcs:
-			print >> w, '#ifdef %s' % (spec.protected_funcs[name])
+			print('#ifdef %s' % (spec.protected_funcs[name]), file=w)
 
-		print >> w, '\twrap_%s = reinterpret_cast<PFN_%s>(gdpa(*pDevice, "%s"));' % (name, name, name)
-		if name in spec.function_aliases.keys():
+		print('\twrap_%s = reinterpret_cast<PFN_%s>(gdpa(*pDevice, "%s"));' % (name, name, name), file=w)
+		if name in list(spec.function_aliases.keys()):
 			alias_name = spec.function_aliases[name]
-			print >> w, '\tif (!wrap_%s)' % name
-			print >> w, '\t{'
-			print >> w, '\t\twrap_%s = reinterpret_cast<PFN_%s>(gdpa(*pDevice, "%s"));' % (name, alias_name, alias_name)
-			print >> w, '\t}'
+			print('\tif (!wrap_%s)' % name, file=w)
+			print('\t{', file=w)
+			print('\t\twrap_%s = reinterpret_cast<PFN_%s>(gdpa(*pDevice, "%s"));' % (name, alias_name, alias_name), file=w)
+			print('\t}', file=w)
 		for alias_name in spec.aliases_to_functions_map.get(name, []):
-			print >> w, '\tif (!wrap_%s)' % name
-			print >> w, '\t{'
-			print >> w, '\t\twrap_%s = reinterpret_cast<PFN_%s>(gdpa(*pDevice, "%s"));' % (name, alias_name, alias_name)
-			print >> w, '\t}'
-		print >> w, '\tif (!wrap_%s)' % name
-		print >> w, '\t{'
-		print >> w, '\t\twrap_%s = reinterpret_cast<PFN_%s>(dlsym(_private_ptr, "%s"));' % (name, name, name)
-		print >> w, '\t}'
-		if name in spec.function_aliases.keys():
+			print('\tif (!wrap_%s)' % name, file=w)
+			print('\t{', file=w)
+			print('\t\twrap_%s = reinterpret_cast<PFN_%s>(gdpa(*pDevice, "%s"));' % (name, alias_name, alias_name), file=w)
+			print('\t}', file=w)
+		print('\tif (!wrap_%s)' % name, file=w)
+		print('\t{', file=w)
+		print('\t\twrap_%s = reinterpret_cast<PFN_%s>(dlsym(_private_ptr, "%s"));' % (name, name, name), file=w)
+		print('\t}', file=w)
+		if name in list(spec.function_aliases.keys()):
 			alias_name = spec.function_aliases[name]
-			print >> w, '\tif (!wrap_%s)' % name
-			print >> w, '\t{'
-			print >> w, '\t\twrap_%s = reinterpret_cast<PFN_%s>(dlsym(_private_ptr, "%s"));' % (name, alias_name, alias_name)
-			print >> w, '\t}'
+			print('\tif (!wrap_%s)' % name, file=w)
+			print('\t{', file=w)
+			print('\t\twrap_%s = reinterpret_cast<PFN_%s>(dlsym(_private_ptr, "%s"));' % (name, alias_name, alias_name), file=w)
+			print('\t}', file=w)
 		for alias_name in spec.aliases_to_functions_map.get(name, []):
-			print >> w, '\tif (!wrap_%s)' % name
-			print >> w, '\t{'
-			print >> w, '\t\twrap_%s = reinterpret_cast<PFN_%s>(dlsym(_private_ptr, "%s"));' % (name, alias_name, alias_name)
-			print >> w, '\t}'
-		print >> w, '\tif (!wrap_%s)' % name
-		print >> w, '\t{'
+			print('\tif (!wrap_%s)' % name, file=w)
+			print('\t{', file=w)
+			print('\t\twrap_%s = reinterpret_cast<PFN_%s>(dlsym(_private_ptr, "%s"));' % (name, alias_name, alias_name), file=w)
+			print('\t}', file=w)
+		print('\tif (!wrap_%s)' % name, file=w)
+		print('\t{', file=w)
 		if name in ['vkDestroySurfaceKHR', 'vkCreateSwapchainKHR']: # these are dead give-aways that something is badly broken
-			print >> w, '\t\tELOG("LAVATUBE WARNING: Device chain function %s failed to initialize. If used at runtime it will crash.");' % name
+			print('\t\tELOG("LAVATUBE WARNING: Device chain function %s failed to initialize. If used at runtime it will crash.");' % name, file=w)
 		else:
-			print >> w, '\t\tDLOG3("Device chain function %s failed to initialize. If used at runtime it will crash.");' % name
-		print >> w, '\t}'
+			print('\t\tDLOG3("Device chain function %s failed to initialize. If used at runtime it will crash.");' % name, file=w)
+		print('\t}', file=w)
 		if name in spec.protected_funcs:
-			print >> w, '#endif'
+			print('#endif', file=w)
 
 def print_wrapper_header(name):
 	w = open(name, 'w')
-	print >> w, '// This file contains only code auto-generated by %s' % os.path.basename(__file__)
-	print >> w, '#pragma once'
-	print >> w
-	print >> w, '#define VK_NO_PROTOTYPES'
-	print >> w, '#include "vulkan/vulkan.h"'
-	print >> w, '#include "vulkan/vk_layer.h"'
-	print >> w, '#include "lavatube.h"'
-	print >> w
+	print('// This file contains only code auto-generated by %s' % os.path.basename(__file__), file=w)
+	print('#pragma once', file=w)
+	print(file=w)
+	print('#define VK_NO_PROTOTYPES', file=w)
+	print('#include "vulkan/vulkan.h"', file=w)
+	print('#include "vulkan/vk_layer.h"', file=w)
+	print(file=w)
 	for name in spec.functions:
 		if name in spec.disabled_functions or spec.str_contains_vendor(name):
 			continue
 		if name in spec.protected_funcs:
-			print >> w, '#ifdef %s' % (spec.protected_funcs[name])
-		print >> w, 'extern PFN_%s wrap_%s;' % (name, name)
+			print('#ifdef %s' % (spec.protected_funcs[name]), file=w)
+		print('extern PFN_%s wrap_%s;' % (name, name), file=w)
 		if name in spec.protected_funcs:
-			print >> w, '#endif'
-	print >> w
-	print >> w, 'typedef void* VkuVulkanLibrary;'
-	print >> w
-	print >> w, '#ifndef COMPILE_LAYER'
-	print >> w, 'VkResult vkuSetupInstance(const VkInstanceCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkInstance* pInstance);'
-	print >> w, 'VkResult vkuSetupDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkDevice* pDevice);'
-	print >> w, '#else'
-	print >> w, 'VkResult vkuSetupInstanceLayer(const VkInstanceCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkInstance* pInstance);'
-	print >> w, 'VkResult vkuSetupDeviceLayer(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkDevice* pDevice);'
-	print >> w, '#endif'
-	print >> w, 'VkuVulkanLibrary vkuCreateWrapper();'
-	print >> w, 'void vkuDestroyWrapper(VkuVulkanLibrary library);'
-	print >> w, 'void print_feature_mismatch(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo* pCreateInfo);'
-	print >> w, 'void print_extension_mismatch(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo* pCreateInfo);'
-	print >> w
-	print >> w, 'extern VkuVulkanLibrary _private_ptr;'
+			print('#endif', file=w)
+	print(file=w)
+	print('typedef void* VkuVulkanLibrary;', file=w)
+	print(file=w)
+	print('#ifndef COMPILE_LAYER', file=w)
+	print('VkResult vkuSetupInstance(const VkInstanceCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkInstance* pInstance);', file=w)
+	print('VkResult vkuSetupDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkDevice* pDevice);', file=w)
+	print('#else', file=w)
+	print('VkResult vkuSetupInstanceLayer(const VkInstanceCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkInstance* pInstance);', file=w)
+	print('VkResult vkuSetupDeviceLayer(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkDevice* pDevice);', file=w)
+	print('#endif', file=w)
+	print('VkuVulkanLibrary vkuCreateWrapper();', file=w)
+	print('void vkuDestroyWrapper(VkuVulkanLibrary library);', file=w)
+	print('void print_feature_mismatch(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo* pCreateInfo);', file=w)
+	print('void print_extension_mismatch(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo* pCreateInfo);', file=w)
+	print(file=w)
+	print('extern VkuVulkanLibrary _private_ptr;', file=w)
 	w.close()
 
 print_wrapper_header('generated/vk_wrapper_auto.h')
 
 def print_wrapper_cpp(name):
 	w = open(name, 'w')
-	print >> w, '// This file contains only code auto-generated by %s' % os.path.basename(__file__)
-	print >> w, '#include <cassert>'
-	print >> w, '#include <stdlib.h>'
-	print >> w, '#include <dlfcn.h>'
-	print >> w, '#include <string>'
-	print >> w
-	print >> w, '#include <vk_wrapper_auto.h>'
-	print >> w
+	print('// This file contains only code auto-generated by %s' % os.path.basename(__file__), file=w)
+	print('#include <cassert>', file=w)
+	print('#include <stdlib.h>', file=w)
+	print('#include <dlfcn.h>', file=w)
+	print('#include <string>', file=w)
+	print('#include "lavatube.h"', file=w)
+	print(file=w)
+	print('#include <vk_wrapper_auto.h>', file=w)
+	print(file=w)
 
 	for name in spec.functions:
 		if name in spec.disabled_functions or spec.str_contains_vendor(name):
 			continue
 		if name in spec.protected_funcs:
-			print >> w, '#ifdef %s' % (spec.protected_funcs[name])
-		print >> w, 'PFN_%s wrap_%s = nullptr;' % (name, name)
+			print('#ifdef %s' % (spec.protected_funcs[name]), file=w)
+		print('PFN_%s wrap_%s = nullptr;' % (name, name), file=w)
 		if name in spec.protected_funcs:
-			print >> w, '#endif'
-	print >> w
+			print('#endif', file=w)
+	print(file=w)
 
-	print >> w, '#ifndef COMPILE_LAYER'
-	print >> w, 'VkResult vkuSetupInstance(const VkInstanceCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkInstance* pInstance)'
-	print >> w, '{'
-	print >> w, '\tif (!wrap_vkCreateInstance)'
-	print >> w, '\t{'
-	print >> w, '\t\tDLOG("LAVATUBE ERROR: wrap_vkCreateInstance is nullptr, cannot proceed.");'
-	print >> w, '\t\tassert(wrap_vkCreateInstance);'
-	print >> w, '\t}'
-	print >> w
-	print >> w, '\tVkResult retval = wrap_vkCreateInstance(pCreateInfo, pAllocator, pInstance);'
-	print >> w, '\tif (retval != VK_SUCCESS) ABORT("Failed to create instance: %s", errorString(retval));'
-	print >> w, '\tPFN_vkGetInstanceProcAddr gipa = wrap_vkGetInstanceProcAddr;'
-	print >> w
+	print('#ifndef COMPILE_LAYER', file=w)
+	print('VkResult vkuSetupInstance(const VkInstanceCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkInstance* pInstance)', file=w)
+	print('{', file=w)
+	print('\tif (!wrap_vkCreateInstance)', file=w)
+	print('\t{', file=w)
+	print('\t\tDLOG("LAVATUBE ERROR: wrap_vkCreateInstance is nullptr, cannot proceed.");', file=w)
+	print('\t\tassert(wrap_vkCreateInstance);', file=w)
+	print('\t}', file=w)
+	print(file=w)
+	print('\tVkResult retval = wrap_vkCreateInstance(pCreateInfo, pAllocator, pInstance);', file=w)
+	print('\tif (retval != VK_SUCCESS) ABORT("Failed to create instance: %s", errorString(retval));', file=w)
+	print('\tPFN_vkGetInstanceProcAddr gipa = wrap_vkGetInstanceProcAddr;', file=w)
+	print(file=w)
 	build_instance_table(w)
-	print >> w
-	print >> w, '\treturn retval;'
-	print >> w, '}'
-	print >> w, '#endif'
-	print >> w
+	print(file=w)
+	print('\treturn retval;', file=w)
+	print('}', file=w)
+	print('#endif', file=w)
+	print(file=w)
 
-	print >> w, '#ifdef COMPILE_LAYER'
-	print >> w, 'VkResult vkuSetupInstanceLayer(const VkInstanceCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkInstance* pInstance)'
-	print >> w, '{'
-	print >> w, '\tVkLayerInstanceCreateInfo* layerCreateInfo = (VkLayerInstanceCreateInfo*)pCreateInfo->pNext;'
-	print >> w
-	print >> w, '\twhile (layerCreateInfo && ((layerCreateInfo->sType != VK_STRUCTURE_TYPE_LOADER_INSTANCE_CREATE_INFO) || (layerCreateInfo->function != VK_LAYER_LINK_INFO)))'
-	print >> w, '\t{'
-	print >> w, '\t\tlayerCreateInfo = (VkLayerInstanceCreateInfo*)layerCreateInfo->pNext;'
-	print >> w, '\t}'
-	print >> w
-	print >> w, '\tif(layerCreateInfo == NULL)'
-	print >> w, '\t{'
-	print >> w, '\t\treturn VK_ERROR_INITIALIZATION_FAILED;'
-	print >> w, '\t}'
-	print >> w
-	print >> w, '\tPFN_vkGetInstanceProcAddr gipa = layerCreateInfo->u.pLayerInfo->pfnNextGetInstanceProcAddr;'
-	print >> w, '\tlayerCreateInfo->u.pLayerInfo = layerCreateInfo->u.pLayerInfo->pNext;'
-	print >> w
-	print >> w, '\t// Setup next layer'
-	print >> w, '\tPFN_vkCreateInstance createInstanceNext = reinterpret_cast<PFN_vkCreateInstance>(gipa(VK_NULL_HANDLE, "vkCreateInstance"));'
-	print >> w, '\tVkResult retval = createInstanceNext(pCreateInfo, pAllocator, pInstance);'
-	print >> w
+	print('#ifdef COMPILE_LAYER', file=w)
+	print('VkResult vkuSetupInstanceLayer(const VkInstanceCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkInstance* pInstance)', file=w)
+	print('{', file=w)
+	print('\tVkLayerInstanceCreateInfo* layerCreateInfo = (VkLayerInstanceCreateInfo*)pCreateInfo->pNext;', file=w)
+	print(file=w)
+	print('\twhile (layerCreateInfo && ((layerCreateInfo->sType != VK_STRUCTURE_TYPE_LOADER_INSTANCE_CREATE_INFO) || (layerCreateInfo->function != VK_LAYER_LINK_INFO)))', file=w)
+	print('\t{', file=w)
+	print('\t\tlayerCreateInfo = (VkLayerInstanceCreateInfo*)layerCreateInfo->pNext;', file=w)
+	print('\t}', file=w)
+	print(file=w)
+	print('\tif(layerCreateInfo == NULL)', file=w)
+	print('\t{', file=w)
+	print('\t\treturn VK_ERROR_INITIALIZATION_FAILED;', file=w)
+	print('\t}', file=w)
+	print(file=w)
+	print('\tPFN_vkGetInstanceProcAddr gipa = layerCreateInfo->u.pLayerInfo->pfnNextGetInstanceProcAddr;', file=w)
+	print('\tlayerCreateInfo->u.pLayerInfo = layerCreateInfo->u.pLayerInfo->pNext;', file=w)
+	print(file=w)
+	print('\t// Setup next layer', file=w)
+	print('\tPFN_vkCreateInstance createInstanceNext = reinterpret_cast<PFN_vkCreateInstance>(gipa(VK_NULL_HANDLE, "vkCreateInstance"));', file=w)
+	print('\tVkResult retval = createInstanceNext(pCreateInfo, pAllocator, pInstance);', file=w)
+	print(file=w)
 	build_instance_table(w)
-	print >> w
-	print >> w, '\treturn retval;'
-	print >> w, '}'
-	print >> w, '#endif'
-	print >> w
+	print(file=w)
+	print('\treturn retval;', file=w)
+	print('}', file=w)
+	print('#endif', file=w)
+	print(file=w)
 
-	print >> w, '#ifndef COMPILE_LAYER'
-	print >> w, 'VkResult vkuSetupDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkDevice* pDevice)'
-	print >> w, '{'
-	print >> w, '\tif (!wrap_vkCreateDevice)'
-	print >> w, '\t{'
-	print >> w, '\t\tDLOG("LAVATUBE ERROR: wrap_vkCreateDevice is nullptr, cannot proceed.");'
-	print >> w, '\t\tassert(wrap_vkCreateDevice);'
-	print >> w, '\t}'
-	print >> w
-	print >> w, '\tVkResult retval = wrap_vkCreateDevice(physicalDevice, pCreateInfo, pAllocator, pDevice);'
-	print >> w, '\tif (retval == VK_ERROR_FEATURE_NOT_PRESENT) print_feature_mismatch(physicalDevice, pCreateInfo);'
-	print >> w, '\telse if (retval == VK_ERROR_EXTENSION_NOT_PRESENT) print_extension_mismatch(physicalDevice, pCreateInfo);'
-	print >> w, '\tif (retval != VK_SUCCESS) ABORT("Failed to create device: %s", errorString(retval));'
-	print >> w, '\tassert(*pDevice);'
-	print >> w, '\tPFN_vkGetDeviceProcAddr gdpa = wrap_vkGetDeviceProcAddr;'
-	print >> w
+	print('#ifndef COMPILE_LAYER', file=w)
+	print('VkResult vkuSetupDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkDevice* pDevice)', file=w)
+	print('{', file=w)
+	print('\tif (!wrap_vkCreateDevice)', file=w)
+	print('\t{', file=w)
+	print('\t\tDLOG("LAVATUBE ERROR: wrap_vkCreateDevice is nullptr, cannot proceed.");', file=w)
+	print('\t\tassert(wrap_vkCreateDevice);', file=w)
+	print('\t}', file=w)
+	print(file=w)
+	print('\tVkResult retval = wrap_vkCreateDevice(physicalDevice, pCreateInfo, pAllocator, pDevice);', file=w)
+	print('\tif (retval == VK_ERROR_FEATURE_NOT_PRESENT) print_feature_mismatch(physicalDevice, pCreateInfo);', file=w)
+	print('\telse if (retval == VK_ERROR_EXTENSION_NOT_PRESENT) print_extension_mismatch(physicalDevice, pCreateInfo);', file=w)
+	print('\tif (retval != VK_SUCCESS) ABORT("Failed to create device: %s", errorString(retval));', file=w)
+	print('\tassert(*pDevice);', file=w)
+	print('\tPFN_vkGetDeviceProcAddr gdpa = wrap_vkGetDeviceProcAddr;', file=w)
+	print(file=w)
 	build_device_table(w)
-	print >> w
-	print >> w, '\treturn retval;'
-	print >> w, '}'
-	print >> w, '#endif'
-	print >> w
+	print(file=w)
+	print('\treturn retval;', file=w)
+	print('}', file=w)
+	print('#endif', file=w)
+	print(file=w)
 
-	print >> w, '#ifdef COMPILE_LAYER'
-	print >> w, 'VkResult vkuSetupDeviceLayer(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkDevice* pDevice)'
-	print >> w, '{'
-	print >> w, '\tVkLayerDeviceCreateInfo* layerCreateInfo = (VkLayerDeviceCreateInfo*)pCreateInfo->pNext;'
-	print >> w
-	print >> w, '\twhile (layerCreateInfo && ((layerCreateInfo->sType != VK_STRUCTURE_TYPE_LOADER_DEVICE_CREATE_INFO) || (layerCreateInfo->function != VK_LAYER_LINK_INFO)))'
-	print >> w, '\t{'
-	print >> w, '\t\tlayerCreateInfo = (VkLayerDeviceCreateInfo*)layerCreateInfo->pNext;'
-	print >> w, '\t}'
-	print >> w
-	print >> w, '\tif(layerCreateInfo == NULL)'
-	print >> w, '\t{'
-	print >> w, '\t\treturn VK_ERROR_INITIALIZATION_FAILED;'
-	print >> w, '\t}'
-	print >> w
-	print >> w, '\tPFN_vkGetInstanceProcAddr gipa = layerCreateInfo->u.pLayerInfo->pfnNextGetInstanceProcAddr;'
-	print >> w, '\tPFN_vkGetDeviceProcAddr gdpa = layerCreateInfo->u.pLayerInfo->pfnNextGetDeviceProcAddr;'
-	print >> w, '\tlayerCreateInfo->u.pLayerInfo = layerCreateInfo->u.pLayerInfo->pNext;'
-	print >> w
-	print >> w, '\t// Setup next layer'
-	print >> w, '\tPFN_vkCreateDevice createDeviceNext = reinterpret_cast<PFN_vkCreateDevice>(gipa(VK_NULL_HANDLE, "vkCreateDevice"));'
-	print >> w, '\tVkResult retval = createDeviceNext(physicalDevice, pCreateInfo, pAllocator, pDevice);'
-	print >> w
+	print('#ifdef COMPILE_LAYER', file=w)
+	print('VkResult vkuSetupDeviceLayer(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkDevice* pDevice)', file=w)
+	print('{', file=w)
+	print('\tVkLayerDeviceCreateInfo* layerCreateInfo = (VkLayerDeviceCreateInfo*)pCreateInfo->pNext;', file=w)
+	print(file=w)
+	print('\twhile (layerCreateInfo && ((layerCreateInfo->sType != VK_STRUCTURE_TYPE_LOADER_DEVICE_CREATE_INFO) || (layerCreateInfo->function != VK_LAYER_LINK_INFO)))', file=w)
+	print('\t{', file=w)
+	print('\t\tlayerCreateInfo = (VkLayerDeviceCreateInfo*)layerCreateInfo->pNext;', file=w)
+	print('\t}', file=w)
+	print(file=w)
+	print('\tif(layerCreateInfo == NULL)', file=w)
+	print('\t{', file=w)
+	print('\t\treturn VK_ERROR_INITIALIZATION_FAILED;', file=w)
+	print('\t}', file=w)
+	print(file=w)
+	print('\tPFN_vkGetInstanceProcAddr gipa = layerCreateInfo->u.pLayerInfo->pfnNextGetInstanceProcAddr;', file=w)
+	print('\tPFN_vkGetDeviceProcAddr gdpa = layerCreateInfo->u.pLayerInfo->pfnNextGetDeviceProcAddr;', file=w)
+	print('\tlayerCreateInfo->u.pLayerInfo = layerCreateInfo->u.pLayerInfo->pNext;', file=w)
+	print(file=w)
+	print('\t// Setup next layer', file=w)
+	print('\tPFN_vkCreateDevice createDeviceNext = reinterpret_cast<PFN_vkCreateDevice>(gipa(VK_NULL_HANDLE, "vkCreateDevice"));', file=w)
+	print('\tVkResult retval = createDeviceNext(physicalDevice, pCreateInfo, pAllocator, pDevice);', file=w)
+	print('\tif (retval == VK_ERROR_FEATURE_NOT_PRESENT) print_feature_mismatch(physicalDevice, pCreateInfo);', file=w)
+	print('\telse if (retval == VK_ERROR_EXTENSION_NOT_PRESENT) print_extension_mismatch(physicalDevice, pCreateInfo);', file=w)
+	print('\tif (retval != VK_SUCCESS) ABORT("Failed to create device: %s", errorString(retval));', file=w)
+	print('\tassert(*pDevice);', file=w)
+	print(file=w)
 	build_device_table(w)
-	print >> w
-	print >> w, '\treturn retval;'
-	print >> w, '}'
-	print >> w, '#endif'
-	print >> w
+	print(file=w)
+	print('\treturn retval;', file=w)
+	print('}', file=w)
+	print('#endif', file=w)
+	print(file=w)
 	w.close()
 
 print_wrapper_cpp('generated/vk_wrapper_auto.cpp')

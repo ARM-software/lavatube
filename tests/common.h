@@ -33,3 +33,15 @@ void test_set_name(VkDevice device, VkObjectType type, uint64_t handle, const ch
 void print_cmdbuf(vulkan_setup_t& vulkan, VkCommandBuffer cmdbuf);
 void print_memory(vulkan_setup_t& vulkan, VkDeviceMemory memory, const char* name);
 void print_buffer(vulkan_setup_t& vulkan, VkBuffer buffer);
+
+// Prior assumption: Memory is not already mapped.
+static inline void test_destroy_buffer(vulkan_setup_t& vulkan, unsigned value, VkDeviceMemory memory, VkBuffer buffer, VkDeviceSize offset, VkDeviceSize size)
+{
+	uint8_t* ptr = nullptr;
+	VkResult result = trace_vkMapMemory(vulkan.device, memory, offset, size, 0, (void**)&ptr);
+	if (result != VK_SUCCESS) ABORT("Failed to map memory in test_assert_buffer");
+	assert(ptr[0] == value);
+	trace_vkUnmapMemory(vulkan.device, memory);
+	trace_vkAssertBufferTRACETOOLTEST(vulkan.device, buffer);
+	trace_vkDestroyBuffer(vulkan.device, buffer, nullptr);
+}

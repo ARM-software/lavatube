@@ -75,10 +75,9 @@ void lava_file_writer::push_thread_barriers()
 	frame_mutex.unlock();
 }
 
-void lava_file_writer::inject_thread_barrier(bool do_lock)
+void lava_file_writer::inject_thread_barrier()
 {
 	write_uint8_t(PACKET_THREAD_BARRIER); // packet type
-	if (do_lock) frame_mutex.lock();
 	int size = parent->thread_streams.size();
 	write_uint8_t(size); // threads to sync
 	for (int i = 0; i < size; i++)
@@ -87,7 +86,6 @@ void lava_file_writer::inject_thread_barrier(bool do_lock)
 		write_uint32_t(call);
 	}
 	DLOG2("Injected thread barrier on thread %d with %d targets", thread_index(), size);
-	if (do_lock) frame_mutex.unlock();
 }
 
 lava_file_writer::~lava_file_writer()
@@ -175,7 +173,6 @@ lava_writer::lava_writer() : global_frame(0)
 	// need a null terminator as it's a fixed size non-string array)
 	sntimef(fakeUUID, VK_UUID_SIZE + 1, "rdoc%y%m%d%H%M%S");
 
-	mCallNo = 0;
 	library = vkuCreateWrapper();
 	mJson["lavatube_version_major"] = LAVATUBE_VERSION_MAJOR;
 	mJson["lavatube_version_minor"] = LAVATUBE_VERSION_MINOR;
@@ -219,6 +216,8 @@ void lava_writer::serialize()
 	if (meta.app.stored_VkPhysicalDeviceVulkan11Features) usage_detection.adjust_VkPhysicalDeviceVulkan11Features(*meta.app.stored_VkPhysicalDeviceVulkan11Features);
 	if (meta.app.stored_VkPhysicalDeviceVulkan12Features) usage_detection.adjust_VkPhysicalDeviceVulkan12Features(*meta.app.stored_VkPhysicalDeviceVulkan12Features);
 	if (meta.app.stored_VkPhysicalDeviceVulkan13Features) usage_detection.adjust_VkPhysicalDeviceVulkan13Features(*meta.app.stored_VkPhysicalDeviceVulkan13Features);
+	usage_detection.adjust_device_extensions(meta.app.device_extensions);
+	usage_detection.adjust_instance_extensions(meta.app.instance_extensions);
 
 	// write metadata to JSON file
 	mJson["global_frames"] = global_frame + 1; // +1 since zero-indexed
@@ -260,6 +259,12 @@ void lava_writer::finish()
 {
 	frame_mutex.lock();
 
+	if ((p__external_memory || p__debug_level >= 1) && mem_allocated > 0)
+	{
+		ILOG("Memory allocated %lu, wasted %lu", (unsigned long)mem_allocated, (unsigned long)mem_wasted);
+	}
+	mem_allocated = 0;
+	mem_wasted = 0;
 	meta.device.reset();
 	meta.app.reset();
 	should_serialize = false;
@@ -279,7 +284,6 @@ void lava_writer::finish()
 	mJson = Json::Value();
 	global_frame.exchange(0);
 	tid = -1;
-	mCallNo = 0;
 	frame_mutex.unlock();
 }
 
@@ -294,7 +298,7 @@ lava_file_writer& lava_writer::file_writer()
 		{
 			f->set(mPath);
 		}
-		f->inject_thread_barrier(false);
+		f->inject_thread_barrier();
 		thread_streams.emplace_back(std::move(f));
 		DLOG("Created thread %d, currently %d threads", (int)tid, (int)thread_streams.size());
 		frame_mutex.unlock();

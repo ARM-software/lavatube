@@ -74,7 +74,7 @@ void file_reader::initiate_preload(uint64_t end)
 		if (readahead_chunks <= chunks) readahead_chunks++;
 		usleep(10000);
 	}
-	printf("Thread %u running preloaded! Uncompressed %lu bytes in total with %d unused chunks\n", tid, (unsigned long)uncompressed_bytes, chunks);
+	printf("Thread %u running preloaded! Uncompressed %lu bytes in total with %d unused chunks\n", tid, (unsigned long)total_read, chunks);
 }
 
 /// Decompressor thread. Use the readahead_chunks variable to control how many chunks to preload.

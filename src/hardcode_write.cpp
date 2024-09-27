@@ -27,9 +27,6 @@ static bool enabled_VK_EXT_tooling_info GUARDED_BY(frame_mutex) = false;
 static VkPhysicalDeviceMemoryProperties virtual_memory_properties GUARDED_BY(frame_mutex) = {};
 static uint32_t remap_memory_types_to_real[VK_MAX_MEMORY_TYPES] GUARDED_BY(frame_mutex);
 
-/// We cannot allow the app to map or unmap memory while we are scanning it.
-static lava::mutex memory_mutex;
-
 static trackable* debug_object_trackable(trace_records& r, VkDebugReportObjectTypeEXT type, uint64_t object)
 {
 	switch (type)
@@ -37,7 +34,7 @@ static trackable* debug_object_trackable(trace_records& r, VkDebugReportObjectTy
 	case VK_DEBUG_REPORT_OBJECT_TYPE_INSTANCE_EXT: return r.VkInstance_index.at((const VkInstance)object);
 	case VK_DEBUG_REPORT_OBJECT_TYPE_PHYSICAL_DEVICE_EXT: return r.VkPhysicalDevice_index.at((VkPhysicalDevice)object);
 	case VK_DEBUG_REPORT_OBJECT_TYPE_DEVICE_EXT: return r.VkDevice_index.at((VkDevice)object);
-	case VK_DEBUG_REPORT_OBJECT_TYPE_QUEUE_EXT: return r.VkQueue_index.at((const VkQueue)object);
+	case VK_DEBUG_REPORT_OBJECT_TYPE_QUEUE_EXT: return (p__virtualqueues) ? (trackable*)object : r.VkQueue_index.at((const VkQueue)object);
 	case VK_DEBUG_REPORT_OBJECT_TYPE_DEVICE_MEMORY_EXT: return r.VkDeviceMemory_index.at((const VkDeviceMemory)object);
 	case VK_DEBUG_REPORT_OBJECT_TYPE_SEMAPHORE_EXT: return r.VkSemaphore_index.at((const VkSemaphore)object);
 	case VK_DEBUG_REPORT_OBJECT_TYPE_COMMAND_BUFFER_EXT: return r.VkCommandBuffer_index.at((const VkCommandBuffer)object);
@@ -74,6 +71,8 @@ static trackable* debug_object_trackable(trace_records& r, VkDebugReportObjectTy
 	case VK_DEBUG_REPORT_OBJECT_TYPE_CU_MODULE_NVX_EXT:
 	case VK_DEBUG_REPORT_OBJECT_TYPE_BUFFER_COLLECTION_FUCHSIA_EXT:
 	case VK_DEBUG_REPORT_OBJECT_TYPE_UNKNOWN_EXT:
+	case VK_DEBUG_REPORT_OBJECT_TYPE_CUDA_MODULE_NV_EXT:
+	case VK_DEBUG_REPORT_OBJECT_TYPE_CUDA_FUNCTION_NV_EXT:
 	case VK_DEBUG_REPORT_OBJECT_TYPE_MAX_ENUM_EXT: assert(false); return nullptr;
 	}
 	return nullptr;
@@ -86,7 +85,7 @@ static trackable* object_trackable(const trace_records& r, VkObjectType type, ui
 	case VK_OBJECT_TYPE_INSTANCE: return r.VkInstance_index.at((VkInstance)object);
 	case VK_OBJECT_TYPE_PHYSICAL_DEVICE: return r.VkPhysicalDevice_index.at((VkPhysicalDevice)object);
 	case VK_OBJECT_TYPE_DEVICE: return r.VkDevice_index.at((VkDevice)object);
-	case VK_OBJECT_TYPE_QUEUE: return r.VkQueue_index.at((const VkQueue)object);
+	case VK_OBJECT_TYPE_QUEUE: return (p__virtualqueues) ? (trackable*)object : r.VkQueue_index.at((const VkQueue)object);
 	case VK_OBJECT_TYPE_DEVICE_MEMORY: return r.VkDeviceMemory_index.at((const VkDeviceMemory)object);
 	case VK_OBJECT_TYPE_SEMAPHORE: return r.VkSemaphore_index.at((const VkSemaphore)object);
 	case VK_OBJECT_TYPE_COMMAND_BUFFER: return r.VkCommandBuffer_index.at((const VkCommandBuffer)object);
@@ -119,11 +118,16 @@ static trackable* object_trackable(const trace_records& r, VkObjectType type, ui
 	case VK_OBJECT_TYPE_DEFERRED_OPERATION_KHR: return r.VkDeferredOperationKHR_index.at((const VkDeferredOperationKHR)object);
 	case VK_OBJECT_TYPE_MICROMAP_EXT: return r.VkMicromapEXT_index.at((const VkMicromapEXT)object);
 	case VK_OBJECT_TYPE_SAMPLER_YCBCR_CONVERSION_KHR: return r.VkSamplerYcbcrConversion_index.at((const VkSamplerYcbcrConversion)object);
+	case VK_OBJECT_TYPE_SHADER_EXT: return r.VkShaderEXT_index.at((const VkShaderEXT)object);
+	case VK_OBJECT_TYPE_VIDEO_SESSION_KHR: return r.VkVideoSessionKHR_index.at((const VkVideoSessionKHR)object);
+	case VK_OBJECT_TYPE_VIDEO_SESSION_PARAMETERS_KHR: return r.VkVideoSessionParametersKHR_index.at((const VkVideoSessionParametersKHR)object);
+	case VK_OBJECT_TYPE_DEBUG_REPORT_CALLBACK_EXT: return r.VkDebugReportCallbackEXT_index.at((const VkDebugReportCallbackEXT)object);
+	case VK_OBJECT_TYPE_DEBUG_UTILS_MESSENGER_EXT: return r.VkDebugUtilsMessengerEXT_index.at((const VkDebugUtilsMessengerEXT)object);
 	// not supported:
+	case VK_OBJECT_TYPE_CUDA_MODULE_NV:
+	case VK_OBJECT_TYPE_CUDA_FUNCTION_NV:
 	case VK_OBJECT_TYPE_CU_MODULE_NVX:
 	case VK_OBJECT_TYPE_CU_FUNCTION_NVX:
-	case VK_OBJECT_TYPE_DEBUG_REPORT_CALLBACK_EXT:
-	case VK_OBJECT_TYPE_DEBUG_UTILS_MESSENGER_EXT:
 	case VK_OBJECT_TYPE_ACCELERATION_STRUCTURE_NV:
 	case VK_OBJECT_TYPE_PERFORMANCE_CONFIGURATION_INTEL:
 	case VK_OBJECT_TYPE_INDIRECT_COMMANDS_LAYOUT_NV:
@@ -133,6 +137,17 @@ static trackable* object_trackable(const trace_records& r, VkObjectType type, ui
 	case VK_OBJECT_TYPE_MAX_ENUM: assert(false); return nullptr;
 	}
 	return nullptr;
+}
+
+static void trace_post_vkCreateShaderModule(lava_file_writer& writer, VkResult result, VkDevice device, const VkShaderModuleCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkShaderModule* pShaderModule)
+{
+	if (result != VK_SUCCESS) return; // ignore rest on failure
+	if (shader_has_buffer_devices_addresses(pCreateInfo->pCode, pCreateInfo->codeSize))
+	{
+		auto* shader = writer.parent->records.VkShaderModule_index.at(*pShaderModule);
+		shader->enables_buffer_device_address = true;
+		ILOG("Shader %u enables buffer references!", shader->index); // remove this later
+	}
 }
 
 static void trace_post_vkAcquireNextImageKHR(lava_file_writer& writer, VkResult result, VkDevice device, VkSwapchainKHR swapchain, uint64_t timeout, VkSemaphore semaphore, VkFence fence, uint32_t* pImageIndex)
@@ -180,21 +195,6 @@ static void trace_post_vkGetPhysicalDeviceFeatures2(lava_file_writer& writer, Vk
 		vk11->variablePointers = VK_FALSE; // not supported yet
 		vk11->variablePointersStorageBuffer = VK_FALSE; // not supported yet
 	}
-
-	VkBenchmarkingTRACETOOLTEST* benchmarking = (VkBenchmarkingTRACETOOLTEST*)find_extension(pFeatures, VK_STRUCTURE_TYPE_BENCHMARKING_TRACETOOLTEST);
-	if (benchmarking)
-	{
-		benchmarking->flags = 0;
-		benchmarking->fixedTimeStep = 30;
-		benchmarking->disablePerformanceAdaptation = VK_TRUE;
-		benchmarking->disableVendorAdaptation = VK_TRUE;
-		benchmarking->disableLoadingFrames = VK_FALSE;
-		benchmarking->visualSettings = 0;
-		benchmarking->scenario = 0;
-		benchmarking->loopTime = 0;
-		benchmarking->tracingFlags = (VkTracingFlagsTRACETOOLTEST)(VK_TRACING_NO_COHERENT_MEMORY_BIT_TRACETOOLTEST | VK_TRACING_NO_MEMORY_ALIASING_BIT_TRACETOOLTEST
-			| VK_TRACING_NO_POINTER_OFFSETS_BIT_TRACETOOLTEST | VK_TRACING_NO_JUST_IN_TIME_REUSE_BIT_TRACETOOLTEST);
-	}
 }
 
 static void trace_post_vkGetPhysicalDeviceFeatures2KHR(lava_file_writer& writer, VkPhysicalDevice physicalDevice, VkPhysicalDeviceFeatures2* pFeatures)
@@ -239,6 +239,8 @@ static void extend_bits(VkMemoryRequirements* pMemoryRequirements)
 			pMemoryRequirements->memoryTypeBits &= ~(1 << i); // no, clear
 		}
 	}
+	// extend alignment
+	pMemoryRequirements->alignment = std::max<VkDeviceSize>(pMemoryRequirements->alignment, 256);
 	frame_mutex.unlock();
 }
 
@@ -247,7 +249,6 @@ static void trace_post_vkGetBufferMemoryRequirements(lava_file_writer& writer, V
 	auto* buffer_data = writer.parent->records.VkBuffer_index.at(buffer);
 	buffer_data->req = *pMemoryRequirements;
 	extend_bits(pMemoryRequirements);
-	pMemoryRequirements->alignment = std::max<VkDeviceSize>(pMemoryRequirements->alignment, 256);
 }
 
 static void trace_post_vkGetImageMemoryRequirements(lava_file_writer& writer, VkDevice device, VkImage image, VkMemoryRequirements* pMemoryRequirements)
@@ -255,10 +256,9 @@ static void trace_post_vkGetImageMemoryRequirements(lava_file_writer& writer, Vk
 	auto* image_data = writer.parent->records.VkImage_index.at(image);
 	image_data->req = *pMemoryRequirements;
 	extend_bits(pMemoryRequirements);
-	pMemoryRequirements->alignment = std::max<VkDeviceSize>(pMemoryRequirements->alignment, 256);
 }
 
-static void inject_dedicated_allocation(lava_file_writer& writer, VkMemoryRequirements2* pMemoryRequirements, bool image)
+static void inject_dedicated_allocation(lava_file_writer& writer, VkBaseOutStructure* pMemoryRequirements, bool image)
 {
 	if ((p__dedicated_image == 0 && image) || (p__dedicated_buffer == 0 && !image)) return;
 
@@ -270,7 +270,7 @@ static void inject_dedicated_allocation(lava_file_writer& writer, VkMemoryRequir
 		info->pNext = pMemoryRequirements->pNext;
 		info->prefersDedicatedAllocation = VK_FALSE;
 		info->requiresDedicatedAllocation = VK_FALSE;
-		pMemoryRequirements->pNext = info;
+		pMemoryRequirements->pNext = (VkBaseOutStructure*)info;
 	}
 
 	if (image)
@@ -287,51 +287,66 @@ static void inject_dedicated_allocation(lava_file_writer& writer, VkMemoryRequir
 
 static void trace_post_vkGetBufferMemoryRequirements2(lava_file_writer& writer, VkDevice device, const VkBufferMemoryRequirementsInfo2* pInfo, VkMemoryRequirements2* pMemoryRequirements)
 {
-	inject_dedicated_allocation(writer, pMemoryRequirements, false);
+	inject_dedicated_allocation(writer, (VkBaseOutStructure*)pMemoryRequirements, false);
 	trace_post_vkGetBufferMemoryRequirements(writer, device, pInfo->buffer, &pMemoryRequirements->memoryRequirements);
 }
 
 static void trace_post_vkGetImageMemoryRequirements2(lava_file_writer& writer, VkDevice device, const VkImageMemoryRequirementsInfo2* pInfo, VkMemoryRequirements2* pMemoryRequirements)
 {
-	inject_dedicated_allocation(writer, pMemoryRequirements, true);
+	inject_dedicated_allocation(writer, (VkBaseOutStructure*)pMemoryRequirements, true);
 	trace_post_vkGetImageMemoryRequirements(writer, device, pInfo->image, &pMemoryRequirements->memoryRequirements);
 }
 
 static void trace_post_vkGetBufferMemoryRequirements2KHR(lava_file_writer& writer, VkDevice device, const VkBufferMemoryRequirementsInfo2* pInfo, VkMemoryRequirements2* pMemoryRequirements)
 {
-	inject_dedicated_allocation(writer, pMemoryRequirements, false);
-	trace_post_vkGetBufferMemoryRequirements(writer, device, pInfo->buffer, &pMemoryRequirements->memoryRequirements);
+	trace_post_vkGetBufferMemoryRequirements2(writer, device, pInfo, pMemoryRequirements);
 }
 
 static void trace_post_vkGetImageMemoryRequirements2KHR(lava_file_writer& writer, VkDevice device, const VkImageMemoryRequirementsInfo2* pInfo, VkMemoryRequirements2* pMemoryRequirements)
 {
-	inject_dedicated_allocation(writer, pMemoryRequirements, true);
-	trace_post_vkGetImageMemoryRequirements(writer, device, pInfo->image, &pMemoryRequirements->memoryRequirements);
+	trace_post_vkGetImageMemoryRequirements2(writer, device, pInfo, pMemoryRequirements);
 }
 
 static void trace_post_vkGetDeviceBufferMemoryRequirements(lava_file_writer& writer, VkDevice device, const VkDeviceBufferMemoryRequirements* pInfo, VkMemoryRequirements2* pMemoryRequirements)
 {
-	assert(false); // TBD
+	inject_dedicated_allocation(writer, (VkBaseOutStructure*)pMemoryRequirements, false);
+	extend_bits(&pMemoryRequirements->memoryRequirements);
 }
 
 static void trace_post_vkGetDeviceBufferMemoryRequirementsKHR(lava_file_writer& writer, VkDevice device, const VkDeviceBufferMemoryRequirements* pInfo, VkMemoryRequirements2* pMemoryRequirements)
 {
-	assert(false); // TBD
+	trace_post_vkGetDeviceBufferMemoryRequirements(writer, device, pInfo, pMemoryRequirements);
 }
 
 static void trace_post_vkGetDeviceImageMemoryRequirements(lava_file_writer& writer, VkDevice device, const VkDeviceImageMemoryRequirements* pInfo, VkMemoryRequirements2* pMemoryRequirements)
 {
-	assert(false); // TBD
+	inject_dedicated_allocation(writer, (VkBaseOutStructure*)pMemoryRequirements, true);
+	extend_bits(&pMemoryRequirements->memoryRequirements);
 }
 
 static void trace_post_vkGetDeviceImageMemoryRequirementsKHR(lava_file_writer& writer, VkDevice device, const VkDeviceImageMemoryRequirements* pInfo, VkMemoryRequirements2* pMemoryRequirements)
 {
-	assert(false); // TBD
+	trace_post_vkGetDeviceImageMemoryRequirements(writer, device, pInfo, pMemoryRequirements);
+}
+
+static void trace_post_vkGetDeviceImageSparseMemoryRequirements(lava_file_writer& writer, VkDevice device, const VkDeviceImageMemoryRequirements* pInfo,
+	uint32_t* pSparseMemoryRequirementCount, VkSparseImageMemoryRequirements2* pSparseMemoryRequirements)
+{
+	for (uint32_t i = 0; i < *pSparseMemoryRequirementCount && pSparseMemoryRequirements; i++)
+	{
+		// TBD
+	}
+}
+
+static void trace_post_vkGetDeviceImageSparseMemoryRequirementsKHR(lava_file_writer& writer, VkDevice device, const VkDeviceImageMemoryRequirements* pInfo,
+	uint32_t* pSparseMemoryRequirementCount, VkSparseImageMemoryRequirements2* pSparseMemoryRequirements)
+{
+	trace_post_vkGetDeviceImageSparseMemoryRequirements(writer, device, pInfo, pSparseMemoryRequirementCount, pSparseMemoryRequirements);
 }
 
 static void trace_post_vkBindImageMemory(lava_file_writer& writer, VkResult result, VkDevice device, VkImage image, VkDeviceMemory memory, VkDeviceSize memoryOffset)
 {
-	memory_mutex.lock();
+	writer.parent->memory_mutex.lock();
 	assert(memory != VK_NULL_HANDLE);
 	assert(result == VK_SUCCESS);
 	auto* image_data = writer.parent->records.VkImage_index.at(image);
@@ -345,12 +360,12 @@ static void trace_post_vkBindImageMemory(lava_file_writer& writer, VkResult resu
 	}
 	image_data->size = image_data->req.size; // we do not try to second guess this for images
 	image_data->accessible = ((image_data->tiling != VK_IMAGE_TILING_OPTIMAL) && (memory_data->propertyFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT));
-	memory_mutex.unlock();
+	writer.parent->memory_mutex.unlock();
 }
 
 static void trace_post_vkBindBufferMemory(lava_file_writer& writer, VkResult result, VkDevice device, VkBuffer buffer, VkDeviceMemory memory, VkDeviceSize memoryOffset)
 {
-	memory_mutex.lock();
+	writer.parent->memory_mutex.lock();
 	assert(memory != VK_NULL_HANDLE);
 	assert(result == VK_SUCCESS);
 	auto* buffer_data = writer.parent->records.VkBuffer_index.at(buffer);
@@ -364,7 +379,7 @@ static void trace_post_vkBindBufferMemory(lava_file_writer& writer, VkResult res
 	}
 	// we pass in size recorded from vkCreateBuffer, which is the actually used size, rather than required allocation size
 	buffer_data->accessible = (memory_data->propertyFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
-	memory_mutex.unlock();
+	writer.parent->memory_mutex.unlock();
 }
 
 static void trace_post_vkBindImageMemory2(lava_file_writer& writer, VkResult result, VkDevice device, uint32_t bindInfoCount, const VkBindImageMemoryInfo* pBindInfos)
@@ -405,12 +420,23 @@ static void trace_post_vkCmdBindDescriptorSets(lava_file_writer& writer,
 	uint32_t                                    dynamicOffsetCount,
 	const uint32_t*                             pDynamicOffsets)
 {
-	// TBD handle pDynamicOffsets here!
+	uint32_t dynamic_index = 0;
 	auto* cmdbuf_data = writer.parent->records.VkCommandBuffer_index.at(commandBuffer);
 	for (unsigned i = 0; i < descriptorSetCount; i++)
 	{
 		const auto* tds = writer.parent->records.VkDescriptorSet_index.at(pDescriptorSets[i]);
 		cmdbuf_data->touch_merge(tds->touched);
+		for (unsigned j = 0; j < tds->dynamic_buffers.size(); j++)
+		{
+			if (tds->dynamic_buffers.at(j).buffer == VK_NULL_HANDLE) continue;
+			auto* buffer_data = writer.parent->records.VkBuffer_index.at(tds->dynamic_buffers.at(j).buffer);
+			VkDeviceSize size = tds->dynamic_buffers.at(j).range;
+			VkDeviceSize offset = tds->dynamic_buffers.at(j).offset + pDynamicOffsets[dynamic_index + j];
+			if (size == VK_WHOLE_SIZE) size = buffer_data->size - offset;
+			cmdbuf_data->touch(buffer_data, offset, size, __LINE__);
+		}
+		dynamic_index += tds->dynamic_buffers.size();
+		assert(dynamic_index <= dynamicOffsetCount);
 	}
 }
 
@@ -422,7 +448,7 @@ static void handle_VkWriteDescriptorSets(lava_file_writer& writer, uint32_t desc
 		auto* tds = writer.parent->records.VkDescriptorSet_index.at(pDescriptorWrites[i].dstSet);
 		// TBD I do not think this is correct. We are allowed to keep descriptor state for bindings not touched here from a previous call.
 		// Not sure how to handle this well, and not seen any content where this breaks anything, but should fix it...
-		if (clear) tds->touched.clear();
+		if (clear) { tds->touched.clear(); tds->dynamic_buffers.clear(); }
 	}
 	for (unsigned i = 0; i < descriptorWriteCount; i++)
 	{
@@ -441,21 +467,25 @@ static void handle_VkWriteDescriptorSets(lava_file_writer& writer, uint32_t desc
 				if (pDescriptorWrites[i].pImageInfo[j].imageView == VK_NULL_HANDLE) continue;
 				auto* imageview_data = writer.parent->records.VkImageView_index.at(pDescriptorWrites[i].pImageInfo[j].imageView);
 				auto* image_data = writer.parent->records.VkImage_index.at(imageview_data->image);
-				tds->touch(image_data, 0, image_data->size);
+				tds->touch(image_data, 0, image_data->size, __LINE__);
 			}
 			break;
 		case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
 		case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
-		case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC:
-		case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC:
 			for (unsigned j = 0; j < pDescriptorWrites[i].descriptorCount; j++)
 			{
 				if (pDescriptorWrites[i].pBufferInfo[j].buffer == VK_NULL_HANDLE) continue;
 				auto* buffer_data = writer.parent->records.VkBuffer_index.at(pDescriptorWrites[i].pBufferInfo[j].buffer);
 				VkDeviceSize size = pDescriptorWrites[i].pBufferInfo[j].range;
-				if (type == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC || type == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC) size = VK_WHOLE_SIZE; // TBD do properly
 				if (size == VK_WHOLE_SIZE) size = buffer_data->size - pDescriptorWrites[i].pBufferInfo[j].offset;
-				tds->touch(buffer_data, pDescriptorWrites[i].pBufferInfo[j].offset, size);
+				tds->touch(buffer_data, pDescriptorWrites[i].pBufferInfo[j].offset, size, __LINE__);
+			}
+			break;
+		case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC:
+		case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC:
+			for (unsigned j = 0; j < pDescriptorWrites[i].descriptorCount; j++)
+			{
+				tds->dynamic_buffers.push_back(pDescriptorWrites[i].pBufferInfo[j]);
 			}
 			break;
 		case VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER:
@@ -465,7 +495,7 @@ static void handle_VkWriteDescriptorSets(lava_file_writer& writer, uint32_t desc
 				if (pDescriptorWrites[i].pTexelBufferView[j] == VK_NULL_HANDLE) continue;
 				auto* bufferview_data = writer.parent->records.VkBufferView_index.at(pDescriptorWrites[i].pTexelBufferView[j]);
 				auto* buffer_data = writer.parent->records.VkBuffer_index.at(bufferview_data->buffer);
-				tds->touch(buffer_data, bufferview_data->offset, bufferview_data->range);
+				tds->touch(buffer_data, bufferview_data->offset, bufferview_data->range, __LINE__);
 			}
 			break;
 		case VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK: // Provided by VK_VERSION_1_3
@@ -519,7 +549,8 @@ static void trace_post_vkUpdateDescriptorSets(lava_file_writer& writer, VkDevice
 	assert(descriptorCopyCount == 0);
 }
 
-static void queue_update(lava_file_writer& writer, trackedqueue_trace* t, VkCommandBuffer cmdbuf, std::unordered_map<VkDeviceMemory, range>& ranges_by_memory, std::unordered_set<trackedcmdbuffer_trace*>& cmdbufs)
+// combine all updates for each memory into one update list for each device memory object, so we keep the number of map operations to a minimum
+static void queue_update(lava_file_writer& writer, trackedqueue* t, VkCommandBuffer cmdbuf, std::unordered_map<VkDeviceMemory, range>& ranges_by_memory, std::unordered_set<trackedcmdbuffer_trace*>& cmdbufs)
 {
 	auto* cmdbuf_data = writer.parent->records.VkCommandBuffer_index.at(cmdbuf);
 
@@ -548,7 +579,7 @@ static void queue_update(lava_file_writer& writer, trackedqueue_trace* t, VkComm
 	}
 }
 
-static void memory_update(lava_file_writer& writer, trackedqueue_trace* queue_data, const std::unordered_map<VkDeviceMemory, range>& ranges_by_memory, std::unordered_set<trackedcmdbuffer_trace*>& cmdbufs)
+static void memory_update(lava_file_writer& writer, trackedqueue* queue_data, const std::unordered_map<VkDeviceMemory, range>& ranges_by_memory, std::unordered_set<trackedcmdbuffer_trace*>& cmdbufs)
 {
 	// for each, map and update
 	for (const auto& pair : ranges_by_memory) // devicememory + max used memory span pair
@@ -594,7 +625,7 @@ static void memory_update(lava_file_writer& writer, trackedqueue_trace* queue_da
 				if (object_data->backing != pair.first) continue; // belongs to different device memory
 				assert(object_data->frame_destroyed == -1);
 				uint64_t written = 0;
-				uint64_t scanned = 0;
+				[[maybe_unused]] uint64_t scanned = 0;
 				char* cloneptr = memory_data->clone + object_data->offset;
 				char* changedptr = ptr + object_data->offset - binding_offset;
 				for (const auto& r : objpair.second.list()) // go through list of touched ranges for our object
@@ -613,7 +644,7 @@ static void memory_update(lava_file_writer& writer, trackedqueue_trace* queue_da
 					      (unsigned long)object_data->written, memory_data->index, binding_offset, binding_size, memory_data->ptr);
 				}
 				object_data->written += written;
-				NEVER("%s(%u) offset=%u size=%u memory=%u(total size=%u) written=%u scanned=%u cmdbuf=%u", pretty_print_VkObjectType(object_data->type), (unsigned)object_data->index, (unsigned)object_data->offset, (unsigned)object_data->size, memory_data->index, (unsigned)memory_data->allocationSize, (unsigned)written, (unsigned)scanned, cmdbuf_data->index);
+				NEVER("%s(%u) offset=%u size=%u memory=%u(total size=%u) written=%u scanned=%u cmdbuf=%u source=%d", pretty_print_VkObjectType(object_data->type), (unsigned)object_data->index, (unsigned)object_data->offset, (unsigned)object_data->size, memory_data->index, (unsigned)memory_data->allocationSize, (unsigned)written, (unsigned)scanned, cmdbuf_data->index, (int)object_data->source);
 			}
 		}
 
@@ -631,9 +662,10 @@ static void trace_pre_vkQueueSubmit2(VkQueue queue, uint32_t submitCount, const 
 	lava_writer& instance = lava_writer::instance();
 	lava_file_writer& writer = instance.file_writer();
 	assert(queue != VK_NULL_HANDLE);
-	auto* queue_data = writer.parent->records.VkQueue_index.at(queue);
+	auto* queue_data = instance.records.VkQueue_index.at(queue);
+	queue_data->self_test();
 
-	memory_mutex.lock();
+	instance.memory_mutex.lock();
 	std::unordered_map<VkDeviceMemory, range> ranges_by_memory;
 	std::unordered_set<trackedcmdbuffer_trace*> cmdbufs;
 	for (unsigned i = 0; i < submitCount; i++)
@@ -645,7 +677,7 @@ static void trace_pre_vkQueueSubmit2(VkQueue queue, uint32_t submitCount, const 
 	}
 	memory_update(writer, queue_data, ranges_by_memory, cmdbufs);
 	writer.debug.flushes_queue++;
-	memory_mutex.unlock();
+	instance.memory_mutex.unlock();
 }
 
 static void trace_pre_vkQueueSubmit2KHR(VkQueue queue, uint32_t submitCount, const VkSubmitInfo2* pSubmits, VkFence fence)
@@ -657,11 +689,10 @@ static void trace_pre_vkQueueSubmit(VkQueue queue, uint32_t submitCount, const V
 {
 	lava_writer& instance = lava_writer::instance();
 	lava_file_writer& writer = instance.file_writer();
+	auto* queue_data = instance.records.VkQueue_index.at(queue);
+	queue_data->self_test();
 
-	assert(queue != VK_NULL_HANDLE);
-	auto* queue_data = writer.parent->records.VkQueue_index.at(queue);
-
-	memory_mutex.lock();
+	instance.memory_mutex.lock();
 	std::unordered_map<VkDeviceMemory, range> ranges_by_memory;
 	std::unordered_set<trackedcmdbuffer_trace*> cmdbufs;
 	for (unsigned i = 0; i < submitCount; i++)
@@ -673,7 +704,7 @@ static void trace_pre_vkQueueSubmit(VkQueue queue, uint32_t submitCount, const V
 	}
 	memory_update(writer, queue_data, ranges_by_memory, cmdbufs);
 	writer.debug.flushes_queue++;
-	memory_mutex.unlock();
+	instance.memory_mutex.unlock();
 }
 
 static void trace_post_vkQueuePresentKHR(lava_file_writer& writer, VkResult result, VkQueue queue, const VkPresentInfoKHR* pPresentInfo)
@@ -681,12 +712,6 @@ static void trace_post_vkQueuePresentKHR(lava_file_writer& writer, VkResult resu
 	assert(pPresentInfo->swapchainCount == 1); // more than one not yet supported
 	DLOG("Presenting with swapchain image index %u", pPresentInfo->pImageIndices[0]);
 	if (result != VK_SUCCESS) ILOG("vkQueuePresentKHR error: %s", errorString(result));
-	const auto* queue_data = writer.parent->records.VkQueue_index.at(queue);
-	for (unsigned i = 0; i < pPresentInfo->swapchainCount; i++)
-	{
-		auto* swapchain_data = writer.parent->records.VkSwapchainKHR_index.at(pPresentInfo->pSwapchains[i]);
-		swapchain_data->queue = queue;
-	}
 	lava_writer& instance = lava_writer::instance();
 	instance.new_frame();
 }
@@ -778,7 +803,7 @@ static void modify_instance_extensions() REQUIRES(frame_mutex)
 
 	uint32_t propertyCount = 0;
 	VkResult result = wrap_vkEnumerateInstanceExtensionProperties(nullptr, &propertyCount, nullptr); // call first to get correct count on host
-	assert(result == VK_SUCCESS);
+	if (result != VK_SUCCESS) ABORT("Failed reading instance extension property count");
 	std::vector<VkExtensionProperties> tmp_instance_extension_properties(propertyCount);
 	result = wrap_vkEnumerateInstanceExtensionProperties(nullptr, &propertyCount, tmp_instance_extension_properties.data());
 	assert(result == VK_SUCCESS);
@@ -788,12 +813,6 @@ static void modify_instance_extensions() REQUIRES(frame_mutex)
 		r["instancePresented"]["extensions"].append(ext.extensionName);
 		instance.meta.device.instance_extensions.insert(ext.extensionName);
 	}
-
-	// Present extensions we provide
-	VkExtensionProperties benchmarking = {};
-	strcpy(benchmarking.extensionName, VK_TRACETOOLTEST_BENCHMARKING_EXTENSION_NAME);
-	benchmarking.specVersion = 1;
-	instance_extension_properties.push_back(benchmarking);
 
 	for (const auto &ext : tmp_instance_extension_properties)
 	{
@@ -816,7 +835,7 @@ static void modify_device_extensions(VkPhysicalDevice physicalDevice) REQUIRES(f
 
 	uint32_t propertyCount = 0;
 	VkResult result = wrap_vkEnumerateDeviceExtensionProperties(physicalDevice, nullptr, &propertyCount, nullptr); // call first to get correct count on host
-	assert(result == VK_SUCCESS);
+	if (result != VK_SUCCESS) ABORT("Failed reading device extension property count");
 	std::vector<VkExtensionProperties> tmp_device_extension_properties(propertyCount);
 	result = wrap_vkEnumerateDeviceExtensionProperties(physicalDevice, nullptr, &propertyCount, tmp_device_extension_properties.data());
 	assert(result == VK_SUCCESS);
@@ -826,11 +845,6 @@ static void modify_device_extensions(VkPhysicalDevice physicalDevice) REQUIRES(f
 	strcpy(checksumvalidation.extensionName, VK_TRACETOOLTEST_CHECKSUM_VALIDATION_EXTENSION_NAME);
 	checksumvalidation.specVersion = 1;
 	device_extension_properties.push_back(checksumvalidation);
-
-	VkExtensionProperties frame_end = {};
-	strcpy(frame_end.extensionName, VK_TRACETOOLTEST_FRAME_END_EXTENSION_NAME);
-	frame_end.specVersion = 1;
-	device_extension_properties.push_back(frame_end);
 
 	VkExtensionProperties objectproperty = {};
 	strcpy(objectproperty.extensionName, VK_TRACETOOLTEST_OBJECT_PROPERTY_EXTENSION_NAME);
@@ -842,14 +856,20 @@ static void modify_device_extensions(VkPhysicalDevice physicalDevice) REQUIRES(f
 	toolinfo.specVersion = 1;
 	device_extension_properties.push_back(toolinfo);
 
+	VkExtensionProperties frame_boundary_info = {};
+	strcpy(frame_boundary_info.extensionName, VK_EXT_FRAME_BOUNDARY_EXTENSION_NAME);
+	frame_boundary_info.specVersion = 1;
+	device_extension_properties.push_back(frame_boundary_info);
+
 	for (const auto &ext : tmp_device_extension_properties)
 	{
 		// Filter out extensions we don't want presented
 		std::string name = ext.extensionName;
 		instance.meta.device.device_extensions.insert(name);
 		r["devicePresented"]["extensions"].append(name);
-		if (name.find("_NV") == std::string::npos && name.find("_AMD") == std::string::npos
-		    && name.find("_INTEL") == std::string::npos && name != VK_EXT_TOOLING_INFO_EXTENSION_NAME)
+		if (name.find("_NV") == std::string::npos && name.find("_AMD") == std::string::npos && name.find("_INTEL") == std::string::npos
+		    // deduplicate in case host also provides this
+		    && name != VK_EXT_TOOLING_INFO_EXTENSION_NAME && name != VK_EXT_FRAME_BOUNDARY_EXTENSION_NAME)
 		{
 			device_extension_properties.push_back(ext); // add to list of extensions presented to app
 		}
@@ -911,8 +931,11 @@ static void trace_pre_vkCreateDevice(VkPhysicalDevice physicalDevice, VkDeviceCr
 	// -- Modify app request --
 
 	bool has_VK_EXT_tooling_info = false;
+	bool add_VK_KHR_external_memory = false;
+	bool add_VK_EXT_external_memory_host = false;
+	bool has_VK_EXT_frame_boundary = false;
 	uint32_t propertyCount = 0;
-	VkResult result = wrap_vkEnumerateDeviceExtensionProperties(physicalDevice, nullptr, &propertyCount, nullptr); // call first to get correct count on host
+	[[maybe_unused]] VkResult result = wrap_vkEnumerateDeviceExtensionProperties(physicalDevice, nullptr, &propertyCount, nullptr); // call first to get correct count on host
 	assert(result == VK_SUCCESS);
 	std::vector<VkExtensionProperties> tmp_device_extension_properties(propertyCount);
 	result = wrap_vkEnumerateDeviceExtensionProperties(physicalDevice, nullptr, &propertyCount, tmp_device_extension_properties.data());
@@ -921,10 +944,18 @@ static void trace_pre_vkCreateDevice(VkPhysicalDevice physicalDevice, VkDeviceCr
 	{
 		std::string name = ext.extensionName;
 		if (name == VK_EXT_TOOLING_INFO_EXTENSION_NAME) has_VK_EXT_tooling_info = true;
+		if (name == VK_KHR_EXTERNAL_MEMORY_EXTENSION_NAME) add_VK_KHR_external_memory = true;
+		if (name == VK_EXT_EXTERNAL_MEMORY_HOST_EXTENSION_NAME) add_VK_EXT_external_memory_host = true;
+		if (name == VK_EXT_FRAME_BOUNDARY_EXTENSION_NAME) has_VK_EXT_frame_boundary = true;
 	}
 
+	// Extra extensions to add
+	std::vector<std::string> extra_exts;
+	if (add_VK_KHR_external_memory) { extra_exts.push_back(VK_KHR_EXTERNAL_MEMORY_EXTENSION_NAME); }
+	if (add_VK_EXT_external_memory_host) { extra_exts.push_back(VK_EXT_EXTERNAL_MEMORY_HOST_EXTENSION_NAME); }
+
 	// Remove built-in extensions before sending the requested extension list to the driver
-	char** nameptrs = writer.pool.allocate<char*>(pCreateInfo->enabledExtensionCount); // reserve space for all
+	char** nameptrs = writer.pool.allocate<char*>(pCreateInfo->enabledExtensionCount + extra_exts.size()); // reserve space for all
 	unsigned newcount = 0;
 	DLOG("Requesting enabled device extension from the driver:");
 	for (unsigned i = 0; i < pCreateInfo->enabledExtensionCount; i++)
@@ -941,9 +972,20 @@ static void trace_pre_vkCreateDevice(VkPhysicalDevice physicalDevice, VkDeviceCr
 		}
 		if (strcmp(name, VK_TRACETOOLTEST_CHECKSUM_VALIDATION_EXTENSION_NAME) == 0) continue; // do not pass to host
 		if (strcmp(name, VK_TRACETOOLTEST_OBJECT_PROPERTY_EXTENSION_NAME) == 0) continue; // do not pass to host
-		if (strcmp(name, VK_TRACETOOLTEST_FRAME_END_EXTENSION_NAME) == 0) continue; // do not pass to host
+		if (!has_VK_EXT_frame_boundary && strcmp(name, VK_EXT_FRAME_BOUNDARY_EXTENSION_NAME) == 0) continue; // do not pass to host
+		if (strcmp(name, VK_KHR_EXTERNAL_MEMORY_EXTENSION_NAME) == 0 && add_VK_KHR_external_memory) continue; // do not need to add twice
+		if (strcmp(name, VK_EXT_EXTERNAL_MEMORY_HOST_EXTENSION_NAME) == 0 && add_VK_EXT_external_memory_host) continue;; // ditto
 		nameptrs[newcount++] = name;
 		DLOG("    %s", name);
+	}
+	// Add extra extensions
+	for (const auto& v : extra_exts)
+	{
+		const int size = v.size() + 1;
+		char* name = writer.pool.allocate<char>(v.size() + 1);
+		strcpy(name, v.c_str());
+		nameptrs[newcount++] = name;
+		DLOG("    %s (added by us)", name);
 	}
 	frame_mutex.unlock();
 	pCreateInfo->ppEnabledExtensionNames = nameptrs;
@@ -958,9 +1000,6 @@ static void trace_post_vkCreateDevice(lava_file_writer& writer, VkResult result,
 	Json::Value& r = instance.json();
 
 	// -- Save information on tracing device --
-#ifdef VK_USE_PLATFORM_ANDROID_KHR
-	r["devicePresented"]["android_hw_level"] = android_hw_level(device_features);
-#endif
 #ifdef __aarch64__
 	r["devicePresented"]["architecture"] = "arm64";
 #elif __arm__
@@ -976,14 +1015,15 @@ static void trace_post_vkCreateDevice(lava_file_writer& writer, VkResult result,
 		instance.meta.device.stored_device_properties = new VkPhysicalDeviceProperties();
 		if (VK_VERSION_MAJOR(instance.meta.device.stored_api_version) >= 1 && VK_VERSION_MINOR(instance.meta.device.stored_api_version) >= 1)
 		{
-			VkPhysicalDeviceProperties2 properties = {};
-			properties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
+			VkPhysicalDeviceProperties2 properties { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2, nullptr };
 			if (VK_VERSION_MAJOR(instance.meta.device.stored_api_version) >= 1 && VK_VERSION_MINOR(instance.meta.device.stored_api_version) >= 2)
 			{
 				instance.meta.device.stored_driver_properties = new VkPhysicalDeviceDriverProperties();
 				instance.meta.device.stored_driver_properties->sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DRIVER_PROPERTIES;
 				properties.pNext = instance.meta.device.stored_driver_properties;
 			}
+			instance.meta.external_memory = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_MEMORY_HOST_PROPERTIES_EXT, properties.pNext };
+			if (p__external_memory) properties.pNext = &instance.meta.external_memory;
 			wrap_vkGetPhysicalDeviceProperties2(physicalDevice, &properties);
 			*instance.meta.device.stored_device_properties = properties.properties; // struct copy
 		}
@@ -1037,26 +1077,6 @@ static void trace_post_vkCreateDevice(lava_file_writer& writer, VkResult result,
 	if (virtual_memory_properties.memoryTypeCount == 0) // might have been called already
 	{
 		setup_virtual_memory(physicalDevice);
-	}
-
-	const VkBenchmarkingTRACETOOLTEST* benchmarking = (const VkBenchmarkingTRACETOOLTEST*)find_extension(pCreateInfo, (VkStructureType)VK_STRUCTURE_TYPE_BENCHMARKING_TRACETOOLTEST);
-	if (benchmarking)
-	{
-		printf("Application enabled VkBenchmarkingTRACETOOLTEST mode:\n");
-		printf("\tfixedTimeStep = %u\n", benchmarking->fixedTimeStep);
-		printf("\tdisablePerformanceAdaptation = %s\n", benchmarking->disablePerformanceAdaptation ? "true" : "false");
-		printf("\tdisableVendorAdaptation = %s\n", benchmarking->disableVendorAdaptation ? "true" : "false");
-		printf("\tdisableLoadingFrames = %s\n", benchmarking->disableVendorAdaptation ? "true" : "false");
-		printf("\tvisualSettings = %u\n", benchmarking->visualSettings);
-		printf("\tscenario = %u\n", benchmarking->scenario);
-		printf("\tloopTime = %u\n", benchmarking->loopTime);
-		std::string s;
-		if (benchmarking->tracingFlags & VK_TRACING_NO_COHERENT_MEMORY_BIT_TRACETOOLTEST) s += "no_coherent_memory ";
-		if (benchmarking->tracingFlags & VK_TRACING_NO_SUBALLOCATION_BIT_TRACETOOLTEST) s += "no_suballocation ";
-		if (benchmarking->tracingFlags & VK_TRACING_NO_MEMORY_ALIASING_BIT_TRACETOOLTEST) s += "no_memory_aliasing ";
-		if (benchmarking->tracingFlags & VK_TRACING_NO_POINTER_OFFSETS_BIT_TRACETOOLTEST) s += "no_pointer_offsets ";
-		if (benchmarking->tracingFlags & VK_TRACING_NO_JUST_IN_TIME_REUSE_BIT_TRACETOOLTEST) s += "no_just_in_time_reuse ";
-		printf("\ttracingFlags = %s\n", s.c_str());
 	}
 
 	frame_mutex.unlock();
@@ -1121,7 +1141,6 @@ static void trace_pre_vkCreateInstance(VkInstanceCreateInfo* pCreateInfo, const 
 		char* name = writer.pool.allocate<char>(size);
 		memset(name, 0, size);
 		strcpy(name, pCreateInfo->ppEnabledExtensionNames[i]);
-		if (strcmp(name, VK_TRACETOOLTEST_BENCHMARKING_EXTENSION_NAME) == 0) continue; // do not pass to host
 		nameptrs[newcount++] = name;
 		DLOG("    %s", name);
 	}
@@ -1143,13 +1162,14 @@ static void trace_post_vkCreateInstance(lava_file_writer& writer, VkResult resul
 	}
 	const std::string trace_out_path = get_trace_path(base_out_path);
 	instance.set(trace_out_path);
+
+	frame_mutex.lock();
+
 	if (pCreateInfo->pApplicationInfo)
 	{
 		instance.meta.device.stored_api_version = pCreateInfo->pApplicationInfo->apiVersion;
 	}
 	ILOG("Trace out path set to: %s", trace_out_path.c_str());
-
-	frame_mutex.lock();
 
 	// Save physical device references
 	uint32_t num_phys_devices = 0;
@@ -1161,7 +1181,13 @@ static void trace_post_vkCreateInstance(lava_file_writer& writer, VkResult resul
 	assert(num_phys_devices == physical_devices.size());
 	for (unsigned cur_dev = 0; cur_dev < num_phys_devices; cur_dev++)
 	{
-		writer.parent->records.VkPhysicalDevice_index.add(physical_devices[cur_dev], instance.global_frame);
+		auto* add = writer.parent->records.VkPhysicalDevice_index.add(physical_devices[cur_dev], instance.global_frame);
+		add->tid = writer.thread_index();
+		add->call = writer.local_call_number;
+		uint32_t count = 0;
+		wrap_vkGetPhysicalDeviceQueueFamilyProperties(physical_devices[cur_dev], &count, nullptr);
+		add->queueFamilyProperties.resize(count);
+		wrap_vkGetPhysicalDeviceQueueFamilyProperties(physical_devices[cur_dev], &count, add->queueFamilyProperties.data());
 	}
 
 	frame_mutex.unlock();
@@ -1173,7 +1199,7 @@ static inline lava_file_writer& write_header(const char* funcname, lava_function
 {
 	lava_writer& instance = lava_writer::instance();
 	lava_file_writer& writer = instance.file_writer();
-	if (thread_barrier) writer.inject_thread_barrier();
+	if (thread_barrier) { frame_mutex.lock(); writer.inject_thread_barrier(); frame_mutex.unlock(); }
 	writer.write_api_command(id);
 	DLOG("[t%02d %06d] Seq %s%s", writer.thread_index(), writer.local_call_number, funcname, thread_barrier ? " (prefaced by thread barrier)" : "");
 	return writer;
@@ -1253,29 +1279,6 @@ VKAPI_ATTR VkResult vkNegotiateLoaderLayerInterfaceVersion(VkNegotiateLayerInter
 	pVersionStruct->pfnGetDeviceProcAddr = trace_vkGetDeviceProcAddr;
 	pVersionStruct->pfnGetPhysicalDeviceProcAddr = nullptr; // TBD implement this when loader issues are sorted out
 	return VK_SUCCESS;
-}
-
-static void write_VkBenchmarkingTRACETOOLTEST(lava_file_writer& writer, const VkBenchmarkingTRACETOOLTEST* sptr)
-{
-	writer.write_uint32_t(sptr->sType);
-	assert(sptr->sType == VK_STRUCTURE_TYPE_BENCHMARKING_TRACETOOLTEST);
-	write_extension(writer, (VkBaseOutStructure*)sptr->pNext);
-	writer.write_uint32_t((uint32_t)sptr->flags);
-	writer.write_uint32_t(sptr->fixedTimeStep);
-	writer.write_uint32_t(sptr->disablePerformanceAdaptation);
-	writer.write_uint32_t(sptr->disableVendorAdaptation);
-	writer.write_uint32_t(sptr->disableLoadingFrames);
-	writer.write_uint32_t(sptr->visualSettings);
-	writer.write_uint32_t(sptr->scenario);
-	writer.write_uint32_t(sptr->loopTime);
-	writer.write_uint32_t(sptr->tracingFlags);
-}
-
-VKAPI_ATTR void VKAPI_CALL trace_vkFrameEndTRACETOOLTEST(VkDevice device)
-{
-	lava_file_writer& writer = write_header("vkFrameEndTRACETOOLTEST", VKFRAMEENDTRACETOOLTEST);
-	writer.write_handle(writer.parent->records.VkDevice_index.at(device));
-	writer.parent->new_frame();
 }
 
 // This function is _not_ traced.
@@ -1434,9 +1437,9 @@ VKAPI_ATTR uint32_t VKAPI_CALL trace_vkAssertBufferTRACETOOLTEST(VkDevice device
 		uint8_t* ptr = nullptr;
 		wrap_vkUnmapMemory(device, memory_data->backing);
 		VkResult result = wrap_vkMapMemory(device, buffer_data->backing, buffer_data->offset, buffer_data->size, 0, (void**)&ptr);
-		assert(result == VK_SUCCESS);
+		if (result != VK_SUCCESS) ABORT("Failed to map memory in vkAssertBuffer");
 		checksum = adler32((unsigned char*)ptr, buffer_data->size);
-		DLOG2("branch2 buffer=%u size=%u checksum=%u first byte=%u", buffer_data->index, (unsigned)buffer_data->size, checksum, (unsigned)ptr[0]);
+		DLOG2("branch2 buffer=%u offset=%u size=%u checksum=%u first byte=%u", buffer_data->index, (unsigned)buffer_data->offset, (unsigned)buffer_data->size, checksum, (unsigned)ptr[0]);
 		wrap_vkUnmapMemory(device, buffer_data->backing);
 		result = wrap_vkMapMemory(device, memory_data->backing, memory_data->offset, memory_data->size, 0, (void**)&ptr); // restore back
 		assert(result == VK_SUCCESS);
@@ -1445,9 +1448,9 @@ VKAPI_ATTR uint32_t VKAPI_CALL trace_vkAssertBufferTRACETOOLTEST(VkDevice device
 	{
 		uint8_t* ptr = nullptr;
 		VkResult result = wrap_vkMapMemory(device, buffer_data->backing, buffer_data->offset, buffer_data->size, 0, (void**)&ptr);
-		assert(result == VK_SUCCESS);
+		if (result != VK_SUCCESS) ABORT("Failed to map memory in vkAssertBuffer");
 		checksum = adler32((unsigned char*)ptr, buffer_data->size);
-		DLOG2("branch3 buffer=%u size=%u checksum=%u first byte=%u", buffer_data->index, (unsigned)buffer_data->size, checksum, (unsigned)ptr[0]);
+		DLOG2("branch3 buffer=%u offset=%u size=%u checksum=%u first byte=%u", buffer_data->index, (unsigned)buffer_data->offset, (unsigned)buffer_data->size, checksum, (unsigned)ptr[0]);
 		wrap_vkUnmapMemory(device, buffer_data->backing);
 	}
 	writer.write_uint32_t(checksum);
@@ -1456,7 +1459,7 @@ VKAPI_ATTR uint32_t VKAPI_CALL trace_vkAssertBufferTRACETOOLTEST(VkDevice device
 
 void trace_post_vkMapMemory(lava_file_writer& writer, VkResult result, VkDevice device, VkDeviceMemory memory, VkDeviceSize offset, VkDeviceSize size, VkMemoryMapFlags flags, void** ppData)
 {
-	memory_mutex.lock();
+	writer.parent->memory_mutex.lock();
 	auto* memory_data = writer.parent->records.VkDeviceMemory_index.at(memory);
 	memory_data->ptr = (char*)*ppData;
 	memory_data->offset = offset;
@@ -1480,12 +1483,17 @@ void trace_post_vkMapMemory(lava_file_writer& writer, VkResult result, VkDevice 
 		memory_data->exposed.add_os(offset, memory_data->size);
 	}
 
-	memory_mutex.unlock();
+	writer.parent->memory_mutex.unlock();
+}
+
+void trace_post_vkMapMemory2KHR(lava_file_writer& writer, VkResult result, VkDevice device, const VkMemoryMapInfoKHR* pMemoryMapInfo, void** ppData)
+{
+	trace_post_vkMapMemory(writer, result, device, pMemoryMapInfo->memory, pMemoryMapInfo->offset, pMemoryMapInfo->size, pMemoryMapInfo->flags, ppData);
 }
 
 void trace_post_vkFlushMappedMemoryRanges(lava_file_writer& writer, VkResult result, VkDevice device, uint32_t memoryRangeCount, const VkMappedMemoryRange* pMemoryRanges)
 {
-	memory_mutex.lock();
+	writer.parent->memory_mutex.lock();
 	assert(result == VK_SUCCESS);
 	// The memory must be memory mapped
 	for (unsigned i = 0; i < memoryRangeCount; i++)
@@ -1500,22 +1508,7 @@ void trace_post_vkFlushMappedMemoryRanges(lava_file_writer& writer, VkResult res
 		assert(memory_data->ptr != nullptr && memory_data->size != 0); // the memory must be memory mapped
 		memory_data->exposed.add_os(v.offset, size);
 	}
-	memory_mutex.unlock();
-}
-
-void trace_pre_vkUnmapMemory(VkDevice device, VkDeviceMemory memory) ACQUIRE(memory_mutex)
-{
-	// Make sure we do not allow app to unmap memory while we are scanning it.
-	memory_mutex.lock();
-}
-
-void trace_post_vkUnmapMemory(lava_file_writer& writer, VkDevice device, VkDeviceMemory memory) RELEASE(memory_mutex)
-{
-	auto* memory_data = writer.parent->records.VkDeviceMemory_index.at(memory);
-	memory_data->ptr = nullptr;
-	memory_data->offset = 0;
-	memory_data->size = 0;
-	memory_mutex.unlock();
+	writer.parent->memory_mutex.unlock();
 }
 
 void trace_pre_vkFreeMemory(VkDevice device, VkDeviceMemory memory, const VkAllocationCallbacks* pAllocator)
@@ -1526,11 +1519,29 @@ void trace_pre_vkFreeMemory(VkDevice device, VkDeviceMemory memory, const VkAllo
 	if (memory != VK_NULL_HANDLE)
 	{
 		auto* memory_data = writer.parent->records.VkDeviceMemory_index.at(memory);
+
+		// "If a memory object is mapped at the time it is freed, it is implicitly unmapped."
+		if (memory_data->ptr && (memory_data->propertyFlags & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT))
+		{
+			instance.memory_mutex.lock();
+			memory_data->ptr = nullptr;
+			memory_data->offset = 0;
+			memory_data->size = 0;
+			instance.memory_mutex.unlock();
+		}
+
 		if (memory_data->clone)
 		{
 			free(memory_data->clone);
 			memory_data->clone = nullptr;
 		}
+
+		if (p__external_memory && memory_data->extmem)
+		{
+			free(memory_data->extmem);
+			memory_data->extmem = nullptr;
+		}
+
 		memory_data->ptr = nullptr;
 		memory_data->exposed.clear();
 	}
@@ -1547,6 +1558,9 @@ void trace_post_vkCreateSwapchainKHR(lava_file_writer& writer, VkResult result, 
 	for (unsigned i = 0; i < count; i++)
 	{
 		auto* add = writer.parent->records.VkImage_index.add(pSwapchainImages[i], lava_writer::instance().global_frame);
+		add->tid = writer.thread_index();
+		add->call = writer.local_call_number;
+		add->type = VK_OBJECT_TYPE_IMAGE;
 		add->sharingMode = pCreateInfo->imageSharingMode;
 		add->is_swapchain_image = true;
 		add->tiling = VK_IMAGE_TILING_OPTIMAL;
@@ -1554,6 +1568,8 @@ void trace_post_vkCreateSwapchainKHR(lava_file_writer& writer, VkResult result, 
 		add->imageType = VK_IMAGE_TYPE_2D;
 		add->flags = pCreateInfo->flags;
 		add->format = pCreateInfo->imageFormat;
+		add->initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+		add->currentLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 		DLOG("Image index %u is swapchain image %u", add->index, i);
 	}
 }
@@ -1596,7 +1612,9 @@ VKAPI_ATTR VkResult VKAPI_CALL trace_vkCreateHeadlessSurfaceEXT(VkInstance insta
 	VkResult retval = hack_vkCreateHeadlessSurfaceEXT(instance, pCreateInfo, pAllocator, pSurface);
 	writer.write_uint32_t(retval);
 	// Post
-	const trackable* surface_data = writer.parent->records.VkSurfaceKHR_index.add(*pSurface, lava_writer::instance().global_frame);
+	trackable* surface_data = writer.parent->records.VkSurfaceKHR_index.add(*pSurface, lava_writer::instance().global_frame);
+	surface_data->tid = writer.thread_index();
+	surface_data->call = writer.local_call_number;
 	DLOG("insert VkSurfaceKHR into vkCreateHeadlessSurfaceEXT index %u", (unsigned)surface_data->index);
 	writer.write_handle(surface_data); // id tracking
 	// Return
@@ -1655,7 +1673,9 @@ VKAPI_ATTR VkResult VKAPI_CALL trace_vkCreateXlibSurfaceKHR(VkInstance instance,
 	VkResult retval = wrap_vkCreateXlibSurfaceKHR(instance, pCreateInfo, pAllocator, pSurface);
 	writer.write_uint32_t(retval);
 	// -- Post --
-	const trackable* surface_data = writer.parent->records.VkSurfaceKHR_index.add(*pSurface, lava_writer::instance().global_frame);
+	trackable* surface_data = writer.parent->records.VkSurfaceKHR_index.add(*pSurface, lava_writer::instance().global_frame);
+	surface_data->tid = writer.thread_index();
+	surface_data->call = writer.local_call_number;
 	DLOG("insert VkSurfaceKHR into vkCreateXlibSurfaceKHR index %u", (unsigned)surface_data->index);
 	writer.write_handle(surface_data); // id tracking
 	// -- Return --
@@ -1712,7 +1732,9 @@ VKAPI_ATTR VkResult VKAPI_CALL trace_vkCreateXcbSurfaceKHR(VkInstance instance, 
 	assert(retval == VK_SUCCESS);
 
 	// Post
-	const auto* surface_data = writer.parent->records.VkSurfaceKHR_index.add(*pSurface, lava_writer::instance().global_frame);
+	auto* surface_data = writer.parent->records.VkSurfaceKHR_index.add(*pSurface, lava_writer::instance().global_frame);
+	surface_data->tid = writer.thread_index();
+	surface_data->call = writer.local_call_number;
 	DLOG("insert VkSurfaceKHR into vkCreateXcbSurfaceKHR index %u", (unsigned)surface_data->index);
 	writer.write_handle(surface_data); // id tracking
 	free(geom_reply);
@@ -1746,7 +1768,9 @@ VKAPI_ATTR VkResult VKAPI_CALL trace_vkCreateWaylandSurfaceKHR(VkInstance instan
 	writer.write_uint32_t(retval);
 	assert(retval == VK_SUCCESS);
 	// Post
-	const auto* surface_data = writer.parent->records.VkSurfaceKHR_index.add(*pSurface, lava_writer::instance().global_frame);
+	auto* surface_data = writer.parent->records.VkSurfaceKHR_index.add(*pSurface, lava_writer::instance().global_frame);
+	surface_data->tid = writer.thread_index();
+	surface_data->call = writer.local_call_number;
 	writer.write_handle(surface_data); // id tracking
 	// Return
 	return retval;
@@ -1771,12 +1795,55 @@ VKAPI_ATTR void VKAPI_CALL trace_vkDestroySurfaceKHR(VkInstance instance, VkSurf
 	wrap_vkDestroySurfaceKHR(instance, surface, pAllocator);
 }
 
-VKAPI_ATTR void VKAPI_CALL trace_vkGetDeviceQueue2(VkDevice device, const VkDeviceQueueInfo2* pQueueInfo, VkQueue* pQueue)
+/// Map virtual queue to real queue. Since we cannot reverse map from one family to two, the two graphics queues must be on the same
+/// family, and we only check the first one.
+static void internalGetDeviceQueue(const std::vector<VkQueueFamilyProperties>& props, uint32_t queueIndex, uint32_t& realIndex, uint32_t& realFamily)
+{
+	realFamily = 0;
+	for (const auto& f : props)
+	{
+		if (f.queueFlags & VK_QUEUE_GRAPHICS_BIT)
+		{
+			assert(queueIndex <= 1);
+			if (queueIndex == 0) realIndex = 0; // real first queue
+			else if (queueIndex == 1 && f.queueCount == 1) realIndex = 0; // fake second queue redirecting to first real queue
+			else realIndex = 1; // real second queue
+			return;
+		}
+		realFamily++;
+	}
+}
+
+VKAPI_ATTR void VKAPI_CALL trace_vkGetDeviceQueue2(VkDevice device, const VkDeviceQueueInfo2* pQueueInfo_orig, VkQueue* pQueue)
 {
 	lava_file_writer& writer = write_header("vkGetDeviceQueue2", VKGETDEVICEQUEUE2);
 	writer.write_handle(writer.parent->records.VkDevice_index.at(device));
+	trackeddevice* device_data = writer.parent->records.VkDevice_index.at(device);
+	trackedphysicaldevice* physicaldevice_data = writer.parent->records.VkPhysicalDevice_index.at(device_data->physicalDevice);
+	writer.physicalDevice = device_data->physicalDevice;
+	writer.device = device;
+	VkDeviceQueueInfo2* pQueueInfo = writer.pool.allocate<VkDeviceQueueInfo2>(1);
+	*pQueueInfo = *pQueueInfo_orig;
 	write_VkDeviceQueueInfo2(writer, pQueueInfo);
-	wrap_vkGetDeviceQueue2(device, pQueueInfo, pQueue);
+
+	uint32_t realIndex = pQueueInfo->queueIndex;
+	uint32_t realFamily = pQueueInfo->queueFamilyIndex;
+
+	if (p__virtualqueues == 0)
+	{
+		wrap_vkGetDeviceQueue2(device, pQueueInfo, pQueue);
+	}
+	else // remap
+	{
+		assert(pQueueInfo->queueIndex < 2);
+		assert(pQueueInfo->queueFamilyIndex == 0);
+		internalGetDeviceQueue(physicaldevice_data->queueFamilyProperties, pQueueInfo->queueIndex, realIndex, realFamily);
+		VkDeviceQueueInfo2 info = *pQueueInfo;
+		info.queueFamilyIndex = realFamily;
+		info.queueIndex = realIndex;
+		wrap_vkGetDeviceQueue2(device, &info, pQueue);
+	}
+
 	if (!writer.parent->records.VkQueue_index.contains(*pQueue))
 	{
 		auto* queue_data = writer.parent->records.VkQueue_index.add(*pQueue, lava_writer::instance().global_frame);
@@ -1784,28 +1851,46 @@ VKAPI_ATTR void VKAPI_CALL trace_vkGetDeviceQueue2(VkDevice device, const VkDevi
 		queue_data->queueFamily = pQueueInfo->queueFamilyIndex;
 		queue_data->queueFlags = pQueueInfo->flags;
 		queue_data->device = device;
+		queue_data->realIndex = realIndex;
+		queue_data->realFamily = realFamily;
+		queue_data->realQueue = *pQueue;
+		queue_data->tid = writer.thread_index();
+		queue_data->call = writer.local_call_number;
+		queue_data->physicalDevice = device_data->physicalDevice;
 	}
-	writer.write_handle(writer.parent->records.VkQueue_index.at(*pQueue));
+	auto* queue_data = writer.parent->records.VkQueue_index.at(*pQueue);
+	assert(queue_data);
+	if (p__virtualqueues != 0) *pQueue = (VkQueue)queue_data;
+	queue_data->self_test();
+	writer.write_handle(queue_data);
 }
 
 VKAPI_ATTR void VKAPI_CALL trace_vkGetDeviceQueue(VkDevice device, uint32_t queueFamilyIndex, uint32_t queueIndex, VkQueue* pQueue)
 {
 	lava_file_writer& writer = write_header("vkGetDeviceQueue", VKGETDEVICEQUEUE);
-
 	auto* device_data = writer.parent->records.VkDevice_index.at(device);
-	VkPhysicalDevice physicalDevice = device_data->physicalDevice;
-
-	uint32_t families = 0;
-	wrap_vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice, &families, nullptr);
-	std::vector<VkQueueFamilyProperties> props(families);
-	wrap_vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice, &families, props.data());
+	trackedphysicaldevice* physicaldevice_data = writer.parent->records.VkPhysicalDevice_index.at(device_data->physicalDevice);
+	const bool virtual_family = (physicaldevice_data->queueFamilyProperties.at(queueFamilyIndex).queueFlags & VK_QUEUE_GRAPHICS_BIT) && p__virtualqueues;
 
 	writer.write_handle(device_data);
-	writer.write_uint32_t(queueFamilyIndex);
+	writer.write_uint32_t(virtual_family ? LAVATUBE_VIRTUAL_QUEUE : queueFamilyIndex);
 	writer.write_uint32_t(queueIndex);
 
+	uint32_t realIndex = queueIndex;
+	uint32_t realFamily = queueFamilyIndex;
+
 	// Execute
-	wrap_vkGetDeviceQueue(device, queueFamilyIndex, queueIndex, pQueue);
+	if (p__virtualqueues == 0)
+	{
+		wrap_vkGetDeviceQueue(device, queueFamilyIndex, queueIndex, pQueue);
+	}
+	else // remap
+	{
+		assert(queueIndex < 2);
+		assert(queueFamilyIndex == 0);
+		internalGetDeviceQueue(physicaldevice_data->queueFamilyProperties, queueIndex, realIndex, realFamily);
+		wrap_vkGetDeviceQueue(device, realFamily, realIndex, pQueue);
+	}
 
 	// Post
 	if (!writer.parent->records.VkQueue_index.contains(*pQueue))
@@ -1813,10 +1898,20 @@ VKAPI_ATTR void VKAPI_CALL trace_vkGetDeviceQueue(VkDevice device, uint32_t queu
 		auto* queue_data = writer.parent->records.VkQueue_index.add(*pQueue, lava_writer::instance().global_frame);
 		queue_data->queueIndex = queueIndex;
 		queue_data->queueFamily = queueFamilyIndex;
-		queue_data->queueFlags = props[queueFamilyIndex].queueFlags;
+		queue_data->queueFlags = physicaldevice_data->queueFamilyProperties.at(queueFamilyIndex).queueFlags;
 		queue_data->device = device;
+		queue_data->realIndex = realIndex;
+		queue_data->realFamily = realFamily;
+		queue_data->realQueue = *pQueue;
+		queue_data->tid = writer.thread_index();
+		queue_data->call = writer.local_call_number;
+		queue_data->physicalDevice = device_data->physicalDevice;
 	}
-	writer.write_handle(writer.parent->records.VkQueue_index.at(*pQueue));
+	auto* queue_data = writer.parent->records.VkQueue_index.at(*pQueue);
+	assert(queue_data);
+	if (p__virtualqueues != 0) *pQueue = (VkQueue)queue_data;
+	queue_data->self_test();
+	writer.write_handle(queue_data);
 }
 
 #ifdef VK_USE_PLATFORM_ANDROID_KHR // vkCreateAndroidSurfaceKHR
@@ -2095,8 +2190,10 @@ void trace_post_vkGetPipelineCacheData(lava_file_writer& writer, VkResult result
 VKAPI_ATTR VkBool32 VKAPI_CALL trace_vkGetPhysicalDeviceXlibPresentationSupportKHR(VkPhysicalDevice physicalDevice, uint32_t queueFamilyIndex, Display* dpy, VisualID visualID)
 {
 	lava_file_writer& writer = write_header("vkGetPhysicalDeviceXlibPresentationSupportKHR", VKGETPHYSICALDEVICEXLIBPRESENTATIONSUPPORTKHR);
-	writer.write_handle(writer.parent->records.VkPhysicalDevice_index.at(physicalDevice));
-	writer.write_uint32_t(queueFamilyIndex);
+	trackedphysicaldevice* physicaldevice_data = writer.parent->records.VkPhysicalDevice_index.at(physicalDevice);
+	const bool virtual_family = (physicaldevice_data->queueFamilyProperties.at(queueFamilyIndex).queueFlags & VK_QUEUE_GRAPHICS_BIT) && p__virtualqueues;
+	writer.write_handle(physicaldevice_data);
+	writer.write_uint32_t(virtual_family ? LAVATUBE_VIRTUAL_QUEUE : queueFamilyIndex);
 	VkBool32 retval = wrap_vkGetPhysicalDeviceXlibPresentationSupportKHR(physicalDevice, queueFamilyIndex, dpy, visualID);
 	writer.write_uint32_t(retval);
 	return retval;
@@ -2104,6 +2201,51 @@ VKAPI_ATTR VkBool32 VKAPI_CALL trace_vkGetPhysicalDeviceXlibPresentationSupportK
 
 #endif
 
+VKAPI_ATTR void VKAPI_CALL trace_vkGetPhysicalDeviceQueueFamilyProperties(VkPhysicalDevice physicalDevice, uint32_t* pQueueFamilyPropertyCount, VkQueueFamilyProperties* pQueueFamilyProperties)
+{
+	lava_file_writer& writer = write_header("vkGetPhysicalDeviceQueueFamilyProperties", VKGETPHYSICALDEVICEQUEUEFAMILYPROPERTIES);
+	trackedphysicaldevice* physicaldevice_data = writer.parent->records.VkPhysicalDevice_index.at(physicalDevice);
+	writer.write_handle(physicaldevice_data);
+	writer.write_uint8_t((pQueueFamilyProperties) ? 1 : 0);
+
+	if (p__virtualqueues == 0)
+	{
+		wrap_vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice, pQueueFamilyPropertyCount, pQueueFamilyProperties);
+	}
+	else // virtual queues
+	{
+		if (pQueueFamilyProperties == nullptr)
+		{
+			*pQueueFamilyPropertyCount = 1;
+		}
+		else // fill the first and only passed in property struct
+		{
+			uint32_t timestampValidBits = 0;
+			uint32_t sparseBits = 0;
+			uint32_t count = 0;
+			wrap_vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice, &count, nullptr);
+			std::vector<VkQueueFamilyProperties> props(count);
+			wrap_vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice, &count, props.data());
+			for (const auto& f : props)
+			{
+				if (f.queueFlags & VK_QUEUE_GRAPHICS_BIT)
+				{
+					assert(f.minImageTransferGranularity.width == 1 && f.minImageTransferGranularity.height == 1 && f.minImageTransferGranularity.depth == 1);
+					if ((f.queueFlags & VK_QUEUE_SPARSE_BINDING_BIT)) sparseBits = VK_QUEUE_SPARSE_BINDING_BIT;
+					timestampValidBits = f.timestampValidBits;
+					break; // both our virtual graphics queues are on the first queue family supporting graphics
+				}
+			}
+
+			pQueueFamilyProperties->queueFlags = VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT | VK_QUEUE_TRANSFER_BIT | sparseBits;
+			pQueueFamilyProperties->queueCount = 2;
+			pQueueFamilyProperties->timestampValidBits = timestampValidBits;
+			pQueueFamilyProperties->minImageTransferGranularity.width = 1;
+			pQueueFamilyProperties->minImageTransferGranularity.height = 1;
+			pQueueFamilyProperties->minImageTransferGranularity.depth = 1;
+		}
+	}
+}
 
 // --- JSON helpers ---
 // only write out static info that does not change for the duration of the trace
@@ -2144,6 +2286,15 @@ static Json::Value trackedimage_json(const trackedimage* t)
 	v["format"] = (unsigned)t->format;
 	v["written"] = (Json::Value::UInt64)t->written;
 	v["updates"] = (unsigned)t->updates;
+	Json::Value arr = Json::arrayValue;
+	arr.append((unsigned)t->extent.width);
+	arr.append((unsigned)t->extent.height);
+	arr.append((unsigned)t->extent.depth);
+	v["extent"] = arr;
+	v["initalLayout"] = (unsigned)t->initialLayout;
+	v["samples"] = (unsigned)t->samples;
+	v["mipLevels"] = (unsigned)t->mipLevels;
+	v["arrayLayers"] = (unsigned)t->arrayLayers;
 	return v;
 }
 
@@ -2186,7 +2337,7 @@ static Json::Value trackeddescriptorset_trace_json(const trackeddescriptorset_tr
 	return v;
 }
 
-static Json::Value trackedqueue_trace_json(const trackedqueue_trace* t)
+static Json::Value trackedqueue_json(const trackedqueue* t)
 {
 	Json::Value v = trackable_json(t);
 	v["queueFamily"] = (unsigned)t->queueFamily;
@@ -2235,6 +2386,20 @@ static Json::Value trackeddescriptorpool_trace_json(const trackeddescriptorpool_
 }
 
 static Json::Value trackeddevice_json(const trackeddevice* t)
+{
+	Json::Value v = trackable_json(t);
+	return v;
+}
+
+static Json::Value trackedshadermodule_json(const trackedshadermodule* t)
+{
+	Json::Value v = trackable_json(t);
+	if (t->enables_buffer_device_address) v["enables_buffer_device_address"] = true;
+	v["size"] = (unsigned)t->size;
+	return v;
+}
+
+static Json::Value trackedphysicaldevice_json(const trackedphysicaldevice* t)
 {
 	Json::Value v = trackable_json(t);
 	return v;

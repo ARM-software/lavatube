@@ -86,7 +86,7 @@ public:
 	inline int32_t read_int32_t() { int32_t t; read_value(&t); return t; }
 	inline int64_t read_int64_t() { int64_t t; read_value(&t); return t; }
 	inline float read_float() { uint32_t t; float r; read_value(&t); memcpy(&r, &t, sizeof(float)); return r; }
-	inline double read_double() { uint32_t t; double r; read_value(&t); memcpy(&r, &t, sizeof(double)); return r; }
+	inline double read_double() { uint64_t t; double r; read_value(&t); memcpy(&r, &t, sizeof(double)); return r; }
 	inline size_t read_size_t() { uint64_t t; read_value(&t); return static_cast<size_t>(t); }
 	inline int read_int() { uint32_t t; read_value(&t); return static_cast<int>(t); }
 	inline long read_long() { uint64_t t; read_value(&t); return static_cast<long>(t); }

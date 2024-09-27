@@ -11,11 +11,12 @@ static bool has_pipeline_control = false;
 static bool has_debug_report = false;
 static bool has_debug_utils = false;
 static int has_dedicated_allocation = 0;
-static int selected_queue_family_index = -1;
+static uint32_t selected_queue_family_index = 0xdeadbeef;
 static VkPhysicalDeviceFeatures2 stored_VkPhysicalDeviceFeatures2 = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2, nullptr };
 static VkPhysicalDeviceVulkan11Features stored_VkPhysicalDeviceVulkan11Features = {};
 static VkPhysicalDeviceVulkan12Features stored_VkPhysicalDeviceVulkan12Features = {};
 static VkPhysicalDeviceVulkan13Features stored_VkPhysicalDeviceVulkan13Features = {};
+static std::vector<VkQueueFamilyProperties> device_VkQueueFamilyProperties;
 static bool has_VkPhysicalDeviceFeatures2 = false;
 static bool has_VkPhysicalDeviceVulkan11Features = false;
 static bool has_VkPhysicalDeviceVulkan12Features = false;
@@ -92,6 +93,8 @@ static uint64_t debug_object_lookup(VkDebugReportObjectTypeEXT type, uint32_t in
 	case VK_DEBUG_REPORT_OBJECT_TYPE_VALIDATION_CACHE_EXT: return (uint64_t)index_to_VkValidationCacheEXT.at(index);
 	case VK_DEBUG_REPORT_OBJECT_TYPE_SAMPLER_YCBCR_CONVERSION_KHR_EXT: return (uint64_t)index_to_VkSamplerYcbcrConversion.at(index);
 	// these are not supported:
+	case VK_DEBUG_REPORT_OBJECT_TYPE_CUDA_MODULE_NV_EXT:
+	case VK_DEBUG_REPORT_OBJECT_TYPE_CUDA_FUNCTION_NV_EXT:
 	case VK_DEBUG_REPORT_OBJECT_TYPE_DEBUG_REPORT_CALLBACK_EXT_EXT:
 	case VK_DEBUG_REPORT_OBJECT_TYPE_CU_MODULE_NVX_EXT:
 	case VK_DEBUG_REPORT_OBJECT_TYPE_CU_FUNCTION_NVX_EXT:
@@ -143,9 +146,14 @@ static uint64_t object_lookup(VkObjectType type, uint32_t index)
 	case VK_OBJECT_TYPE_MICROMAP_EXT: return (uint64_t)index_to_VkMicromapEXT.at(index);
 	case VK_OBJECT_TYPE_PRIVATE_DATA_SLOT: return (uint64_t)index_to_VkPrivateDataSlot.at(index);
 	case VK_OBJECT_TYPE_SAMPLER_YCBCR_CONVERSION_KHR: return (uint64_t)index_to_VkSamplerYcbcrConversion.at(index);
+	case VK_OBJECT_TYPE_VIDEO_SESSION_KHR: return (uint64_t)index_to_VkVideoSessionKHR.at(index);
+	case VK_OBJECT_TYPE_VIDEO_SESSION_PARAMETERS_KHR: return (uint64_t)index_to_VkVideoSessionParametersKHR.at(index);
+	case VK_OBJECT_TYPE_SHADER_EXT: return (uint64_t)index_to_VkShaderEXT.at(index);
+	case VK_OBJECT_TYPE_DEBUG_REPORT_CALLBACK_EXT: return (uint64_t)index_to_VkDebugReportCallbackEXT.at(index);
+	case VK_OBJECT_TYPE_DEBUG_UTILS_MESSENGER_EXT: return (uint64_t)index_to_VkDebugUtilsMessengerEXT.at(index);
 	// these are not supported:
-	case VK_OBJECT_TYPE_DEBUG_REPORT_CALLBACK_EXT:
-	case VK_OBJECT_TYPE_DEBUG_UTILS_MESSENGER_EXT:
+	case VK_OBJECT_TYPE_CUDA_MODULE_NV:
+	case VK_OBJECT_TYPE_CUDA_FUNCTION_NV:
 	case VK_OBJECT_TYPE_OPTICAL_FLOW_SESSION_NV:
 	case VK_OBJECT_TYPE_BUFFER_COLLECTION_FUCHSIA:
 	case VK_OBJECT_TYPE_INDIRECT_COMMANDS_LAYOUT_NV:
@@ -288,7 +296,7 @@ static VkSwapchainKHR remake_swapchain(lava_file_reader& reader, VkQueue queue, 
 	s.imageArrayLayers = data->info.imageArrayLayers;
 	s.imageUsage = data->info.imageUsage;
 	s.imageSharingMode = data->info.imageSharingMode;
-	s.queueFamilyIndexCount = selected_queue_family_index;
+	s.queueFamilyIndexCount = 0;
 	s.pQueueFamilyIndices = nullptr;
 	s.preTransform = data->info.preTransform;
 	s.compositeAlpha = data->info.compositeAlpha;
@@ -503,17 +511,18 @@ void replay_pre_vkCreateDevice(lava_file_reader& reader, VkPhysicalDevice physic
 {
 	pCreateInfo->enabledLayerCount = 0; // even though implementation should ignore it as per the spec, that is not always the case, so help it along
 
-	uint32_t families = 0;
-	wrap_vkGetPhysicalDeviceQueueFamilyProperties(selected_physical_device, &families, nullptr);
-	std::vector<VkQueueFamilyProperties> props(families);
-	wrap_vkGetPhysicalDeviceQueueFamilyProperties(selected_physical_device, &families, props.data());
-	for (unsigned i = 0; i < props.size(); i++)
+	// Limit the number of requested queues to what is available
+	VkDeviceQueueCreateInfo* queueinfo = reader.pool.allocate<VkDeviceQueueCreateInfo>(pCreateInfo->queueCreateInfoCount);
+	for (uint32_t i = 0; i < pCreateInfo->queueCreateInfoCount; i++)
 	{
-		const VkQueueFamilyProperties& p = props.at(i);
-		if ((p.queueFlags & VK_QUEUE_GRAPHICS_BIT) && (p.queueFlags & VK_QUEUE_COMPUTE_BIT) && (p.queueFlags & VK_QUEUE_TRANSFER_BIT)) selected_queue_family_index = i;
-		DLOG("Selected queue family: %d", selected_queue_family_index);
+		queueinfo[i] = pCreateInfo->pQueueCreateInfos[i]; // struct copy
+		if (queueinfo[i].queueFamilyIndex == selected_queue_family_index
+		    && queueinfo[i].queueCount > device_VkQueueFamilyProperties.at(selected_queue_family_index).queueCount)
+		{
+			queueinfo[i].queueCount = device_VkQueueFamilyProperties.at(selected_queue_family_index).queueCount;
+		}
 	}
-	if (selected_queue_family_index == -1) ABORT("No valid queue family found!");
+	pCreateInfo->pQueueCreateInfos = queueinfo;
 
 	// Replace stored features with a pruned feature list
 	bool uses_ext_features = false;
@@ -597,6 +606,18 @@ void replay_post_vkCreateInstance(lava_file_reader& reader, VkResult result, con
 		ILOG("\t%u : %s (API %u.%u)", i, devprops.deviceName, VK_VERSION_MAJOR(devprops.apiVersion), VK_VERSION_MINOR(devprops.apiVersion));
 	}
 
+	uint32_t families = 0;
+	wrap_vkGetPhysicalDeviceQueueFamilyProperties(selected_physical_device, &families, nullptr);
+	device_VkQueueFamilyProperties.resize(families);
+	wrap_vkGetPhysicalDeviceQueueFamilyProperties(selected_physical_device, &families, device_VkQueueFamilyProperties.data());
+	for (unsigned i = 0; i < device_VkQueueFamilyProperties.size(); i++)
+	{
+		const VkQueueFamilyProperties& p = device_VkQueueFamilyProperties.at(i);
+		if ((p.queueFlags & VK_QUEUE_GRAPHICS_BIT) && (p.queueFlags & VK_QUEUE_COMPUTE_BIT) && (p.queueFlags & VK_QUEUE_TRANSFER_BIT)) selected_queue_family_index = i;
+		DLOG("Selected queue family: %d", selected_queue_family_index);
+	}
+	if (selected_queue_family_index == 0xdeadbeef) ABORT("No valid queue family found!");
+
 	if (!callback_initialized && wrap_vkCreateDebugReportCallbackEXT && has_debug_report)
 	{
 		VkDebugReportCallbackCreateInfoEXT drcinfo = {};
@@ -609,16 +630,18 @@ void replay_post_vkCreateInstance(lava_file_reader& reader, VkResult result, con
 	}
 }
 
-const char* const* device_extensions(lava_file_reader& reader, VkPhysicalDevice physicalDevice, uint32_t& len)
+const char* const* device_extensions(VkDeviceCreateInfo* sptr, lava_file_reader& reader, VkPhysicalDevice physicalDevice, uint32_t& len)
 {
+	bool host_has_frame_boundary = false;
+	bool trace_has_frame_boundary = false;
 	static std::vector<const char *> dst;
 	static std::vector<std::string> backing;
 	const char* const* stored = reader.read_string_array(len); // all extensions used in original
 	const std::vector<const char*> do_not_copy = {
 		VK_KHR_SWAPCHAIN_EXTENSION_NAME, VK_KHR_GET_MEMORY_REQUIREMENTS_2_EXTENSION_NAME,
 		VK_KHR_DEDICATED_ALLOCATION_EXTENSION_NAME, VK_EXT_PIPELINE_CREATION_FEEDBACK_EXTENSION_NAME,
-		VK_EXT_PIPELINE_CREATION_CACHE_CONTROL_EXTENSION_NAME, VK_TRACETOOLTEST_BENCHMARKING_EXTENSION_NAME, VK_TRACETOOLTEST_CHECKSUM_VALIDATION_EXTENSION_NAME,
-		VK_TRACETOOLTEST_OBJECT_PROPERTY_EXTENSION_NAME, VK_EXT_TOOLING_INFO_EXTENSION_NAME, VK_TRACETOOLTEST_FRAME_END_EXTENSION_NAME
+		VK_EXT_PIPELINE_CREATION_CACHE_CONTROL_EXTENSION_NAME, VK_TRACETOOLTEST_CHECKSUM_VALIDATION_EXTENSION_NAME,
+		VK_TRACETOOLTEST_OBJECT_PROPERTY_EXTENSION_NAME, VK_EXT_TOOLING_INFO_EXTENSION_NAME
 	};
 
 	dst.clear();
@@ -635,6 +658,12 @@ const char* const* device_extensions(lava_file_reader& reader, VkPhysicalDevice 
 				nocopy = true;
 				break;
 			}
+		}
+
+		if (strcmp(stored[i], "VK_EXT_frame_boundary") == 0)
+		{
+			trace_has_frame_boundary = true;
+			nocopy = true; // add it later
 		}
 
 		// Sanity check
@@ -664,8 +693,19 @@ const char* const* device_extensions(lava_file_reader& reader, VkPhysicalDevice 
 		if (strcmp(s.extensionName, VK_EXT_PIPELINE_CREATION_CACHE_CONTROL_EXTENSION_NAME) == 0) has_pipeline_control = true;
 		if (strcmp(s.extensionName, VK_KHR_DEDICATED_ALLOCATION_EXTENSION_NAME) == 0) has_dedicated_allocation++;
 		if (strcmp(s.extensionName, VK_KHR_GET_MEMORY_REQUIREMENTS_2_EXTENSION_NAME) == 0) has_dedicated_allocation++;
+		if (strcmp(s.extensionName, VK_EXT_FRAME_BOUNDARY_EXTENSION_NAME) == 0) host_has_frame_boundary = true;
 	}
 	if (!has_swapchain) ABORT("No swapchain extension found - cannot proceed!");
+
+	if (!host_has_frame_boundary && trace_has_frame_boundary)
+	{
+		ILOG("Replay host does not have frame boundary but trace does -- removing it from the replay!");
+		purge_extension_parent(sptr, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FRAME_BOUNDARY_FEATURES_EXT);
+	}
+	else if (trace_has_frame_boundary)
+	{
+		backing.push_back(VK_EXT_FRAME_BOUNDARY_EXTENSION_NAME);
+	}
 
 	// Add device extensions
 	backing.push_back(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
@@ -911,22 +951,6 @@ static void retrace_vkFrameEndTRACETOOLTEST(lava_file_reader& reader)
 	VkDevice device = index_to_VkDevice.at(device_index);
 	DLOG("End of thread %u local frame %d signaled by vkFrameEndTRACETOOLTEST", reader.thread_index(), reader.local_frame);
 	reader.new_frame();
-}
-
-static void read_VkBenchmarkingTRACETOOLTEST(lava_file_reader& reader, VkBenchmarkingTRACETOOLTEST* sptr)
-{
-	sptr->sType = static_cast<VkStructureType>(reader.read_uint32_t());
-	assert(sptr->sType == VK_STRUCTURE_TYPE_BENCHMARKING_TRACETOOLTEST);
-	read_extension(reader, (VkBaseOutStructure**)&sptr->pNext);
-	sptr->flags = (VkFlags)reader.read_uint32_t();
-	sptr->fixedTimeStep = reader.read_uint32_t();
-	sptr->disablePerformanceAdaptation = static_cast<VkBool32>(reader.read_uint32_t());
-	sptr->disableVendorAdaptation = static_cast<VkBool32>(reader.read_uint32_t());
-	sptr->disableLoadingFrames = static_cast<VkBool32>(reader.read_uint32_t());
-	sptr->visualSettings = reader.read_uint32_t();
-	sptr->scenario = reader.read_uint32_t();
-	sptr->loopTime = reader.read_uint32_t();
-	sptr->tracingFlags = static_cast<VkTracingFlagsTRACETOOLTEST>(reader.read_uint32_t());
 }
 
 void retrace_vkGetDeviceTracingObjectPropertyTRACETOOLTEST(lava_file_reader& reader)
@@ -1359,35 +1383,79 @@ void retrace_vkCreateMetalSurfaceEXT(lava_file_reader& reader)
 
 void retrace_vkGetDeviceQueue2(lava_file_reader& reader)
 {
-	VkQueue pQueue;
+	VkQueue queue = VK_NULL_HANDLE;
 	const uint32_t device_index = reader.read_handle();
 	VkDevice device = index_to_VkDevice.at(device_index);
 	VkDeviceQueueInfo2 info_real = {};
 	read_VkDeviceQueueInfo2(reader, &info_real);
-	wrap_vkGetDeviceQueue2(device, &info_real, &pQueue);
+	bool virtual_family = false;
+	uint32_t realIndex = info_real.queueIndex;
+	uint32_t realFamily = info_real.queueFamilyIndex;
+	if (info_real.queueFamilyIndex == LAVATUBE_VIRTUAL_QUEUE)
+	{
+		virtual_family = true;
+		info_real.queueFamilyIndex = selected_queue_family_index;
+		const VkQueueFamilyProperties& props = device_VkQueueFamilyProperties.at(info_real.queueFamilyIndex);
+		if (info_real.queueIndex >= props.queueCount) // we don't have enough queues
+		{
+			info_real.queueIndex = 0; // map to first queue
+		}
+	}
+	wrap_vkGetDeviceQueue2(device, &info_real, &queue);
+	assert(queue != VK_NULL_HANDLE);
 	const uint32_t stored_queue_index = reader.read_handle();
 	if (!index_to_VkQueue.contains(stored_queue_index))
 	{
-		index_to_VkQueue.set(stored_queue_index, pQueue);
+		const VkQueueFamilyProperties& props = device_VkQueueFamilyProperties.at(info_real.queueFamilyIndex);
+		index_to_VkQueue.set(stored_queue_index, queue);
 		auto& queue_data = VkQueue_index.at(stored_queue_index);
 		queue_data.device = device;
+		queue_data.queueIndex = info_real.queueIndex;
+		queue_data.queueFamily = info_real.queueFamilyIndex;
+		queue_data.realIndex = realIndex;
+		queue_data.realFamily = realFamily;
+		queue_data.realQueue = queue;
+		queue_data.queueFlags = props.queueFlags;
+		queue_data.physicalDevice = VkDevice_index.at(device_index).physicalDevice;
 	}
 }
 
 void retrace_vkGetDeviceQueue(lava_file_reader& reader)
 {
-	VkQueue pQueue;
+	VkQueue queue = VK_NULL_HANDLE;
 	const uint32_t device_index = reader.read_handle();
 	VkDevice device = index_to_VkDevice.at(device_index);
-	const uint32_t queueFamilyIndex = reader.read_uint32_t();
-	const uint32_t queueIndex = reader.read_uint32_t();
-	wrap_vkGetDeviceQueue(device, selected_queue_family_index, queueIndex, &pQueue);
+	uint32_t queueFamilyIndex = reader.read_uint32_t();
+	uint32_t queueIndex = reader.read_uint32_t();
+	bool virtual_family = false;
+	uint32_t realIndex = queueIndex;
+	uint32_t realFamily = queueFamilyIndex;
+	if (queueFamilyIndex == LAVATUBE_VIRTUAL_QUEUE)
+	{
+		virtual_family = true;
+		queueFamilyIndex = selected_queue_family_index;
+		const VkQueueFamilyProperties& props = device_VkQueueFamilyProperties.at(queueFamilyIndex);
+		if (queueIndex >= props.queueCount) // we don't have enough queues
+		{
+			queueIndex = 0; // map to first queue
+		}
+	}
+	wrap_vkGetDeviceQueue(device, queueFamilyIndex, queueIndex, &queue);
+	assert(queue != VK_NULL_HANDLE);
 	const uint32_t stored_queue_index = reader.read_handle();
 	if (!index_to_VkQueue.contains(stored_queue_index))
 	{
-		index_to_VkQueue.set(stored_queue_index, pQueue);
+		const VkQueueFamilyProperties& props = device_VkQueueFamilyProperties.at(queueFamilyIndex);
+		index_to_VkQueue.set(stored_queue_index, queue);
 		auto& queue_data = VkQueue_index.at(stored_queue_index);
 		queue_data.device = device;
+		queue_data.queueIndex = queueIndex;
+		queue_data.queueFamily = queueFamilyIndex;
+		queue_data.realIndex = realIndex;
+		queue_data.realFamily = realFamily;
+		queue_data.realQueue = queue;
+		queue_data.queueFlags = props.queueFlags;
+		queue_data.physicalDevice = VkDevice_index.at(device_index).physicalDevice;
 	}
 }
 
@@ -1601,6 +1669,7 @@ static trackedbuffer trackedbuffer_json(const Json::Value& v)
 	t.req.size = v["req_size"].asUInt64();
 	t.req.alignment = v["req_alignment"].asUInt();
 	t.req.memoryTypeBits = 0;
+	t.type = VK_OBJECT_TYPE_BUFFER;
 	return t;
 }
 
@@ -1617,6 +1686,18 @@ static trackedimage trackedimage_json(const Json::Value& v)
 	t.req.size = v["req_size"].asUInt64();
 	t.req.alignment = v["req_alignment"].asUInt();
 	t.req.memoryTypeBits = 0;
+	t.initialLayout = (VkImageLayout)(v.get("initialLayout", 0).asUInt());
+	t.currentLayout = t.initialLayout;
+	t.samples = (VkSampleCountFlagBits)(v.get("samples", 0).asUInt());
+	t.mipLevels = (unsigned)v.get("mipLevels", 0).asUInt();
+	t.arrayLayers = (unsigned)v.get("arrayLevels", 0).asUInt();
+	if (v.isMember("extent"))
+	{
+		t.extent.width = v["extent"][0].asUInt();
+		t.extent.height = v["extent"][1].asUInt();
+		t.extent.depth = v["extent"][2].asUInt();
+	}
+	t.type = VK_OBJECT_TYPE_IMAGE;
 	return t;
 }
 
@@ -1669,9 +1750,9 @@ static trackeddescriptorset_replay trackeddescriptorset_replay_json(const Json::
 	return t;
 }
 
-static trackedqueue_replay trackedqueue_replay_json(const Json::Value& v)
+static trackedqueue trackedqueue_json(const Json::Value& v)
 {
-	trackedqueue_replay t(v["frame_created"].asInt());
+	trackedqueue t(v["frame_created"].asInt());
 	t.frame_destroyed = v["frame_destroyed"].asInt();
 	if (v.isMember("name")) t.name = v["name"].asString();
 	return t;
@@ -1685,11 +1766,29 @@ static trackeddevice trackeddevice_json(const Json::Value& v)
 	return t;
 }
 
+static trackedphysicaldevice trackedphysicaldevice_json(const Json::Value& v)
+{
+	trackedphysicaldevice t(v["frame_created"].asInt());
+	t.frame_destroyed = v["frame_destroyed"].asInt();
+	if (v.isMember("name")) t.name = v["name"].asString();
+	return t;
+}
+
 static trackedframebuffer trackedframebuffer_json(const Json::Value& v)
 {
 	trackedframebuffer t(v["frame_created"].asInt());
 	t.frame_destroyed = v["frame_destroyed"].asInt();
 	if (v.isMember("name")) t.name = v["name"].asString();
+	return t;
+}
+
+static trackedshadermodule trackedshadermodule_json(const Json::Value& v)
+{
+	trackedshadermodule t(v["frame_created"].asInt());
+	t.frame_destroyed = v["frame_destroyed"].asInt();
+	if (v.isMember("name")) t.name = v["name"].asString();
+	if (v.isMember("size")) t.name = v["size"].asInt();
+	if (v.isMember("enables_buffer_device_address")) t.enables_buffer_device_address = v["enables_buffer_device_address"].asBool();
 	return t;
 }
 

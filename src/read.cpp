@@ -7,6 +7,9 @@
 #include "jsoncpp/json/reader.h"
 #include "read_auto.h"
 
+/// Mutex to enforce additional external synchronization
+lava::mutex sync_mutex;
+
 // --- misc
 
 Json::Value readJson(const std::string& filename, const std::string packedfile)
@@ -103,11 +106,13 @@ void lava_reader::finalize(bool terminate)
 	fclose(fptr);
 	if (terminate)
 	{
+		global_mutex.lock();
 		for (auto& v : *thread_call_numbers) v = 0; // stop waiting threads from progressing
 		for (unsigned i = 0; i < threads.size(); i++)
 		{
 			if (!thread_streams[i]->terminated.load()) pthread_cancel(threads[i].native_handle());
 		}
+		global_mutex.unlock();
 	}
 }
 
@@ -133,7 +138,7 @@ void lava_reader::init(const std::string& path, int heap_size)
 	{
 		const uint16_t trace_index = v[funcname].asInt(); // old index
 		const uint16_t retrace_index = retrace_getid(funcname.c_str()); // new index
-		if (retrace_index != UINT16_MAX) dictionary[trace_index] = retrace_getcall(retrace_index); // map old index to function call
+		if (retrace_index != UINT16_MAX) dictionary[trace_index] = retrace_index; // map old index to new
 		else DLOG("Function %s from trace dictionary not supported! If used, we will fail!", funcname.c_str());
 	}
 

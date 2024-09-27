@@ -335,10 +335,12 @@ void read_test_1()
 
 int main()
 {
+	ILOG("write_test_1");
 	write_test_1();
 	sync();
 	read_test_1();
 
+	ILOG("write_test_1_2");
 	write_test_1_2();
 	sync();
 	read_test_1_2();

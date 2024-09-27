@@ -7,7 +7,6 @@
 #include <string>
 
 #include "util.h"
-#include "read.h"
 #include "write.h"
 
 #include "tests/tests.h"

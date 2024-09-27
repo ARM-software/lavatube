@@ -1,6 +1,7 @@
 #include "util.h"
 
 #include <string.h>
+#include <spirv/unified1/spirv.h>
 
 #if defined(_GNU_SOURCE) || defined(__BIONIC__)
 #include <pthread.h>
@@ -38,13 +39,25 @@ int STOI(const std::string& value)
 }
 #endif
 
-static int get_env_int(const char* name, int fallback)
+static int get_env_int(const char* name, int v)
 {
-	int v = fallback;
 	const char* tmpstr = getenv(name);
 	if (tmpstr)
 	{
 		v = atoi(tmpstr);
+	}
+	return v;
+}
+
+static int get_env_bool(const char* name, int v)
+{
+	const char* tmpstr = getenv(name);
+	if (tmpstr)
+	{
+		if (tmpstr[0] == 'F' || tmpstr[0] == 'f') return 0;
+		else if (tmpstr[0] == 'T' || tmpstr[0] == 't') return 1;
+		v = atoi(tmpstr);
+		if (v > 1 || v < 0) { fprintf(stderr, "Invalid value for parameter %s: %s\n", name, tmpstr); exit(-1); }
 	}
 	return v;
 }
@@ -60,25 +73,28 @@ static FILE* get_env_file(const char* name, FILE* fallback)
 	return fallback;
 }
 
-uint_fast8_t p__blackhole = get_env_int("LAVATUBE_BLACKHOLE", 0);
-uint_fast8_t p__dedicated_buffer = get_env_int("LAVATUBE_DEDICATED_BUFFER", 0);
-uint_fast8_t p__dedicated_image = get_env_int("LAVATUBE_DEDICATED_IMAGE", 0);
+uint_fast8_t p__virtualqueues = get_env_bool("LAVATUBE_VIRTUAL_QUEUES", 0);
+FILE* p__debug_destination = get_env_file("LAVATUBE_DEBUG_FILE", stdout); // must be defined first here
+uint_fast8_t p__blackhole = get_env_bool("LAVATUBE_BLACKHOLE", 0);
+uint_fast8_t p__dedicated_buffer = get_env_bool("LAVATUBE_DEDICATED_BUFFER", 0);
+uint_fast8_t p__dedicated_image = get_env_bool("LAVATUBE_DEDICATED_IMAGE", 0);
 uint_fast8_t p__gpu = get_env_int("LAVATUBE_GPU", 0);
 uint_fast8_t p__debug_level = get_env_int("LAVATUBE_DEBUG", 0);
-uint_fast8_t p__validation = get_env_int("LAVATUBE_VALIDATION", 0);
+uint_fast8_t p__validation = get_env_bool("LAVATUBE_VALIDATION", 0);
 uint_fast8_t p__swapchains = get_env_int("LAVATUBE_SWAPCHAINS", 3); // zero means do not override
-uint_fast8_t p__noscreen = get_env_int("LAVATUBE_NOSCREEN", 0);
-uint_fast8_t p__virtualswap = get_env_int("LAVATUBE_VIRTUALSWAPCHAIN", 0);
-uint_fast8_t p__virtualperfmode = get_env_int("LAVATUBE_VIRTUALSWAPCHAIN_PERFMODE", 0);
+uint_fast8_t p__noscreen = get_env_bool("LAVATUBE_NOSCREEN", 0);
+uint_fast8_t p__virtualswap = get_env_bool("LAVATUBE_VIRTUALSWAPCHAIN", 0);
+uint_fast8_t p__virtualperfmode = get_env_bool("LAVATUBE_VIRTUALSWAPCHAIN_PERFMODE", 0);
 VkPresentModeKHR p__realpresentmode = (VkPresentModeKHR)get_env_int("LAVATUBE_VIRTUALSWAPCHAIN_PRESENTMODE", VK_PRESENT_MODE_MAX_ENUM_KHR);
 uint_fast8_t p__realimages = get_env_int("LAVATUBE_VIRTUALSWAPCHAIN_IMAGES", 0); // zero means do not override
 const char* p__save_pipelinecache = getenv("LAVATUBE_SAVE_PIPELINECACHE");
 const char* p__load_pipelinecache = getenv("LAVATUBE_LOAD_PIPELINECACHE");
-uint_fast8_t p__dedicated_allocation = get_env_int("LAVATUBE_DEDICATED_ALLOCATION", 1);
-uint_fast8_t p__custom_allocator = get_env_int("LAVATUBE_CUSTOM_ALLOCATOR", 0);
-uint_fast8_t p__no_anisotropy = get_env_int("LAVATUBE_NO_ANISOTROPY", 0);
+uint_fast8_t p__dedicated_allocation = get_env_bool("LAVATUBE_DEDICATED_ALLOCATION", 1);
+uint_fast8_t p__custom_allocator = get_env_bool("LAVATUBE_CUSTOM_ALLOCATOR", 0);
+uint_fast8_t p__no_anisotropy = get_env_bool("LAVATUBE_NO_ANISOTROPY", 0);
 uint_fast8_t p__delay_fence_success_frames = get_env_int("LAVATUBE_DELAY_FENCE_SUCCESS_FRAMES", 0); // off by default
-FILE* p__debug_destination = get_env_file("LAVATUBE_DEBUG_FILE", stdout);
+int p__chunksize = get_env_int("LAVATUBE_CHUNK_SIZE", 64 * 1024 * 1024);
+uint_fast8_t p__external_memory = get_env_bool("LAVATUBE_EXTERNAL_MEMORY", 0);
 
 const char* errorString(const VkResult errorCode)
 {
@@ -124,11 +140,19 @@ const char* errorString(const VkResult errorCode)
 	STR(OPERATION_DEFERRED_KHR);
 	STR(OPERATION_NOT_DEFERRED_KHR);
 	STR(ERROR_COMPRESSION_EXHAUSTED_EXT);
-
+	STR(ERROR_IMAGE_USAGE_NOT_SUPPORTED_KHR);
+	STR(ERROR_VIDEO_PICTURE_LAYOUT_NOT_SUPPORTED_KHR);
+	STR(ERROR_VIDEO_PROFILE_OPERATION_NOT_SUPPORTED_KHR);
+	STR(ERROR_VIDEO_PROFILE_FORMAT_NOT_SUPPORTED_KHR);
+	STR(ERROR_VIDEO_PROFILE_CODEC_NOT_SUPPORTED_KHR);
+	STR(ERROR_VIDEO_STD_VERSION_NOT_SUPPORTED_KHR);
+	STR(ERROR_INCOMPATIBLE_SHADER_BINARY_EXT);
+	STR(ERROR_INVALID_VIDEO_STD_PARAMETERS_KHR);
 #undef STR
-	default:
-		return "(unrecognized error code)";
+	case VK_RESULT_MAX_ENUM:
+		return "(bad error code)";
 	}
+	return "(unrecognized error code)";
 }
 
 void check_retval(VkResult stored_retval, VkResult retval)
@@ -136,8 +160,7 @@ void check_retval(VkResult stored_retval, VkResult retval)
 	if (stored_retval == VK_SUCCESS && retval != VK_SUCCESS)
 	{
 		const char* err = errorString(retval);
-		FELOG("LAVATUBE ERROR: Returncode does not match stored value, got error: %s (code %u)", err, (unsigned)retval);
-		assert(false);
+		ABORT("LAVATUBE ERROR: Returncode does not match stored value, got error: %s (code %u)", err, (unsigned)retval);
 	}
 }
 
@@ -304,6 +327,20 @@ void* find_extension(void* sptr, VkStructureType sType)
 	return ptr;
 }
 
+void purge_extension_parent(void* sptr, VkStructureType sType)
+{
+	VkBaseOutStructure* ptr = (VkBaseOutStructure*)sptr;
+	while (ptr != nullptr && ptr->pNext != nullptr)
+	{
+		if (ptr->pNext->sType == sType)
+		{
+			ptr->pNext = ptr->pNext->pNext;
+			return;
+		}
+		ptr = ptr->pNext;
+	}
+}
+
 const void* find_extension(const void* sptr, VkStructureType sType)
 {
 	const VkBaseOutStructure* ptr = (VkBaseOutStructure*)sptr;
@@ -311,19 +348,20 @@ const void* find_extension(const void* sptr, VkStructureType sType)
 	return ptr;
 }
 
-int android_hw_level(const VkPhysicalDeviceFeatures& f)
+bool shader_has_buffer_devices_addresses(const uint32_t* code, uint32_t code_size)
 {
-       if (!f.textureCompressionETC2)
-       {
-               return -1;
-       }
-       else if (f.fullDrawIndexUint32 && f.imageCubeArray && f.independentBlend && f.geometryShader && f.tessellationShader
-                && f.sampleRateShading && f.textureCompressionASTC_LDR && f.fragmentStoresAndAtomics && f.shaderImageGatherExtended
-                && f.shaderUniformBufferArrayDynamicIndexing && f.shaderSampledImageArrayDynamicIndexing)
-       {
-               return 1;
-       }
-       return 0;
+	uint16_t opcode;
+	uint16_t word_count;
+	const uint32_t* insn = code + 5;
+	code_size /= 4; // bytes to words
+	do {
+		opcode = uint16_t(insn[0]);
+		word_count = uint16_t(insn[0] >> 16);
+		if (opcode == SpvOpExtension && strcmp((char*)&insn[2], "KHR_physical_storage_buffer") == 0) return true;
+		insn += word_count;
+	}
+	while (insn != code + code_size && opcode != SpvOpMemoryModel);
+	return false;
 }
 
 const char* pretty_print_VkObjectType(VkObjectType val)
@@ -356,7 +394,32 @@ const char* pretty_print_VkObjectType(VkObjectType val)
 	case VK_OBJECT_TYPE_DESCRIPTOR_SET: return "DescriptorSet";
 	case VK_OBJECT_TYPE_FRAMEBUFFER: return "Framebuffer";
 	case VK_OBJECT_TYPE_COMMAND_POOL: return "CommandPool";
-	default: return "Unhandled enum";
+	case VK_OBJECT_TYPE_SAMPLER_YCBCR_CONVERSION: return "YcbcrConversion";
+	case VK_OBJECT_TYPE_DESCRIPTOR_UPDATE_TEMPLATE: return "DescriptorUpdateTemplate";
+	case VK_OBJECT_TYPE_PRIVATE_DATA_SLOT: return "PrivateDataSlot";
+	case VK_OBJECT_TYPE_SURFACE_KHR: return "Surface";
+	case VK_OBJECT_TYPE_SWAPCHAIN_KHR: return "Swapchain";
+	case VK_OBJECT_TYPE_DISPLAY_KHR: return "Display";
+	case VK_OBJECT_TYPE_DISPLAY_MODE_KHR: return "DisplayMode";
+	case VK_OBJECT_TYPE_DEBUG_REPORT_CALLBACK_EXT: return "DebugReportCallback";
+	case VK_OBJECT_TYPE_CU_FUNCTION_NVX: return "CuFunctionNVX";
+	case VK_OBJECT_TYPE_DEBUG_UTILS_MESSENGER_EXT: return "DebugUtilsMessenger";
+	case VK_OBJECT_TYPE_ACCELERATION_STRUCTURE_KHR: return "AccelerationStructure";
+	case VK_OBJECT_TYPE_VALIDATION_CACHE_EXT: return "ValidationCache";
+	case VK_OBJECT_TYPE_ACCELERATION_STRUCTURE_NV: return "AccelerationStructureNV";
+	case VK_OBJECT_TYPE_PERFORMANCE_CONFIGURATION_INTEL: return "PerformanceConfigurationINTEL";
+	case VK_OBJECT_TYPE_DEFERRED_OPERATION_KHR: return "DeferredOperation";
+	case VK_OBJECT_TYPE_INDIRECT_COMMANDS_LAYOUT_NV: return "IndirectComamndsLayoutNV";
+	case VK_OBJECT_TYPE_CU_MODULE_NVX: return "CuModuleNVX";
+	case VK_OBJECT_TYPE_BUFFER_COLLECTION_FUCHSIA: return "BufferCollectionFUCHSIA";
+	case VK_OBJECT_TYPE_MICROMAP_EXT: return "Micromap";
+	case VK_OBJECT_TYPE_OPTICAL_FLOW_SESSION_NV: return "OpticalFlowSessionNV";
+	case VK_OBJECT_TYPE_MAX_ENUM: assert(false); return "Error";
+	case VK_OBJECT_TYPE_VIDEO_SESSION_KHR: return "VideoSession";
+	case VK_OBJECT_TYPE_VIDEO_SESSION_PARAMETERS_KHR: return "VideoSessionParameters";
+	case VK_OBJECT_TYPE_SHADER_EXT: return "Shader";
+	case VK_OBJECT_TYPE_CUDA_MODULE_NV: return "CudaModule";
+	case VK_OBJECT_TYPE_CUDA_FUNCTION_NV: return "CudaFunction";
 	}
 	return "Error";
 }

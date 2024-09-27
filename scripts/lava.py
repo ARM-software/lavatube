@@ -1,14 +1,18 @@
-#!/usr/bin/python2
+#!/usr/bin/python3
 
+import sys
+sys.path.append('external/tracetooltests/scripts')
 import spec
 import util
 import os
 import argparse
 import struct
 
-fake_functions = [ 'vkAssertBufferTRACETOOLTEST', 'vkSyncBufferTRACETOOLTEST', 'vkGetDeviceTracingObjectPropertyTRACETOOLTEST', 'vkFrameEndTRACETOOLTEST' ]
-fake_structs = { 'VkBenchmarkingTRACETOOLTEST': 'VK_STRUCTURE_TYPE_BENCHMARKING_TRACETOOLTEST' }
-# structs we want to save in our trace metadata as well
+# New functions that we implement
+fake_functions = [ 'vkAssertBufferTRACETOOLTEST', 'vkSyncBufferTRACETOOLTEST', 'vkGetDeviceTracingObjectPropertyTRACETOOLTEST' ]
+fake_structs = {}
+
+# Structs we want to save in our trace metadata as well
 extra_tracked_structs = [ 'VkPhysicalDeviceFeatures2', 'VkPhysicalDeviceVulkan11Features', 'VkPhysicalDeviceVulkan12Features', 'VkPhysicalDeviceVulkan13Features' ]
 
 r = open('generated/read_auto.cpp', 'w')
@@ -21,7 +25,7 @@ wr = open('generated/write_resource_auto.cpp', 'w')
 wrh = open('generated/write_resource_auto.h', 'w')
 
 def out(lst, str=''):
-	for n in lst: print >> n, str
+	for n in lst: print(str, file=n)
 
 # Starts to write file output from here (w=trace, r=replay, wh=trace header, rh=replay header)
 targets_all = [w,r,wh,rh,u,uh,wr,wrh]
@@ -64,9 +68,9 @@ out([r], '#include "read_auto.h"')
 out(targets_main)
 out(targets_main, '#pragma GCC diagnostic ignored "-Wunused-variable"')
 out(targets_main, '#pragma GCC diagnostic ignored "-Wunused-function"')
-out(targets_main, '#ifndef __clang__')
+out(targets_main, '#if (__clang_major__ > 12) || (!defined(__llvm__) && defined(__GNUC__))')
 out(targets_main, '#pragma GCC diagnostic ignored "-Wunused-but-set-variable"')
-out(targets_main, "#endif")
+out(targets_main, '#endif')
 out(targets_all)
 
 # Debug stuff
@@ -191,7 +195,7 @@ for v in spec.extension_structs:
 	out(targets_read, '\t\t}')
 	if v in spec.protected_types:
 		out(targets_read, '#endif')
-for k,v in fake_structs.iteritems():
+for k,v in fake_structs.items():
 	out(targets_read, '\t\tcase %s:' % v)
 	out(targets_read, '\t\t{')
 	out(targets_read, '\t\t\t%s* tmps = reader.pool.allocate<%s>(1);' % (k, k))
@@ -221,7 +225,7 @@ for v in spec.extension_structs:
 	out(targets_write, '\t\tcase %s: DLOG2("Saving extension %s (%%u)", (unsigned)sptr->sType); writer.write_uint32_t((uint32_t)sptr->sType); write_%s(writer, (%s*)sptr); break;' % (spec.type2sType[v], v, v, v))
 	if v in spec.protected_types:
 		out(targets_write, '#endif')
-for k,v in fake_structs.iteritems():
+for k,v in fake_structs.items():
 	out(targets_write, '\t\tcase %s: DLOG2("Saving fake extension %s (%%u)", (unsigned)sptr->sType); writer.write_uint32_t((uint32_t)sptr->sType); write_%s(writer, (%s*)sptr); break;' % (v, k, k, k))
 out(targets_write, '\t}')
 out(targets_write, '}')
@@ -240,11 +244,14 @@ for v in spec.root.findall("commands/command"):
 # Generate all functions
 for v in spec.root.findall("commands/command"):
 	name = None
+	api = v.attrib.get('api')
+	if api and api == 'vulkansc': continue
 	if v.attrib.get('alias'):
 		name = v.attrib.get('name')
 	else:
 		proto = v.find('proto')
 		name = proto.find('name').text
+	if not name in spec.functions: continue
 	util.loadfunc(name, all_funcs[name], r, rh)
 	util.savefunc(name, all_funcs[name], w, wh)
 for f in fake_functions:
@@ -338,7 +345,7 @@ out([wr], '{')
 out([wr], '\tuint16_t idx;')
 out([wr], '\tif (function_table.count(procname) == 0)')
 out([wr], '\t{')
-out([wr], '\t\tELOG("LAVATUBE WARNING: Failed to map procname %s to function index. Returning nullptr.", procname);')
+out([wr], '\t\tDLOG("LAVATUBE WARNING: Failed to map procname %s to function index. Returning nullptr.", procname);')
 out([wr], '\t\tidx=UINT16_MAX;')
 out([wr], '\t} else {')
 out([wr], '\t\tidx = function_table.at(procname);')

@@ -19,7 +19,7 @@ jobs:
     - name: Install deps
       run: |
          sudo apt-get update
-         sudo apt-get install git cmake pkg-config python2 libxcb1-dev libxrandr-dev libxcb-randr0-dev libtbb-dev libvulkan-dev
+         sudo apt-get install git cmake pkg-config python2 libxcb1-dev libxrandr-dev libxcb-randr0-dev libtbb-dev libvulkan-dev spirv-headers
     
     - name: Checkout
       run: git submodule update --init --recursive --force
@@ -36,9 +36,9 @@ jobs:
           ./containers
           ./containers2
           ./containers_perf
-          ./write1
           ./write3
           ./read3
           ./write4
           ./read4
           ./rangetrack
+          ./write1

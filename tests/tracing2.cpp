@@ -3,6 +3,7 @@
 
 #define TEST_NAME_1 "tracing_2"
 #define NUM_BUFFERS 14
+#define BUFFER_SIZE (1024 * 1024)
 
 static void trace_3()
 {
@@ -54,7 +55,7 @@ static void trace_3()
 	VkBuffer buffer[NUM_BUFFERS];
 	VkBufferCreateInfo bufferCreateInfo = {};
 	bufferCreateInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-	bufferCreateInfo.size = 1024 * 1024;
+	bufferCreateInfo.size = BUFFER_SIZE;
 	bufferCreateInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
 	bufferCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 	for (unsigned i = 0; i < NUM_BUFFERS; i++)
@@ -64,7 +65,10 @@ static void trace_3()
 
 	VkMemoryRequirements req;
 	trace_vkGetBufferMemoryRequirements(vulkan.device, buffer[0], &req);
-	uint32_t memoryTypeIndex = get_device_memory_type(req.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+	const uint32_t memoryTypeIndex = get_device_memory_type(req.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+	const uint32_t align_mod = req.size % req.alignment;
+	const uint32_t aligned_size = (align_mod == 0) ? req.size : (req.size + req.alignment - align_mod);
+	assert(req.size == aligned_size);
 
 	VkMemoryAllocateInfo pAllocateMemInfo = {};
 	pAllocateMemInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
@@ -123,7 +127,6 @@ static void trace_3()
 	{
 		if (buffer[i] == VK_NULL_HANDLE) continue;
 		trace_vkSyncBufferTRACETOOLTEST(vulkan.device, buffer[i]);
-		trace_vkAssertBufferTRACETOOLTEST(vulkan.device, buffer[i]);
 	}
 
 	VkDescriptorSetLayoutCreateInfo cdslayout = {};
@@ -159,7 +162,8 @@ static void trace_3()
 	trace_vkDestroyDescriptorSetLayout(vulkan.device, dslayout, nullptr);
 	for (unsigned i = 0; i < NUM_BUFFERS; i++)
 	{
-		trace_vkDestroyBuffer(vulkan.device, buffer[i], nullptr);
+		if (buffer[i] == VK_NULL_HANDLE) continue;
+		test_destroy_buffer(vulkan, (req.size * i) % 255, memory, buffer[i], req.size * i, BUFFER_SIZE);
 	}
 
 	trace_vkFreeMemory(vulkan.device, memory, nullptr);

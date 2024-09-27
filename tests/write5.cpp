@@ -12,6 +12,8 @@
 
 #include "tests/tests.h"
 
+static uint64_t total = 0;
+
 static inline uint64_t mygettime()
 {
 	struct timespec t;
@@ -36,6 +38,7 @@ static void write_test_pattern_stride(bool actual, int stride, int conseq)
 	uint64_t start = mygettime();
 	uint64_t changed = file.write_patch(clone, ptr, offset, size);
 	uint64_t end = mygettime();
+	total += end - start;
 	if (actual) printf("test_pattern_stride_%03d_conseq_%03d   %'12" PRIu64 " (%'8" PRIu64 " bytes stored, ideal would be %'8u)\n", stride, conseq, end - start, changed, changes);
 	assert(memcmp(ptr, clone, size) == 0);
 }
@@ -60,7 +63,10 @@ static void write_test_1()
 	vals2[3000] = 65535;
 	uint64_t changed = file.write_patch(clone, ptr, offset, bytesize);
 	printf("write_test_1 changed %lu bytes\n", (unsigned long)changed);
-	for (unsigned i = 0; i < 10; i++) { changed = file.write_patch(clone, ptr, offset, bytesize); assert(changed == 0); }
+	uint64_t start = mygettime();
+	for (unsigned i = 0; i < 20; i++) { changed = file.write_patch(clone, ptr, offset, bytesize); assert(changed == 0); }
+	uint64_t end = mygettime();
+	printf("write_test_1: %lu\n", (unsigned long)end - start);
 	assert(memcmp(ptr, clone, bytesize) == 0);
 }
 
@@ -111,6 +117,7 @@ int main()
 	write_test_pattern_stride(true, 64, 8);
 	write_test_pattern_stride(true, 128, 8);
 	write_test_pattern_stride(true, 256, 16);
+	printf("Total: %lu\n", (unsigned long)total);
 
 	return 0;
 }

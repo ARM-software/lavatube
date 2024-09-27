@@ -415,7 +415,7 @@ static void retrace_2(int variant)
 	getnext(t, nullptr); // thread barrier
 	getnext(t, "vkDestroyImage");
 	trackedbuffer& b = VkBuffer_index.at(0);
-	assert(b.size = BUFFER_SIZE);
+	assert(b.size == BUFFER_SIZE);
 	assert(b.frame_destroyed != -1);
 	for (unsigned i = 0; i < NUM_BUFFERS; i++)
 	{

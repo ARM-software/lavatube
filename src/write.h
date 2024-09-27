@@ -68,6 +68,7 @@ struct trace_metadata
 {
 	/// What the device told the app it is capable of, modified by us
 	trace_capabilities device GUARDED_BY(frame_mutex);
+	VkPhysicalDeviceExternalMemoryHostPropertiesEXT external_memory = {};
 
 	/// What the app asked for, modified by us
 	trace_capabilities app GUARDED_BY(frame_mutex);
@@ -146,9 +147,14 @@ public:
 	int local_call_number = 0;
 	lava_writer* parent;
 
+	VkDevice device = VK_NULL_HANDLE;
+	VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
 	VkCommandBuffer commandBuffer = VK_NULL_HANDLE;
 
 	inline void write_api_command(uint16_t id);
+
+	inline void write_VkDescriptorDataEXT(const VkDescriptorDataEXT& val) {} // TBD
+	inline void write_VkAccelerationStructureNV(VkAccelerationStructureNV val) {} // TBD
 
 	inline void write_handle(const trackable* t)
 	{
@@ -168,7 +174,7 @@ public:
 		}
 	}
 
-	void inject_thread_barrier(bool do_lock = true);
+	void inject_thread_barrier() REQUIRES(frame_mutex);
 
 	/// Make other threads wait for us
 	void push_thread_barriers();
@@ -205,10 +211,13 @@ public:
 	void new_frame();
 
 	std::atomic_int global_frame;
-	std::atomic_int mCallNo;
 	trace_records records;
 
 	trace_metadata meta GUARDED_BY(frame_mutex);
+
+	// statistics
+	uint64_t mem_allocated = 0;
+	uint64_t mem_wasted = 0;
 
 	/// Actually used features. We use this to modify the meta_app.
 	feature_detection usage_detection; // reentrant safe
@@ -216,6 +225,9 @@ public:
 	char fakeUUID[VK_UUID_SIZE + 1];
 
 	trace_data<lava_file_writer*> thread_streams;
+
+	/// We cannot allow the app to map or unmap memory while we are scanning it
+	lava::mutex memory_mutex;
 
 private:
 	int mAsVersion = -1;
@@ -230,11 +242,15 @@ private:
 inline void lava_file_writer::write_api_command(uint16_t id)
 {
 	freeze();
+	device = VK_NULL_HANDLE;
+	physicalDevice = VK_NULL_HANDLE;
 	commandBuffer = VK_NULL_HANDLE;
 	if (pending_barrier.load(std::memory_order_relaxed))
 	{
+		frame_mutex.lock();
 		inject_thread_barrier();
 		pending_barrier.store(false, std::memory_order_relaxed);
+		frame_mutex.unlock();
 	}
 	write_uint8_t(PACKET_API_CALL); // API call
 	write_uint16_t(id); // API call name by id

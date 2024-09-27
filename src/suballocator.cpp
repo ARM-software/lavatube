@@ -141,13 +141,13 @@ void suballoc_setup(VkPhysicalDevice physicaldevice)
 }
 
 static suballoc_location add_object_new(VkDevice device, uint16_t tid, uint32_t memoryTypeIndex, suballocation &s, VkMemoryPropertyFlags flags,
-        VkDeviceSize alignment, VkImageTiling tiling, bool dedicated, bind_object_memory bind_callback)
+        VkDeviceSize alignment, VkImageTiling tiling, bool dedicated, VkMemoryAllocateFlags allocflags, bind_object_memory bind_callback)
 {
 	heap h;
 	h.tid = tid;
-	VkMemoryAllocateInfo info = {};
-	info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
 	VkMemoryDedicatedAllocateInfoKHR dedinfo = { VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO, nullptr };
+	VkMemoryAllocateFlagsInfo flaginfo = { VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_FLAGS_INFO, nullptr, allocflags, 0 };
+	VkMemoryAllocateInfo info = { VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO, &flaginfo };
 	if (dedicated)
 	{
 		if (s.type == VK_OBJECT_TYPE_BUFFER)
@@ -158,7 +158,7 @@ static suballoc_location add_object_new(VkDevice device, uint16_t tid, uint32_t 
 		{
 			dedinfo.image = s.handle.image;
 		}
-		info.pNext = &dedinfo;
+		flaginfo.pNext = &dedinfo;
 		info.allocationSize = s.size;
 	}
 	else
@@ -187,11 +187,11 @@ static suballoc_location add_object_new(VkDevice device, uint16_t tid, uint32_t 
 }
 
 static suballoc_location add_object(VkDevice device, uint16_t tid, uint32_t memoryTypeIndex, suballocation &s, VkMemoryPropertyFlags flags,
-	VkDeviceSize alignment, VkImageTiling tiling, bool dedicated, bind_object_memory bind_callback)
+	VkDeviceSize alignment, VkImageTiling tiling, bool dedicated, VkMemoryAllocateFlags allocflags, bind_object_memory bind_callback)
 {
 	if (dedicated)
 	{
-		return add_object_new(device, tid, memoryTypeIndex, s, flags, alignment, tiling, dedicated, bind_callback);
+		return add_object_new(device, tid, memoryTypeIndex, s, flags, alignment, tiling, dedicated, allocflags, bind_callback);
 	}
 	for (heap& h : heaps)
 	{
@@ -264,7 +264,7 @@ static suballoc_location add_object(VkDevice device, uint16_t tid, uint32_t memo
 		}
 	}
 	// if we get here, we need to create another heap
-	return add_object_new(device, tid, memoryTypeIndex, s, flags, alignment, tiling, dedicated, bind_callback);
+	return add_object_new(device, tid, memoryTypeIndex, s, flags, alignment, tiling, dedicated, allocflags, bind_callback);
 }
 
 static bool fill_image_memreq(VkDevice device, VkImage image, VkMemoryRequirements2& req)
@@ -301,7 +301,7 @@ suballoc_location suballoc_add_image(uint16_t tid, VkDevice device, VkImage imag
 	s.size = std::max(req.memoryRequirements.size, min_size);
 	s.offset = 0;
 	s.index = image_index;
-	auto r = add_object(device, tid, memoryTypeIndex, s, flags, req.memoryRequirements.alignment, tiling, dedicated,
+	auto r = add_object(device, tid, memoryTypeIndex, s, flags, req.memoryRequirements.alignment, tiling, dedicated, 0,
 		[=](heap& h, VkDeviceSize offset, VkDeviceSize size)
 		{
 			assert(h.mem != VK_NULL_HANDLE);
@@ -347,11 +347,11 @@ void suballoc_virtualswap_images(VkDevice device, const std::vector<VkImage>& im
 	}
 }
 
-suballoc_location suballoc_add_buffer(uint16_t tid, VkDevice device, VkBuffer buffer, uint32_t buffer_index, VkMemoryPropertyFlags flags)
+suballoc_location suballoc_add_buffer(uint16_t tid, VkDevice device, VkBuffer buffer, uint32_t buffer_index, VkMemoryPropertyFlags mempropflags, VkBufferUsageFlags buffer_flags)
 {
-	if ((flags & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT) || (flags & VK_MEMORY_PROPERTY_HOST_CACHED_BIT))
+	if ((mempropflags & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT) || (mempropflags & VK_MEMORY_PROPERTY_HOST_CACHED_BIT))
 	{
-		flags &= ~VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT; // do not require this bit in these cases
+		mempropflags &= ~VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT; // do not require this bit in these cases
 	}
 	VkMemoryRequirements2 req = {};
 	req.sType = VK_STRUCTURE_TYPE_MEMORY_REQUIREMENTS_2;
@@ -369,14 +369,16 @@ suballoc_location suballoc_add_buffer(uint16_t tid, VkDevice device, VkBuffer bu
 	{
 		wrap_vkGetBufferMemoryRequirements(device, buffer, &req.memoryRequirements);
 	}
-	uint32_t memoryTypeIndex = get_device_memory_type(req.memoryRequirements.memoryTypeBits, flags);
+	uint32_t memoryTypeIndex = get_device_memory_type(req.memoryRequirements.memoryTypeBits, mempropflags);
 	suballocation s;
 	s.type = VK_OBJECT_TYPE_BUFFER;
 	s.handle.buffer = buffer;
 	s.size = req.memoryRequirements.size;
 	s.offset = 0;
 	s.index = buffer_index;
-	auto r = add_object(device, tid, memoryTypeIndex, s, flags, req.memoryRequirements.alignment, VK_IMAGE_TILING_LINEAR, dedicated.prefersDedicatedAllocation,
+	VkMemoryAllocateFlags allocflags = 0;
+	if (buffer_flags & VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT) { dedicated.prefersDedicatedAllocation = VK_TRUE; allocflags |= VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT_KHR; }
+	auto r = add_object(device, tid, memoryTypeIndex, s, mempropflags, req.memoryRequirements.alignment, VK_IMAGE_TILING_LINEAR, dedicated.prefersDedicatedAllocation, allocflags,
 		[=](heap& h, VkDeviceSize offset, VkDeviceSize size)
 		{
 			assert(h.mem != VK_NULL_HANDLE);

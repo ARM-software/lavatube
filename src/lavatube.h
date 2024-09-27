@@ -16,11 +16,14 @@
 
 #include <unordered_set>
 #include <list>
+#include <vulkan/vk_icd.h>
 
 class lava_file_reader;
 class lava_file_writer;
 
 using lava_trace_func = PFN_vkVoidFunction;
+
+#define LAVATUBE_VIRTUAL_QUEUE 0xbeefbeef
 
 /// pending memory checking, wait on fence
 enum QueueState
@@ -39,6 +42,8 @@ enum
 
 struct trackable
 {
+	uintptr_t magic = ICD_LOADER_MAGIC; // in case we want to pass this around as a vulkan object
+
 	uint32_t index = 0;
 	int frame_created = 0;
 	int frame_destroyed = -1;
@@ -78,8 +83,11 @@ struct trackedmemory : trackable
 	/// are mapped at least once.
 	char* clone = nullptr;
 
-	/// Original memory area
+	/// Mapped memory area
 	char* ptr = nullptr;
+
+	/// If we use external memory, keep track of our allocation
+	char* extmem = nullptr;
 
 	/// Tracking all memory exposed to client through memory mapping.
 	exposure exposed;
@@ -93,7 +101,14 @@ struct trackedmemory : trackable
 		assert(exposed.span().last <= allocationSize);
 		assert(allocationSize != VK_WHOLE_SIZE);
 		trackable::self_test();
+		assert(p__external_memory == 1 || extmem == nullptr);
 	}
+};
+
+struct trackedphysicaldevice : trackable
+{
+	using trackable::trackable; // inherit constructor
+	std::vector<VkQueueFamilyProperties> queueFamilyProperties;
 };
 
 struct trackeddevice : trackable
@@ -113,6 +128,7 @@ struct trackedobject : trackable
 	uint64_t written = 0; // bytes written out for this object
 	uint32_t updates = 0; // number of times it was updated
 	bool accessible = false; // whether our backing memory is host visible and understandable
+	int source = 0; // code line that is the last source for us to be scanned, only for debugging
 
 	void self_test() const
 	{
@@ -122,19 +138,26 @@ struct trackedobject : trackable
 	}
 };
 
+struct trackedshadermodule : trackedobject
+{
+	using trackedobject::trackedobject; // inherit constructor
+	bool enables_buffer_device_address = false;
+	size_t size = 0;
+};
+
 struct trackedbuffer : trackedobject
 {
 	using trackedobject::trackedobject; // inherit constructor
 	VkBufferCreateFlags flags = VK_BUFFER_CREATE_FLAG_BITS_MAX_ENUM;
 	VkSharingMode sharingMode = VK_SHARING_MODE_MAX_ENUM;
 	VkBufferUsageFlags usage = VK_BUFFER_USAGE_FLAG_BITS_MAX_ENUM;
-	VkDeviceAddress address = 0;
 
 	void self_test() const
 	{
 		assert(flags != VK_BUFFER_CREATE_FLAG_BITS_MAX_ENUM);
 		assert(sharingMode != VK_SHARING_MODE_MAX_ENUM);
 		assert(usage != VK_BUFFER_USAGE_FLAG_BITS_MAX_ENUM);
+		assert(type == VK_OBJECT_TYPE_BUFFER);
 		trackedobject::self_test();
 	}
 };
@@ -149,6 +172,12 @@ struct trackedimage : trackedobject
 	VkImageCreateFlags flags = VK_IMAGE_CREATE_FLAG_BITS_MAX_ENUM;
 	VkFormat format = VK_FORMAT_MAX_ENUM;
 	bool is_swapchain_image = false;
+	VkImageLayout initialLayout = VK_IMAGE_LAYOUT_MAX_ENUM;
+	VkImageLayout currentLayout = VK_IMAGE_LAYOUT_MAX_ENUM;
+	VkSampleCountFlagBits samples = VK_SAMPLE_COUNT_FLAG_BITS_MAX_ENUM;
+	VkExtent3D extent {};
+	uint32_t mipLevels = 0;
+	uint32_t arrayLayers = 0;
 
 	void self_test() const
 	{
@@ -158,6 +187,9 @@ struct trackedimage : trackedobject
 		assert(imageType != VK_IMAGE_TYPE_MAX_ENUM);
 		assert(flags != VK_IMAGE_CREATE_FLAG_BITS_MAX_ENUM);
 		assert(format != VK_FORMAT_MAX_ENUM);
+		assert(initialLayout != VK_IMAGE_LAYOUT_MAX_ENUM);
+		assert(currentLayout != VK_IMAGE_LAYOUT_MAX_ENUM);
+		assert(type == VK_OBJECT_TYPE_IMAGE);
 		trackedobject::self_test();
 	}
 };
@@ -216,11 +248,9 @@ struct trackedswapchain : trackable
 struct trackedswapchain_trace : trackedswapchain
 {
 	using trackedswapchain::trackedswapchain; // inherit constructor
-	VkQueue queue = VK_NULL_HANDLE;
 
 	void self_test() const
 	{
-		assert(queue != VK_NULL_HANDLE);
 		trackedswapchain::self_test();
 	}
 };
@@ -285,13 +315,39 @@ struct trackedcmdbuffer_trace : trackable
 {
 	using trackable::trackable; // inherit constructor
 	VkCommandPool pool = VK_NULL_HANDLE;
+	VkDevice device = VK_NULL_HANDLE;
+	VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
 	uint32_t pool_index = CONTAINER_INVALID_INDEX;
 	VkCommandBufferLevel level = VK_COMMAND_BUFFER_LEVEL_MAX_ENUM;
+	struct
+	{
+		trackedbuffer* buffer_data = nullptr;
+		VkDeviceSize offset = 0;
+		VkIndexType indexType = VK_INDEX_TYPE_MAX_ENUM; // VK_INDEX_TYPE_UINT16, VK_INDEX_TYPE_UINT32 or VK_INDEX_TYPE_UINT8_EXT
+	} indexBuffer;
 	std::unordered_map<trackedobject*, exposure> touched; // track memory updates
 
-	void touch(trackedobject* data, VkDeviceSize offset, VkDeviceSize size)
+	void touch_index_buffer(VkDeviceSize firstIndex, VkDeviceSize indexCount)
+	{
+		VkDeviceSize size = indexCount;
+		VkDeviceSize multiplier = 1;
+
+		if (indexBuffer.indexType == VK_INDEX_TYPE_UINT16) multiplier = 2;
+		else if (indexBuffer.indexType == VK_INDEX_TYPE_UINT32) multiplier = 4;
+
+		VkDeviceSize offset = indexBuffer.offset + firstIndex * multiplier;
+
+		if (size == VK_WHOLE_SIZE) size = indexBuffer.buffer_data->size - offset; // indirect indexed draw
+		else size *= multiplier;
+
+		assert(offset + size <= indexBuffer.buffer_data->size);
+		touch(indexBuffer.buffer_data, offset, size, __LINE__);
+	}
+
+	void touch(trackedobject* data, VkDeviceSize offset, VkDeviceSize size, unsigned source)
 	{
 		if (!data->accessible) return;
+		data->source = source;
 		if (size == VK_WHOLE_SIZE) size = data->size - offset;
 		touched[data].add_os(offset, size);
 	}
@@ -309,6 +365,8 @@ struct trackedcmdbuffer_trace : trackable
 	{
 		for (const auto& pair : touched) { assert(pair.first->accessible); pair.first->self_test(); pair.second.self_test(); }
 		assert(pool != VK_NULL_HANDLE);
+		assert(device != VK_NULL_HANDLE);
+		assert(physicalDevice != VK_NULL_HANDLE);
 		assert(pool_index != CONTAINER_INVALID_INDEX);
 		assert(level != VK_COMMAND_BUFFER_LEVEL_MAX_ENUM);
 		trackable::self_test();
@@ -321,10 +379,12 @@ struct trackeddescriptorset_trace : trackable
 	VkDescriptorPool pool = VK_NULL_HANDLE;
 	uint32_t pool_index = CONTAINER_INVALID_INDEX;
 	std::unordered_map<trackedobject*, exposure> touched; // track memory updates
+	std::vector<VkDescriptorBufferInfo> dynamic_buffers; // must be resolved on bind
 
-	void touch(trackedobject* data, VkDeviceSize offset, VkDeviceSize size)
+	void touch(trackedobject* data, VkDeviceSize offset, VkDeviceSize size, unsigned source)
 	{
 		if (!data->accessible) return;
+		data->source = -(int)source;
 		if (size == VK_WHOLE_SIZE) size = data->size - offset;
 		touched[data].add_os(offset, size);
 	}
@@ -338,18 +398,29 @@ struct trackeddescriptorset_trace : trackable
 	}
 };
 
-struct trackedqueue_trace : trackable
+struct trackedqueue : trackable
 {
 	using trackable::trackable; // inherit constructor
 	VkDevice device = VK_NULL_HANDLE;
-	uint32_t queueIndex = 0;
-	uint32_t queueFamily = 0;
+	VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
+	uint32_t queueIndex = UINT32_MAX;
+	uint32_t queueFamily = UINT32_MAX;
+	uint32_t realIndex = UINT32_MAX;
+	uint32_t realFamily = UINT32_MAX;
+	VkQueue realQueue = VK_NULL_HANDLE;
 	VkQueueFlags queueFlags = VK_QUEUE_FLAG_BITS_MAX_ENUM;
 
 	void self_test() const
 	{
 		assert(device != VK_NULL_HANDLE);
+		assert(physicalDevice != VK_NULL_HANDLE);
 		assert(queueFlags != VK_QUEUE_FLAG_BITS_MAX_ENUM);
+		assert(realQueue != VK_NULL_HANDLE);
+		assert(queueFlags != VK_QUEUE_FLAG_BITS_MAX_ENUM);
+		assert(queueIndex != UINT32_MAX);
+		assert(realIndex != UINT32_MAX);
+		assert(queueFamily != UINT32_MAX);
+		assert(realFamily != UINT32_MAX);
 		trackable::self_test();
 	}
 };

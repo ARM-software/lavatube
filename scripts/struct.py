@@ -1,103 +1,125 @@
-#!/usr/bin/python2
+#!/usr/bin/python3
+
+import sys
+sys.path.append('external/tracetooltests/scripts')
 
 import spec
 import util
 
 # Do not generate read/write functions for these
 skiplist = [ 'VkXlibSurfaceCreateInfoKHR', 'VkXcbSurfaceCreateInfoKHR', 'VkBaseOutStructure', 'VkBaseInStructure', 'VkAllocationCallbacks',
-	'VkDeviceFaultInfoEXT', 'VkMicromapBuildInfoEXT', 'VkAccelerationStructureTrianglesOpacityMicromapEXT' ]
+	'VkDeviceFaultInfoEXT', 'VkMicromapBuildInfoEXT', 'VkAccelerationStructureTrianglesOpacityMicromapEXT', 'VkVideoDecodeH264ProfileInfoKHR',
+	'VkVideoDecodeH264CapabilitiesKHR', 'VkVideoDecodeH264SessionParametersAddInfoKHR', 'VkVideoDecodeH264ProfileInfoKHR', 'VkVideoDecodeH264SessionParametersCreateInfoKHR',
+	'VkVideoDecodeH264PictureInfoKHR', 'VkVideoDecodeH264DpbSlotInfoKHR', 'VkVideoDecodeH265ProfileInfoKHR', 'VkVideoDecodeH265SessionParametersAddInfoKHR',
+	'VkVideoDecodeH265CapabilitiesKHR', 'VkVideoDecodeH265SessionParametersCreateInfoKHR', 'VkVideoDecodeH265PictureInfoKHR', 'VkVideoDecodeH265DpbSlotInfoKHR',
+	'VkOpaqueCaptureDescriptorDataCreateInfoEXT',
+	'VkPushDescriptorSetWithTemplateInfoKHR',
+	'VkMemoryMapPlacedInfoEXT',
+	'VkBindMemoryStatusKHR',
+	'VkRenderingInputAttachmentIndexInfoKHR',
+]
+
 hardcoded_read = [ 'VkAccelerationStructureBuildGeometryInfoKHR' ]
+hardcoded_write = []
 
 z = util.getspool()
-structlist = []
-for v in spec.root.findall('types/type'):
-	name = v.attrib.get('name')
-	category = v.attrib.get('category')
-	if category != 'struct':
-		continue
+
+def skip(name, selected):
+	if not name in spec.structures or (selected and name != selected) or name in util.struct_noop:
+		return True
 	if name in skiplist:
-		continue
-	if spec.str_contains_vendor(name):
-		continue
-	structlist.append(name)
+		return True
+	return False
 
 def struct_header_read(r, selected = None):
 	for v in spec.root.findall('types/type'):
 		name = v.attrib.get('name')
-		if not name in structlist or (selected and name != selected) or name in util.struct_noop:
-			continue
+		if skip(name, selected): continue
 		if name in spec.protected_types:
-			print >> r, '#ifdef %s' % spec.protected_types[name]
-		structlist.append(name)
+			print('#ifdef %s' % spec.protected_types[name], file=r)
 		accessor = '%s* sptr' % name
-		print >> r, 'static void read_%s(lava_file_reader& reader, %s);' % (name, accessor)
+		print('static void read_%s(lava_file_reader& reader, %s);' % (name, accessor), file=r)
 		if name in spec.protected_types:
-			print >> r, '#endif // %s' % spec.protected_types[name]
-	print >> r
+			print('#endif // %s' % spec.protected_types[name], file=r)
+	print(file=r)
 
 def struct_header_write(w, selected = None):
 	for v in spec.root.findall('types/type'):
 		name = v.attrib.get('name')
-		if not name in structlist or (selected and name != selected) or name in util.struct_noop:
-			continue
+		if skip(name, selected): continue
 		if name in spec.protected_types:
-			print >> w, '#ifdef %s' % spec.protected_types[name]
-		structlist.append(name)
+			print('#ifdef %s' % spec.protected_types[name], file=w)
 		accessor = '%s* sptr' % name
-		print >> w, 'static void write_%s(lava_file_writer& writer, const %s);' % (name, accessor)
+		modifier = 'const ' if not name in util.deconst_struct else ''
+		print('static void write_%s(lava_file_writer& writer, %s%s);' % (name, modifier, accessor), file=w)
 		if name in spec.protected_types:
-			print >> w, '#endif // %s' % spec.protected_types[name]
-	print >> w
+			print('#endif // %s' % spec.protected_types[name], file=w)
+	print(file=w)
+
+def struct_add_tracking_read(name):
+	if name in ['VkImageMemoryBarrier2', 'VkImageMemoryBarrier']:
+		z.do('trackedimage& image_data = VkImage_index.at(image_index);')
+		# TBD Fix this tracking code and reenable the below assert
+		#z.do('assert(image_data.currentLayout == sptr->oldLayout);')
+		z.do('image_data.currentLayout = sptr->newLayout;')
+
+def struct_add_tracking_write(name):
+	if name in ['VkImageMemoryBarrier2', 'VkImageMemoryBarrier']:
+		# TBD Fix this tracking code and reenable the below assert
+		#z.do('assert(image_data->currentLayout == sptr->oldLayout);')
+		z.do('image_data->currentLayout = sptr->newLayout;')
 
 def struct_impl_read(r, selected = None):
 	for v in spec.root.findall('types/type'):
 		name = v.attrib.get('name')
-		if not name in structlist or (selected and name != selected) or name in util.struct_noop or name in hardcoded_read:
-			continue
+		if skip(name, selected) or name in hardcoded_read: continue
 		if name in spec.protected_types:
-			print >> r, '#ifdef %s' % spec.protected_types[name]
+			print('#ifdef %s' % spec.protected_types[name], file=r)
 		accessor = '%s* sptr' % name
 		special = ''
 		if name == 'VkDeviceCreateInfo': special = ', VkPhysicalDevice physicalDevice'
 		elif 'VkBindBufferMemoryInfo' in name or 'VkBindImageMemoryInfo' in name: special = ', VkDevice device'
-		print >> r, 'static void read_%s(lava_file_reader& reader, %s%s)' % (name, accessor, special)
-		print >> r, '{'
+		print('static void read_%s(lava_file_reader& reader, %s%s)' % (name, accessor, special), file=r)
+		print('{', file=r)
 		if v.attrib.get('alias'):
 			if 'VkDeviceCreateInfo' in name: special = ', physicalDevice'
 			elif 'VkBindBufferMemoryInfo' in name or 'VkBindImageMemoryInfo' in name: special = ', device'
-			print >> r, '\tread_%s(reader, sptr%s);' % (v.attrib.get('alias'), special)
+			print('\tread_%s(reader, sptr%s);' % (v.attrib.get('alias'), special), file=r)
 		else:
 			z.target(r)
 			z.read = True
 			params = []
 			z.struct_begin(name)
 			for p in v.findall('member'):
+				api = p.attrib.get('api')
+				if api and api == 'vulkansc': continue
 				param = util.parameter(p, read=True, funcname=name)
 				param.print_load(param.name, 'sptr->')
+			struct_add_tracking_read(name)
 			z.struct_end()
 			z.dump()
-		print >> r, '}'
+		print('}', file=r)
 		if name in spec.protected_types:
-			print >> r, '#endif // %s' % spec.protected_types[name]
-		print >> r
+			print('#endif // %s' % spec.protected_types[name], file=r)
+		print(file=r)
 
 def struct_impl_write(w, selected = None):
 	for v in spec.root.findall('types/type'):
 		name = v.attrib.get('name')
-		if not name in structlist or (selected and name != selected) or name in util.struct_noop:
-			continue
+		if skip(name, selected) or name in hardcoded_write: continue
 		if name in spec.protected_types:
-			print >> w, '#ifdef %s' % spec.protected_types[name]
+			print('#ifdef %s' % spec.protected_types[name], file=w)
 		accessor = '%s* sptr' % name
 		# Write implementation
 		special = ''
 		if name == 'VkPipelineViewportStateCreateInfo': special = ', const VkPipelineDynamicStateCreateInfo* pDynamicState'
 		elif name == 'VkCommandBufferBeginInfo': special = ', trackedcmdbuffer_trace* tcmd'
 		elif name == 'VkWriteDescriptorSet': special = ', bool ignoreDstSet'
-		print >> w, 'static void write_%s(lava_file_writer& writer, const %s%s)' % (name, accessor, special)
-		print >> w, '{'
+		modifier = 'const ' if not name in util.deconst_struct else ''
+		print('static void write_%s(lava_file_writer& writer, %s%s%s)' % (name, modifier, accessor, special), file=w)
+		print('{', file=w)
 		if v.attrib.get('alias'):
-			print >> w, '\twrite_%s(writer, sptr);' % v.attrib.get('alias')
+			print('\twrite_%s(writer, sptr);' % v.attrib.get('alias'), file=w)
 		else:
 			z.target(w)
 			z.read = False
@@ -115,17 +137,21 @@ def struct_impl_write(w, selected = None):
 				z.do('if (pDynamicState->pDynamicStates[df] == VK_DYNAMIC_STATE_SCISSOR /*|| pDynamicState->pDynamicStates[df] == VK_DYNAMIC_STATE_SCISSOR_WITH_COUNT*/) isDynamicScissors = true;')
 				z.loop_end()
 			for p in v.findall('member'):
+				api = p.attrib.get('api')
+				if api and api == 'vulkansc': continue
 				param = util.parameter(p, read=False, funcname=name, transitiveConst=True)
 				param.print_save(param.name, 'sptr->')
-			if name in spec.feature_detection_structs:
+			if name in util.feature_detection_structs:
 				z.do('writer.parent->usage_detection.check_%s(sptr);' % name)
+			util.save_add_tracking(name)
+			struct_add_tracking_write(name)
 			z.struct_end()
 			z.dump()
-		print >> w, '}'
+		print('}', file=w)
 		# Done
 		if name in spec.protected_types:
-			print >> w, '#endif // %s' % spec.protected_types[name]
-		print >> w
+			print('#endif // %s' % spec.protected_types[name], file=w)
+		print(file=w)
 
 if __name__ == '__main__':
 	r = open('generated/struct_read_auto.h', 'w')
@@ -140,4 +166,3 @@ if __name__ == '__main__':
 	struct_impl_write(w)
 	r.close()
 	w.close()
-

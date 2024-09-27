@@ -10,6 +10,8 @@ General:
 * Inline uniform blocks
 * Memory aliasing
 * Make VkLayer_lavatube.json truthful
+* Improved multi-device support
+	* Store internal Vulkan object metadata by Vulkan device
 
 Missing Vulkan call implementations:
 * vkGetDeviceBufferMemoryRequirements(KHR)

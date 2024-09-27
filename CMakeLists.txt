@@ -7,18 +7,32 @@ set(NO_XCB FALSE CACHE BOOL "Do not compile support for XCB and Xlib")
 set(NO_TRACETOOLTESTS FALSE CACHE BOOL "Do not compile tracetooltests")
 
 find_program(CCACHE_PROGRAM ccache)
+if(NOT CCACHE_PROGRAM)
+    message(STATUS "No ccache found")
+endif()
 if(CCACHE_PROGRAM AND DEFINED ENV{CCACHE_DIR})
-	set_property(GLOBAL PROPERTY RULE_LAUNCH_COMPILE "${CCACHE_PROGRAM}")
-	message(STATUS "We will build using ccache -- very good!")
+    set_property(GLOBAL PROPERTY RULE_LAUNCH_COMPILE "${CCACHE_PROGRAM}")
+    message(STATUS "We will build using ccache -- very good!")
 endif()
 
 cmake_minimum_required(VERSION 3.7)
-project(lavatube VERSION 0.0.1)
+project(lavatube VERSION 0.0.1 DESCRIPTION "Vulkan tracer designed for multi-threaded replay with minimum overhead" HOMEPAGE_URL "https://github.com/ARM-software/lavatube" LANGUAGES C CXX)
 enable_testing()
+
+IF(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
+  SET(CMAKE_INSTALL_PREFIX "/opt/lavatube" CACHE PATH "install prefix" FORCE)
+ENDIF(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
+
+if (NOT DEFINED CMAKE_CXX_STANDARD)
+    set(CMAKE_CXX_STANDARD 17)
+endif()
+set(CMAKE_CXX_EXTENSIONS OFF)
+set(CMAKE_CXX_VISIBILITY_PRESET hidden)
+set(CMAKE_CTEST_ARGUMENTS "--output-on-failure")
 
 set(SRC_ROOT ${CMAKE_SOURCE_DIR})
 set(THIRD_PARTY_DIR ${SRC_ROOT}/external)
-set(PYTHON_EXECUTABLE python2)
+set(PYTHON_EXECUTABLE python3)
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake")
 set(LAYER_NAME VkLayer_lavatube)
 find_package(PkgConfig REQUIRED)
@@ -75,10 +89,10 @@ target_link_libraries(density ${SANITIZER})
 
 # --- common ---
 
-find_package(TBB REQUIRED HINTS /usr/aarch64-linux-gnu/lib/cmake/TBB /usr/arm-linux-gnueabihf/lib/cmake/TBB)
+find_package(TBB REQUIRED HINTS /usr/lib/x86_64-linux-gnu/cmake/TBB /usr/aarch64-linux-gnu/lib/cmake/TBB /usr/arm-linux-gnueabihf/lib/cmake/TBB)
 
 # Debug Release RelWithDebInfo MinSizeRel
-set(COMMON_FLAGS ${SANITIZER} -std=c++11 -Werror -Wall -fvisibility=hidden ${XCB_ENABLE} -Wshadow)
+set(COMMON_FLAGS ${SANITIZER} -std=c++17 -Werror -Wall -fvisibility=hidden ${XCB_ENABLE} -Wshadow)
 if(CMAKE_BUILD_TYPE STREQUAL "Debug" OR NOT CMAKE_BUILD_TYPE)
 	set(COMMON_FLAGS ${COMMON_FLAGS} -ggdb -O0 -fno-omit-frame-pointer -DDEBUG -DRELTYPE="debug")
 	message(STATUS "Debug build")
@@ -106,6 +120,12 @@ set(COMMON_INCLUDE
     PRIVATE ${SRC_ROOT}/external/jsoncpp
 )
 
+set(VULKAN_TESTS_SRC
+   ${CMAKE_SOURCE_DIR}/tests/tests.h
+   ${CMAKE_SOURCE_DIR}/tests/common.cpp
+   ${CMAKE_SOURCE_DIR}/tests/common.h
+)
+
 set(COMMON_SRC
     ${CMAKE_SOURCE_DIR}/external/jsoncpp/src/lib_json/json_writer.cpp
     ${CMAKE_SOURCE_DIR}/external/jsoncpp/src/lib_json/json_reader.cpp
@@ -120,21 +140,26 @@ set(COMMON_SRC
     ${CMAKE_SOURCE_DIR}/src/packfile.h
     ${CMAKE_SOURCE_DIR}/src/lavamutex.h
     ${CMAKE_SOURCE_DIR}/src/containers.h
+
+    ${CMAKE_SOURCE_DIR}/src/filewriter.cpp
+    ${CMAKE_SOURCE_DIR}/src/filewriter.h
+    ${CMAKE_SOURCE_DIR}/src/write.cpp
+    ${CMAKE_SOURCE_DIR}/src/write.h
+    ${CMAKE_SOURCE_DIR}/src/rangetracking.h
+
+    ${CMAKE_SOURCE_DIR}/generated/vk_wrapper_auto.cpp
+    ${CMAKE_SOURCE_DIR}/generated/vk_wrapper_auto.h
     ${CMAKE_SOURCE_DIR}/generated/util_auto.cpp
     ${CMAKE_SOURCE_DIR}/generated/util_auto.h
-    ${CMAKE_SOURCE_DIR}/generated/tostring.h
+    ${CMAKE_SOURCE_DIR}/generated/write_auto.cpp
+    ${CMAKE_SOURCE_DIR}/generated/write_auto.h
+    ${CMAKE_SOURCE_DIR}/generated/write_resource_auto.cpp
+    ${CMAKE_SOURCE_DIR}/generated/write_resource_auto.h
     ${CMAKE_SOURCE_DIR}/generated/tostring.cpp
+    ${CMAKE_SOURCE_DIR}/generated/tostring.h
 )
 
-set(VULKAN_TESTS_SRC
-   ${CMAKE_SOURCE_DIR}/tests/tests.h
-   ${CMAKE_SOURCE_DIR}/tests/common.cpp
-   ${CMAKE_SOURCE_DIR}/tests/common.h
-)
-
-set(READ_SRC
-    ${CMAKE_SOURCE_DIR}/src/util.cpp
-    ${CMAKE_SOURCE_DIR}/src/util.h
+set(LAVATUBE_SRC
     ${CMAKE_SOURCE_DIR}/src/window.cpp
     ${CMAKE_SOURCE_DIR}/src/window.h
     ${CMAKE_SOURCE_DIR}/src/filereader.cpp
@@ -145,54 +170,33 @@ set(READ_SRC
     ${CMAKE_SOURCE_DIR}/src/allocators.h
     ${CMAKE_SOURCE_DIR}/src/suballocator.cpp
     ${CMAKE_SOURCE_DIR}/src/suballocator.h
-    ${CMAKE_SOURCE_DIR}/generated/vk_wrapper_auto.cpp
-    ${CMAKE_SOURCE_DIR}/generated/vk_wrapper_auto.h
+
     ${CMAKE_SOURCE_DIR}/generated/read_auto.cpp
     ${CMAKE_SOURCE_DIR}/generated/read_auto.h
 )
 
-set(WRITE_SRC_COMMON
-    ${CMAKE_SOURCE_DIR}/src/util.cpp
-    ${CMAKE_SOURCE_DIR}/src/util.h
-    ${CMAKE_SOURCE_DIR}/src/filewriter.cpp
-    ${CMAKE_SOURCE_DIR}/src/filewriter.h
-    ${CMAKE_SOURCE_DIR}/src/write.cpp
-    ${CMAKE_SOURCE_DIR}/src/write.h
-    ${CMAKE_SOURCE_DIR}/src/rangetracking.h
-)
-set(WRITE_SRC
-    ${WRITE_SRC_COMMON}
-    ${CMAKE_SOURCE_DIR}/generated/vk_wrapper_auto.cpp
-    ${CMAKE_SOURCE_DIR}/generated/vk_wrapper_auto.h
-    ${CMAKE_SOURCE_DIR}/generated/write_auto.cpp
-    ${CMAKE_SOURCE_DIR}/generated/write_auto.h
-    ${CMAKE_SOURCE_DIR}/generated/write_resource_auto.cpp
-    ${CMAKE_SOURCE_DIR}/generated/write_resource_auto.h
-)
-
-file(MAKE_DIRECTORY generated)
 add_custom_command(
     OUTPUT .autogenerated
     BYPRODUCTS ${SRC_ROOT}/generated/struct_read_auto.cpp ${SRC_ROOT}/generated/struct_write_auto.cpp ${SRC_ROOT}/generated/struct_read_auto.h ${SRC_ROOT}/generated/struct_write_auto.h
            ${SRC_ROOT}/generated/read_auto.cpp ${SRC_ROOT}/generated/write_auto.cpp ${SRC_ROOT}/generated/read_auto.h ${SRC_ROOT}/generated/write_auto.h ${SRC_ROOT}/generated/util_auto.cpp
-           ${SRC_ROOT}/generated/util_auto.h ${SRC_ROOT}/generated/vk_wrapper_auto.h ${SRC_ROOT}/generated/vk_wrapper_auto.cpp ${SRC_ROOT}/generated/vulkan_layer.cpp
+           ${SRC_ROOT}/generated/util_auto.h ${SRC_ROOT}/generated/vk_wrapper_auto.h ${SRC_ROOT}/generated/vk_wrapper_auto.cpp
            ${SRC_ROOT}/generated/write_resource_auto.cpp ${SRC_ROOT}/generated/write_resource_auto.h ${SRC_ROOT}/generated/tostring.cpp ${SRC_ROOT}/generated/tostring.h
+    COMMAND rm -f scripts/spec.pyc # fix checkouts broken when this file's source moved
+    COMMAND mkdir -p generated
     COMMAND ${PYTHON_EXECUTABLE} ${SRC_ROOT}/scripts/struct.py
     COMMAND ${PYTHON_EXECUTABLE} ${SRC_ROOT}/scripts/lava.py
     COMMAND ${PYTHON_EXECUTABLE} ${SRC_ROOT}/scripts/vk_wrapper.py
-    COMMAND ${PYTHON_EXECUTABLE} ${SRC_ROOT}/scripts/vulkan.py
     COMMAND ${PYTHON_EXECUTABLE} ${SRC_ROOT}/scripts/tostring.py
-    COMMAND sync
     COMMAND touch .autogenerated
     WORKING_DIRECTORY ${SRC_ROOT}
-    DEPENDS ${SRC_ROOT}/scripts/lava.py ${SRC_ROOT}/external/Vulkan-Headers/registry/vk.xml ${SRC_ROOT}/scripts/spec.py ${SRC_ROOT}/src/hardcode_read.cpp ${SRC_ROOT}/scripts/vulkan.py
+    DEPENDS ${SRC_ROOT}/scripts/lava.py ${SRC_ROOT}/external/Vulkan-Headers/registry/vk.xml ${SRC_ROOT}/external/tracetooltests/scripts/spec.py ${SRC_ROOT}/src/hardcode_read.cpp
 	${SRC_ROOT}/src/hardcode_write.cpp ${SRC_ROOT}/scripts/util.py ${SRC_ROOT}/external/Vulkan-Headers/include/vulkan/vk_layer.h ${SRC_ROOT}/scripts/vk_wrapper.py
 )
 
 # The below is necessary because cmake is too braindead to realize we should not run the above once per target
 add_custom_target(sync_stuff DEPENDS .autogenerated)
 
-add_library(lavatube STATIC ${COMMON_SRC})
+add_library(lavatube STATIC ${COMMON_SRC} ${LAVATUBE_SRC})
 target_include_directories(lavatube ${COMMON_INCLUDE})
 target_link_libraries(lavatube ${COMMON_LIBRARIES})
 target_compile_options(lavatube PRIVATE ${COMMON_FLAGS} -fPIC)
@@ -200,16 +204,16 @@ add_dependencies(lavatube sync_stuff)
 
 # --- tracer layer ---
 
-add_library(VkLayer_lavatube SHARED ${WRITE_SRC} ${CMAKE_SOURCE_DIR}/generated/vulkan_layer.cpp)
+add_library(VkLayer_lavatube SHARED ${CMAKE_SOURCE_DIR}/src/vulkan_layer.cpp ${COMMON_SRC})
 target_include_directories(VkLayer_lavatube ${COMMON_INCLUDE})
-target_link_libraries(VkLayer_lavatube ${COMMON_LIBRARIES} lavatube)
+target_link_libraries(VkLayer_lavatube ${COMMON_LIBRARIES})
 target_compile_options(VkLayer_lavatube PRIVATE ${COMMON_FLAGS})
 target_compile_definitions(VkLayer_lavatube PUBLIC COMPILE_LAYER)
 add_custom_command(TARGET VkLayer_lavatube POST_BUILD COMMAND mkdir -p implicit_layer.d)
 add_custom_command(TARGET VkLayer_lavatube POST_BUILD COMMAND mv libVkLayer_lavatube.so implicit_layer.d/libVkLayer_lavatube.so)
 add_custom_command(TARGET VkLayer_lavatube POST_BUILD COMMAND cp ${SRC_ROOT}/VkLayer_lavatube.json implicit_layer.d/VkLayer_lavatube.json)
 add_dependencies(VkLayer_lavatube sync_stuff)
-install(TARGETS VkLayer_lavatube LIBRARY)
+install(FILES ${CMAKE_BINARY_DIR}/implicit_layer.d/VkLayer_lavatube.json ${CMAKE_BINARY_DIR}/implicit_layer.d/libVkLayer_lavatube.so DESTINATION implicit_layer.d)
 install(PROGRAMS scripts/lava-capture.py TYPE BIN)
 
 # --- unit tests ---
@@ -219,6 +223,16 @@ target_include_directories(featuretest ${COMMON_INCLUDE})
 target_link_libraries(featuretest ${MOST_COMMON_LIBRARIES} pthread)
 target_compile_options(featuretest PRIVATE ${COMMON_FLAGS})
 add_test(NAME feature_test COMMAND ${CMAKE_CURRENT_BINARY_DIR}/featuretest)
+
+add_executable(mprotect tests/mprotect.cpp src/util.cpp src/util.h)
+target_include_directories(mprotect ${COMMON_INCLUDE})
+target_link_libraries(mprotect ${MOST_COMMON_LIBRARIES} pthread)
+target_compile_options(mprotect PRIVATE ${COMMON_FLAGS})
+
+#add_executable(userfaultfd tests/userfaultfd.cpp src/util.cpp src/util.h)
+#target_include_directories(userfaultfd ${COMMON_INCLUDE})
+#target_link_libraries(userfaultfd ${MOST_COMMON_LIBRARIES} pthread)
+#target_compile_options(userfaultfd PRIVATE ${COMMON_FLAGS})
 
 add_executable(containers tests/container_test.cpp)
 target_include_directories(containers ${COMMON_INCLUDE})
@@ -243,40 +257,46 @@ target_link_libraries(rangetrack ${MOST_COMMON_LIBRARIES})
 target_compile_options(rangetrack PRIVATE ${COMMON_FLAGS})
 add_test(NAME rangetrack_test COMMAND ${CMAKE_CURRENT_BINARY_DIR}/rangetrack)
 
-add_executable(tracing1 tests/tracing1.cpp ${WRITE_SRC} ${READ_SRC} ${VULKAN_TESTS_SRC})
+add_executable(tracing1 tests/tracing1.cpp ${VULKAN_TESTS_SRC})
 target_include_directories(tracing1 ${COMMON_INCLUDE})
 target_link_libraries(tracing1 ${COMMON_LIBRARIES} lavatube)
 target_compile_options(tracing1 PRIVATE ${COMMON_FLAGS})
 add_dependencies(tracing1 sync_stuff)
 add_test(NAME trace_test_1_1 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/tracing1 0)
 add_test(NAME trace_test_1_2 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/tracing1 1)
-add_test(NAME trace_test_1_0_replay COMMAND ${CMAKE_CURRENT_BINARY_DIR}/replay tracing_1_2_0.vk)
-add_test(NAME trace_test_1_1_replay COMMAND ${CMAKE_CURRENT_BINARY_DIR}/replay -D tracing_1_2_1.vk)
-add_test(NAME trace_test_1_2_replay COMMAND ${CMAKE_CURRENT_BINARY_DIR}/replay -H 0 tracing_1_2_1.vk)
-add_test(NAME trace_test_2_1_replay COMMAND ${CMAKE_CURRENT_BINARY_DIR}/replay -B tracing_1_2_0.vk)
+add_test(NAME trace_test_1_0_replay COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay tracing_1_2_0.vk)
+add_test(NAME trace_test_1_1_replay COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -D tracing_1_2_1.vk)
+add_test(NAME trace_test_1_2_replay COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -H 0 tracing_1_2_1.vk)
+add_test(NAME trace_test_2_1_replay COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -B tracing_1_2_0.vk)
 
-add_executable(tracing2 tests/tracing2.cpp ${WRITE_SRC} ${READ_SRC} ${VULKAN_TESTS_SRC})
+add_executable(tracing2 tests/tracing2.cpp ${VULKAN_TESTS_SRC})
 target_include_directories(tracing2 ${COMMON_INCLUDE})
 target_link_libraries(tracing2 ${COMMON_LIBRARIES} lavatube)
 target_compile_options(tracing2 PRIVATE ${COMMON_FLAGS})
-add_dependencies(tracing2 sync_stuff replay)
+add_dependencies(tracing2 sync_stuff lava-replay)
 add_test(NAME trace_test_2 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/tracing2)
 set_tests_properties(trace_test_2 PROPERTIES FIXTURES_SETUP tracing_2)
-add_test(NAME trace_test_2_replay COMMAND ${CMAKE_CURRENT_BINARY_DIR}/replay -H 0 tracing_2.vk)
+add_test(NAME trace_test_2_replay COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -H 0 tracing_2.vk)
+add_test(NAME trace_test_2_dedicbuf1 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/tracing2)
+set_tests_properties(trace_test_2_dedicbuf1 PROPERTIES ENVIRONMENT "LAVATUBE_DEDICATED_BUFFER=1")
+add_test(NAME trace_test_2_chunksize COMMAND ${CMAKE_CURRENT_BINARY_DIR}/tracing2)
+set_tests_properties(trace_test_2_chunksize PROPERTIES ENVIRONMENT "LAVATUBE_CHUNK_SIZE=32767")
+add_test(NAME trace_test_2_virtqueue COMMAND ${CMAKE_CURRENT_BINARY_DIR}/tracing2)
+set_tests_properties(trace_test_2_virtqueue PROPERTIES ENVIRONMENT "LAVATUBE_VIRTUAL_QUEUES=1")
 
-add_executable(tracing3 tests/tracing3.cpp ${WRITE_SRC} ${READ_SRC} ${VULKAN_TESTS_SRC})
+add_executable(tracing3 tests/tracing3.cpp ${VULKAN_TESTS_SRC})
 target_include_directories(tracing3 ${COMMON_INCLUDE})
 target_link_libraries(tracing3 ${COMMON_LIBRARIES} lavatube)
 target_compile_options(tracing3 PRIVATE ${COMMON_FLAGS})
-add_dependencies(tracing3 sync_stuff replay)
+add_dependencies(tracing3 sync_stuff lava-replay)
 add_test(NAME trace_test_3 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/tracing3)
-add_test(NAME trace_test_3_replay_mp COMMAND ${CMAKE_CURRENT_BINARY_DIR}/replay tracing_3.vk)
+add_test(NAME trace_test_3_replay_mp COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay tracing_3.vk)
 
-add_executable(tracing4 tests/tracing4.cpp ${WRITE_SRC} ${READ_SRC} ${VULKAN_TESTS_SRC})
+add_executable(tracing4 tests/tracing4.cpp ${VULKAN_TESTS_SRC})
 target_include_directories(tracing4 ${COMMON_INCLUDE})
 target_link_libraries(tracing4 ${COMMON_LIBRARIES} lavatube)
 target_compile_options(tracing4 PRIVATE ${COMMON_FLAGS})
-add_dependencies(tracing4 sync_stuff replay)
+add_dependencies(tracing4 sync_stuff lava-replay)
 add_test(NAME trace_test_4_0_0 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/tracing4 -q 0 -m 0)
 add_test(NAME trace_test_4_1_0 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/tracing4 -q 1 -m 0 -c 5)
 add_test(NAME trace_test_4_2_0 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/tracing4 -q 2 -m 0)
@@ -293,52 +313,55 @@ add_test(NAME trace_test_4_1_2 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/tracing4 -q 1
 add_test(NAME trace_test_4_2_2 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/tracing4 -q 2 -m 2)
 add_test(NAME trace_test_4_3_2 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/tracing4 -q 3 -m 2)
 add_test(NAME trace_test_4_4_2 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/tracing4 -q 4 -m 2 -b 1000)
-add_test(NAME trace_test_4_replay_0 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/replay tracing_4_q0_m0_F0.vk)
-add_test(NAME trace_test_4_replay_1 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/replay tracing_4_q1_m1_F0.vk)
-add_test(NAME trace_test_4_replay_2 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/replay tracing_4_q2_m2_F0.vk)
-add_test(NAME trace_test_4_replay_3 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/replay tracing_4_q3_m0_F0.vk)
-add_test(NAME trace_test_4_replay_4 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/replay -N tracing_4_q4_m1_F0.vk)
-add_test(NAME trace_test_4_replay_5 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/replay -B tracing_4_q4_m1_F0.vk)
-add_test(NAME trace_test_4_replay_6 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/replay -v -w none -B tracing_4_q4_m1_F0.vk)
+add_test(NAME trace_test_4_replay_0 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay tracing_4_q0_m0_F0.vk)
+add_test(NAME trace_test_4_replay_1 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay tracing_4_q1_m1_F0.vk)
+add_test(NAME trace_test_4_replay_2 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay tracing_4_q2_m2_F0.vk)
+add_test(NAME trace_test_4_replay_3 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay tracing_4_q3_m0_F0.vk)
+add_test(NAME trace_test_4_replay_4 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -N tracing_4_q4_m1_F0.vk)
+add_test(NAME trace_test_4_replay_5 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -B tracing_4_q4_m1_F0.vk)
+add_test(NAME trace_test_4_replay_6 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -v -w none -B tracing_4_q4_m1_F0.vk)
+add_test(NAME trace_test_4_virtqueue COMMAND ${CMAKE_CURRENT_BINARY_DIR}/tracing4)
+set_tests_properties(trace_test_4_virtqueue PROPERTIES ENVIRONMENT "LAVATUBE_DESTINATION=tracing_4_virtqueue;LAVATUBE_VIRTUAL_QUEUES=1")
+add_test(NAME trace_test_4_virtqueue_replay COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay tracing_4_virtqueue.vk)
 
-add_executable(tracing5 tests/tracing5.cpp ${WRITE_SRC} ${READ_SRC} ${VULKAN_TESTS_SRC})
+add_executable(tracing5 tests/tracing5.cpp ${VULKAN_TESTS_SRC})
 target_include_directories(tracing5 ${COMMON_INCLUDE})
 target_link_libraries(tracing5 ${COMMON_LIBRARIES} lavatube)
 target_compile_options(tracing5 PRIVATE ${COMMON_FLAGS})
-add_dependencies(tracing5 sync_stuff replay)
+add_dependencies(tracing5 sync_stuff lava-replay)
 add_test(NAME trace_test_5 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/tracing5)
-add_test(NAME trace_test_5_replay COMMAND ${CMAKE_CURRENT_BINARY_DIR}/replay tracing_5.vk)
+add_test(NAME trace_test_5_replay COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay tracing_5.vk)
 
-add_executable(tracing6 tests/tracing6.cpp ${WRITE_SRC} ${READ_SRC} ${VULKAN_TESTS_SRC})
+add_executable(tracing6 tests/tracing6.cpp ${VULKAN_TESTS_SRC})
 target_include_directories(tracing6 ${COMMON_INCLUDE})
 target_link_libraries(tracing6 ${COMMON_LIBRARIES} lavatube)
 target_compile_options(tracing6 PRIVATE ${COMMON_FLAGS})
-add_dependencies(tracing6 sync_stuff replay)
+add_dependencies(tracing6 sync_stuff lava-replay)
 add_test(NAME trace_test_6 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/tracing6)
-add_test(NAME trace_test_6_replay COMMAND ${CMAKE_CURRENT_BINARY_DIR}/replay tracing_6.vk)
+add_test(NAME trace_test_6_replay COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay tracing_6.vk)
 
-add_executable(write1 tests/write1.cpp ${WRITE_SRC} ${READ_SRC})
+add_executable(write1 tests/write1.cpp)
 target_include_directories(write1 ${COMMON_INCLUDE})
 target_link_libraries(write1 ${COMMON_LIBRARIES} lavatube)
 target_compile_options(write1 PRIVATE ${COMMON_FLAGS})
 add_dependencies(write1 sync_stuff)
 add_test(NAME write_test_1 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/write1)
 
-add_executable(write2 tests/write2.cpp ${WRITE_SRC} ${READ_SRC})
+add_executable(write2 tests/write2.cpp)
 target_include_directories(write2 ${COMMON_INCLUDE})
 target_link_libraries(write2 ${COMMON_LIBRARIES} lavatube)
 target_compile_options(write2 PRIVATE ${COMMON_FLAGS})
 add_dependencies(write2 sync_stuff)
 add_test(NAME write_test_2 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/write2)
 
-add_executable(write3 tests/write3.cpp ${WRITE_SRC})
+add_executable(write3 tests/write3.cpp)
 target_include_directories(write3 ${COMMON_INCLUDE})
 target_link_libraries(write3 ${COMMON_LIBRARIES} lavatube)
 target_compile_options(write3 PRIVATE ${COMMON_FLAGS})
 add_dependencies(write3 sync_stuff)
 add_test(NAME write_test_3 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/write3)
 
-add_executable(read3 tests/read3.cpp ${READ_SRC})
+add_executable(read3 tests/read3.cpp)
 target_include_directories(read3 ${COMMON_INCLUDE})
 target_link_libraries(read3 ${COMMON_LIBRARIES} lavatube)
 target_compile_options(read3 PRIVATE ${COMMON_FLAGS})
@@ -346,7 +369,7 @@ add_dependencies(read3 sync_stuff)
 add_test(NAME read_test_3 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/read3)
 set_property(TEST read_test_3 APPEND PROPERTY DEPENDS write_test_3)
 
-add_executable(write3-2 tests/write3-2.cpp ${WRITE_SRC})
+add_executable(write3-2 tests/write3-2.cpp)
 target_include_directories(write3-2 ${COMMON_INCLUDE})
 target_link_libraries(write3-2 ${COMMON_LIBRARIES} lavatube)
 target_compile_options(write3-2 PRIVATE ${COMMON_FLAGS})
@@ -375,23 +398,24 @@ target_compile_options(write5 PRIVATE ${COMMON_FLAGS})
 add_dependencies(write5 sync_stuff)
 add_test(NAME write_test_5 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/write5)
 
-# --- replayer ---
+# --- lava-replay ---
 
-add_executable(replay src/replay.cpp ${READ_SRC})
-target_include_directories(replay ${COMMON_INCLUDE})
-target_link_libraries(replay ${COMMON_LIBRARIES} lavatube)
-target_compile_options(replay PRIVATE ${COMMON_FLAGS})
-add_dependencies(replay sync_stuff)
-add_test(NAME replayer_info COMMAND ${CMAKE_CURRENT_BINARY_DIR}/replay -i tracing_2.vk)
+add_executable(lava-replay src/replay.cpp)
+target_include_directories(lava-replay ${COMMON_INCLUDE})
+target_link_libraries(lava-replay ${COMMON_LIBRARIES} lavatube)
+target_compile_options(lava-replay PRIVATE ${COMMON_FLAGS})
+add_dependencies(lava-replay sync_stuff)
+add_test(NAME replayer_info COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -i tracing_2.vk)
 set_tests_properties(replayer_info PROPERTIES FIXTURES_REQUIRED tracing_2)
-add_test(NAME replayer_vulkan_demo COMMAND ${CMAKE_CURRENT_BINARY_DIR}/replay -B -w none -v -f 10 20 ${CMAKE_SOURCE_DIR}/traces/demo_computeraytracing.vk)
-add_test(NAME replayer_vkmark COMMAND ${CMAKE_CURRENT_BINARY_DIR}/replay -B -w none -v -f 5 9 ${CMAKE_SOURCE_DIR}/traces/vkmark_cube.vk)
-add_test(NAME replayer_samples COMMAND ${CMAKE_CURRENT_BINARY_DIR}/replay -B -w none -v -f 5 9 ${CMAKE_SOURCE_DIR}/traces/sample_hello_triangle.vk)
-add_test(NAME replayer_vkcube COMMAND ${CMAKE_CURRENT_BINARY_DIR}/replay -B -w none -v -f 5 9 ${CMAKE_SOURCE_DIR}/traces/lunarg_vkcube.vk)
+add_test(NAME replayer_vulkan_demo COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -B -w none -v -f 10 20 ${CMAKE_SOURCE_DIR}/traces/demo_computeraytracing.vk)
+add_test(NAME replayer_vkmark COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -B -w none -v -f 5 9 ${CMAKE_SOURCE_DIR}/traces/vkmark_cube.vk)
+add_test(NAME replayer_samples COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -B -w none -v -f 5 9 ${CMAKE_SOURCE_DIR}/traces/sample_hello_triangle.vk)
+add_test(NAME replayer_vkcube COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -B -w none -v -f 5 9 ${CMAKE_SOURCE_DIR}/traces/lunarg_vkcube.vk)
+install(TARGETS lava-replay RUNTIME)
 
-# --- lavatool ---
+# --- lava-tool ---
 
-add_executable(lavatool src/lavatool.cpp
+add_executable(lava-tool src/lavatool.cpp
 	${CMAKE_SOURCE_DIR}/external/jsoncpp/src/lib_json/json_writer.cpp
 	${CMAKE_SOURCE_DIR}/external/jsoncpp/src/lib_json/json_reader.cpp
 	${CMAKE_SOURCE_DIR}/external/jsoncpp/src/lib_json/json_value.cpp
@@ -400,50 +424,54 @@ add_executable(lavatool src/lavatool.cpp
 	${CMAKE_SOURCE_DIR}/src/util.cpp
 	${CMAKE_SOURCE_DIR}/src/util.h
 )
-target_include_directories(lavatool ${COMMON_INCLUDE})
-target_link_libraries(lavatool ${MOST_COMMON_LIBRARIES})
-target_compile_options(lavatool PRIVATE ${COMMON_FLAGS} -fPIC)
-add_test(NAME pack_test_1 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lavatool) # usage
+target_include_directories(lava-tool ${COMMON_INCLUDE})
+target_link_libraries(lava-tool ${MOST_COMMON_LIBRARIES})
+target_compile_options(lava-tool PRIVATE ${COMMON_FLAGS} -fPIC)
+add_test(NAME pack_test_1 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-tool) # usage
 set_tests_properties(pack_test_1 PROPERTIES FIXTURES_REQUIRED tracing_2)
-add_test(NAME pack_test_2 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lavatool extract debug.json tracing_2.vk)
+add_test(NAME pack_test_2 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-tool extract debug.json tracing_2.vk)
 set_tests_properties(pack_test_2 PROPERTIES FIXTURES_REQUIRED tracing_2)
-add_test(NAME pack_test_3_1 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lavatool print tracking.json tracing_2.vk)
+add_test(NAME pack_test_3_1 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-tool print tracking.json tracing_2.vk)
 set_tests_properties(pack_test_3_1 PROPERTIES FIXTURES_REQUIRED tracing_2)
-add_test(NAME pack_test_3_2 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lavatool extract thread_0.bin tracing_2.vk)
+add_test(NAME pack_test_3_2 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-tool extract thread_0.bin tracing_2.vk)
 set_tests_properties(pack_test_3_2 PROPERTIES FIXTURES_REQUIRED tracing_2)
-add_test(NAME pack_test_4 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lavatool unpack tmp_2 tracing_2.vk)
+add_test(NAME pack_test_4 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-tool unpack tmp_2 tracing_2.vk)
 set_tests_properties(pack_test_4 PROPERTIES FIXTURES_REQUIRED tracing_2)
 add_test(NAME pack_test_4_1 COMMAND cmp ${CMAKE_CURRENT_BINARY_DIR}/tmp_2/debug.json ${CMAKE_CURRENT_BINARY_DIR}/debug.json)
 set_tests_properties(pack_test_4_1 PROPERTIES FIXTURES_REQUIRED tracing_2)
 add_test(NAME pack_test_4_2 COMMAND cmp ${CMAKE_CURRENT_BINARY_DIR}/tmp_2/thread_0.bin ${CMAKE_CURRENT_BINARY_DIR}/thread_0.bin)
 set_tests_properties(pack_test_4_2 PROPERTIES FIXTURES_REQUIRED tracing_2)
-add_test(NAME pack_test_5 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lavatool list tracing_2.vk)
+add_test(NAME pack_test_5 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-tool list tracing_2.vk)
 set_tests_properties(pack_test_5 PROPERTIES FIXTURES_REQUIRED tracing_2)
-add_test(NAME pack_test_6 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lavatool check tracing_2.vk)
+add_test(NAME pack_test_6 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-tool check tracing_2.vk)
 set_tests_properties(pack_test_6 PROPERTIES FIXTURES_REQUIRED tracing_2)
+install(TARGETS lava-tool RUNTIME)
 
 # --- layer tests ---
 
 function(layer_test test_name test_exe)
-	add_test(NAME layer_test_${ARGV0} COMMAND ${CMAKE_CURRENT_BINARY_DIR}/tracetooltests/vulkan_${ARGV1} ${ARGV2} ${ARGV3})
+	add_test(NAME layer_test_${ARGV0} COMMAND ${CMAKE_CURRENT_BINARY_DIR}/tracetooltests/vulkan_${ARGV1} ${ARGV2} ${ARGV3} ${ARGV4} ${ARGV5} ${ARGV6} ${ARGV7})
 	set_tests_properties(layer_test_${ARGV0} PROPERTIES
 		FIXTURES_SETUP ${ARGV0}
-		ENVIRONMENT "LAVATUBE_DESTINATION=vulkan_${ARGV0};VK_LAYER_PATH=${CMAKE_CURRENT_BINARY_DIR}/implicit_layer.d;VK_INSTANCE_LAYERS=VK_LAYER_ARM_lavatube;LD_LIBRARY_PATH=${CMAKE_CURRENT_BINARY_DIR}/implicit_layer.d"
+		ENVIRONMENT "LAVATUBE_VIRTUAL_QUEUES=1;LAVATUBE_DESTINATION=vulkan_${ARGV0};VK_LAYER_PATH=${CMAKE_CURRENT_BINARY_DIR}/implicit_layer.d;VK_INSTANCE_LAYERS=VK_LAYER_ARM_lavatube;LD_LIBRARY_PATH=${CMAKE_CURRENT_BINARY_DIR}/implicit_layer.d"
 		SKIP_RETURN_CODE 77
 	)
-	add_test(NAME layer_test_${ARGV0}_replay COMMAND ${CMAKE_CURRENT_BINARY_DIR}/replay -V vulkan_${ARGV0}.vk)
+	add_test(NAME layer_test_${ARGV0}_replay COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -V vulkan_${ARGV0}.vk)
 	set_tests_properties(layer_test_${ARGV0}_replay PROPERTIES FIXTURES_REQUIRED ${ARGV0})
-	add_test(NAME layer_test_${ARGV0}_replay_blackhole COMMAND ${CMAKE_CURRENT_BINARY_DIR}/replay -B vulkan_${ARGV0}.vk)
+	add_test(NAME layer_test_${ARGV0}_replay_blackhole COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -B vulkan_${ARGV0}.vk)
 	set_tests_properties(layer_test_${ARGV0}_replay_blackhole PROPERTIES FIXTURES_REQUIRED ${ARGV0})
-	add_test(NAME layer_test_${ARGV0}_replay_blackhole_nonewsi COMMAND ${CMAKE_CURRENT_BINARY_DIR}/replay -B -v -w none vulkan_${ARGV0}.vk)
+	add_test(NAME layer_test_${ARGV0}_replay_blackhole_nonewsi COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -B -v -w none vulkan_${ARGV0}.vk)
 	set_tests_properties(layer_test_${ARGV0}_replay_blackhole_nonewsi PROPERTIES FIXTURES_REQUIRED ${ARGV0})
-	add_test(NAME layer_test_${ARGV0}_replay_nonewsi COMMAND ${CMAKE_CURRENT_BINARY_DIR}/replay -v -w none vulkan_${ARGV0}.vk)
+	add_test(NAME layer_test_${ARGV0}_replay_nonewsi COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -v -w none vulkan_${ARGV0}.vk)
 	set_tests_properties(layer_test_${ARGV0}_replay_nonewsi PROPERTIES FIXTURES_REQUIRED ${ARGV0})
 endfunction()
 
 layer_test(general general)
 add_test(NAME layer_test_general_fencedelay COMMAND ${CMAKE_CURRENT_BINARY_DIR}/tracetooltests/vulkan_general -f 1)
 set_tests_properties(layer_test_general_fencedelay PROPERTIES ENVIRONMENT "VK_LAYER_PATH=${CMAKE_CURRENT_BINARY_DIR}/implicit_layer.d;VK_INSTANCE_LAYERS=VK_LAYER_ARM_lavatube;LD_LIBRARY_PATH=${CMAKE_CURRENT_BINARY_DIR}/implicit_layer.d;LAVATUBE_DELAY_FENCE_SUCCESS_FRAMES=1;")
+add_test(NAME script_test_general COMMAND ${CMAKE_SOURCE_DIR}/scripts/lava-capture.py -o script_test_general.vk --layer-path ${CMAKE_CURRENT_BINARY_DIR}/implicit_layer.d ${CMAKE_CURRENT_BINARY_DIR}/tracetooltests/vulkan_general -f 0 -V 2)
+add_test(NAME script_test_general_fencedelay COMMAND ${CMAKE_SOURCE_DIR}/scripts/lava-capture.py -o script_test_general_fencedelay.vk --layer-path ${CMAKE_CURRENT_BINARY_DIR}/implicit_layer.d --delayfence 1 ${CMAKE_CURRENT_BINARY_DIR}/tracetooltests/vulkan_general -f 1)
+add_test(NAME script_test_copying_1 COMMAND ${CMAKE_SOURCE_DIR}/scripts/lava-capture.py -o script_test_copying_1.vk --dedicated-buffer --gpu 0 --layer-path ${CMAKE_CURRENT_BINARY_DIR}/implicit_layer.d ${CMAKE_CURRENT_BINARY_DIR}/tracetooltests/vulkan_copying_1 -V 2)
 #layer_test(general_vulkan13 general -V 3) # crashes on replay on privatedata
 layer_test(copying_1 copying_1)
 layer_test(copying_1_q1 copying_1 -q 1)
@@ -453,6 +481,7 @@ layer_test(copying_1_q4 copying_1 -q 4)
 layer_test(copying_1_q5 copying_1 -q 5)
 layer_test(copying_1_m1 copying_1 -m 1)
 layer_test(copying_1_m2 copying_1 -m 2)
+layer_test(copying_1_bda copying_1 -B -D -V 2)
 layer_test(copying_2 copying_2 -q 1)
 layer_test(copying_2_vulkan13 copying_2 -V 3 -q 1)
 layer_test(copying_3 copying_3)
@@ -461,23 +490,23 @@ layer_test(memory_1_1 memory_1_1)
 layer_test(thread_1 thread_1)
 layer_test(thread_2 thread_2)
 layer_test(thread_3 thread_3)
-add_test(NAME layer_test_thread_3_replay_blackhole_stress_1 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/replay -V -B vulkan_thread_3.vk)
+add_test(NAME layer_test_thread_3_replay_blackhole_stress_1 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -V -B vulkan_thread_3.vk)
 set_tests_properties(layer_test_thread_3_replay_blackhole_stress_1 PROPERTIES FIXTURES_REQUIRED thread_3)
-add_test(NAME layer_test_thread_3_replay_blackhole_stress_2 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/replay -D -B vulkan_thread_3.vk)
+add_test(NAME layer_test_thread_3_replay_blackhole_stress_2 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -D -B vulkan_thread_3.vk)
 set_tests_properties(layer_test_thread_3_replay_blackhole_stress_2 PROPERTIES FIXTURES_REQUIRED thread_3)
-add_test(NAME layer_test_thread_3_replay_blackhole_stress_3 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/replay -B vulkan_thread_3.vk)
+add_test(NAME layer_test_thread_3_replay_blackhole_stress_3 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -B vulkan_thread_3.vk)
 set_tests_properties(layer_test_thread_3_replay_blackhole_stress_3 PROPERTIES FIXTURES_REQUIRED thread_3)
-add_test(NAME layer_test_thread_3_replay_blackhole_stress_4 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/replay -B vulkan_thread_3.vk)
+add_test(NAME layer_test_thread_3_replay_blackhole_stress_4 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -B vulkan_thread_3.vk)
 set_tests_properties(layer_test_thread_3_replay_blackhole_stress_4 PROPERTIES FIXTURES_REQUIRED thread_3)
-add_test(NAME layer_test_thread_3_replay_blackhole_stress_5 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/replay -B vulkan_thread_3.vk)
+add_test(NAME layer_test_thread_3_replay_blackhole_stress_5 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -B vulkan_thread_3.vk)
 set_tests_properties(layer_test_thread_3_replay_blackhole_stress_5 PROPERTIES FIXTURES_REQUIRED thread_3)
-add_test(NAME layer_test_thread_3_replay_blackhole_stress_6 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/replay -B vulkan_thread_3.vk)
+add_test(NAME layer_test_thread_3_replay_blackhole_stress_6 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -B vulkan_thread_3.vk)
 set_tests_properties(layer_test_thread_3_replay_blackhole_stress_6 PROPERTIES FIXTURES_REQUIRED thread_3)
-add_test(NAME layer_test_thread_3_replay_blackhole_stress_7 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/replay -B vulkan_thread_3.vk)
+add_test(NAME layer_test_thread_3_replay_blackhole_stress_7 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -B vulkan_thread_3.vk)
 set_tests_properties(layer_test_thread_3_replay_blackhole_stress_7 PROPERTIES FIXTURES_REQUIRED thread_3)
-add_test(NAME layer_test_thread_3_replay_blackhole_stress_8 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/replay -B vulkan_thread_3.vk)
+add_test(NAME layer_test_thread_3_replay_blackhole_stress_8 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -B vulkan_thread_3.vk)
 set_tests_properties(layer_test_thread_3_replay_blackhole_stress_8 PROPERTIES FIXTURES_REQUIRED thread_3)
-add_test(NAME layer_test_thread_3_replay_blackhole_stress_9 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/replay -B vulkan_thread_3.vk)
+add_test(NAME layer_test_thread_3_replay_blackhole_stress_9 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -B vulkan_thread_3.vk)
 set_tests_properties(layer_test_thread_3_replay_blackhole_stress_9 PROPERTIES FIXTURES_REQUIRED thread_3)
 layer_test(compute_1 compute_1)
 add_test(NAME layer_test_compute_1_1 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/tracetooltests/vulkan_compute_1 -pc)
@@ -486,7 +515,7 @@ add_test(NAME layer_test_compute_1_2 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/traceto
 set_tests_properties(layer_test_compute_1_1 PROPERTIES ENVIRONMENT "VK_LAYER_PATH=${CMAKE_CURRENT_BINARY_DIR}/implicit_layer.d;VK_INSTANCE_LAYERS=VK_LAYER_ARM_lavatube;LD_LIBRARY_PATH=${CMAKE_CURRENT_BINARY_DIR}/implicit_layer.d;")
 add_test(NAME layer_test_compute_1_3 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/tracetooltests/vulkan_compute_1 -pc -pcf test.bin)
 set_tests_properties(layer_test_compute_1_1 PROPERTIES ENVIRONMENT "VK_LAYER_PATH=${CMAKE_CURRENT_BINARY_DIR}/implicit_layer.d;VK_INSTANCE_LAYERS=VK_LAYER_ARM_lavatube;LD_LIBRARY_PATH=${CMAKE_CURRENT_BINARY_DIR}/implicit_layer.d;")
-add_custom_command(TARGET lavatool PRE_BUILD COMMAND rm -f test.bin)
+add_custom_command(TARGET lava-tool PRE_BUILD COMMAND rm -f test.bin)
 layer_test(compute_2 compute_2)
 layer_test(feature_1 feature_1)
 layer_test(tool_1 tool_1)

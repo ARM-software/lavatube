@@ -1,4 +1,7 @@
-#!/usr/bin/python2
+#!/usr/bin/python3
+
+import sys
+sys.path.append('external/tracetooltests/scripts')
 
 import xml.etree.ElementTree as ET
 import re
@@ -7,6 +10,18 @@ import collections
 import spec
 
 spec.init()
+
+feature_detection_structs = []
+feature_detection_funcs = []
+detect_words = []
+with open('include/feature_detect.h', 'r') as f:
+	for line in f:
+		m = re.search('check_(\w+)', line)
+		if m:
+			detect_words.append(m.group(1))
+for name in spec.structures:
+	if name in detect_words:
+		feature_detection_structs.append(name)
 
 # Set this to zero to enable injecting sentinel values between each real value.
 debugcount = -1
@@ -35,8 +50,23 @@ extra_optionals = {
 		'pViewports': '(!isDynamicViewports)',
 		'pScissors': '(!isDynamicScissors)',
 	},
+	'VkDeviceCreateInfo': {
+		'ppEnabledLayerNames': 'false', # deprecated and ignored
+	},
 	'VkBufferCreateInfo': {
 		'pQueueFamilyIndices': '(sptr->sharingMode == VK_SHARING_MODE_CONCURRENT)',
+	},
+	'VkImageCreateInfo': {
+		'pQueueFamilyIndices': '(sptr->sharingMode == VK_SHARING_MODE_CONCURRENT)',
+	},
+	'VkSwapchainCreateInfoKHR': {
+		'pQueueFamilyIndices': '(sptr->imageSharingMode == VK_SHARING_MODE_CONCURRENT)', # implicitly regarded as ignorable
+	},
+	'VkPhysicalDeviceImageDrmFormatModifierInfoEXT': {
+		'pQueueFamilyIndices': '(sptr->sharingMode == VK_SHARING_MODE_CONCURRENT)',
+	},
+	'VkFramebufferCreateInfo': {
+		'pAttachments': '!(sptr->flags & VK_FRAMEBUFFER_CREATE_IMAGELESS_BIT)',
 	},
 	# this depends on state outside of the function parameters...
 	'VkCommandBufferBeginInfo': {
@@ -44,31 +74,25 @@ extra_optionals = {
 	},
 }
 
-command_names = {
-	'vkCmdDispatchIndirect': 'VkDispatchIndirectCommand',
-	'vkCmdDrawIndirect': 'VkDrawIndirectCommand',
-	'vkCmdDrawIndexedIndirect': 'VkDrawIndexedIndirectCommand',
-	'vkCmdDrawMeshTasksIndirectEXT': 'VkDrawMeshTasksIndirectCommandEXT',
-	'vkCmdDrawIndirectCount': 'VkDrawIndirectCommand',
-	'vkCmdDrawIndirectCountAMD': 'VkDrawIndirectCommand',
-	'vkCmdDrawIndexedIndirectCount': 'VkDrawIndexedIndirectCommand',
-	'vkCmdDrawIndexedIndirectCountAMD': 'VkDrawIndexedIndirectCommand',
-}
+# Need to make extra sure these are externally synchronized
+extra_sync = [ 'vkQueueSubmit', 'vkQueueSubmit2', 'vkQueueWaitIdle', 'vkQueueBindSparse', 'vkDestroyDevice' ]
 
 skip_opt_check = ['pAllocator', 'pUserData', 'pfnCallback', 'pfnUserCallback', 'pNext' ]
 # for these, thread barrier goes before the function call to sync us up to other threads:
 thread_barrier_funcs = [ 'vkQueueSubmit', 'vkResetDescriptorPool', 'vkResetCommandPool', 'vkUnmapMemory', 'vkFlushMappedMemoryRanges', 'vkResetQueryPool',
-	'vkResetQueryPoolEXT', 'vkQueueSubmit2', 'vkQueueSubmit2EXT', 'vkQueuePresentKHR', 'vkFrameEndTRACETOOLTEST' ]
+	'vkResetQueryPoolEXT', 'vkQueueSubmit2', 'vkQueueSubmit2EXT', 'vkQueuePresentKHR', 'vkFrameEndTRACETOOLTEST', 'vkUnmapMemory2KHR' ]
 # for these, thread barrier goes after the function call to sync other threads up to us:
 push_thread_barrier_funcs = [ 'vkQueueWaitIdle', 'vkDeviceWaitIdle', 'vkResetDescriptorPool', 'vkResetQueryPool', 'vkResetQueryPoolEXT', 'vkResetCommandPool',
 	'vkQueuePresentKHR', 'vkWaitForFences', 'vkGetFenceStatus', 'vkFrameEndTRACETOOLTEST' ]
 
 # TODO : Add support for these functions and structures
 functions_noop = [
-	"vkUpdateDescriptorSetWithTemplateKHR", "vkUpdateDescriptorSetWithTemplate", "vkCmdPushDescriptorSetWithTemplateKHR",
-	'vkGetPipelinePropertiesEXT', 'vkUpdateDescriptorSetWithTemplate', 'vkCmdUpdateBuffer',
-	'vkCmdBuildMicromapsEXT', 'vkBuildMicromapsEXT', 'vkGetMicromapBuildSizesEXT',
-	'vkGetDeviceFaultInfoEXT' # we never want to trace this, but rather inject it during tracing if device loss happens, print the info, then abort
+	"vkUpdateDescriptorSetWithTemplateKHR", "vkUpdateDescriptorSetWithTemplate", "vkCmdPushDescriptorSetWithTemplateKHR", 'vkGetImageViewOpaqueCaptureDescriptorDataEXT',
+	'vkGetPipelinePropertiesEXT', 'vkUpdateDescriptorSetWithTemplate', 'vkCmdUpdateBuffer', 'vkGetBufferOpaqueCaptureDescriptorDataEXT',
+	'vkCmdBuildMicromapsEXT', 'vkBuildMicromapsEXT', 'vkGetMicromapBuildSizesEXT', 'vkGetImageOpaqueCaptureDescriptorDataEXT', 'vkGetSamplerOpaqueCaptureDescriptorDataEXT',
+	'vkGetDeviceFaultInfoEXT', # we never want to trace this, but rather inject it during tracing if device loss happens, print the info, then abort
+	'vkGetAccelerationStructureOpaqueCaptureDescriptorDataEXT', 'vkCmdPushDescriptorSetWithTemplate2KHR', 'vkCmdSetRenderingInputAttachmentIndicesKHR',
+	'vkGetEncodedVideoSessionParametersKHR',
 ]
 struct_noop = []
 
@@ -93,7 +117,7 @@ hardcoded = [ 'vkGetSwapchainImagesKHR', 'vkCreateAndroidSurfaceKHR', 'vkGetDevi
 	'vkDestroySurfaceKHR', 'vkGetDeviceQueue', 'vkGetDeviceQueue2', "vkGetAndroidHardwareBufferPropertiesANDROID", "vkGetMemoryAndroidHardwareBufferANDROID",
 	'vkEnumerateInstanceLayerProperties', 'vkEnumerateInstanceExtensionProperties', 'vkEnumerateDeviceLayerProperties', 'vkEnumerateDeviceExtensionProperties',
 	'vkGetPhysicalDeviceXlibPresentationSupportKHR', 'vkCreateWin32SurfaceKHR', 'vkCreateDirectFBSurfaceEXT', 'vkCreateMetalSurfaceEXT' ]
-hardcoded_write = [ 'vkGetPhysicalDeviceToolPropertiesEXT', 'vkGetPhysicalDeviceToolProperties' ]
+hardcoded_write = [ 'vkGetPhysicalDeviceToolPropertiesEXT', 'vkGetPhysicalDeviceToolProperties', 'vkGetPhysicalDeviceQueueFamilyProperties' ]
 hardcoded_read = [ 'vkCmdBuildAccelerationStructuresIndirectKHR' ]
 # For these functions it is ok if the function pointer is missing, since we implement them ourselves
 layer_implemented = [ 'vkCreateDebugReportCallbackEXT', 'vkDestroyDebugReportCallbackEXT', 'vkDebugReportMessageEXT', 'vkDebugMarkerSetObjectTagEXT',
@@ -101,52 +125,57 @@ layer_implemented = [ 'vkCreateDebugReportCallbackEXT', 'vkDestroyDebugReportCal
 	'vkSetDebugUtilsObjectTagEXT',	'vkQueueBeginDebugUtilsLabelEXT', 'vkQueueEndDebugUtilsLabelEXT', 'vkQueueInsertDebugUtilsLabelEXT',
 	'vkCmdBeginDebugUtilsLabelEXT', 'vkCmdEndDebugUtilsLabelEXT', 'vkCmdInsertDebugUtilsLabelEXT', 'vkCreateDebugUtilsMessengerEXT',
 	'vkDestroyDebugUtilsMessengerEXT', 'vkSubmitDebugUtilsMessageEXT', 'vkGetPhysicalDeviceToolPropertiesEXT', 'vkGetPhysicalDeviceToolProperties' ]
-# Functions that can run before instance creation, and must not try to order their execution sequence for this reason
-no_sequencing = [ 'vkEnumerateInstanceVersion', 'vkGetInstanceProcAddr', 'vkEnumerateInstanceLayerProperties', 'vkEnumerateInstanceExtensionProperties' ]
 # functions we should ignore on replay
 ignore_on_read = [ 'vkGetMemoryHostPointerPropertiesEXT', 'vkCreateDebugUtilsMessengerEXT', 'vkDestroyDebugUtilsMessengerEXT', 'vkAllocateMemory',
 	'vkMapMemory', 'vkUnmapMemory', 'vkCreateDebugReportCallbackEXT', 'vkDestroyDebugReportCallbackEXT', 'vkFlushMappedMemoryRanges',
-	'vkInvalidateMappedMemoryRanges', 'vkFreeMemory', 'vkGetPhysicalDeviceXcbPresentationSupportKHR',
+	'vkInvalidateMappedMemoryRanges', 'vkFreeMemory', 'vkGetPhysicalDeviceXcbPresentationSupportKHR', 'vkMapMemory2KHR', 'vkUnmapMemory2KHR',
 	'vkGetImageMemoryRequirements2KHR', 'vkGetBufferMemoryRequirements2KHR', 'vkGetImageSparseMemoryRequirements2KHR', 'vkGetImageMemoryRequirements',
 	'vkGetBufferMemoryRequirements', 'vkGetImageSparseMemoryRequirements', 'vkGetImageMemoryRequirements2', 'vkGetBufferMemoryRequirements2',
 	'vkGetImageSparseMemoryRequirements2' ]
-no_sequencing.extend(ignore_on_read) # no need to sequence these
 # functions we should not call natively when tracing - let pre or post calls handle it
 ignore_on_trace = []
 # these functions have hard-coded post-execute callbacks
 replay_pre_calls = [ 'vkDestroyInstance', 'vkDestroyDevice', 'vkCreateDevice', 'vkCreateSampler', 'vkQueuePresentKHR', 'vkCreateSwapchainKHR',
 	'vkCreateSharedSwapchainsKHR' ]
 replay_post_calls = [ 'vkCreateInstance', 'vkCreateDevice', 'vkDestroyInstance', 'vkQueuePresentKHR', 'vkAcquireNextImageKHR', 'vkAcquireNextImage2KHR' ]
-trace_pre_calls = [ 'vkUnmapMemory', 'vkQueueSubmit', 'vkCreateInstance', 'vkCreateDevice', 'vkFreeMemory', 'vkQueueSubmit2', 'vkQueueSubmit2KHR' ]
+trace_pre_calls = [ 'vkQueueSubmit', 'vkCreateInstance', 'vkCreateDevice', 'vkFreeMemory', 'vkQueueSubmit2', 'vkQueueSubmit2KHR' ]
 trace_post_calls = [ 'vkCreateInstance', 'vkCreateDevice', 'vkDestroyInstance', 'vkGetPhysicalDeviceFeatures', 'vkGetPhysicalDeviceProperties',
 		'vkGetPhysicalDeviceSurfaceCapabilitiesKHR', 'vkBindImageMemory', 'vkBindBufferMemory', 'vkBindImageMemory2', 'vkBindImageMemory2KHR',
-		'vkBindBufferMemory2', 'vkUpdateDescriptorSets', 'vkFlushMappedMemoryRanges', 'vkQueuePresentKHR',
-		'vkMapMemory', 'vkUnmapMemory', 'vkCmdBindDescriptorSets', 'vkBindBufferMemory2KHR', 'vkCmdPushDescriptorSet',
+		'vkBindBufferMemory2', 'vkUpdateDescriptorSets', 'vkFlushMappedMemoryRanges', 'vkQueuePresentKHR', 'vkMapMemory2KHR',
+		'vkMapMemory', 'vkCmdBindDescriptorSets', 'vkBindBufferMemory2KHR', 'vkCmdPushDescriptorSet',
 		'vkGetImageMemoryRequirements', 'vkGetPipelineCacheData', 'vkAcquireNextImageKHR', 'vkAcquireNextImage2KHR',
 		'vkGetBufferMemoryRequirements', 'vkGetBufferMemoryRequirements2', 'vkGetImageMemoryRequirements2', 'vkGetPhysicalDeviceMemoryProperties',
 		'vkGetPhysicalDeviceFormatProperties', 'vkGetPhysicalDeviceFormatProperties2', 'vkCmdPushDescriptorSetKHR', 'vkCreateSwapchainKHR',
 		'vkGetBufferMemoryRequirements2KHR', 'vkGetDeviceBufferMemoryRequirements', 'vkGetDeviceBufferMemoryRequirementsKHR',
 		'vkGetDeviceImageMemoryRequirements', 'vkGetDeviceImageMemoryRequirementsKHR', 'vkGetPhysicalDeviceFeatures2', 'vkGetPhysicalDeviceFeatures2KHR',
-		'vkGetPhysicalDeviceMemoryProperties2' ]
+		'vkGetPhysicalDeviceMemoryProperties2', 'vkGetDeviceImageSparseMemoryRequirementsKHR', 'vkGetDeviceImageSparseMemoryRequirements',
+		'vkCreateShaderModule' ]
 skip_post_calls = [ 'vkGetQueryPoolResults', 'vkGetPhysicalDeviceXcbPresentationSupportKHR' ]
-# Awful workaround to be able to rewrite inputs while tracing: These input variables are copied and replaced to not be const anymore.
+# Workaround to be able to rewrite parameter inputs while tracing: These input variables are copied and replaced to not be const anymore.
 deconstify = {
 	'vkAllocateMemory' : 'pAllocateInfo',
 	'vkCreateInstance' : 'pCreateInfo',
 	'vkCreateDevice' : 'pCreateInfo',
 	'vkCreateSampler' : 'pCreateInfo',
 	'vkCreateSwapchainKHR' : 'pCreateInfo',
+	'vkCreateCommandPool' : 'pCreateInfo',
+	'vkGetPhysicalDeviceQueueFamilyPerformanceQueryPassesKHR' : 'pPerformanceQueryCreateInfo',
+	'vkCreateVideoSessionKHR' : 'pCreateInfo',
 }
+# Workaround to deconstify nested structures
+deconst_struct = [
+	'VkDeviceQueueCreateInfo', 'VkDeviceQueueInfo2', 'VkQueryPoolPerformanceCreateInfoKHR', 'VkVideoSessionCreateInfoKHR', 'VkDeviceCreateInfo', 'VkCommandPoolCreateInfo'
+]
 # Subclassing of trackable
 trackable_type_map_general = { 'VkBuffer': 'trackedbuffer', 'VkImage': 'trackedimage', 'VkCommandBuffer': 'trackedcmdbuffer', 'VkDescriptorSet': 'trackeddescriptorset',
 	'VkDeviceMemory': 'trackedmemory', 'VkFence': 'trackedfence', 'VkPipeline': 'trackedpipeline', 'VkImageView': 'trackedimageview', 'VkBufferView': 'trackedbufferview',
-	'VkDevice': 'trackeddevice', 'VkFramebuffer': 'trackedframebuffer', 'VkRenderPass': 'trackedrenderpass' }
+	'VkDevice': 'trackeddevice', 'VkFramebuffer': 'trackedframebuffer', 'VkRenderPass': 'trackedrenderpass', 'VkQueue': 'trackedqueue', 'VkPhysicalDevice': 'trackedphysicaldevice',
+	'VkShaderModule': 'trackedshadermodule' }
 trackable_type_map_trace = trackable_type_map_general.copy()
 trackable_type_map_trace.update({ 'VkCommandBuffer': 'trackedcmdbuffer_trace', 'VkSwapchainKHR': 'trackedswapchain_trace', 'VkDescriptorSet': 'trackeddescriptorset_trace',
-	'VkQueue': 'trackedqueue_trace', 'VkEvent': 'trackedevent_trace', 'VkDescriptorPool': 'trackeddescriptorpool_trace', 'VkCommandPool': 'trackedcommandpool_trace' })
+	'VkEvent': 'trackedevent_trace', 'VkDescriptorPool': 'trackeddescriptorpool_trace', 'VkCommandPool': 'trackedcommandpool_trace' })
 trackable_type_map_replay = trackable_type_map_general.copy()
-trackable_type_map_replay.update({ 'VkCommandBuffer': 'trackedcmdbuffer_replay', 'VkDescriptorSet': 'trackeddescriptorset_replay', 'VkSwapchainKHR': 'trackedswapchain_replay',
-	'VkQueue': 'trackedqueue_replay' })
+trackable_type_map_replay.update({ 'VkCommandBuffer': 'trackedcmdbuffer_replay', 'VkDescriptorSet': 'trackeddescriptorset_replay', 'VkSwapchainKHR': 'trackedswapchain_replay' })
 
 # Parse element size, which can be weird
 def getraw(val):
@@ -165,14 +194,13 @@ def getsize(raw):
 
 def typetmpname(root):
 	assert not '[' in root, 'Bad name %s' % root
-	return 'tmp_' + root[0] + root.translate(None, '_*-.:<> ')
+	return 'tmp_' + root[0] + root.translate(root.maketrans('', '', '_*-.:<> '))
 
 # Used to split output into declarations and instructions. This is needed because
 # we need things declared inside narrower scopes to outlive those scopes, and it
 # is nice for reusing temporaries (some functions would use a lot of them).
 class spool(object):
 	def __init__(self):
-		self.loops = 0
 		self.declarations = []
 		self.instructions = []
 		self.before_instr = []
@@ -236,19 +264,19 @@ class spool(object):
 
 	def dump(self):
 		for v in self.first_lines:
-			print >> self.out, '\t' + v
+			print('\t' + v, file=self.out)
 		if len(self.declarations) > 0:
-			print >> self.out, '\t// -- Declarations --'
+			print('\t// -- Declarations --', file=self.out)
 		for v in self.declarations:
-			print >> self.out, '\t' + v
+			print('\t' + v, file=self.out)
 		if len(self.before_instr) > 0:
-			print >> self.out, '\t// -- Initializations --'
+			print('\t// -- Initializations --', file=self.out)
 		for v in self.before_instr:
-			print >> self.out, '\t' + v
+			print('\t' + v, file=self.out)
 		if len(self.instructions) > 0 and (len(self.before_instr) > 0 or len(self.declarations) > 0):
-			print >> self.out, '\t// -- Instructions --'
+			print('\t// -- Instructions --', file=self.out)
 		for v in self.instructions:
-			print >> self.out, v
+			print(v, file=self.out)
 		self.declarations = []
 		self.instructions = []
 		self.indents = 1
@@ -285,11 +313,9 @@ class spool(object):
 
 	def loop_begin(self):
 		self.brace_begin()
-		self.loops += 1
 
 	def loop_end(self):
 		self.brace_end()
-		self.loops -= 1
 
 	# Generate enough variants of a backing store in case of loops or struct variants
 	# Only usable in the replayer.
@@ -368,12 +394,10 @@ class parameter(object):
 			self.length = self.length.replace(',1', '')
 		if self.length and '::' in self.length:
 			self.length = self.length.replace('::','->')
-		if not self.length and '[' in raw: # ie fixed length array
-			length = node.find('enum')
-			if length is not None:
-				self.length = length.text
-			else: # naked numeral
-				self.length = getsize(raw)
+		if '[' in raw: # fixed length array?
+			enum_length = node.find('enum')
+			if enum_length: self.length = length.text # an enum define
+			else: self.length = getsize(raw) # a numeric value
 		if self.length and (self.length.isdigit() or self.length.isupper()):
 			self.fixedsize = True # fixed length array
 		self.structure = self.type in spec.structures
@@ -381,7 +405,7 @@ class parameter(object):
 		self.nondisphandle = self.type in spec.nondisp_handles
 		self.inparam = (not self.ptr or self.const) # else out parameter
 		self.string_array = self.length and ',null-terminated' in self.length and self.type == 'char'
-		self.string = self.length == 'null-terminated' and self.type == 'char'
+		self.string = self.length == 'null-terminated' and self.type == 'char' and not self.string_array and not self.fixedsize
 		self.read = read
 
 		# We need to be really defensive and treat all pointers as potentially optional. We cannot trust the optional XML
@@ -440,6 +464,10 @@ class parameter(object):
 
 	def print_struct(self, mytype, varname, owner, size = None):
 		global z
+		side = ('reader' if self.read else 'writer')
+
+		if mytype in deconst_struct and not self.read and self.funcname[0] == 'V':
+			z.do('%s* %s_impl = %s.pool.allocate<%s>(%s);' % (mytype, self.name, side, mytype, '1' if not size else size))
 
 		accessor = varname
 		if size:
@@ -457,9 +485,23 @@ class parameter(object):
 		elif mytype == 'VkDeviceCreateInfo' and self.read: accessor += ', physicalDevice'
 		elif ('VkBindImageMemoryInfo' in mytype or 'VkBindBufferMemoryInfo' in mytype) and self.read: accessor += ', device'
 
-		z.do('%s_%s(%s, %s);' % (('read' if self.read else 'write'), mytype, ('reader' if self.read else 'writer'), accessor))
+		if self.funcname[0] == 'V' and mytype in deconst_struct and not self.read: # we cannot modify passed in memory when writing
+			if size:
+				z.do('%s_impl[sidx] = %s[sidx]; // struct copy, discarding the const' % (self.name, varname))
+				z.do('%s_%s(%s, &%s_impl[sidx]);' % (('read' if self.read else 'write'), mytype, side, self.name))
+			else:
+				z.do('*%s_impl = *%s; // struct copy, discarding the const' % (self.name, varname))
+				z.do('%s_%s(%s, %s_impl);' % (('read' if self.read else 'write'), mytype, side, self.name))
+				z.do('%s = %s_impl; // replacing pointer' % (accessor, self.name))
+		elif mytype in deconst_struct and self.read and self.funcname[0] == 'V':
+			z.do('%s_%s(%s, (%s*)%s);' % (('read' if self.read else 'write'), mytype, side, mytype, accessor))
+		else:
+			z.do('%s_%s(%s, %s);' % (('read' if self.read else 'write'), mytype, side, accessor))
+
 		if size:
 			z.loop_end()
+			if self.funcname[0] == 'V' and mytype in deconst_struct and not self.read:
+				z.do('%s = %s_impl; // replacing pointer' % (varname, self.name))
 
 	def print_load(self, name, owner): # called for each parameter
 		global z
@@ -492,13 +534,12 @@ class parameter(object):
 			z.do('%s = reader.pool.allocate<VkAccelerationStructureBuildRangeInfoKHR*>(infoCount);' % varname)
 			z.do('for (unsigned i = 0; i < infoCount; i++) %s[i] = reader.pool.allocate<VkAccelerationStructureBuildRangeInfoKHR>(pInfos[i].geometryCount);' % varname)
 			z.do('for (unsigned i = 0; i < infoCount; i++) for (unsigned j = 0; j < pInfos[i].geometryCount; j++) { auto* p = %s[i]; read_VkAccelerationStructureBuildRangeInfoKHR(reader, &p[j]); }' % varname)
-		#elif self.name == 'queueFamilyIndex':
-		#	z.decl('uint32_t', self.name)
-		#	z.do('%s = selected_queue_family_index;' % self.name)
-		#	z.do('(void)reader.read_uint32_t(); // ignore stored %s' % self.name)
-		#	if not is_root:
-		#		z.do('%s = %s;' % (varname, self.name))
-		elif (self.name == 'ppData' and self.funcname == 'vkMapMemory') or self.name == 'pHostPointer':
+		elif self.name == 'queueFamilyIndex':
+			z.decl('uint32_t', self.name)
+			z.do('%s = reader.read_uint32_t();' % self.name)
+			z.do('if (%s == LAVATUBE_VIRTUAL_QUEUE) %s = selected_queue_family_index;' % (self.name, self.name))
+			if not is_root: z.do('%s = %s;' % (varname, self.name))
+		elif (self.name == 'ppData' and self.funcname in ['vkMapMemory', 'vkMapMemory2KHR']) or self.name == 'pHostPointer':
 			z.decl('%s%s%s' % (self.mod, self.type, self.param_ptrstr), self.name)
 		elif self.name == 'pfnUserCallback' and self.funcname == 'VkDebugUtilsMessengerCreateInfoEXT':
 			z.do('%s = messenger_callback; // hijacking this pointer with our own callback function' % varname)
@@ -515,7 +556,7 @@ class parameter(object):
 			elif self.funcname == 'VkInstanceCreateInfo' and self.name == 'ppEnabledLayerNames':
 				z.do('%s = instance_layers(reader, sptr->%s);' % (varname, len))
 			elif self.funcname == 'VkDeviceCreateInfo' and self.name == 'ppEnabledExtensionNames':
-				z.do('%s = device_extensions(reader, physicalDevice, sptr->%s);' % (varname, len))
+				z.do('%s = device_extensions(sptr, reader, physicalDevice, sptr->%s);' % (varname, len))
 			elif self.funcname == 'VkDeviceCreateInfo' and self.name == 'ppEnabledLayerNames':
 				z.do('%s = device_layers(reader, sptr->%s);' % (varname, len))
 			else:
@@ -606,6 +647,9 @@ class parameter(object):
 				storedname = z.tmpmem('float', '%s * 4' % self.length)
 				z.do('reader.read_array(%s, %s * 4); // read VkClearValue into temporary' % (storedname, self.length))
 				z.do('%s = reinterpret_cast<VkClearValue*>(%s);' % (varname, storedname))
+		elif self.type in spec.packed_bitfields:
+			storedtype = spec.type_mappings[self.type]
+			z.do('%s = (%s)reader.read_%s_t();' % (self.type, varname, storedtype))
 		elif self.type in spec.type_mappings:
 			storedtype = spec.type_mappings[self.type]
 			nativetype = self.type if self.type != 'void' else 'char'
@@ -698,7 +742,8 @@ class parameter(object):
 			z.do('suballoc_location loc = suballoc_add_image(reader.thread_index(), device, %s, image_index, special_flags, tiling, min_size);' % varname)
 		elif self.funcname in ['vkBindBufferMemory', 'VkBindBufferMemoryInfo', 'VkBindBufferMemoryInfoKHR'] and self.name == 'buffer':
 			z.do('const VkMemoryPropertyFlags special_flags = static_cast<VkMemoryPropertyFlags>(reader.read_uint32_t()); // fetch memory flags especially added')
-			z.do('suballoc_location loc = suballoc_add_buffer(reader.thread_index(), device, %s, buffer_index, special_flags);' % varname)
+			z.do('trackedbuffer& buffer_data = VkBuffer_index.at(buffer_index);')
+			z.do('suballoc_location loc = suballoc_add_buffer(reader.thread_index(), device, %s, buffer_index, special_flags, buffer_data.usage);' % varname)
 
 		if self.funcname in ['vkBindImageMemory', 'vkBindBufferMemory', 'VkBindBufferMemoryInfo', 'VkBindBufferMemoryInfoKHR', 'VkBindImageMemoryInfoKHR', 'VkBindImageMemoryInfo']:
 			if self.name == 'memory':
@@ -727,6 +772,21 @@ class parameter(object):
 			type = spec.functions_destroy[self.funcname][2]
 			if self.funcname not in ignore_on_read:
 				z.do('if (%s != VK_NULL_HANDLE) index_to_%s.unset(%s);' % (varname, type, toindex(type)))
+
+		# Track our currently executing device
+		if self.type == 'VkDevice' and self.funcname[0] == 'v' and self.name == 'device':
+			z.do('reader.device = device;')
+			z.do('reader.physicalDevice = VkDevice_index.at(device_index).physicalDevice;')
+		if self.type == 'VkPhysicalDevice' and self.funcname[0] == 'v' and self.name == 'physicalDevice':
+			z.do('reader.physicalDevice = physicalDevice;')
+		if self.type == 'VkQueue' and self.funcname[0] == 'v' and self.name == 'queue':
+			z.do('trackedqueue& queue_data = VkQueue_index.at(queue_index);')
+			z.do('reader.device = queue_data.device;')
+			z.do('reader.physicalDevice = queue_data.physicalDevice;')
+		if self.type == 'VkCommandBuffer' and self.name == 'commandBuffer' and self.funcname[0] == 'v':
+			z.do('trackedcmdbuffer_replay& commandbuffer_data = VkCommandBuffer_index.at(commandbuffer_index);')
+			z.do('reader.device = commandbuffer_data.device;')
+			z.do('reader.physicalDevice = commandbuffer_data.physicalDevice;')
 
 		if self.optional and not self.name in skip_opt_check:
 			z.brace_end()
@@ -765,7 +825,7 @@ class parameter(object):
 			z.do('initialDataSize = 0;')
 		elif (self.name == 'pInitialData' and self.funcname == 'VkPipelineCacheCreateInfo'):
 			z.do('assert(false); // pInitialData')
-		elif (self.name == 'ppData' and self.funcname == 'vkMapMemory') or self.name == 'pHostPointer':
+		elif (self.name == 'ppData' and self.funcname in ['vkMapMemory', 'vkMapMemory2KHR']) or self.name == 'pHostPointer':
 			pass
 		elif self.structure:
 			self.print_struct(self.type, varname, owner, size=self.length)
@@ -810,6 +870,7 @@ class parameter(object):
 				assert not self.funcname in extra_optionals
 				pass # handled elsewhere
 			elif self.length:
+				assert self.type != 'VkQueue', '%s has array queues' % self.funcname
 				if 'VK_MAX_' not in self.length:
 					z.do('for (unsigned hi = 0; hi < %s; hi++)' % (owner + self.length))
 				else: # define variant
@@ -822,49 +883,56 @@ class parameter(object):
 					z.do('data->call = writer.local_call_number;')
 
 				if self.funcname in [ 'vkCmdBindVertexBuffers2', 'vkCmdBindVertexBuffers2EXT' ] and self.name == 'pBuffers':
-					z.do('if (pBuffers[hi]) commandbuffer_data->touch(data, pOffsets[hi], pSizes ? pSizes[hi] : (data->size - pOffsets[hi]));') # TBD handle pStrides
+					z.do('if (pBuffers[hi]) commandbuffer_data->touch(data, pOffsets[hi], pSizes ? pSizes[hi] : (data->size - pOffsets[hi]), __LINE__);') # TBD handle pStrides
 				if self.funcname in [ 'vkCmdBindVertexBuffers' ] and self.name == 'pBuffers':
-					z.do('if (pBuffers[hi]) commandbuffer_data->touch(data, pOffsets[hi], data->size - pOffsets[hi]);')
+					z.do('if (pBuffers[hi]) commandbuffer_data->touch(data, pOffsets[hi], data->size - pOffsets[hi], __LINE__);')
 
 				z.loop_end()
 			else:
 				z.decl(trackable_type_map_trace.get(self.type, 'trackable') + '*', totrackable(self.type))
-				z.do('%s = writer.parent->records.%s_index.at(%s%s);' % (totrackable(self.type), self.type, deref, varname))
+				if self.type == 'VkQueue':
+					assert not self.ptr, '%s has pointer queues' % self.funcname
+					assert self.name == 'queue', '%s has queue not named queue' % self.funcname
+					z.declarations.insert(0, 'queue = (p__virtualqueues && queue != VK_NULL_HANDLE) ? ((trackedqueue*)queue)->realQueue : queue;')
+					z.declarations.insert(0, 'VkQueue original_queue = queue;') # this goes first
+					z.do('%s = (p__virtualqueues) ? ((trackedqueue*)original_queue) : writer.parent->records.VkQueue_index.at(queue);' % totrackable(self.type))
+				else:
+					z.do('%s = writer.parent->records.%s_index.at(%s%s);' % (totrackable(self.type), self.type, deref, varname))
 				if self.funcname in extra_optionals and self.name in extra_optionals[self.funcname]:
 					z.do('if (%s)' % extra_optionals[self.funcname][self.name])
 					z.brace_begin()
+				z.do('if (%s) %s->self_test();' % (totrackable(self.type), totrackable(self.type)))
 				z.do('writer.write_handle(%s);' % totrackable(self.type))
 
 				if self.funcname in [ 'vkCmdBindIndexBuffer' ] and self.name == 'buffer':
-					z.do('commandbuffer_data->touch(buffer_data, offset, buffer_data->size - offset);')
+					z.do('commandbuffer_data->indexBuffer.offset = offset;')
+					z.do('commandbuffer_data->indexBuffer.buffer_data = buffer_data;')
+					z.do('commandbuffer_data->indexBuffer.indexType = indexType;')
 				elif self.funcname in [ 'vkCmdDispatchIndirect' ] and self.name == 'buffer':
-					z.do('commandbuffer_data->touch(buffer_data, offset, sizeof(%s));' % command_names[self.funcname])
+					z.do('commandbuffer_data->touch(buffer_data, offset, sizeof(%s), __LINE__);' % spec.indirect_command_c_struct_names[self.funcname])
 				elif self.funcname in [ 'vkCmdDrawIndirect', 'vkCmdDrawIndexedIndirect', 'vkCmdDrawMeshTasksIndirectEXT' ] and self.name == 'buffer':
-					z.do('if (drawCount == 1) commandbuffer_data->touch(buffer_data, offset, sizeof(%s));' % command_names[self.funcname])
-					z.do('else if (drawCount > 1) commandbuffer_data->touch(buffer_data, offset, stride * drawCount);')
+					z.do('if (drawCount == 1) commandbuffer_data->touch(buffer_data, offset, sizeof(%s), __LINE__);' % spec.indirect_command_c_struct_names[self.funcname])
+					z.do('else if (drawCount > 1) commandbuffer_data->touch(buffer_data, offset, stride * drawCount, __LINE__);')
+					if 'Indexed' in name: z.do('commandbuffer_data->touch_index_buffer(0, VK_WHOLE_SIZE); // must check whole buffer here since we do not know yet what will be used')
 				elif self.funcname in [ 'vkCmdDrawIndirectCount', 'vkCmdDrawIndirectCountKHR', 'vkCmdDrawIndirectCountAMD' ] and self.name == 'countBuffer':
-					z.do('commandbuffer_data->touch(buffer_data, countBufferOffset, 4 * maxDrawCount);')
+					z.do('commandbuffer_data->touch(buffer_data, countBufferOffset, 4 * maxDrawCount, __LINE__);')
 				elif self.funcname in [ 'vkCmdDrawIndirectCount', 'vkCmdDrawIndirectCountKHR', 'vkCmdDrawIndexedIndirectCount', 'vkCmdDrawIndexedIndirectCountKHR',
 				                        'vkCmdDrawMeshTasksIndirectCountEXT', 'vkCmdDrawIndexedIndirectCount' ] and self.name == 'buffer':
-					z.do('if (maxDrawCount > 0) commandbuffer_data->touch(buffer_data, offset, stride * maxDrawCount);')
+					z.do('if (maxDrawCount > 0) commandbuffer_data->touch(buffer_data, offset, stride * maxDrawCount, __LINE__);')
+					if 'Indexed' in name: z.do('commandbuffer_data->touch_index_buffer(0, VK_WHOLE_SIZE); // must check whole buffer here since we do not know yet what will be used')
 				elif self.funcname in [ 'vkCmdCopyBuffer', 'VkCopyBufferInfo2', 'VkCopyBufferInfo2KHR' ] and self.name == 'srcBuffer':
 					if self.funcname[0] == 'V': z.decl(trackable_type_map_trace['VkCommandBuffer'] + '*', totrackable('VkCommandBuffer'), custom='writer.parent->records.VkCommandBuffer_index.at(writer.commandBuffer);')
 					prefix = 'sptr->' if self.funcname[0] == 'V' else ''
-					z.do('for (unsigned ii = 0; ii < %sregionCount; ii++) commandbuffer_data->touch(buffer_data, %spRegions[ii].srcOffset, %spRegions[ii].size);' % (prefix, prefix, prefix))
+					z.do('for (unsigned ii = 0; ii < %sregionCount; ii++) commandbuffer_data->touch(buffer_data, %spRegions[ii].srcOffset, %spRegions[ii].size, __LINE__);' % (prefix, prefix, prefix))
 				elif self.funcname in [ 'vkCmdCopyBuffer', 'VkCopyBufferInfo2', 'VkCopyBufferInfo2KHR' ] and self.name == 'dstBuffer':
 					if self.funcname[0] == 'V': z.decl(trackable_type_map_trace['VkCommandBuffer'] + '*', totrackable('VkCommandBuffer'), custom='writer.parent->records.VkCommandBuffer_index.at(writer.commandBuffer);')
 					prefix = 'sptr->' if self.funcname[0] == 'V' else ''
-					z.do('for (unsigned ii = 0; ii < %sregionCount; ii++) commandbuffer_data->touch(buffer_data, %spRegions[ii].dstOffset, %spRegions[ii].size);' % (prefix, prefix, prefix))
+					z.do('for (unsigned ii = 0; ii < %sregionCount; ii++) commandbuffer_data->touch(buffer_data, %spRegions[ii].dstOffset, %spRegions[ii].size, __LINE__);' % (prefix, prefix, prefix))
 				elif self.funcname in [ 'vkCmdCopyImage', 'vkCmdBlitImage', 'vkCmdCopyBufferToImage', 'vkCmdCopyImageToBuffer', 'vkCmdResolveImage', 'VkCopyImageInfo2',
 							'VkCopyImageInfo2KHR', 'VkCopyBufferToImageInfo2', 'VkCopyBufferToImageInfo2KHR', 'VkCopyImageToBufferInfo2', 'VkCopyImageToBufferInfo2KHR',
-							'VkBlitImageInfo2', 'VkBlitImageInfo2KHR', 'VkResolveImageInfo2', 'VkResolveImageInfo2KHR' ] and self.type == 'VkImage':
+							'VkBlitImageInfo2', 'VkBlitImageInfo2KHR', 'VkResolveImageInfo2', 'VkResolveImageInfo2KHR' ] and self.type == 'VkImage' and 'src' in self.name:
 					if self.funcname[0] == 'V': z.decl(trackable_type_map_trace['VkCommandBuffer'] + '*', totrackable('VkCommandBuffer'), custom='writer.parent->records.VkCommandBuffer_index.at(writer.commandBuffer);')
-					z.do('commandbuffer_data->touch(image_data, 0, image_data->size);') # TBD can calculate smaller area for some images but maybe not worth it
-				elif self.funcname in [ 'vkCmdCopyBufferToImage', 'vkCmdCopyImageToBuffer', 'VkCopyBufferToImageInfo2', 'VkCopyBufferToImageInfo2KHR', 'VkCopyImageToBufferInfo2',
-							'VkCopyImageToBufferInfo2KHR' ] and self.type == 'VkBuffer':
-					if self.funcname[0] == 'V': z.decl(trackable_type_map_trace['VkCommandBuffer'] + '*', totrackable('VkCommandBuffer'), custom='writer.parent->records.VkCommandBuffer_index.at(writer.commandBuffer);')
-					prefix = 'sptr->' if self.funcname[0] == 'V' else ''
-					z.do('for (unsigned ii = 0; ii < %sregionCount; ii++) commandbuffer_data->touch(buffer_data, %spRegions[ii].bufferOffset, buffer_data->size - %spRegions[ii].bufferOffset);' % (prefix, prefix, prefix)) # TBD restrict more
+					z.do('commandbuffer_data->touch(image_data, 0, image_data->size, __LINE__);') # TBD can calculate smaller area for some images but maybe not worth it
 				elif self.funcname in [ 'vkCmdExecuteCommands' ]:
 					z.do('for (unsigned ii = 0; ii < commandBufferCount; ii++) // copy over touched ranges from secondary to primary')
 					z.loop_begin()
@@ -878,7 +946,7 @@ class parameter(object):
 					z.brace_begin()
 					z.do('auto* imageview_data = writer.parent->records.VkImageView_index.at(pRenderingInfo->pColorAttachments[ii].imageView);')
 					z.do('auto* image_data = writer.parent->records.VkImage_index.at(imageview_data->image);')
-					z.do('commandbuffer_data->touch(image_data, 0, image_data->size);')
+					z.do('commandbuffer_data->touch(image_data, 0, image_data->size, __LINE__);')
 					z.brace_end()
 					z.loop_end()
 				elif self.funcname in [ 'vkCmdBeginRenderPass', 'vkCmdBeginRenderPass2', 'vkCmdBeginRenderPass2KHR' ]:
@@ -889,7 +957,7 @@ class parameter(object):
 					z.do('if (renderpass_data->attachments[ii].loadOp == VK_ATTACHMENT_LOAD_OP_LOAD || renderpass_data->attachments[ii].stencilLoadOp == VK_ATTACHMENT_LOAD_OP_LOAD)')
 					z.brace_begin()
 					z.do('auto* image_data = writer.parent->records.VkImage_index.at(framebuffer_data->imageviews.at(ii)->image);')
-					z.do('commandbuffer_data->touch(image_data, 0, image_data->size);')
+					z.do('commandbuffer_data->touch(image_data, 0, image_data->size, __LINE__);')
 					z.brace_end()
 					z.loop_end()
 
@@ -906,12 +974,19 @@ class parameter(object):
 				z.do('for (unsigned s = 0; s < (unsigned)(%s); s++) writer.write_%s(%s[s]);' % (self.length, spec.type_mappings[self.type], varname))
 			else: # no, just write out as is
 				z.do('writer.write_array(reinterpret_cast<const char*>(%s), %s * sizeof(%s));' % (varname, self.length, self.type if self.type != 'void' else 'char'))
+		elif self.type in spec.packed_bitfields:
+			storedtype = spec.type_mappings[self.type]
+			z.do('writer.write_%s_t((%s)%s);' % (storedtype, storedtype, varname))
 		elif self.ptr and self.type in spec.type_mappings:
 			z.do('writer.write_%s(*%s);' % (spec.type_mappings[self.type], varname))
 		elif self.ptr:
 			z.do('writer.write_%s(*%s);' % (self.type, varname))
 		elif self.type in spec.type_mappings and self.length: # type mapped array
 			z.do('writer.write_array(reinterpret_cast<%s%s*>(%s), %s);' % (self.mod, spec.type_mappings[self.type], varname, self.length))
+		elif self.name == 'queueFamilyIndex':
+			if self.funcname[0] == 'V': z.do('trackedphysicaldevice* physicaldevice_data = writer.parent->records.VkPhysicalDevice_index.at(writer.physicalDevice);')
+			z.do('const bool virtual_family = (physicaldevice_data->queueFamilyProperties.at(%s).queueFlags & VK_QUEUE_GRAPHICS_BIT) && p__virtualqueues;' % varname)
+			z.do('writer.write_uint32_t(virtual_family ? LAVATUBE_VIRTUAL_QUEUE : %s);' % varname)
 		elif self.type in spec.type_mappings:
 			z.do('writer.write_%s(%s);' % (spec.type_mappings[self.type], varname))
 		elif self.ptr and self.length: # arrays
@@ -936,8 +1011,18 @@ class parameter(object):
 			z.do('object_data->name = sptr->pObjectName;')
 		if self.funcname == 'VkDebugUtilsObjectNameInfoEXT' and self.name == 'pObjectName':
 			z.do('object_data->name = sptr->pObjectName;')
-		if 'vkCmd' in self.funcname and self.type == 'VkCommandBuffer' and self.name == 'commandBuffer':
+		if self.type == 'VkDevice' and self.funcname[0] == 'v' and self.name == 'device':
+			z.do('writer.device = device;')
+			z.do('writer.physicalDevice = device_data->physicalDevice;')
+		if self.type == 'VkPhysicalDevice' and self.funcname[0] == 'v' and self.name == 'physicalDevice':
+			z.do('writer.physicalDevice = physicalDevice;')
+		if self.type == 'VkQueue' and self.funcname[0] == 'v' and self.name == 'queue':
+			z.do('writer.device = queue_data->device;')
+			z.do('writer.physicalDevice = queue_data->physicalDevice;')
+		if self.type == 'VkCommandBuffer' and self.name == 'commandBuffer':
 			z.do('writer.commandBuffer = %s;' % varname) # always earlier in the parameter list than images and buffers, fortunately
+			z.do('writer.device = commandbuffer_data->device;')
+			z.do('writer.physicalDevice = commandbuffer_data->physicalDevice;')
 		if self.funcname in ['vkBindImageMemory', 'vkBindBufferMemory', 'VkBindImageMemoryInfo', 'VkBindImageMemoryInfoKHR', 'VkBindBufferMemoryInfo', 'VkBindBufferMemoryInfoKHR'] and self.name in ['image', 'buffer']:
 			z.do('const auto* meminfo = writer.parent->records.VkDeviceMemory_index.at(%s);' % (owner + 'memory'))
 			z.do('writer.write_uint32_t(static_cast<uint32_t>(meminfo->propertyFlags)); // save memory flags')
@@ -951,7 +1036,29 @@ class parameter(object):
 			z.do('assert(virtual_memory_properties.memoryTypeCount > pAllocateInfo_ORIGINAL->memoryTypeIndex);')
 			z.do('pAllocateInfo->memoryTypeIndex = remap_memory_types_to_real[pAllocateInfo->memoryTypeIndex]; // remap memory index')
 			z.do('assert(real_memory_properties.memoryTypeCount > pAllocateInfo->memoryTypeIndex);')
+			z.do('char* extmem = nullptr;')
+			z.do('if (p__external_memory == 1 && (virtual_memory_properties.memoryTypes[pAllocateInfo_ORIGINAL->memoryTypeIndex].propertyFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT))')
+			z.brace_begin()
+			z.do('if (find_extension(pAllocateInfo, VK_STRUCTURE_TYPE_IMPORT_MEMORY_HOST_POINTER_INFO_EXT)) ABORT("Cannot replace host memory allocations - application is already doing it!");')
+			z.do('VkImportMemoryHostPointerInfoEXT* info = writer.pool.allocate<VkImportMemoryHostPointerInfoEXT>(1);')
+			z.do('info->sType = VK_STRUCTURE_TYPE_IMPORT_MEMORY_HOST_POINTER_INFO_EXT;')
+			z.do('info->pNext = pAllocateInfo->pNext;')
+			z.do('info->handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_HOST_ALLOCATION_BIT_EXT ;')
+			z.do('info->pHostPointer = nullptr;')
+			z.do('uint32_t alignment = std::max<uint32_t>(writer.parent->meta.external_memory.minImportedHostPointerAlignment, getpagesize());')
+			z.do('uint64_t size = pAllocateInfo->allocationSize + alignment - 1 - (pAllocateInfo->allocationSize + alignment - 1) % alignment;')
+			z.do('writer.parent->mem_wasted += size - pAllocateInfo->allocationSize;')
+			z.do('writer.parent->mem_allocated += size;')
+			z.do('if (posix_memalign((void**)&extmem, alignment, size) != 0) ABORT("Failed to allocate external memory");')
+			z.do('info->pHostPointer = (void*)extmem;')
+			z.do('pAllocateInfo->pNext = info;')
+			z.brace_end()
+			z.do('else writer.parent->mem_allocated += pAllocateInfo->allocationSize;')
 			z.do('frame_mutex.unlock();')
+		if self.funcname == 'VkMemoryUnmapInfoKHR' and self.name == 'memory':
+			z.do('devicememory_data->ptr = nullptr;')
+			z.do('devicememory_data->offset = 0;')
+			z.do('devicememory_data->size = 0;')
 
 		if debugcount >= 0 and self.funcname != 'vkDestroyInstance':
 			z.do('writer.write_uint16_t(%d); // sentinel for %s' % (debugcount, varname))
@@ -978,13 +1085,29 @@ def save_add_pre(name): # need to include the resource-creating or resource-dest
 		elif name == 'vkWaitForFences':
 			z.do('if (tf->frame_delay >= 0 && timeout != UINT32_MAX) { tf->frame_delay--; writer.write_uint32_t(VK_TIMEOUT); return VK_TIMEOUT; }')
 		z.brace_end()
+	elif name in ['vkUnmapMemory', 'vkUnmapMemory2KHR']:
+		z.do('writer.parent->memory_mutex.lock();')
 
 	if name == 'vkCreateSwapchainKHR': # TBD: also do vkCreateSharedSwapchainsKHR
 		z.init('pCreateInfo->minImageCount = num_swapchains();')
 
 def save_add_tracking(name):
 	z = getspool()
-	if name == 'vkResetCommandPool':
+
+	if name == 'vkCmdDrawMultiIndexedEXT':
+		z.do('for (unsigned ii = 0; ii < drawCount; ii++)')
+		z.loop_begin()
+		z.do('commandbuffer_data->touch_index_buffer(pIndexInfo[ii].firstIndex, pIndexInfo[ii].indexCount);')
+		z.loop_end()
+	elif name in ['vkUnmapMemory', 'vkUnmapMemory2KHR']:
+		if name == 'vkUnmapMemory':
+			z.do('devicememory_data->ptr = nullptr;')
+			z.do('devicememory_data->offset = 0;')
+			z.do('devicememory_data->size = 0;')
+		z.do('writer.parent->memory_mutex.unlock();')
+	elif 'vkCmdDraw' in name and 'Indexed' in name and not 'Indirect' in name:
+		z.do('commandbuffer_data->touch_index_buffer(firstIndex, indexCount);')
+	elif name == 'vkResetCommandPool':
 		z.do('if (flags & VK_COMMAND_POOL_RESET_RELEASE_RESOURCES_BIT) commandpool_data->commandbuffers.clear();')
 		z.do('else for (auto* i : commandpool_data->commandbuffers) i->touched.clear();')
 	elif name == 'vkResetCommandBuffer' or name == 'vkBeginCommandBuffer':
@@ -999,6 +1122,10 @@ def save_add_tracking(name):
 		z.do('tf->tid = writer.thread_index();')
 		z.do('tf->call = writer.local_call_number;')
 		z.brace_end()
+	elif name in [ 'vkCmdCopyBufferToImage', 'vkCmdCopyImageToBuffer', 'VkCopyBufferToImageInfo2', 'VkCopyBufferToImageInfo2KHR', 'VkCopyImageToBufferInfo2', 'VkCopyImageToBufferInfo2KHR' ]:
+		if name[0] == 'V': z.decl(trackable_type_map_trace['VkCommandBuffer'] + '*', totrackable('VkCommandBuffer'), custom='writer.parent->records.VkCommandBuffer_index.at(writer.commandBuffer);')
+		prefix = 'sptr->' if name[0] == 'V' else ''
+		z.do('for (unsigned ii = 0; ii < %sregionCount; ii++) commandbuffer_data->touch(buffer_data, %spRegions[ii].bufferOffset, std::min(image_data->size, buffer_data->size - %spRegions[ii].bufferOffset), __LINE__);' % (prefix, prefix, prefix))
 	elif name in spec.functions_create and spec.functions_create[name][1] == '1':
 		(param, count, type) = get_create_params(name)
 		z.do('auto* add = writer.parent->records.%s_index.add(*%s, lava_writer::instance().global_frame);' % (type, param))
@@ -1018,7 +1145,16 @@ def save_add_tracking(name):
 			z.do('add->flags = pCreateInfo->flags;')
 			z.do('add->format = pCreateInfo->format;')
 			z.do('add->type = VK_OBJECT_TYPE_IMAGE;')
+			z.do('add->initialLayout = pCreateInfo->initialLayout;')
+			z.do('add->currentLayout = pCreateInfo->initialLayout;')
+			z.do('add->samples = pCreateInfo->samples;')
+			z.do('add->extent = pCreateInfo->extent;')
+			z.do('add->mipLevels = pCreateInfo->mipLevels;')
+			z.do('add->arrayLayers = pCreateInfo->arrayLayers;')
 			z.do('if (pCreateInfo->flags & VK_IMAGE_CREATE_ALIAS_BIT) ELOG("Image aliasing detected! We need to implement support for this!");')
+		elif type == 'VkShaderModule':
+			z.do('add->type = VK_OBJECT_TYPE_SHADER_MODULE;')
+			z.do('add->size = pCreateInfo->codeSize;')
 		elif type == 'VkRenderPass' and name == 'vkCreateRenderPass':
 			z.do('add->attachments.resize(pCreateInfo->attachmentCount);')
 			z.do('for (unsigned ii = 0; ii < pCreateInfo->attachmentCount; ii++) add->attachments[ii] = pCreateInfo->pAttachments[ii]; // struct copy')
@@ -1056,6 +1192,7 @@ def save_add_tracking(name):
 			z.do('add->propertyFlags = virtual_memory_properties.memoryTypes[pAllocateInfo_ORIGINAL->memoryTypeIndex].propertyFlags;')
 			z.do('add->allocationSize = pAllocateInfo->allocationSize;')
 			z.do('add->backing = *pMemory;')
+			z.do('add->extmem = extmem;')
 			z.do('frame_mutex.unlock();')
 		elif type == 'VkImageView':
 			z.do('add->image = pCreateInfo->image;')
@@ -1087,6 +1224,8 @@ def save_add_tracking(name):
 		z.do('add->call = writer.local_call_number;')
 		if type == 'VkCommandBuffer':
 			z.do('add->pool = pAllocateInfo->commandPool;')
+			z.do('add->device = device;')
+			z.do('add->physicalDevice = writer.parent->records.VkDevice_index.at(device)->physicalDevice;')
 			z.do('auto* commandpool_data = writer.parent->records.VkCommandPool_index.at(pAllocateInfo->commandPool);')
 			z.do('add->pool_index = commandpool_data->index;')
 			z.do('add->level = pAllocateInfo->level;')
@@ -1118,17 +1257,6 @@ def save_add_tracking(name):
 		z.do('meta->self_test();')
 		if type == 'VkCommandBuffer':
 			z.do('commandpool_data->commandbuffers.erase(meta);')
-		if type in ['VkBuffer', 'VkImage']:
-			z.do('if (meta->backing != VK_NULL_HANDLE && writer.parent->records.VkDeviceMemory_index.contains(meta->backing))')
-			z.brace_begin()
-			z.do('memory_mutex.lock();')
-			z.do('auto* mem = writer.parent->records.VkDeviceMemory_index.at(meta->backing);')
-		if type == 'VkBuffer':
-			z.do('memory_mutex.unlock();')
-			z.brace_end()
-		elif type == 'VkImage':
-			z.do('memory_mutex.unlock();')
-			z.brace_end()
 		z.brace_end()
 
 # Run before execute
@@ -1173,11 +1301,19 @@ def load_add_tracking(name):
 			elif type == 'VkDevice':
 				z.do('trackeddevice& device_data = VkDevice_index.at(device_index);')
 				z.do('device_data.physicalDevice = physicalDevice; // track parentage')
+			elif type == 'VkImage':
+				z.do('trackedimage& image_data = VkImage_index.at(image_index);')
+				z.do('image_data.initialLayout = pCreateInfo->initialLayout; // duplicates info stored in json but needed for compatibility with older traces')
+				z.do('image_data.currentLayout = pCreateInfo->initialLayout;')
 		else: # multiple
 			z.do('for (unsigned i = 0; i < %s; i++)' % count)
 			z.brace_begin()
 			if type == 'VkSwapchainKHR':
 				z.do('if (is_noscreen()) pSwapchains[i] = (VkSwapchainKHR)((intptr_t)indices[i] + 1);')
+			elif type == 'VkCommandBuffer':
+				z.do('trackedcmdbuffer_replay& commandbuffer_data = VkCommandBuffer_index.at(indices[i]);')
+				z.do('commandbuffer_data.device = device;')
+				z.do('commandbuffer_data.physicalDevice = VkDevice_index.at(device_index).physicalDevice;')
 			z.do('DLOG2("insert %s into %s index %%u at pos=%%u", indices[i], i);' % (type, name))
 			z.do('if (%s[i]) index_to_%s.set(indices[i], %s[i]);' % (param, type, param))
 			if type == 'VkSwapchainKHR':
@@ -1198,16 +1334,17 @@ def load_add_tracking(name):
 			z.do('for (auto i : data.virtual_fences) wrap_vkDestroyFence(device, i, nullptr);')
 
 def func_common(name, node, read, target, header, guard_header=True):
-	z = getspool()
 	proto = node.find('proto')
 	retval = proto.find('type').text
 	if name in spec.protected_funcs:
-		print >> target, '#ifdef %s // %s' % (spec.protected_funcs[name], name)
-		if guard_header:
-			print >> header, '#ifdef %s // %s' % (spec.protected_funcs[name], name)
-		print >> target
+		print('#ifdef %s // %s' % (spec.protected_funcs[name], name), file=target)
+		if header and guard_header:
+			print('#ifdef %s // %s' % (spec.protected_funcs[name], name), file=header)
+		print(file=target)
 	params = []
 	for p in node.findall('param'):
+		api = p.attrib.get('api')
+		if api and api == "vulkansc": continue
 		params.append(parameter(p, read=read, funcname=name))
 	paramlist = [ x.parameter() for x in params ]
 	return retval, params, paramlist
@@ -1216,19 +1353,19 @@ def func_common_end(name, target, header, add_dummy=False):
 	z = getspool()
 	if name in spec.protected_funcs:
 		if name not in hardcoded and add_dummy and name not in functions_noop and name not in spec.disabled_functions:
-			print >> target
-			print >> target, '#else // %s' % spec.protected_funcs[name]
-			print >> target
-			print >> target, 'void retrace_%s(lava_file_reader& reader)' % name
-			print >> target, '{'
-			print >> target, '\tABORT("Attempt to call unimplemented protected function: %s");' % name
-			print >> target, '}'
+			print(file=target)
+			print('#else // %s' % spec.protected_funcs[name], file=target)
+			print(file=target)
+			print('void retrace_%s(lava_file_reader& reader)' % name, file=target)
+			print('{', file=target)
+			print('\tABORT("Attempt to call unimplemented protected function: %s");' % name, file=target)
+			print('}', file=target)
 
-		print >> target
-		print >> target, '#endif // %s 1' % spec.protected_funcs[name]
-		print >> target
-		if not add_dummy:
-			if header: print >> header, '#endif // %s 2' % spec.protected_funcs[name]
+		print(file=target)
+		print('#endif // %s 1' % spec.protected_funcs[name], file=target)
+		print(file=target)
+		if not add_dummy and header:
+			if header: print('#endif // %s 2' % spec.protected_funcs[name], file=header)
 
 def loadfunc(name, node, target, header):
 	debugcount = isdebugcount()
@@ -1241,12 +1378,12 @@ def loadfunc(name, node, target, header):
 	if name in spec.disabled or name in functions_noop or name in spec.disabled_functions or spec.str_contains_vendor(name):
 		func_common_end(name, target=target, header=header, add_dummy=True)
 		return
-	if header: print >> header, 'void retrace_%s(lava_file_reader& reader);' % name
+	if header: print('void retrace_%s(lava_file_reader& reader);' % name, file=header)
 	if name in hardcoded or name in hardcoded_read:
 		func_common_end(name, target=target, header=header, add_dummy=True)
 		return
-	print >> target, 'void retrace_%s(lava_file_reader& reader)' % name
-	print >> target, '{'
+	print('void retrace_%s(lava_file_reader& reader)' % name, file=target)
+	print('{', file=target)
 	if debugstats:
 		z.do('uint64_t startTime = gettime();')
 	z.do('// -- Load --')
@@ -1256,6 +1393,8 @@ def loadfunc(name, node, target, header):
 	if name in spec.special_count_funcs: # functions that work differently based on whether last param is a nullptr or not
 		z.do('uint8_t do_call = reader.read_uint8_t();')
 	z.do('// -- Execute --')
+	if name in extra_sync:
+		z.do('sync_mutex.lock();')
 	for param in params:
 		if not param.inparam and param.ptr and param.type != 'void' and not name in ignore_on_read and not name in spec.special_count_funcs and not name in spec.functions_create:
 			vname = z.backing(param.type, param.name, size=param.length, struct=param.structure)
@@ -1398,6 +1537,8 @@ def loadfunc(name, node, target, header):
 				z.do('(void)reader.read_uint32_t(); // also ignore result return value')
 	if debugstats:
 		z.do('apiTime = gettime() - apiTime;')
+	if name in extra_sync:
+		z.do('sync_mutex.unlock();')
 	z.do('// -- Post --')
 	if not name in spec.special_count_funcs and not name in skip_post_calls:
 		for param in params:
@@ -1416,9 +1557,9 @@ def loadfunc(name, node, target, header):
 		z.do('__atomic_add_fetch(&setup_time_%s, gettime() - startTime - apiTime, __ATOMIC_RELAXED);' % name)
 		z.do('__atomic_add_fetch(&vulkan_time_%s, apiTime, __ATOMIC_RELAXED);' % name)
 	z.dump()
-	print >> target, '}'
+	print('}', file=target)
 	func_common_end(name, target=target, header=header, add_dummy=True)
-	print >> target
+	print(file=target)
 
 def savefunc(name, node, target, header):
 	debugcount = isdebugcount()
@@ -1431,7 +1572,7 @@ def savefunc(name, node, target, header):
 	if name in spec.disabled or name in spec.disabled_functions or spec.str_contains_vendor(name):
 		func_common_end(name, target=target, header=header)
 		return
-	print >> header, 'VKAPI_ATTR %s VKAPI_CALL trace_%s(%s);' % (retval, name, ', '.join(paramlist))
+	print('VKAPI_ATTR %s VKAPI_CALL trace_%s(%s);' % (retval, name, ', '.join(paramlist)), file=header)
 	if name in hardcoded or name in hardcoded_write:
 		func_common_end(name, target=target, header=header)
 		return
@@ -1441,14 +1582,14 @@ def savefunc(name, node, target, header):
 			paramlist[i] = paramlist[i] + '_ORIGINAL'
 			z.first('%s %s_impl = *%s_ORIGINAL; // struct copy, discarding the const' % (params[i].type, params[i].name, params[i].name))
 			z.first('%s %s = &%s_impl;' % (params[i].type + '*', params[i].name, params[i].name))
-	print >> target, 'VKAPI_ATTR %s VKAPI_CALL trace_%s(%s)' % (retval, name, ', '.join(paramlist))
-	print >> target, '{'
+	print('VKAPI_ATTR %s VKAPI_CALL trace_%s(%s)' % (retval, name, ', '.join(paramlist)), file=target)
+	print('{', file=target)
 	if name in functions_noop:
-		print >> target, '\tassert(false);'
+		print('\tassert(false);', file=target)
 		z.dump()
 		if retval != 'void':
-			print >> target, '\treturn (%s)0;' % retval
-		print >> target, '}\n'
+			print('\treturn (%s)0;' % retval, file=target)
+		print('}\n', file=target)
 		func_common_end(name, target=target, header=header)
 		return
 	if debugstats:
@@ -1466,6 +1607,8 @@ def savefunc(name, node, target, header):
 			parlist.append(vv[0])
 		z.do('writer.write_uint8_t((%s) ? 1 : 0);' % ' && '.join(parlist))
 	z.do('// -- Execute --')
+	if name in extra_sync:
+		z.do('frame_mutex.lock();')
 	save_add_pre(name)
 	if debugstats:
 		z.do('uint64_t apiTime = gettime();')
@@ -1499,6 +1642,8 @@ def savefunc(name, node, target, header):
 			z.do('wrap_%s(%s);' % (name, ', '.join(call_list)))
 	if debugstats:
 		z.do('apiTime = gettime() - apiTime;')
+	if name in extra_sync:
+		z.do('frame_mutex.unlock();')
 	z.do('// -- Post --')
 	save_add_tracking(name)
 	if retval == 'VkBool32' or retval == 'VkResult' or retval == 'uint32_t':
@@ -1526,12 +1671,12 @@ def savefunc(name, node, target, header):
 			z.do('trace_post_%s(writer, retval, %s);' % (name, ', '.join(call_list)))
 		else:
 			z.do('trace_post_%s(writer, %s);' % (name, ', '.join(call_list)))
-	if name in spec.feature_detection_funcs:
+	if name in feature_detection_funcs:
 		z.do('writer.parent->usage_detection.check_%s(%s);' % (name, ', '.join(call_list)))
 	if retval != 'void':
 		z.do('// -- Return --')
 		z.do('return retval;')
 	z.dump()
-	print >> target, '}'
+	print('}', file=target)
 	func_common_end(name, target=target, header=header)
-	print >> target
+	print(file=target)

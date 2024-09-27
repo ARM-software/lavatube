@@ -2,6 +2,8 @@
 
 #include <cassert>
 #include <atomic>
+#include <string>
+#include <unordered_set>
 #include <vulkan/vulkan.h>
 
 // Handle actually-used feature detection for many features during tracing. Using bool atomics here
@@ -160,6 +162,13 @@ struct atomicPhysicalDeviceVulkan13Features
 	std::atomic_bool maintenance4 { false };
 };
 
+static __attribute__((pure)) inline const void* get_extension(const void* sptr, VkStructureType sType)
+{
+	const VkBaseOutStructure* ptr = (VkBaseOutStructure*)sptr;
+	while (ptr != nullptr && ptr->sType != sType) ptr = ptr->pNext;
+	return ptr;
+}
+
 struct feature_detection
 {
 private:
@@ -168,9 +177,41 @@ private:
 	struct atomicPhysicalDeviceVulkan11Features core11;
 	struct atomicPhysicalDeviceVulkan12Features core12;
 	struct atomicPhysicalDeviceVulkan13Features core13;
+	std::atomic_bool has_VK_EXT_swapchain_colorspace { false };
+	std::atomic_bool has_VkPhysicalDeviceShaderAtomicInt64Features { false };
+	std::atomic_bool has_VK_KHR_shared_presentable_image { false };
+
+	inline bool is_colorspace_ext(VkColorSpaceKHR s)
+	{
+		return (s == VK_COLOR_SPACE_ADOBERGB_LINEAR_EXT || s == VK_COLOR_SPACE_ADOBERGB_NONLINEAR_EXT
+		        || s == VK_COLOR_SPACE_BT2020_LINEAR_EXT || s == VK_COLOR_SPACE_BT709_LINEAR_EXT
+		        || s == VK_COLOR_SPACE_BT709_NONLINEAR_EXT || s == VK_COLOR_SPACE_DCI_P3_LINEAR_EXT
+		        || s == VK_COLOR_SPACE_DCI_P3_NONLINEAR_EXT || s == VK_COLOR_SPACE_DISPLAY_P3_LINEAR_EXT
+		        || s == VK_COLOR_SPACE_DISPLAY_P3_NONLINEAR_EXT || s == VK_COLOR_SPACE_DOLBYVISION_EXT
+		        || s == VK_COLOR_SPACE_EXTENDED_SRGB_LINEAR_EXT || s == VK_COLOR_SPACE_EXTENDED_SRGB_NONLINEAR_EXT
+		        || s == VK_COLOR_SPACE_HDR10_HLG_EXT || s == VK_COLOR_SPACE_HDR10_ST2084_EXT || s == VK_COLOR_SPACE_PASS_THROUGH_EXT);
+	}
 
 public:
 	// --- Checking structures Call these for all these structures after they are successfully used. ---
+
+	void check_VkDeviceCreateInfo(const VkDeviceCreateInfo* info)
+	{
+		// This also handles VK_EXT_shader_image_atomic_int64 which is an alias
+		VkPhysicalDeviceShaderAtomicInt64Features* pdsai64f = (VkPhysicalDeviceShaderAtomicInt64Features*)get_extension(info, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_ATOMIC_INT64_FEATURES);
+		if (pdsai64f && (pdsai64f->shaderBufferInt64Atomics || pdsai64f->shaderSharedInt64Atomics)) has_VkPhysicalDeviceShaderAtomicInt64Features = true;
+	}
+
+	void check_VkSurfaceCapabilities2KHR(const VkSurfaceCapabilities2KHR* info)
+	{
+		VkSharedPresentSurfaceCapabilitiesKHR* sc = (VkSharedPresentSurfaceCapabilitiesKHR*)get_extension(info, VK_STRUCTURE_TYPE_SHARED_PRESENT_SURFACE_CAPABILITIES_KHR);
+		if (sc && sc->sharedPresentSupportedUsageFlags) has_VK_KHR_shared_presentable_image = true;
+	}
+
+	void check_VkSwapchainCreateInfoKHR(const VkSwapchainCreateInfoKHR* info)
+	{
+		if (is_colorspace_ext(info->imageColorSpace)) has_VK_EXT_swapchain_colorspace = true;
+	}
 
 	void check_VkPipelineShaderStageCreateInfo(const VkPipelineShaderStageCreateInfo* info)
 	{
@@ -234,6 +275,9 @@ public:
 		if (info->flags & VK_BUFFER_CREATE_SPARSE_BINDING_BIT)
 		{
 			core10.sparseBinding = true;
+		}
+		if (info->flags & VK_BUFFER_CREATE_SPARSE_RESIDENCY_BIT)
+		{
 			core10.sparseResidencyBuffer = true;
 		}
 		if (info->flags & VK_BUFFER_CREATE_SPARSE_ALIASED_BIT) core10.sparseResidencyAliased = true;
@@ -288,6 +332,18 @@ public:
 	}
 
 	// --- Remove unused feature bits from these structures ---
+
+	void adjust_device_extensions(std::unordered_set<std::string>& exts)
+	{
+		if (!has_VkPhysicalDeviceShaderAtomicInt64Features) exts.erase("VK_KHR_shader_atomic_int64");
+		if (!has_VkPhysicalDeviceShaderAtomicInt64Features) exts.erase("VK_EXT_shader_image_atomic_int64"); // alias of above
+		if (!has_VK_KHR_shared_presentable_image) exts.erase("VK_KHR_shared_presentable_image");
+	}
+
+	void adjust_instance_extensions(std::unordered_set<std::string>& exts)
+	{
+		if (!has_VK_EXT_swapchain_colorspace) exts.erase("VK_EXT_swapchain_colorspace");
+	}
 
 	void adjust_VkPhysicalDeviceFeatures(VkPhysicalDeviceFeatures& incore10)
 	{

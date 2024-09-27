@@ -4,6 +4,7 @@
 //  Header hacks
 //
 
+#include <stdarg.h>
 #include <sys/stat.h>
 #include <sys/syscall.h>
 #include <linux/unistd.h>
@@ -39,7 +40,7 @@ static __attribute__((pure)) inline pid_t lava_gettid()
 	return syscall(__NR_gettid);
 }
 
-// These are deliberately made ugly to dis-incentivize anyone from using them directly
+extern uint_fast8_t p__virtualqueues;
 extern uint_fast8_t p__blackhole;
 extern uint_fast8_t p__dedicated_buffer;
 extern uint_fast8_t p__dedicated_image;
@@ -59,6 +60,8 @@ extern uint_fast8_t p__custom_allocator;
 extern uint_fast8_t p__no_anisotropy;
 extern uint_fast8_t p__delay_fence_success_frames;
 extern FILE* p__debug_destination;
+extern int p__chunksize;
+extern uint_fast8_t p__external_memory;
 
 /// Logging to be enable as needed by source recompilation
 #define NEVER(_format, ...)
@@ -142,13 +145,6 @@ static inline bool use_dedicated_allocation() { return p__dedicated_allocation; 
 static inline bool use_custom_allocator() { return p__custom_allocator; } // replay only, for now
 static inline bool no_anisotropy() { return p__no_anisotropy; } // replay only, for now
 
-static __attribute__((pure)) inline unsigned checksum(const std::vector<char>& v)
-{
-	unsigned c = 0;
-	for (unsigned a = 0; a < v.size(); a++) c += (unsigned)v.at(a);
-	return c;
-}
-
 /// Consistent top header for any extension struct. Used to iterate them and handle the ones we recognize.
 struct dummy_ext { VkStructureType sType; dummy_ext* pNext; };
 
@@ -182,6 +178,9 @@ static __attribute__((pure)) inline uint64_t gettime()
 
 std::string get_vulkan_lib_path();
 
+/// Whether a SPIRV shader has enabled support for buffer device addresses
+bool shader_has_buffer_devices_addresses(const uint32_t* code, uint32_t codeSize);
+
 /// Faster than std::vector but with much the same interface. The performance improvement mostly
 /// comes from not filling memory beforehand.
 struct buffer
@@ -198,14 +197,14 @@ struct buffer
 	inline void release() noexcept { free(mPtr); mPtr = nullptr; mSize = 0; }
 };
 
-static inline int aligned_size(VkDeviceSize size, VkDeviceSize alignment)
-{
-	return size + alignment - 1 - (size + alignment - 1) % alignment;
-}
+static __attribute__((const)) inline uint64_t aligned_size(uint64_t size, uint64_t alignment) { return size + alignment - 1ull - (size + alignment - 1ull) % alignment; }
+static __attribute__((const)) inline uint64_t aligned_start(uint64_t size, uint64_t alignment) { return (size & ~(alignment - 1)); }
 
-void* find_extension_parent(void* sptr, VkStructureType sType);
 void* find_extension(void* sptr, VkStructureType sType);
 const void* find_extension(const void* sptr, VkStructureType sType);
 
-int android_hw_level(const VkPhysicalDeviceFeatures& f);
+// "parent" methods require you to pass the owner of the pNext chain
+void* find_extension_parent(void* sptr, VkStructureType sType); // returns the parent object to the searched for type
+void purge_extension_parent(void* sptr, VkStructureType sType); // removes this extension from a pNext chain
+
 const char* pretty_print_VkObjectType(VkObjectType val);

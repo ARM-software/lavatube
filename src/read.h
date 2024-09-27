@@ -24,18 +24,16 @@
 using lava_replay_func = std::function<void(lava_file_reader&)>;
 class lava_file_reader;
 
-// these are implemented differently for trace and replay cases
+extern lava::mutex sync_mutex;
 
-struct trackedqueue_replay : trackable
-{
-	using trackable::trackable; // inherit constructor
-	VkDevice device = VK_NULL_HANDLE;
-};
+// these are implemented differently for trace and replay cases
 
 struct trackedcmdbuffer_replay : trackable
 {
 	using trackable::trackable; // inherit constructor
 	uint32_t pool = 0;
+	VkDevice device = VK_NULL_HANDLE;
+	VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
 };
 
 struct trackeddescriptorset_replay : trackable
@@ -77,15 +75,15 @@ public:
 
 	std::vector<std::thread> threads;
 
+	// The dictionary is read from a JSON file and then mapped from their to our function ids.
+	std::unordered_map<uint16_t, uint16_t> dictionary;
+
 private:
 	/// Start time of frame range
 	std::atomic_uint64_t mStartTime{ 0 };
 
 	lava::mutex global_mutex;
 	std::string mPackedFile;
-	/// Map function id to function pointer. The dictionary is read from a JSON file and
-	/// then mapped to functions.
-	std::unordered_map<uint16_t, lava_replay_func> dictionary;
 	std::unordered_map<int, lava_file_reader*> thread_streams GUARDED_BY(global_mutex);
 	int mStart = 0;
 	int mEnd = -1;
@@ -110,6 +108,9 @@ public:
 	VkFlags read_VkFlags() { uint32_t t; read_value(&t); return static_cast<VkFlags>(t); }
 
 	inline int thread_index() const { return tid; }
+
+	inline VkDescriptorDataEXT read_VkDescriptorDataEXT() { return VkDescriptorDataEXT{}; } // TBD
+	inline VkAccelerationStructureNV read_VkAccelerationStructureNV() { return VK_NULL_HANDLE; }
 
 	inline uint32_t read_handle();
 	inline void read_handle_array(uint32_t* dest, uint32_t length) { for (uint32_t i = 0; i < length; i++) dest[i] = read_handle(); }
@@ -138,6 +139,8 @@ public:
 	}
 
 	lava_reader* parent;
+	VkDevice device = VK_NULL_HANDLE;
+	VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
 
 	/// Current local frame
 	int local_frame = 0;

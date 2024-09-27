@@ -55,7 +55,7 @@ Building
 
 For Ubuntu x86, install these packages:
 
-	sudo apt-get install git cmake pkg-config python2 libxcb1-dev libxrandr-dev libxcb-randr0-dev libtbb-dev libvulkan-dev
+	sudo apt-get install git cmake pkg-config python2 libxcb1-dev libxrandr-dev libxcb-randr0-dev libtbb-dev libvulkan-dev spirv-headers
 
 To build for linux desktop:
 --------------------------
@@ -66,6 +66,12 @@ mkdir build
 cd build
 cmake ..
 make
+```
+
+Then in order to verify that everything is working correctly:
+
+```
+make test
 ```
 
 To build for android:
@@ -132,6 +138,8 @@ When tracing, the following files will be created in a separate directory:
 Tracing options
 ===============
 
+LAVATUBE_DESTINATION can be used to set the name of the output trace file.
+
 LAVATUBE_DEDICATED_BUFFER and LAVATUBE_DEDICATED_IMAGE can be used to override
 or inject dedicate allocation hints to the application. If set to 1, all buffers
 or images will have the preferred hint set. If set to 2, all buffers or images
@@ -140,6 +148,20 @@ will have the required hint set.
 LAVATUBE_DELAY_FENCE_SUCCESS_FRAMES will delay the returned success of vkGetFenceStatus
 and vkWaitForFences for the given number of frames to try to stagger the reuse of
 content assets.
+
+LAVATUBE_GPU lets you pick which GPU to use, by index. See vulkaninfo to see which
+index value to use.
+
+LAVATUBE_CHUNK_SIZE lets you choose the compression chunk size, by default it is 64mb.
+
+LAVATUBE_EXTERNAL_MEMORY set it to 1 to experiment with replacing your GPU host memory
+allocations with external memory allocations.
+
+LAVATUBE_VIRTUAL_QUEUES if set to 1 will enable a virtualized memory system with only
+one graphics queue family containing two queues. If the host system does not support
+two queues, work for the second queue will be passed to the first queue. All other
+queue families and queues will be hidden.
+
 
 Further reading
 ===============
