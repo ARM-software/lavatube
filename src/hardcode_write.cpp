@@ -867,6 +867,11 @@ static void modify_device_extensions(VkPhysicalDevice physicalDevice) REQUIRES(f
 	frame_boundary_info.specVersion = 1;
 	device_extension_properties.push_back(frame_boundary_info);
 
+	VkExtensionProperties memory_markup_info = {};
+	strcpy(memory_markup_info.extensionName, VK_TRACETOOLTEST_TRACE_HELPERS_EXTENSION_NAME);
+	memory_markup_info.specVersion = 1;
+	device_extension_properties.push_back(memory_markup_info);
+
 	for (const auto &ext : tmp_device_extension_properties)
 	{
 		// Filter out extensions we don't want presented
@@ -978,7 +983,12 @@ static void trace_pre_vkCreateDevice(VkPhysicalDevice physicalDevice, VkDeviceCr
 		}
 		if (strcmp(name, VK_TRACETOOLTEST_CHECKSUM_VALIDATION_EXTENSION_NAME) == 0) continue; // do not pass to host
 		if (strcmp(name, VK_TRACETOOLTEST_OBJECT_PROPERTY_EXTENSION_NAME) == 0) continue; // do not pass to host
-		if (!has_VK_EXT_frame_boundary && strcmp(name, VK_EXT_FRAME_BOUNDARY_EXTENSION_NAME) == 0) continue; // do not pass to host
+		if (strcmp(name, VK_TRACETOOLTEST_TRACE_HELPERS_EXTENSION_NAME) == 0) continue; // do not pass to host
+		if (!has_VK_EXT_frame_boundary && strcmp(name, VK_EXT_FRAME_BOUNDARY_EXTENSION_NAME) == 0) // do not pass to host
+		{
+			purge_extension_parent(pCreateInfo, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FRAME_BOUNDARY_FEATURES_EXT);
+			continue;
+		}
 		if (strcmp(name, VK_KHR_EXTERNAL_MEMORY_EXTENSION_NAME) == 0 && add_VK_KHR_external_memory) continue; // do not need to add twice
 		if (strcmp(name, VK_EXT_EXTERNAL_MEMORY_HOST_EXTENSION_NAME) == 0 && add_VK_EXT_external_memory_host) continue;; // ditto
 		nameptrs[newcount++] = name;
@@ -1407,6 +1417,12 @@ VKAPI_ATTR void VKAPI_CALL trace_vkSyncBufferTRACETOOLTEST(VkDevice device, VkBu
 	const auto* device_data = writer.parent->records.VkDevice_index.at(device);
 	auto* buffer_data = writer.parent->records.VkBuffer_index.at(buffer);
 	auto* memory_data = writer.parent->records.VkDeviceMemory_index.at(buffer_data->backing);
+	writer.parent->memory_mutex.lock();
+	if (!memory_data->clone)
+	{
+		memory_data->clone = (char*)calloc(1, memory_data->allocationSize);
+	}
+	writer.parent->memory_mutex.unlock();
 	if (memory_data->ptr != nullptr) ABORT("Memory cannot be memory mapped already when running vkSyncBufferTRACETOOLTEST!");
 	range v = memory_data->exposed.fetch_os(buffer_data->offset, buffer_data->size, false); // clear exposure
 	(void)v;
@@ -1425,11 +1441,183 @@ VKAPI_ATTR void VKAPI_CALL trace_vkSyncBufferTRACETOOLTEST(VkDevice device, VkBu
 	writer.write_handle(buffer_data);
 }
 
+static void write_VkAddressRemapTRACETOOLTEST(lava_file_writer& writer, const VkAddressRemapTRACETOOLTEST* sptr)
+{
+	writer.write_uint32_t(sptr->sType);
+	assert(sptr->sType == VK_STRUCTURE_TYPE_ADDRESS_REMAP_TRACETOOLTEST);
+	write_extension(writer, (VkBaseOutStructure*)sptr->pNext);
+	writer.write_uint32_t(sptr->target);
+	writer.write_uint32_t(sptr->count);
+	bool pOffsets_opt = (sptr->pOffsets != 0 && sptr->count > 0); // whether we should save pData
+	writer.write_uint8_t(pOffsets_opt);
+	if (pOffsets_opt)
+	{
+		writer.write_array(reinterpret_cast<const char*>(sptr->pOffsets), sptr->count * sizeof(VkDeviceSize));
+	}
+}
+
+static void write_VkUpdateMemoryInfoTRACETOOLTEST(lava_file_writer& writer, const VkUpdateMemoryInfoTRACETOOLTEST* sptr)
+{
+	writer.write_uint32_t(sptr->sType);
+	assert(sptr->sType == VK_STRUCTURE_TYPE_UPDATE_MEMORY_INFO_TRACETOOLTEST);
+	write_extension(writer, (VkBaseOutStructure*)sptr->pNext);
+	writer.write_uint64_t(sptr->dstOffset);
+	writer.write_uint64_t(sptr->dataSize);
+	uint8_t pData_opt = (sptr->pData != 0 && sptr->dataSize > 0); // whether we should save pData
+	writer.write_uint8_t(pData_opt);
+	if (pData_opt)
+	{
+		writer.write_array(reinterpret_cast<const char*>(sptr->pData), sptr->dataSize);
+	}
+}
+
+static void write_VkPatchChunkListTRACETOOLTEST(lava_file_writer& writer, const VkPatchChunkListTRACETOOLTEST* sptr)
+{
+	writer.write_uint32_t(sptr->sType);
+	assert(sptr->sType == VK_STRUCTURE_TYPE_PATCH_CHUNK_LIST_TRACETOOLTEST);
+	write_extension(writer, (VkBaseOutStructure*)sptr->pNext);
+	VkPatchChunkTRACETOOLTEST* ptr = (VkPatchChunkTRACETOOLTEST*)sptr->pChunks;
+	while (ptr->offset != 0 || ptr->size != 0)
+	{
+		writer.write_uint32_t(ptr->offset);
+		writer.write_uint32_t(ptr->size);
+		writer.write_array((char*)ptr->data, ptr->size);
+	}
+}
+
+VKAPI_ATTR void trace_vkUpdateBufferTRACETOOLTEST(VkDevice device, VkBuffer dstBuffer, VkUpdateMemoryInfoTRACETOOLTEST* pInfo)
+{
+	lava_file_writer& writer = write_header("vkUpdateBufferTRACETOOLTEST", VKUPDATEBUFFERTRACETOOLTEST);
+	const auto* device_data = writer.parent->records.VkDevice_index.at(device);
+	auto* buffer_data = writer.parent->records.VkBuffer_index.at(dstBuffer);
+	writer.write_handle(device_data);
+	writer.write_handle(buffer_data);
+	if (buffer_data)
+	{
+		buffer_data->tid = writer.thread_index();
+		buffer_data->call = writer.local_call_number;
+		buffer_data->self_test();
+	}
+	write_VkUpdateMemoryInfoTRACETOOLTEST(writer, pInfo);
+
+	// Act
+	auto* memory_data = writer.parent->records.VkDeviceMemory_index.at(buffer_data->backing);
+	char* ptr = nullptr;
+	VkResult result = wrap_vkMapMemory(device, memory_data->backing, buffer_data->offset + pInfo->dstOffset, buffer_data->size - pInfo->dstOffset, 0, (void**)&ptr);
+	assert(result == VK_SUCCESS);
+	buffer_data->updates++;
+	memcpy(ptr, pInfo->pData, pInfo->dataSize);
+	wrap_vkUnmapMemory(device, memory_data->backing);
+}
+
+VKAPI_ATTR void trace_vkUpdateImageTRACETOOLTEST(VkDevice device, VkImage dstImage, VkUpdateMemoryInfoTRACETOOLTEST* pInfo)
+{
+	lava_file_writer& writer = write_header("vkUpdateImageTRACETOOLTEST", VKUPDATEIMAGETRACETOOLTEST);
+	const auto* device_data = writer.parent->records.VkDevice_index.at(device);
+	auto* image_data = writer.parent->records.VkImage_index.at(dstImage);
+	writer.write_handle(device_data);
+	writer.write_handle(image_data);
+	if (image_data)
+	{
+		image_data->tid = writer.thread_index();
+		image_data->call = writer.local_call_number;
+		image_data->self_test();
+	}
+	write_VkUpdateMemoryInfoTRACETOOLTEST(writer, pInfo);
+
+	// Act
+	auto* memory_data = writer.parent->records.VkDeviceMemory_index.at(image_data->backing);
+	char* ptr = nullptr;
+	VkResult result = wrap_vkMapMemory(device, memory_data->backing, image_data->offset + pInfo->dstOffset, image_data->size - pInfo->dstOffset, 0, (void**)&ptr);
+	assert(result == VK_SUCCESS);
+	image_data->updates++;
+	memcpy(ptr, pInfo->pData, pInfo->dataSize);
+	wrap_vkUnmapMemory(device, memory_data->backing);
+}
+
+VKAPI_ATTR void trace_vkPatchBufferTRACETOOLTEST(VkDevice device, VkBuffer dstBuffer, VkPatchChunkListTRACETOOLTEST* pList)
+{
+	lava_file_writer& writer = write_header("vkUpdateBufferTRACETOOLTEST", VKUPDATEBUFFERTRACETOOLTEST);
+	const auto* device_data = writer.parent->records.VkDevice_index.at(device);
+	auto* buffer_data = writer.parent->records.VkBuffer_index.at(dstBuffer);
+	writer.write_handle(device_data);
+	writer.write_handle(buffer_data);
+	if (buffer_data)
+	{
+		buffer_data->tid = writer.thread_index();
+		buffer_data->call = writer.local_call_number;
+		buffer_data->self_test();
+	}
+	write_VkPatchChunkListTRACETOOLTEST(writer, pList);
+
+	// TBD
+}
+
+VKAPI_ATTR void trace_vkPatchImageTRACETOOLTEST(VkDevice device, VkImage dstImage, VkPatchChunkListTRACETOOLTEST* pList)
+{
+	lava_file_writer& writer = write_header("vkUpdateImageTRACETOOLTEST", VKUPDATEIMAGETRACETOOLTEST);
+	const auto* device_data = writer.parent->records.VkDevice_index.at(device);
+	auto* image_data = writer.parent->records.VkImage_index.at(dstImage);
+	writer.write_handle(device_data);
+	writer.write_handle(image_data);
+	if (image_data)
+	{
+		image_data->tid = writer.thread_index();
+		image_data->call = writer.local_call_number;
+		image_data->self_test();
+	}
+	write_VkPatchChunkListTRACETOOLTEST(writer, pList);
+
+	// TBD
+}
+
+VKAPI_ATTR void trace_vkCmdUpdateBuffer2TRACETOOLTEST(VkCommandBuffer commandBuffer, VkBuffer dstBuffer, VkUpdateMemoryInfoTRACETOOLTEST* pInfo)
+{
+	lava_file_writer& writer = write_header("vkCmdUpdateBuffer2TRACETOOLTEST", VKCMDUPDATEBUFFER2TRACETOOLTEST);
+	auto* commandbuffer_data = writer.parent->records.VkCommandBuffer_index.at(commandBuffer);
+	auto* buffer_data = writer.parent->records.VkBuffer_index.at(dstBuffer);
+	if (commandbuffer_data) commandbuffer_data->self_test();
+	writer.write_handle(commandbuffer_data);
+	writer.write_handle(buffer_data);
+	if (commandbuffer_data)
+	{
+		commandbuffer_data->tid = writer.thread_index();
+		commandbuffer_data->call = writer.local_call_number;
+		commandbuffer_data->self_test();
+	}
+	if (buffer_data)
+	{
+		buffer_data->tid = writer.thread_index();
+		buffer_data->call = writer.local_call_number;
+		buffer_data->self_test();
+	}
+	writer.commandBuffer = commandBuffer;
+	writer.device = commandbuffer_data->device;
+	writer.physicalDevice = commandbuffer_data->physicalDevice;
+	write_VkUpdateMemoryInfoTRACETOOLTEST(writer, pInfo);
+}
+
+VKAPI_ATTR void trace_vkThreadBarrierTRACETOOLTEST(uint32_t count, uint32_t* pValues)
+{
+	lava_file_writer& writer = write_header("vkThreadBarrierTRACETOOLTEST", VKTHREADBARRIERTRACETOOLTEST);
+	writer.write_uint32_t(count);
+	for (uint32_t i = 0; i < count; i++)
+	{
+		writer.write_uint32_t(pValues[i]);
+	}
+}
+
 VKAPI_ATTR uint32_t VKAPI_CALL trace_vkAssertBufferTRACETOOLTEST(VkDevice device, VkBuffer buffer)
 {
 	lava_file_writer& writer = write_header("vkAssertBufferTRACETOOLTEST", VKASSERTBUFFERTRACETOOLTEST);
 	auto* buffer_data = writer.parent->records.VkBuffer_index.at(buffer);
 	auto* memory_data = writer.parent->records.VkDeviceMemory_index.at(buffer_data->backing);
+	writer.parent->memory_mutex.lock();
+	if (!memory_data->clone)
+	{
+		memory_data->clone = (char*)calloc(1, memory_data->allocationSize);
+	}
+	writer.parent->memory_mutex.unlock();
 	writer.write_handle(writer.parent->records.VkDevice_index.at(device));
 	writer.write_handle(buffer_data);
 	uint32_t checksum = 0;
@@ -2276,6 +2464,10 @@ static Json::Value trackedbuffer_json(const trackedbuffer* t)
 	v["req_alignment"] = (unsigned)t->req.alignment;
 	v["written"] = (Json::Value::UInt64)t->written;
 	v["updates"] = (unsigned)t->updates;
+	if (t->buffer_device_address != 0)
+	{
+		v["buffer_device_address"] = (Json::Value::UInt64)t->buffer_device_address;
+	}
 	return v;
 }
 

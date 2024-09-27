@@ -15,6 +15,7 @@ Features
 * Detects many unused features and removes erroneous enablement of them from the trace.
 * Blackhole replay where no work is actually submitted to the GPU.
 * Noscreen replay where we run any content without creating a window surface or displaying anything.
+* Implements the experimental [Common Benchmark Standard](external/tracetooltests/doc/BenchmarkingStandard.md)
 
 Performance
 -----------
@@ -55,7 +56,7 @@ Building
 
 For Ubuntu x86, install these packages:
 
-	sudo apt-get install git cmake pkg-config python2 libxcb1-dev libxrandr-dev libxcb-randr0-dev libtbb-dev libvulkan-dev spirv-headers
+	sudo apt-get install git cmake pkg-config python3 libxcb1-dev libxrandr-dev libxcb-randr0-dev libtbb-dev libvulkan-dev spirv-headers
 
 To build for linux desktop:
 --------------------------

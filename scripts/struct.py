@@ -20,7 +20,7 @@ skiplist = [ 'VkXlibSurfaceCreateInfoKHR', 'VkXcbSurfaceCreateInfoKHR', 'VkBaseO
 ]
 
 hardcoded_read = [ 'VkAccelerationStructureBuildGeometryInfoKHR' ]
-hardcoded_write = []
+hardcoded_write = [ 'VkUpdateMemoryInfoTRACETOOLTEST', 'VkAddressRemapTRACETOOLTEST', 'VkPatchChunkTRACETOOLTEST' ]
 
 z = util.getspool()
 

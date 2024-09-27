@@ -335,7 +335,6 @@ void purge_extension_parent(void* sptr, VkStructureType sType)
 		if (ptr->pNext->sType == sType)
 		{
 			ptr->pNext = ptr->pNext->pNext;
-			return;
 		}
 		ptr = ptr->pNext;
 	}

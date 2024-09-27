@@ -36,4 +36,4 @@ Replayer:
 
 Tools
 * Trace to text tool
-* Upgrade the code generators to python 3 (and generally improve them)
+* Improve the python code generators

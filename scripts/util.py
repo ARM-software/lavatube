@@ -136,7 +136,7 @@ ignore_on_read = [ 'vkGetMemoryHostPointerPropertiesEXT', 'vkCreateDebugUtilsMes
 ignore_on_trace = []
 # these functions have hard-coded post-execute callbacks
 replay_pre_calls = [ 'vkDestroyInstance', 'vkDestroyDevice', 'vkCreateDevice', 'vkCreateSampler', 'vkQueuePresentKHR', 'vkCreateSwapchainKHR',
-	'vkCreateSharedSwapchainsKHR' ]
+	'vkCreateSharedSwapchainsKHR', 'vkCreateGraphicsPipelines', 'vkCreateComputePipelines', 'vkCreateRayTracingPipelinesKHR', 'vkCmdPushConstants2KHR' ]
 replay_post_calls = [ 'vkCreateInstance', 'vkCreateDevice', 'vkDestroyInstance', 'vkQueuePresentKHR', 'vkAcquireNextImageKHR', 'vkAcquireNextImage2KHR',
 	'vkGetBufferDeviceAddress' ]
 trace_pre_calls = [ 'vkQueueSubmit', 'vkCreateInstance', 'vkCreateDevice', 'vkFreeMemory', 'vkQueueSubmit2', 'vkQueueSubmit2KHR' ]

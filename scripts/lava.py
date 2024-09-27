@@ -9,8 +9,13 @@ import argparse
 import struct
 
 # New functions that we implement
-fake_functions = [ 'vkAssertBufferTRACETOOLTEST', 'vkSyncBufferTRACETOOLTEST', 'vkGetDeviceTracingObjectPropertyTRACETOOLTEST' ]
-fake_structs = {}
+fake_functions = [ 'vkAssertBufferTRACETOOLTEST', 'vkSyncBufferTRACETOOLTEST', 'vkGetDeviceTracingObjectPropertyTRACETOOLTEST',
+	'vkCmdUpdateBuffer2TRACETOOLTEST', 'vkThreadBarrierTRACETOOLTEST',
+	'vkUpdateBufferTRACETOOLTEST',  'vkUpdateImageTRACETOOLTEST', 'vkPatchBufferTRACETOOLTEST', 'vkPatchImageTRACETOOLTEST' ]
+fake_extension_structs = {
+	'VkAddressRemapTRACETOOLTEST': 'VK_STRUCTURE_TYPE_ADDRESS_REMAP_TRACETOOLTEST',
+	'VkUpdateMemoryInfoTRACETOOLTEST': 'VK_STRUCTURE_TYPE_UPDATE_MEMORY_INFO_TRACETOOLTEST',
+}
 
 # Structs we want to save in our trace metadata as well
 extra_tracked_structs = [ 'VkPhysicalDeviceFeatures2', 'VkPhysicalDeviceVulkan11Features', 'VkPhysicalDeviceVulkan12Features', 'VkPhysicalDeviceVulkan13Features' ]
@@ -230,7 +235,7 @@ for v in spec.extension_structs:
 	out(targets_read, '\t\t}')
 	if v in spec.protected_types:
 		out(targets_read, '#endif')
-for k,v in fake_structs.items():
+for k,v in fake_extension_structs.items():
 	out(targets_read, '\t\tcase %s:' % v)
 	out(targets_read, '\t\t{')
 	out(targets_read, '\t\t\t%s* tmps = reader.pool.allocate<%s>(1);' % (k, k))
@@ -260,7 +265,7 @@ for v in spec.extension_structs:
 	out(targets_write, '\t\tcase %s: DLOG2("Saving extension %s (%%u)", (unsigned)sptr->sType); writer.write_uint32_t((uint32_t)sptr->sType); write_%s(writer, (%s*)sptr); break;' % (spec.type2sType[v], v, v, v))
 	if v in spec.protected_types:
 		out(targets_write, '#endif')
-for k,v in fake_structs.items():
+for k,v in fake_extension_structs.items():
 	out(targets_write, '\t\tcase %s: DLOG2("Saving fake extension %s (%%u)", (unsigned)sptr->sType); writer.write_uint32_t((uint32_t)sptr->sType); write_%s(writer, (%s*)sptr); break;' % (v, k, k, k))
 out(targets_write, '\t}')
 out(targets_write, '}')
@@ -289,6 +294,8 @@ for v in spec.root.findall("commands/command"):
 	if not name in spec.functions: continue
 	util.loadfunc(name, all_funcs[name], r, rh)
 	util.savefunc(name, all_funcs[name], w, wh)
+for f in fake_extension_structs:
+	out(targets_read_headers, 'void read_%s(lava_file_reader& reader, %s* sptr);' % (f, f))
 for f in fake_functions:
 	if f == 'vkAssertBufferTRACETOOLTEST':
 		out([wh, rh], 'VKAPI_ATTR uint32_t VKAPI_CALL trace_vkAssertBufferTRACETOOLTEST(VkDevice device, VkBuffer buffer);')
@@ -297,7 +304,19 @@ for f in fake_functions:
 	elif f == 'vkGetDeviceTracingObjectPropertyTRACETOOLTEST':
 		out([wh, rh], 'VKAPI_ATTR uint64_t VKAPI_CALL trace_vkGetDeviceTracingObjectPropertyTRACETOOLTEST(VkDevice device, VkObjectType objectType, uint64_t objectHandle, VkTracingObjectPropertyTRACETOOLTEST valueType);')
 	elif f == 'vkFrameEndTRACETOOLTEST':
-		out([wh, rh], 'VKAPI_ATTR void VKAPI_CALL trace_vkFrameEndTRACETOOLTEST(VkDevice device);')
+		out([wh], 'VKAPI_ATTR void VKAPI_CALL trace_vkFrameEndTRACETOOLTEST(VkDevice device);')
+	elif f == 'vkCmdUpdateBuffer2TRACETOOLTEST':
+		out([wh], 'VKAPI_ATTR void trace_vkCmdUpdateBuffer2TRACETOOLTEST(VkCommandBuffer commandBuffer, VkBuffer dstBuffer, VkUpdateMemoryInfoTRACETOOLTEST* pInfo);')
+	elif f == 'vkUpdateBufferTRACETOOLTEST':
+		out([wh], 'VKAPI_ATTR void trace_vkUpdateBufferTRACETOOLTEST(VkDevice device, VkBuffer buffer, VkUpdateMemoryInfoTRACETOOLTEST* pInfo);')
+	elif f == 'vkUpdateImageTRACETOOLTEST':
+		out([wh], 'VKAPI_ATTR void trace_vkUpdateImageTRACETOOLTEST(VkDevice device, VkImage buffer, VkUpdateMemoryInfoTRACETOOLTEST* pInfo);')
+	elif f == 'vkPatchBufferTRACETOOLTEST':
+		out([wh], 'VKAPI_ATTR void trace_vkPatchBufferTRACETOOLTEST(VkDevice device, VkBuffer buffer, VkPatchChunkListTRACETOOLTEST* pList);')
+	elif f == 'vkPatchImageTRACETOOLTEST':
+		out([wh], 'VKAPI_ATTR void trace_vkPatchImageTRACETOOLTEST(VkDevice device, VkImage buffer, VkPatchChunkListTRACETOOLTEST* pList);')
+	elif f == 'vkThreadBarrierTRACETOOLTEST':
+		out([wh], 'VKAPI_ATTR void trace_vkThreadBarrierTRACETOOLTEST(uint32_t count, uint32_t* pValues);')
 	else:
 		assert False, 'Missing fake function header implementation'
 

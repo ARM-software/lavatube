@@ -15,12 +15,12 @@ jobs:
 
     steps:
     - uses: actions/checkout@v3
-    
+
     - name: Install deps
       run: |
          sudo apt-get update
-         sudo apt-get install git cmake pkg-config python2 libxcb1-dev libxrandr-dev libxcb-randr0-dev libtbb-dev libvulkan-dev spirv-headers
-    
+         sudo apt-get install git cmake pkg-config python3 libxcb1-dev libxrandr-dev libxcb-randr0-dev libtbb-dev libvulkan-dev spirv-headers
+
     - name: Checkout
       run: git submodule update --init --recursive --force
 
@@ -29,7 +29,7 @@ jobs:
 
     - name: Build
       run: cmake --build ${{github.workspace}}/build --config ${{env.BUILD_TYPE}}
-      
+
     - name: Test
       working-directory: ${{github.workspace}}/build
       run: |
