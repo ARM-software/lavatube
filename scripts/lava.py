@@ -137,6 +137,41 @@ out([u], '};')
 out([u], 'const char* get_function_name(uint16_t idx) { return reverse_function_table.at(idx); }')
 out([uh], 'const char* get_function_name(uint16_t idx) __attribute__((pure));')
 
+out([uh, u])
+for s in spec.feature_structs:
+	if s in spec.protected_types:
+		out([u], '#ifdef %s' % (spec.protected_types[s]))
+	out([u], 'static void print_feature_mismatch_%s(VkPhysicalDevice physical, const %s* req)' % (s, s))
+	out([u], '{')
+	out([u], '\t%s host = { %s, nullptr };' % (s, spec.type2sType[s]))
+	out([u], '\tVkPhysicalDeviceFeatures2 feat2 = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2, &host };')
+	out([u], '\twrap_vkGetPhysicalDeviceFeatures2(physical, &feat2);')
+	for v in spec.root.findall('types/type'):
+		sname = v.attrib.get('name')
+		if sname != s: continue
+		for p in v.findall('member'):
+			api = p.attrib.get('api')
+			if api and api == 'vulkansc': continue
+			name = p.find('name').text
+			if name in ['pNext', 'sType']: continue
+			out([u], '\tif (req->%s == VK_TRUE && host.%s == VK_FALSE) printf("\\t%s : %s\\n");' % (name, name, sname, name))
+	out([u], '}')
+	if s in spec.protected_types:
+		out([u], '#endif')
+	out([u])
+out([uh], 'void print_pnext_feature_mismatches(VkPhysicalDevice physical, const VkDeviceCreateInfo* info);')
+out([u], 'void print_pnext_feature_mismatches(VkPhysicalDevice physical, const VkDeviceCreateInfo* info)')
+out([u], '{')
+for s in spec.feature_structs:
+	if s in spec.protected_types:
+		out([u], '#ifdef %s' % (spec.protected_types[s]))
+	out([u], '\tconst %s* req_%s = (const %s*)find_extension(info, %s);' % (s, s, s, spec.type2sType[s]))
+	out([u], '\tif (req_%s) print_feature_mismatch_%s(physical, req_%s);' % (s, s, s))
+	if s in spec.protected_types:
+		out([u], '#endif')
+out([u], '}')
+out([uh, u])
+
 out([wrh, wr] + targets_read)
 out(targets_read, 'static void reset_all()')
 out(targets_write, 'static void reset_all(trace_records* r) REQUIRES(frame_mutex)')
