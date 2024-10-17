@@ -295,7 +295,7 @@ struct trackedfence : trackable
 	VkFenceCreateFlags flags = (VkFenceCreateFlags)0;
 
 	// tracer only
-	int frame_delay = -1; // delay fuse
+	int frame_delay = -1; // delay fuse uninitialized
 };
 
 struct trackedpipeline : trackable

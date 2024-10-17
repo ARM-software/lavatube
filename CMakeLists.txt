@@ -468,9 +468,9 @@ endfunction()
 
 layer_test(general general)
 add_test(NAME layer_test_general_fencedelay COMMAND ${CMAKE_CURRENT_BINARY_DIR}/tracetooltests/vulkan_general -f 1)
-set_tests_properties(layer_test_general_fencedelay PROPERTIES ENVIRONMENT "VK_LAYER_PATH=${CMAKE_CURRENT_BINARY_DIR}/implicit_layer.d;VK_INSTANCE_LAYERS=VK_LAYER_ARM_lavatube;LD_LIBRARY_PATH=${CMAKE_CURRENT_BINARY_DIR}/implicit_layer.d;LAVATUBE_DELAY_FENCE_SUCCESS_FRAMES=1;")
+set_tests_properties(layer_test_general_fencedelay PROPERTIES ENVIRONMENT "VK_LAYER_PATH=${CMAKE_CURRENT_BINARY_DIR}/implicit_layer.d;VK_INSTANCE_LAYERS=VK_LAYER_ARM_lavatube;LD_LIBRARY_PATH=${CMAKE_CURRENT_BINARY_DIR}/implicit_layer.d;LAVATUBE_DELAY_FENCE_SUCCESS_FRAMES=2;")
 add_test(NAME script_test_general COMMAND ${CMAKE_SOURCE_DIR}/scripts/lava-capture.py -o script_test_general.vk --layer-path ${CMAKE_CURRENT_BINARY_DIR}/implicit_layer.d ${CMAKE_CURRENT_BINARY_DIR}/tracetooltests/vulkan_general -f 0 -V 2)
-add_test(NAME script_test_general_fencedelay COMMAND ${CMAKE_SOURCE_DIR}/scripts/lava-capture.py -o script_test_general_fencedelay.vk --layer-path ${CMAKE_CURRENT_BINARY_DIR}/implicit_layer.d --delayfence 1 ${CMAKE_CURRENT_BINARY_DIR}/tracetooltests/vulkan_general -f 1)
+add_test(NAME script_test_general_fencedelay COMMAND ${CMAKE_SOURCE_DIR}/scripts/lava-capture.py -o script_test_general_fencedelay.vk --layer-path ${CMAKE_CURRENT_BINARY_DIR}/implicit_layer.d --delayfence 2 ${CMAKE_CURRENT_BINARY_DIR}/tracetooltests/vulkan_general -f 1)
 add_test(NAME script_test_copying_1 COMMAND ${CMAKE_SOURCE_DIR}/scripts/lava-capture.py -o script_test_copying_1.vk --dedicated-buffer --gpu 0 --layer-path ${CMAKE_CURRENT_BINARY_DIR}/implicit_layer.d ${CMAKE_CURRENT_BINARY_DIR}/tracetooltests/vulkan_copying_1 -V 2)
 #layer_test(general_vulkan13 general -V 3) # crashes on replay on privatedata
 layer_test(copying_1 copying_1)

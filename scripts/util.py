@@ -1080,11 +1080,11 @@ def save_add_pre(name): # need to include the resource-creating or resource-dest
 		z.do('if (p__delay_fence_success_frames > 0) for (unsigned i = 0; i < fenceCount; i++)')
 		z.brace_begin() # the assumption here is that the function is only called once per frame per fence unless it is in a loop
 		z.do('auto* tf = writer.parent->records.VkFence_index.at(%s);' % ('pFences[i]' if name == 'vkWaitForFences' else 'fence'))
-		z.do('if (tf->frame_delay == -1) { tf->frame_delay = p__delay_fence_success_frames - 1; }')
+		z.do('if (tf->frame_delay == -1) { tf->frame_delay = p__delay_fence_success_frames; }')
 		if name == 'vkGetFenceStatus':
-			z.do('if (tf->frame_delay >= 0) { tf->frame_delay--; writer.write_uint32_t(VK_NOT_READY); return VK_NOT_READY; }')
+			z.do('if (tf->frame_delay > 0) { tf->frame_delay--; writer.write_uint32_t(VK_NOT_READY); return VK_NOT_READY; }')
 		elif name == 'vkWaitForFences':
-			z.do('if (tf->frame_delay >= 0 && timeout != UINT32_MAX) { tf->frame_delay--; writer.write_uint32_t(VK_TIMEOUT); return VK_TIMEOUT; }')
+			z.do('if (tf->frame_delay > 0 && timeout != UINT32_MAX) { tf->frame_delay--; writer.write_uint32_t(VK_TIMEOUT); return VK_TIMEOUT; }')
 		z.brace_end()
 	elif name in ['vkUnmapMemory', 'vkUnmapMemory2KHR']:
 		z.do('writer.parent->memory_mutex.lock();')
@@ -1119,7 +1119,7 @@ def save_add_tracking(name):
 		z.do('for (unsigned i = 0; i < fenceCount; i++)')
 		z.brace_begin()
 		z.do('auto* tf = writer.parent->records.VkFence_index.at(pFences[i]);')
-		z.do('tf->frame_delay = -1; // just to be sure')
+		z.do('tf->frame_delay = -1; // reset delay fuse')
 		z.do('tf->tid = writer.thread_index();')
 		z.do('tf->call = writer.local_call_number;')
 		z.brace_end()
