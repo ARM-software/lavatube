@@ -525,40 +525,34 @@ void replay_pre_vkCreateDevice(lava_file_reader& reader, VkPhysicalDevice physic
 	pCreateInfo->pQueueCreateInfos = queueinfo;
 
 	// Replace stored features with a pruned feature list
-	bool uses_ext_features = false;
 	VkBaseOutStructure *ext = (VkBaseOutStructure*)find_extension_parent(pCreateInfo, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES);
 	if (ext && has_VkPhysicalDeviceVulkan11Features)
 	{
 		stored_VkPhysicalDeviceVulkan11Features.pNext = ext->pNext->pNext;
 		ext->pNext = (VkBaseOutStructure*)&stored_VkPhysicalDeviceVulkan11Features;
-		uses_ext_features = true;
 	}
 	ext = (VkBaseOutStructure*)find_extension_parent(pCreateInfo, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES);
 	if (ext && has_VkPhysicalDeviceVulkan12Features)
 	{
 		stored_VkPhysicalDeviceVulkan12Features.pNext = ext->pNext->pNext;
 		ext->pNext = (VkBaseOutStructure*)&stored_VkPhysicalDeviceVulkan12Features;
-		uses_ext_features = true;
 	}
 	ext = (VkBaseOutStructure*)find_extension_parent(pCreateInfo, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES);
 	if (ext && has_VkPhysicalDeviceVulkan13Features)
 	{
 		stored_VkPhysicalDeviceVulkan13Features.pNext = ext->pNext->pNext;
 		ext->pNext = (VkBaseOutStructure*)&stored_VkPhysicalDeviceVulkan13Features;
-		uses_ext_features = true;
 	}
-
-	if (!uses_ext_features && has_VkPhysicalDeviceFeatures2) // not using feature structs through pNext? use the old way
+	ext = (VkBaseOutStructure*)find_extension_parent(pCreateInfo, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2);
+	if (ext && has_VkPhysicalDeviceFeatures2)
 	{
-		pCreateInfo->pEnabledFeatures = &stored_VkPhysicalDeviceFeatures2.features; // struct copy
-	}
-	else if (has_VkPhysicalDeviceFeatures2)
-	{
-		ext = (VkBaseOutStructure*)find_extension_parent(pCreateInfo, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2);
-		assert(ext);
 		stored_VkPhysicalDeviceFeatures2.pNext = ext->pNext->pNext;
 		ext->pNext = (VkBaseOutStructure*)&stored_VkPhysicalDeviceFeatures2;
 		pCreateInfo->pEnabledFeatures = nullptr;
+	}
+	else if (has_VkPhysicalDeviceFeatures2) // use the old way, just stored in the new way
+	{
+		pCreateInfo->pEnabledFeatures = &stored_VkPhysicalDeviceFeatures2.features; // struct copy
 	}
 
 	// TBD replace feature extensions
