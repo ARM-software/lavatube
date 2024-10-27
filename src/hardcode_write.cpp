@@ -898,6 +898,16 @@ static void trace_pre_vkCreateDevice(VkPhysicalDevice physicalDevice, VkDeviceCr
 	r["deviceRequested"] = Json::objectValue;
 	if (device_extension_properties.size() == 0) modify_device_extensions(physicalDevice); // in case empty
 
+	// Logging
+	const VkBaseOutStructure* pNext = (const VkBaseOutStructure*)pCreateInfo->pNext;
+	if (pNext) DLOG("vkCreateDevice pNext chain contains:");
+	else DLOG("vkCreateDevice pNext chain is empty");
+	while (pNext)
+	{
+		DLOG("\t%s", get_stype_name(pNext->sType));
+		pNext = pNext->pNext;
+	}
+
 	// -- Save information on app request --
 
 	if (pCreateInfo->pEnabledFeatures)

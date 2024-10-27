@@ -141,7 +141,26 @@ for f in fake_functions:
 out([u], '};')
 out([u], 'const char* get_function_name(uint16_t idx) { return reverse_function_table.at(idx); }')
 out([uh], 'const char* get_function_name(uint16_t idx) __attribute__((pure));')
+out([uh], 'const char* get_stype_name(VkStructureType idx) __attribute__((pure));')
 
+out([u])
+out([u], 'static std::unordered_map<VkStructureType, const char*> reverse_stype_table =')
+out([u], '{')
+for k,v in spec.sType2type.items():
+	if 'VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PORTABILITY_SUBSET_FEATURES_KHR' in k: continue
+	if 'VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PORTABILITY_SUBSET_PROPERTIES_KHR' in k: continue
+	if k in spec.protected_types:
+		out(targets_read, '#ifdef %s' % (spec.protected_types[v]))
+	out([u], '\t{ %s, "%s" },' % (k, v))
+	if k in spec.protected_types:
+		out(targets_read, '#endif')
+out([u], '')
+out([u], '\t{ VK_STRUCTURE_TYPE_LOADER_INSTANCE_CREATE_INFO, "VkLayerInstanceCreateInfo" },')
+out([u], '\t{ VK_STRUCTURE_TYPE_LOADER_DEVICE_CREATE_INFO, "VkLayerDeviceCreateInfo" },')
+out([u], '};')
+out([u], 'const char* get_stype_name(VkStructureType idx) { return reverse_stype_table.at(idx); }')
+
+out([u])
 out([uh, u])
 for s in spec.feature_structs:
 	if s in spec.protected_types:
