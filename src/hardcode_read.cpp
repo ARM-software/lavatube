@@ -1024,6 +1024,8 @@ void replay_pre_vkCmdPushConstants2KHR(lava_file_reader& reader, VkCommandBuffer
 	assert(pPushConstantsInfo->pValues);
 	assert(pPushConstantsInfo->size >= remap->count);
 	translate_addresses(reader, remap->count, remap->pOffsets, const_cast<void*>(pPushConstantsInfo->pValues));
+	// make sure we don't leak this to the driver, as this would break validation
+	purge_extension_parent(const_cast<VkPushConstantsInfoKHR*>(pPushConstantsInfo), VK_STRUCTURE_TYPE_ADDRESS_REMAP_TRACETOOLTEST);
 }
 
 void replay_pre_vkCreateComputePipelines(lava_file_reader& reader, VkDevice device, VkPipelineCache pipelineCache, uint32_t createInfoCount,
@@ -1040,6 +1042,9 @@ void replay_pre_vkCreateComputePipelines(lava_file_reader& reader, VkDevice devi
 		assert(pCreateInfos[i].stage.pSpecializationInfo->dataSize >= remap->count);
 
 		translate_addresses(reader, remap->count, remap->pOffsets, const_cast<void*>(pCreateInfos[i].stage.pSpecializationInfo->pData));
+
+		// make sure we don't leak this to the driver, as this would break validation
+		purge_extension_parent(const_cast<VkPipelineShaderStageCreateInfo*>(&pCreateInfos[i].stage), VK_STRUCTURE_TYPE_ADDRESS_REMAP_TRACETOOLTEST);
 	}
 }
 
@@ -1058,6 +1063,9 @@ void replay_pre_vkCreateGraphicsPipelines(lava_file_reader& reader, VkDevice dev
 			assert(pCreateInfos[i].pStages[stage].pSpecializationInfo->dataSize >= remap->count);
 
 			translate_addresses(reader, remap->count, remap->pOffsets, const_cast<void*>(pCreateInfos[i].pStages[stage].pSpecializationInfo->pData));
+
+			// make sure we don't leak this to the driver, as this would break validation
+			purge_extension_parent(const_cast<VkPipelineShaderStageCreateInfo*>(&pCreateInfos[i].pStages[stage]), VK_STRUCTURE_TYPE_ADDRESS_REMAP_TRACETOOLTEST);
 		}
 	}
 }
@@ -1077,6 +1085,9 @@ void replay_pre_vkCreateRayTracingPipelinesKHR(lava_file_reader& reader, VkDevic
 			assert(pCreateInfos[i].pStages[stage].pSpecializationInfo->dataSize >= remap->count);
 
 			translate_addresses(reader, remap->count, remap->pOffsets, const_cast<void*>(pCreateInfos[i].pStages[stage].pSpecializationInfo->pData));
+
+			// make sure we don't leak this to the driver, as this would break validation
+			purge_extension_parent(const_cast<VkPipelineShaderStageCreateInfo*>(&pCreateInfos[i].pStages[stage]), VK_STRUCTURE_TYPE_ADDRESS_REMAP_TRACETOOLTEST);
 		}
 	}
 }
