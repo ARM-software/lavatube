@@ -21,6 +21,7 @@ static bool has_VkPhysicalDeviceFeatures2 = false;
 static bool has_VkPhysicalDeviceVulkan11Features = false;
 static bool has_VkPhysicalDeviceVulkan12Features = false;
 static bool has_VkPhysicalDeviceVulkan13Features = false;
+static bool host_has_frame_boundary = false;
 
 static void memory_report_callback(
 	const VkDeviceMemoryReportCallbackDataEXT*  pCallbackData,
@@ -165,6 +166,27 @@ static uint64_t object_lookup(VkObjectType type, uint32_t index)
 	case VK_OBJECT_TYPE_MAX_ENUM: assert(false); return 0;
 	}
 	return 0;
+}
+
+void replay_pre_vkQueueSubmit2(VkQueue queue, uint32_t submitCount, const VkSubmitInfo2* pSubmits, VkFence fence)
+{
+	for (uint32_t i = 0; i < submitCount; i++)
+	{
+		if (!host_has_frame_boundary) purge_extension_parent(const_cast<VkSubmitInfo2*>(&pSubmits[i]), VK_STRUCTURE_TYPE_FRAME_BOUNDARY_EXT);
+	}
+}
+
+void replay_pre_vkQueueSubmit2KHR(VkQueue queue, uint32_t submitCount, const VkSubmitInfo2KHR* pSubmits, VkFence fence)
+{
+	replay_pre_vkQueueSubmit2(queue, submitCount, pSubmits, fence);
+}
+
+void replay_pre_vkQueueSubmit(lava_file_reader& reader, VkQueue queue, uint32_t submitCount, const VkSubmitInfo* pSubmits, VkFence fence)
+{
+	for (uint32_t i = 0; i < submitCount; i++)
+	{
+		if (!host_has_frame_boundary) purge_extension_parent(const_cast<VkSubmitInfo*>(&pSubmits[i]), VK_STRUCTURE_TYPE_FRAME_BOUNDARY_EXT);
+	}
 }
 
 void replay_pre_vkCreateSampler(lava_file_reader& reader, VkDevice device, VkSamplerCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkSampler* pSampler)
@@ -632,7 +654,6 @@ void replay_post_vkCreateInstance(lava_file_reader& reader, VkResult result, con
 
 const char* const* device_extensions(VkDeviceCreateInfo* sptr, lava_file_reader& reader, VkPhysicalDevice physicalDevice, uint32_t& len)
 {
-	bool host_has_frame_boundary = false;
 	bool trace_has_frame_boundary = false;
 	static std::vector<const char *> dst;
 	static std::vector<std::string> backing;
