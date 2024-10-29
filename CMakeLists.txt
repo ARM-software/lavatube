@@ -523,6 +523,7 @@ add_test(NAME layer_test_thread_3_replay_blackhole_stress_9 COMMAND ${CMAKE_CURR
 set_tests_properties(layer_test_thread_3_replay_blackhole_stress_9 PROPERTIES FIXTURES_REQUIRED thread_3)
 layer_test(compute_1 compute_1)
 layer_test(compute_1_indirect compute_1 --indirect)
+layer_test(compute_1_indirect_offset compute_1 --indirect -ioff 9)
 layer_test(compute_1_fb compute_1 --frame-boundary)
 add_test(NAME layer_test_compute_1_1 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/tracetooltests/vulkan_compute_1 -pc)
 set_tests_properties(layer_test_compute_1_1 PROPERTIES ENVIRONMENT "VK_LAYER_PATH=${CMAKE_CURRENT_BINARY_DIR}/implicit_layer.d;VK_INSTANCE_LAYERS=VK_LAYER_ARM_lavatube;LD_LIBRARY_PATH=${CMAKE_CURRENT_BINARY_DIR}/implicit_layer.d;")
