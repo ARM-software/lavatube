@@ -347,8 +347,9 @@ void suballoc_virtualswap_images(VkDevice device, const std::vector<VkImage>& im
 	}
 }
 
-suballoc_location suballoc_add_buffer(uint16_t tid, VkDevice device, VkBuffer buffer, uint32_t buffer_index, VkMemoryPropertyFlags mempropflags, VkBufferUsageFlags buffer_flags)
+suballoc_location suballoc_add_buffer(uint16_t tid, VkDevice device, VkBuffer buffer, uint32_t buffer_index, VkMemoryPropertyFlags mempropflags, const trackedbuffer& buffer_data)
 {
+	const VkBufferUsageFlags buffer_flags = buffer_data.usage;
 	if ((mempropflags & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT) || (mempropflags & VK_MEMORY_PROPERTY_HOST_CACHED_BIT))
 	{
 		mempropflags &= ~VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT; // do not require this bit in these cases

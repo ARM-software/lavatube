@@ -316,12 +316,13 @@ for v in spec.root.findall("commands/command"):
 for f in fake_extension_structs:
 	out(targets_read_headers, 'void read_%s(lava_file_reader& reader, %s* sptr);' % (f, f))
 for f in fake_functions:
+	out(targets_read_headers, 'void retrace_%s(lava_file_reader& reader);' % f)
 	if f == 'vkAssertBufferTRACETOOLTEST':
-		out([wh, rh], 'VKAPI_ATTR uint32_t VKAPI_CALL trace_vkAssertBufferTRACETOOLTEST(VkDevice device, VkBuffer buffer);')
+		out([wh], 'VKAPI_ATTR uint32_t VKAPI_CALL trace_vkAssertBufferTRACETOOLTEST(VkDevice device, VkBuffer buffer);')
 	elif f == 'vkSyncBufferTRACETOOLTEST':
-		out([wh, rh], 'VKAPI_ATTR void VKAPI_CALL trace_vkSyncBufferTRACETOOLTEST(VkDevice device, VkBuffer buffer);')
+		out([wh], 'VKAPI_ATTR void VKAPI_CALL trace_vkSyncBufferTRACETOOLTEST(VkDevice device, VkBuffer buffer);')
 	elif f == 'vkGetDeviceTracingObjectPropertyTRACETOOLTEST':
-		out([wh, rh], 'VKAPI_ATTR uint64_t VKAPI_CALL trace_vkGetDeviceTracingObjectPropertyTRACETOOLTEST(VkDevice device, VkObjectType objectType, uint64_t objectHandle, VkTracingObjectPropertyTRACETOOLTEST valueType);')
+		out([wh], 'VKAPI_ATTR uint64_t VKAPI_CALL trace_vkGetDeviceTracingObjectPropertyTRACETOOLTEST(VkDevice device, VkObjectType objectType, uint64_t objectHandle, VkTracingObjectPropertyTRACETOOLTEST valueType);')
 	elif f == 'vkFrameEndTRACETOOLTEST':
 		out([wh], 'VKAPI_ATTR void VKAPI_CALL trace_vkFrameEndTRACETOOLTEST(VkDevice device);')
 	elif f == 'vkCmdUpdateBuffer2TRACETOOLTEST':
@@ -341,10 +342,10 @@ for f in fake_functions:
 
 out(targets_all)
 
-out([rh], 'void image_update(lava_file_reader& reader, uint32_t device_index, uint32_t image_index);')
-out([rh], 'void buffer_update(lava_file_reader& reader, uint32_t device_index, uint32_t buffer_index);')
-out([rh], 'void terminate_all(VkDevice device);')
-out([rh])
+out(targets_read_headers, 'void image_update(lava_file_reader& reader, uint32_t device_index, uint32_t image_index);')
+out(targets_read_headers, 'void buffer_update(lava_file_reader& reader, uint32_t device_index, uint32_t buffer_index);')
+out(targets_read_headers, 'void terminate_all(VkDevice device);')
+out(targets_read_headers)
 
 out(targets_read, 'void retrace_init(const Json::Value& v, int heap_size)')
 out(targets_read, '{')
@@ -364,16 +365,16 @@ for v in spec.root.findall('types/type'):
 		if v.find('name').text == 'VkInstance':
 			out(targets_read, '\t\t\tif (v[p].asInt() == 0) ELOG("No Vulkan instances recorded. Broken trace file!");')
 		if v.find('name').text == 'VkSurfaceKHR':
-			out([r], '\t\t\twindow_preallocate(v[p].asInt());')
+			out(targets_read, '\t\t\twindow_preallocate(v[p].asInt());')
 		if v.find('name').text == 'VkImage':
-			out([r], '\t\t\timages = v[p].asInt();')
+			out(targets_read, '\t\t\timages = v[p].asInt();')
 		if v.find('name').text == 'VkBuffer':
-			out([r], '\t\t\tbuffers = v[p].asInt();')
+			out(targets_read, '\t\t\tbuffers = v[p].asInt();')
 		out(targets_read, '\t\t}')
 out(targets_read, '\t}')
-out([r], '\tsuballoc_init(images, buffers, heap_size);')
+out(targets_read, '\tsuballoc_init(images, buffers, heap_size);')
 out(targets_read, '}')
-out([rh], 'void retrace_init(const Json::Value& v, int heap_size = -1);')
+out(targets_read_headers, 'void retrace_init(const Json::Value& v, int heap_size = -1);')
 
 out(targets_write)
 out(targets_write, 'Json::Value trace_limits(const lava_writer* instance)')
@@ -391,7 +392,7 @@ out(targets_write, '}')
 out(targets_write_headers, 'Json::Value trace_limits(const lava_writer* instance) REQUIRES(frame_mutex);')
 
 out(targets_read)
-out([r], 'lava_replay_func retrace_getcall(uint16_t call)')
+out(targets_read, 'lava_replay_func retrace_getcall(uint16_t call)')
 out(targets_read, '{')
 out(targets_read, '\tswitch(call)')
 out(targets_read, '\t{')
@@ -399,7 +400,7 @@ idx = 0
 for f in spec.functions:
 	if f in util.functions_noop or f in spec.disabled_functions or spec.str_contains_vendor(f):
 		out(targets_read, '\tcase %d:' % idx)
-		out([r], '\t\tDLOG3("Attempt to use retrace_getcall on unimplemented function %s with index %d.");' % (f, idx))
+		out(targets_read, '\t\tDLOG3("Attempt to use retrace_getcall on unimplemented function %s with index %d.");' % (f, idx))
 		out(targets_read, '\t\treturn nullptr;')
 	else:
 		out(targets_read, '\tcase %d: return (lava_replay_func)retrace_%s;' % (idx, f))
@@ -448,12 +449,12 @@ out([wr], '\tdefault: return nullptr;')
 out([wr], '\t}')
 out([wr], '}')
 
-out([r])
-out([r], 'uint16_t retrace_getid(const char* f)')
-out([r], '{')
-out([r], '\tif (function_table.count(f) == 0) return UINT16_MAX;')
-out([r], '\treturn function_table.at(f);')
-out([r], '}')
+out(targets_read)
+out(targets_read, 'uint16_t retrace_getid(const char* f)')
+out(targets_read, '{')
+out(targets_read, '\tif (function_table.count(f) == 0) return UINT16_MAX;')
+out(targets_read, '\treturn function_table.at(f);')
+out(targets_read, '}')
 out(targets_read_headers, 'uint16_t retrace_getid(const char* f);')
 
 out(targets_write)
@@ -484,7 +485,7 @@ out(targets_write, '\treturn v;')
 out(targets_write, '}')
 
 out(targets_read)
-out([rh], 'void trackable_read(const Json::Value& v);')
+out(targets_read_headers, 'void trackable_read(const Json::Value& v);')
 out(targets_read, 'void trackable_read(const Json::Value& v)')
 out(targets_read, '{')
 for v in spec.root.findall('types/type'):
