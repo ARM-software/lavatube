@@ -148,6 +148,8 @@ const char* errorString(const VkResult errorCode)
 	STR(ERROR_VIDEO_STD_VERSION_NOT_SUPPORTED_KHR);
 	STR(ERROR_INCOMPATIBLE_SHADER_BINARY_EXT);
 	STR(ERROR_INVALID_VIDEO_STD_PARAMETERS_KHR);
+	STR(PIPELINE_BINARY_MISSING_KHR);
+	STR(ERROR_NOT_ENOUGH_SPACE_KHR);
 #undef STR
 	case VK_RESULT_MAX_ENUM:
 		return "(bad error code)";
@@ -408,7 +410,7 @@ const char* pretty_print_VkObjectType(VkObjectType val)
 	case VK_OBJECT_TYPE_ACCELERATION_STRUCTURE_NV: return "AccelerationStructureNV";
 	case VK_OBJECT_TYPE_PERFORMANCE_CONFIGURATION_INTEL: return "PerformanceConfigurationINTEL";
 	case VK_OBJECT_TYPE_DEFERRED_OPERATION_KHR: return "DeferredOperation";
-	case VK_OBJECT_TYPE_INDIRECT_COMMANDS_LAYOUT_NV: return "IndirectComamndsLayoutNV";
+	case VK_OBJECT_TYPE_INDIRECT_COMMANDS_LAYOUT_NV: return "IndirectCommandsLayoutNV";
 	case VK_OBJECT_TYPE_CU_MODULE_NVX: return "CuModuleNVX";
 	case VK_OBJECT_TYPE_BUFFER_COLLECTION_FUCHSIA: return "BufferCollectionFUCHSIA";
 	case VK_OBJECT_TYPE_MICROMAP_EXT: return "Micromap";
@@ -419,6 +421,9 @@ const char* pretty_print_VkObjectType(VkObjectType val)
 	case VK_OBJECT_TYPE_SHADER_EXT: return "Shader";
 	case VK_OBJECT_TYPE_CUDA_MODULE_NV: return "CudaModule";
 	case VK_OBJECT_TYPE_CUDA_FUNCTION_NV: return "CudaFunction";
+	case VK_OBJECT_TYPE_PIPELINE_BINARY_KHR: return "PipelineBinary";
+	case VK_OBJECT_TYPE_INDIRECT_COMMANDS_LAYOUT_EXT: return "IndirectCommandsLayout";
+	case VK_OBJECT_TYPE_INDIRECT_EXECUTION_SET_EXT: return "IndirectExecutionSet";
 	}
 	return "Error";
 }
