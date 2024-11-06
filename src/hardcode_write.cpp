@@ -134,6 +134,9 @@ static trackable* object_trackable(const trace_records& r, VkObjectType type, ui
 	case VK_OBJECT_TYPE_BUFFER_COLLECTION_FUCHSIA:
 	case VK_OBJECT_TYPE_OPTICAL_FLOW_SESSION_NV:
 	case VK_OBJECT_TYPE_UNKNOWN:
+	case VK_OBJECT_TYPE_PIPELINE_BINARY_KHR:
+	case VK_OBJECT_TYPE_INDIRECT_COMMANDS_LAYOUT_EXT:
+	case VK_OBJECT_TYPE_INDIRECT_EXECUTION_SET_EXT:
 	case VK_OBJECT_TYPE_MAX_ENUM: assert(false); return nullptr;
 	}
 	return nullptr;

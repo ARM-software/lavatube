@@ -25,6 +25,8 @@ Missing Vulkan call implementations:
 
 Missing and desirable extension support:
 * VK_EXT_mutable_descriptor_type
+* VK_EXT_device_generated_commands
+* VK_KHR_pipeline_binary
 
 Replayer:
 * Preloading

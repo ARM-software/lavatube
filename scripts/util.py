@@ -93,6 +93,7 @@ functions_noop = [
 	'vkGetDeviceFaultInfoEXT', # we never want to trace this, but rather inject it during tracing if device loss happens, print the info, then abort
 	'vkGetAccelerationStructureOpaqueCaptureDescriptorDataEXT', 'vkCmdPushDescriptorSetWithTemplate2KHR', 'vkCmdSetRenderingInputAttachmentIndicesKHR',
 	'vkGetEncodedVideoSessionParametersKHR',
+	'vkCreatePipelineBinariesKHR', 'vkCreateIndirectCommandsLayoutEXT', 'vkCreateIndirectExecutionSetEXT', 'vkGetPipelineBinaryDataKHR', # TBD
 ]
 struct_noop = []
 
