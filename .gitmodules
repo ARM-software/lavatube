@@ -1,9 +1,6 @@
 [submodule "external/density"]
 	path = external/density
 	url = http://github.com/centaurean/density
-[submodule "external/Vulkan-Headers"]
-	path = external/Vulkan-Headers
-	url = https://github.com/KhronosGroup/Vulkan-Headers.git
 [submodule "tracetooltests"]
 	path = tracetooltests
 	url = https://github.com/ARM-software/tracetooltests.git
