@@ -173,7 +173,7 @@ deconst_struct = [
 trackable_type_map_general = { 'VkBuffer': 'trackedbuffer', 'VkImage': 'trackedimage', 'VkCommandBuffer': 'trackedcmdbuffer', 'VkDescriptorSet': 'trackeddescriptorset',
 	'VkDeviceMemory': 'trackedmemory', 'VkFence': 'trackedfence', 'VkPipeline': 'trackedpipeline', 'VkImageView': 'trackedimageview', 'VkBufferView': 'trackedbufferview',
 	'VkDevice': 'trackeddevice', 'VkFramebuffer': 'trackedframebuffer', 'VkRenderPass': 'trackedrenderpass', 'VkQueue': 'trackedqueue', 'VkPhysicalDevice': 'trackedphysicaldevice',
-	'VkShaderModule': 'trackedshadermodule' }
+	'VkShaderModule': 'trackedshadermodule', 'VkAccelerationStructureKHR': 'trackedaccelerationstructure' }
 trackable_type_map_trace = trackable_type_map_general.copy()
 trackable_type_map_trace.update({ 'VkCommandBuffer': 'trackedcmdbuffer_trace', 'VkSwapchainKHR': 'trackedswapchain_trace', 'VkDescriptorSet': 'trackeddescriptorset_trace',
 	'VkEvent': 'trackedevent_trace', 'VkDescriptorPool': 'trackeddescriptorpool_trace', 'VkCommandPool': 'trackedcommandpool_trace' })
@@ -1216,6 +1216,12 @@ def save_add_tracking(name):
 			z.do('add->info = *pCreateInfo;')
 		elif type == 'VkDevice':
 			z.do('add->physicalDevice = physicalDevice;')
+		elif type == 'VkAccelerationStructureKHR':
+			z.do('add->type = pCreateInfo->type;')
+			z.do('add->offset = pCreateInfo->offset;')
+			z.do('add->buffer = pCreateInfo->buffer;')
+			z.do('add->buffer_index = writer.parent->records.VkBuffer_index.at(pCreateInfo->buffer)->index;')
+			z.do('add->size = pCreateInfo->size;')
 		z.do('DLOG2("insert %s into %s index %%u", (unsigned)add->index);' % (type, name))
 		z.do('writer.write_handle(add);')
 	elif name in spec.functions_create: # multiple

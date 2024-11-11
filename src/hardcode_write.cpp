@@ -142,6 +142,12 @@ static trackable* object_trackable(const trace_records& r, VkObjectType type, ui
 	return nullptr;
 }
 
+static void trace_post_vkGetAccelerationStructureDeviceAddressKHR(lava_file_writer& writer, VkDeviceAddress result, VkDevice device, const VkAccelerationStructureDeviceAddressInfoKHR* pInfo)
+{
+	auto* data = writer.parent->records.VkAccelerationStructureKHR_index.at(pInfo->accelerationStructure);
+	data->buffer_device_address = result;
+}
+
 static void trace_post_vkGetBufferDeviceAddress(lava_file_writer& writer, VkDeviceAddress result, VkDevice device, const VkBufferDeviceAddressInfo* pInfo)
 {
 	auto* buffer_data = writer.parent->records.VkBuffer_index.at(pInfo->buffer);
@@ -2463,6 +2469,19 @@ static Json::Value trackable_json(const trackable* t)
 	v["frame_created"] = t->frame_created;
 	v["frame_destroyed"] = t->frame_destroyed;
 	if (!t->name.empty()) v["name"] = t->name;
+	return v;
+}
+
+static Json::Value trackedaccelerationstructure_json(const trackedaccelerationstructure* t)
+{
+	Json::Value v = trackable_json(t);
+	v["size"] = (Json::Value::UInt64)t->size;
+	v["offset"] = (Json::Value::UInt64)t->offset;
+	v["buffer_index"] = t->buffer_index;
+	if (t->buffer_device_address != 0)
+	{
+		v["buffer_device_address"] = (Json::Value::UInt64)t->buffer_device_address;
+	}
 	return v;
 }
 

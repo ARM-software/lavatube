@@ -160,6 +160,18 @@ void lava_reader::init(const std::string& path, int heap_size)
 			}
 		}
 	}
+	if (trackable.isMember("VkAccelerationStructureKHR"))
+	{
+		for (uint32_t i = 0; i < VkAccelerationStructureKHR_index.size(); i++)
+		{
+			Json::Value& buf = trackable["VkAccelerationStructureKHR"][i];
+			if (buf.isMember("buffer_device_address"))
+			{
+				VkDeviceAddress address = buf["buffer_device_address"].asUInt64();
+				buffer_device_address_remapping[address] = &VkAccelerationStructureKHR_index.at(i); // same parent class as above
+			}
+		}
+	}
 
 	Json::Value meta = readJson("metadata.json", mPackedFile);
 	mGlobalFrames = meta["global_frames"].asInt();

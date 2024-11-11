@@ -287,6 +287,12 @@ void retrace_vkDestroySurfaceKHR(lava_file_reader& reader)
 	}
 }
 
+static void replay_post_vkGetAccelerationStructureDeviceAddressKHR(lava_file_reader& reader, VkDeviceAddress result, VkDevice device, const VkAccelerationStructureDeviceAddressInfoKHR* pInfo)
+{
+	const uint32_t as_index = index_to_VkAccelerationStructureKHR.index(pInfo->accelerationStructure);
+	VkAccelerationStructureKHR_index.at(as_index).buffer_device_address = result;
+}
+
 static void replay_post_vkGetBufferDeviceAddress(lava_file_reader& reader, VkDeviceAddress result, VkDevice device, const VkBufferDeviceAddressInfo* pInfo)
 {
 	const uint32_t buffer_index = index_to_VkBuffer.index(pInfo->buffer);
@@ -1032,8 +1038,8 @@ static void translate_addresses(lava_file_reader& reader, uint32_t count, VkDevi
 		const uint64_t offset = pOffsets[i];
 		uint64_t* addr = (uint64_t*)(((char*)ptr) + offset);
 		const uint64_t current = *addr;
-		const trackedbuffer* buffer_data = reader.parent->buffer_device_address_remapping.at(current);
-		const uint64_t newval = buffer_data->buffer_device_address;
+		const trackedmemoryobject* data = reader.parent->buffer_device_address_remapping.at(current);
+		const uint64_t newval = data->buffer_device_address;
 		ILOG("%u: Changing memory value at offset %lu from %lu to %lu", (unsigned)i, (unsigned long)offset, (unsigned long)current, (unsigned long)newval);
 		*addr = newval;
 	}
@@ -1957,6 +1963,17 @@ static trackedpipeline trackedpipeline_json(const Json::Value& v)
 	if (v.isMember("name")) t.name = v["name"].asString();
 	t.flags = v["flags"].asUInt();
 	t.type = (VkPipelineBindPoint)v["type"].asUInt();
+	return t;
+}
+
+static trackedaccelerationstructure trackedaccelerationstructure_json(const Json::Value& v)
+{
+	trackedaccelerationstructure t(v["frame_created"].asInt());
+	t.frame_destroyed = v["frame_destroyed"].asInt();
+	if (v.isMember("name")) t.name = v["name"].asString();
+	t.size = (VkDeviceSize)v["size"].asUInt64();
+	t.offset = (VkDeviceSize)v["offset"].asUInt64();
+	t.buffer_index = v["buffer_index"].asUInt();
 	return t;
 }
 

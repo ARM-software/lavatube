@@ -71,7 +71,7 @@ public:
 	std::vector<std::atomic_uint_fast32_t>* thread_call_numbers; // thread local call numbers
 
 	// This is thread safe since we allocate it all before threading begins.
-	std::map<VkDeviceAddress, trackedbuffer*> buffer_device_address_remapping;
+	std::map<VkDeviceAddress, trackedmemoryobject*> buffer_device_address_remapping;
 
 	/// Current global frame (only use for logging)
 	std::atomic_int global_frame{ 0 };

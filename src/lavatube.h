@@ -145,13 +145,18 @@ struct trackedshadermodule : trackedobject
 	size_t size = 0;
 };
 
-struct trackedbuffer : trackedobject
+struct trackedmemoryobject : trackedobject
 {
 	using trackedobject::trackedobject; // inherit constructor
+	VkDeviceAddress buffer_device_address = 0;
+};
+
+struct trackedbuffer : trackedmemoryobject
+{
+	using trackedmemoryobject::trackedmemoryobject; // inherit constructor
 	VkBufferCreateFlags flags = VK_BUFFER_CREATE_FLAG_BITS_MAX_ENUM;
 	VkSharingMode sharingMode = VK_SHARING_MODE_MAX_ENUM;
 	VkBufferUsageFlags usage = VK_BUFFER_USAGE_FLAG_BITS_MAX_ENUM;
-	VkDeviceAddress buffer_device_address = 0;
 
 	void self_test() const
 	{
@@ -160,6 +165,23 @@ struct trackedbuffer : trackedobject
 		assert(usage != VK_BUFFER_USAGE_FLAG_BITS_MAX_ENUM);
 		assert(type == VK_OBJECT_TYPE_BUFFER);
 		trackedobject::self_test();
+	}
+};
+
+struct trackedaccelerationstructure : trackedmemoryobject
+{
+	using trackedmemoryobject::trackedmemoryobject; // inherit constructor
+	VkBuffer buffer = VK_NULL_HANDLE;
+	uint32_t buffer_index = CONTAINER_INVALID_INDEX;
+	VkAccelerationStructureTypeKHR type = VK_ACCELERATION_STRUCTURE_TYPE_MAX_ENUM_KHR;
+	VkDeviceSize offset = 0;
+	VkDeviceSize size = 0;
+
+	void self_test() const
+	{
+		assert(buffer != VK_NULL_HANDLE);
+		assert(buffer_index != CONTAINER_INVALID_INDEX);
+		assert(type != VK_ACCELERATION_STRUCTURE_TYPE_MAX_ENUM_KHR);
 	}
 };
 
