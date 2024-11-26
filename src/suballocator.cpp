@@ -18,6 +18,7 @@ static void suballoc_print(FILE* fp);
 
 static uint64_t min_heap_size = 1024 * 1024 * 32; // default 32mb size heaps
 static std::vector<VkDeviceMemory> virtualswapmemory;
+static bool run = true; // whether we actually run things or just fake it
 
 struct suballocation
 {
@@ -57,7 +58,6 @@ struct lookup
 	lookup(heap* h, VkDeviceSize o, VkDeviceSize s) : home(h), offset(o), size(s) {}
 	lookup() {}
 };
-
 
 static tbb::concurrent_vector<heap> heaps;
 static VkPhysicalDeviceMemoryProperties memory_properties;
@@ -123,8 +123,9 @@ static uint32_t get_device_memory_type(uint32_t type_filter, VkMemoryPropertyFla
 
 // API
 
-void suballoc_init(int num_images, int num_buffers, int heap_size)
+void suballoc_init(int num_images, int num_buffers, int heap_size, bool fake)
 {
+	run = !fake;
 	assert(image_lookup.size() == 0);
 	assert(buffer_lookup.size() == 0);
 	image_lookup.resize(num_images);
@@ -136,7 +137,19 @@ void suballoc_init(int num_images, int num_buffers, int heap_size)
 void suballoc_setup(VkPhysicalDevice physicaldevice)
 {
 	assert(memory_properties.memoryTypeCount == 0);
-	wrap_vkGetPhysicalDeviceMemoryProperties(physicaldevice, &memory_properties);
+	if (run)
+	{
+		wrap_vkGetPhysicalDeviceMemoryProperties(physicaldevice, &memory_properties);
+	}
+	else
+	{
+		memory_properties.memoryTypeCount = 1;
+		memory_properties.memoryTypes[0].heapIndex = 0;
+		memory_properties.memoryTypes[0].propertyFlags = VK_MEMORY_PROPERTY_FLAG_BITS_MAX_ENUM;
+		memory_properties.memoryHeapCount = 1;
+		memory_properties.memoryHeaps[0].size = UINT64_MAX;
+		memory_properties.memoryHeaps[0].flags = VK_MEMORY_HEAP_DEVICE_LOCAL_BIT;
+	}
 	assert(memory_properties.memoryTypeCount > 0);
 }
 
@@ -167,13 +180,19 @@ static suballoc_location add_object_new(VkDevice device, uint16_t tid, uint32_t 
 	}
 	assert(info.allocationSize < 1024 * 1024 * 1024); // 1 gig max for sanity's sake
 	info.memoryTypeIndex = memoryTypeIndex;
-	VkResult result = wrap_vkAllocateMemory(device, &info, nullptr, &h.mem);
-	if (result != VK_SUCCESS)
+	if (run)
 	{
-		print_memory_usage();
-		SUBALLOC_ABORT("Failed to allocate %lu bytes of memory for memory type %u and tiling %u", (unsigned long)info.allocationSize, (unsigned)memoryTypeIndex, (unsigned)tiling);
+		VkResult result = wrap_vkAllocateMemory(device, &info, nullptr, &h.mem);
+		if (result != VK_SUCCESS)
+		{
+			print_memory_usage();
+			SUBALLOC_ABORT("Failed to allocate %lu bytes of memory for memory type %u and tiling %u", (unsigned long)info.allocationSize, (unsigned)memoryTypeIndex, (unsigned)tiling);
+		}
 	}
-	(void)result; // TBD - handle failure somehow
+	else
+	{
+		h.mem = (VkDeviceMemory)malloc(info.allocationSize);
+	}
 	h.free = info.allocationSize - s.size;
 	h.total = info.allocationSize;
 	h.memoryTypeIndex = memoryTypeIndex;
@@ -267,8 +286,10 @@ static suballoc_location add_object(VkDevice device, uint16_t tid, uint32_t memo
 	return add_object_new(device, tid, memoryTypeIndex, s, flags, alignment, tiling, dedicated, allocflags, bind_callback);
 }
 
-static bool fill_image_memreq(VkDevice device, VkImage image, VkMemoryRequirements2& req)
+static bool fill_image_memreq(VkDevice device, VkImage image, VkMemoryRequirements2& req, VkDeviceSize size)
 {
+	if (!run) { req.memoryRequirements.size = size; req.memoryRequirements.alignment = 1; req.memoryRequirements.memoryTypeBits = 1; return false; }
+	assert(run);
 	req.sType = VK_STRUCTURE_TYPE_MEMORY_REQUIREMENTS_2;
 	VkMemoryDedicatedRequirements dedicated = { VK_STRUCTURE_TYPE_MEMORY_DEDICATED_REQUIREMENTS, nullptr, VK_TRUE, VK_FALSE };
 	if (use_dedicated_allocation())
@@ -293,7 +314,7 @@ suballoc_location suballoc_add_image(uint16_t tid, VkDevice device, VkImage imag
 		flags &= ~VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT; // do not require this bit in these cases
 	}
 	VkMemoryRequirements2 req = {};
-	const bool dedicated = fill_image_memreq(device, image, req);
+	const bool dedicated = fill_image_memreq(device, image, req, min_size);
 	const uint32_t memoryTypeIndex = get_device_memory_type(req.memoryRequirements.memoryTypeBits, flags);
 	suballocation s;
 	s.type = VK_OBJECT_TYPE_IMAGE;
@@ -316,8 +337,9 @@ suballoc_location suballoc_add_image(uint16_t tid, VkDevice device, VkImage imag
 
 void suballoc_virtualswap_images(VkDevice device, const std::vector<VkImage>& images)
 {
+	assert(run);
 	VkMemoryRequirements2 req = {};
-	const bool dedicated = fill_image_memreq(device, images.at(0), req);
+	const bool dedicated = fill_image_memreq(device, images.at(0), req, 0);
 	VkMemoryPropertyFlags flags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
 	const uint32_t memoryTypeIndex = get_device_memory_type(req.memoryRequirements.memoryTypeBits, flags);
 	VkMemoryAllocateInfo info = {};
@@ -358,7 +380,7 @@ suballoc_location suballoc_add_buffer(uint16_t tid, VkDevice device, VkBuffer bu
 	req.sType = VK_STRUCTURE_TYPE_MEMORY_REQUIREMENTS_2;
 	VkMemoryDedicatedRequirements dedicated = {};
 	dedicated.sType = VK_STRUCTURE_TYPE_MEMORY_DEDICATED_REQUIREMENTS;
-	if (use_dedicated_allocation())
+	if (use_dedicated_allocation() && run)
 	{
 		VkBufferMemoryRequirementsInfo2 info = {};
 		info.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_REQUIREMENTS_INFO_2;
@@ -366,9 +388,15 @@ suballoc_location suballoc_add_buffer(uint16_t tid, VkDevice device, VkBuffer bu
 		req.pNext = &dedicated;
 		wrap_vkGetBufferMemoryRequirements2(device, &info, &req);
 	}
-	else
+	else if (run)
 	{
 		wrap_vkGetBufferMemoryRequirements(device, buffer, &req.memoryRequirements);
+	}
+	else // fake mem system
+	{
+		req.memoryRequirements.size = buffer_data.size;
+		req.memoryRequirements.alignment = 1;
+		req.memoryRequirements.memoryTypeBits = 1;
 	}
 	uint32_t memoryTypeIndex = get_device_memory_type(req.memoryRequirements.memoryTypeBits, mempropflags);
 	suballocation s;
@@ -438,7 +466,8 @@ void suballoc_destroy(VkDevice device)
 {
 	for (heap& h : heaps)
 	{
-		wrap_vkFreeMemory(device, h.mem, nullptr);
+		if (run) wrap_vkFreeMemory(device, h.mem, nullptr);
+		else free(h.mem);
 		h.deletes.clear();
 	}
 	heaps.clear();

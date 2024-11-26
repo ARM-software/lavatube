@@ -81,6 +81,10 @@ public:
 	// The dictionary is read from a JSON file and then mapped from their to our function ids.
 	std::unordered_map<uint16_t, uint16_t> dictionary;
 
+	/// Whether we should actually call into Vulkan or if we are just processing the data.
+	/// Duplicated into the file reader.
+	bool run = true;
+
 private:
 	/// Start time of frame range
 	std::atomic_uint64_t mStartTime{ 0 };
@@ -145,11 +149,16 @@ public:
 	VkDevice device = VK_NULL_HANDLE;
 	VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
 
+	/// Whether we should actually call into Vulkan or if we are just processing the data
+	bool run = true;
+
 	/// Current local frame
 	int local_frame = 0;
 
 	/// Is this reader's thread terminated?
 	std::atomic_bool terminated{ false };
+
+	inline void self_test();
 
 private:
 	int tid;
@@ -165,6 +174,12 @@ private:
 	unsigned global_frames = 0;
 	unsigned local_frames = 0;
 };
+
+inline void lava_file_reader::self_test()
+{
+	assert(parent);
+	assert(run == parent->run);
+}
 
 inline void lava_file_reader::read_barrier()
 {

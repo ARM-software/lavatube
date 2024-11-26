@@ -275,7 +275,7 @@ void retrace_vkDestroySurfaceKHR(lava_file_reader& reader)
 	{
 		surface_index = reader.read_handle();
 		surface = index_to_VkSurfaceKHR.at(surface_index);
-		if (!is_noscreen())
+		if (!is_noscreen() && reader.run)
 		{
 			VkAllocationCallbacks allocator = {};
 			VkAllocationCallbacks* pAllocator = &allocator;
@@ -321,6 +321,7 @@ void replay_post_vkAcquireNextImage2KHR(lava_file_reader& reader, VkResult resul
 // make or remake swapchain images
 static VkSwapchainKHR remake_swapchain(lava_file_reader& reader, VkQueue queue, VkSwapchainKHR old_swapchain, trackedswapchain_replay* data)
 {
+	assert(reader.run);
 	// TBD check surface capabilities, these values may not be supported
 	VkSwapchainCreateInfoKHR s = { VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR, nullptr };
 	s.flags = data->info.flags;
@@ -468,7 +469,8 @@ static void cleanup_sync(VkQueue queue, uint32_t waitSemaphoreCount, const VkSem
 {
 	const VkPipelineStageFlags flags = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
 	VkSubmitInfo submit_info = { VK_STRUCTURE_TYPE_SUBMIT_INFO, nullptr, waitSemaphoreCount, waitSemaphores, &flags, 0, nullptr, signalSemaphoreCount, signalSemaphores };
-	VkResult result = wrap_vkQueueSubmit(queue, 1, &submit_info, fence);
+	VkResult result = VK_SUCCESS;
+	wrap_vkQueueSubmit(queue, 1, &submit_info, fence);
 	assert(result == VK_SUCCESS);
 }
 
@@ -516,7 +518,7 @@ void replay_post_vkQueuePresentKHR(lava_file_reader& reader, VkResult result, Vk
 		wrap_vkDeviceWaitIdle(queue_data.device);
 		reader.parent->finalize(true);
 		usleep(100); // hack to ensure all other, in-progress threads are completed or waiting forever before we destroy everything below
-		terminate_all(queue_data.device);
+		if (reader.run) terminate_all(queue_data.device);
 		if (p__debug_destination) fclose(p__debug_destination);
 	}
 }
@@ -602,15 +604,6 @@ void replay_pre_vkCreateDevice(lava_file_reader& reader, VkPhysicalDevice physic
 	}
 }
 
-void replay_post_vkCreateDevice(lava_file_reader& reader, VkResult result, VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkDevice* pDevice)
-{
-	if (!*pDevice)
-	{
-		ABORT("Failed to create a Vulkan device: %s", errorString(result));
-	}
-	suballoc_setup(selected_physical_device);
-}
-
 void replay_post_vkCreateInstance(lava_file_reader& reader, VkResult result, const VkInstanceCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkInstance* pInstance)
 {
 	if (!pInstance || !*pInstance || *pInstance == VK_NULL_HANDLE)
@@ -667,6 +660,7 @@ const char* const* device_extensions(VkDeviceCreateInfo* sptr, lava_file_reader&
 	static std::vector<const char *> dst;
 	static std::vector<std::string> backing;
 	const char* const* stored = reader.read_string_array(len); // all extensions used in original
+	if (!reader.run) return stored;
 	const std::vector<const char*> do_not_copy = {
 		VK_KHR_SWAPCHAIN_EXTENSION_NAME, VK_KHR_GET_MEMORY_REQUIREMENTS_2_EXTENSION_NAME,
 		VK_KHR_DEDICATED_ALLOCATION_EXTENSION_NAME, VK_EXT_PIPELINE_CREATION_FEEDBACK_EXTENSION_NAME,
@@ -785,6 +779,7 @@ const char* const* instance_extensions(lava_file_reader& reader, uint32_t& len)
 		"VK_EXT_headless_surface"
 	};
 	const char* const* stored = reader.read_string_array(len);
+	if (!reader.run) return stored;
 
 	backing.clear();
 	dst.clear();
@@ -888,7 +883,7 @@ const char* const* instance_layers(lava_file_reader& reader, uint32_t& len)
 	static std::vector<const char *> dst;
 	static std::vector<std::string> backing;
 	const char* const* retval = reader.read_string_array(len);
-	(void)retval; // read and ignore
+	if (!reader.run) return retval;
 
 	backing.clear();
 	dst.clear();
@@ -965,7 +960,8 @@ void retrace_vkGetDeviceProcAddr(lava_file_reader& reader)
 	const uint32_t device_index = reader.read_handle();
 	VkDevice device = index_to_VkDevice.at(device_index);
 	const char* pName = reader.read_string();
-	PFN_vkVoidFunction ptr = wrap_vkGetDeviceProcAddr(device, pName);
+	PFN_vkVoidFunction ptr = nullptr;
+	if (reader.run) wrap_vkGetDeviceProcAddr(device, pName);
 }
 
 void retrace_vkGetInstanceProcAddr(lava_file_reader& reader)
@@ -973,7 +969,8 @@ void retrace_vkGetInstanceProcAddr(lava_file_reader& reader)
 	const uint32_t instance_index = reader.read_handle();
 	VkInstance instance = index_to_VkInstance.at(instance_index);
 	const char* pName = reader.read_string();
-	PFN_vkVoidFunction ptr = wrap_vkGetInstanceProcAddr(instance, pName);
+	PFN_vkVoidFunction ptr = nullptr;
+	if (reader.run) wrap_vkGetInstanceProcAddr(instance, pName);
 }
 
 static void retrace_vkFrameEndTRACETOOLTEST(lava_file_reader& reader)
@@ -1004,6 +1001,7 @@ void retrace_vkAssertBufferTRACETOOLTEST(lava_file_reader& reader)
 	VkDevice device = index_to_VkDevice.at(device_index);
 	suballoc_location loc = suballoc_find_buffer_memory(buffer_index);
 	uint8_t* ptr = nullptr;
+	if (!reader.run) return;
 	VkResult result = wrap_vkMapMemory(device, loc.memory, loc.offset, tbuf.size, 0, (void**)&ptr);
 	assert(result == VK_SUCCESS);
 	uint32_t checksum_new = adler32((unsigned char*)ptr, tbuf.size);
@@ -1125,8 +1123,15 @@ void replay_pre_vkCreateRayTracingPipelinesKHR(lava_file_reader& reader, VkDevic
 static char* mem_map(lava_file_reader& reader, VkDevice device, const suballoc_location& loc)
 {
 	char* ptr = nullptr;
-	VkResult result = wrap_vkMapMemory(device, loc.memory, loc.offset, loc.size, 0, (void**)&ptr);
-	assert(result == VK_SUCCESS);
+	if (reader.run)
+	{
+		VkResult result = wrap_vkMapMemory(device, loc.memory, loc.offset, loc.size, 0, (void**)&ptr);
+		assert(result == VK_SUCCESS);
+	}
+	else
+	{
+		ptr = (char*)loc.memory;
+	}
 	if (loc.needs_init)
 	{
 		memset(ptr, 0, loc.size);
@@ -1137,7 +1142,7 @@ static char* mem_map(lava_file_reader& reader, VkDevice device, const suballoc_l
 static void mem_unmap(lava_file_reader& reader, VkDevice device, const suballoc_location& loc, VkAddressRemapTRACETOOLTEST* ar, char* ptr)
 {
 	if (ar) translate_addresses(reader, ar->count, ar->pOffsets, ptr);
-	if (loc.needs_flush)
+	if (loc.needs_flush && reader.run)
 	{
 		VkMappedMemoryRange flush = {};
 		flush.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE;
@@ -1146,7 +1151,7 @@ static void mem_unmap(lava_file_reader& reader, VkDevice device, const suballoc_
 		flush.size = loc.size;
 		wrap_vkFlushMappedMemoryRanges(device, 1, &flush);
 	}
-	wrap_vkUnmapMemory(device, loc.memory);
+	if (reader.run) wrap_vkUnmapMemory(device, loc.memory);
 }
 
 VKAPI_ATTR void retrace_vkThreadBarrierTRACETOOLTEST(lava_file_reader& reader)
@@ -1286,7 +1291,7 @@ VKAPI_ATTR void retrace_vkCmdUpdateBuffer2TRACETOOLTEST(lava_file_reader& reader
 	VkAddressRemapTRACETOOLTEST* ar = (VkAddressRemapTRACETOOLTEST*)find_extension(&info, VK_STRUCTURE_TYPE_ADDRESS_REMAP_TRACETOOLTEST);
 	// -- Execute --
 	if (ar) translate_addresses(reader, ar->count, ar->pOffsets, const_cast<void*>(info.pData));
-	wrap_vkCmdUpdateBuffer(commandBuffer, dstBuffer, info.dstOffset, info.dataSize, info.pData);
+	if (reader.run) wrap_vkCmdUpdateBuffer(commandBuffer, dstBuffer, info.dstOffset, info.dataSize, info.pData);
 	ILOG("Ran vkCmdUpdateBuffer2TRACETOOLTEST"); // TBD REMOVE ME
 }
 
@@ -1361,7 +1366,7 @@ void retrace_vkCmdBuildAccelerationStructuresIndirectKHR(lava_file_reader& reade
 		}
 	}
 	// -- Execute --
-	wrap_vkCmdBuildAccelerationStructuresIndirectKHR(commandBuffer, infoCount, pInfos, pIndirectDeviceAddresses, pIndirectStrides, ppMaxPrimitiveCounts);
+	if (reader.run) wrap_vkCmdBuildAccelerationStructuresIndirectKHR(commandBuffer, infoCount, pInfos, pIndirectDeviceAddresses, pIndirectStrides, ppMaxPrimitiveCounts);
 	// -- Post --
 }
 
@@ -1426,7 +1431,7 @@ void retrace_vkGetSwapchainImagesKHR(lava_file_reader& reader)
 	VkSwapchainKHR swapchain = index_to_VkSwapchainKHR.at(swapchain_index);
 	trackedswapchain_replay& data = VkSwapchainKHR_index.at(swapchain_index);
 
-	if (!is_noscreen())
+	if (!is_noscreen() && reader.run)
 	{
 		uint32_t pSwapchainImageCount;
 		result = wrap_vkGetSwapchainImagesKHR(device, swapchain, &pSwapchainImageCount, nullptr);
@@ -1437,7 +1442,7 @@ void retrace_vkGetSwapchainImagesKHR(lava_file_reader& reader)
 		(void)result;
 	}
 
-	if (!data.initialized && is_virtualswapchain()) // create virtual swapchain
+	if (!data.initialized && is_virtualswapchain() && reader.run) // create virtual swapchain
 	{
 		// Make virtual images
 		VkImageCreateInfo pinfo = {};
@@ -1512,7 +1517,8 @@ void retrace_vkGetSwapchainImagesKHR(lava_file_reader& reader)
 	for (uint32_t i = 0; i < stored_image_count; i++)
 	{
 		const uint32_t remap_index = reader.read_handle();
-		if (!is_virtualswapchain()) index_to_VkImage.set(remap_index, data.pSwapchainImages[i]);
+		if (!reader.run) index_to_VkImage.set(remap_index, fake_handle<VkImage>(remap_index));
+		else if (!is_virtualswapchain()) index_to_VkImage.set(remap_index, data.pSwapchainImages[i]);
 		else index_to_VkImage.set(remap_index, data.virtual_images[i]);
 		DLOG("Image index %u is swapchain image index %u", remap_index, i);
 	}
@@ -1543,7 +1549,9 @@ void retrace_vkCreateAndroidSurfaceKHR(lava_file_reader& reader)
 	const uint32_t retval = reader.read_uint32_t();
 	(void)retval;
 	const uint32_t surface_index = reader.read_handle();
-	VkSurfaceKHR pSurface = window_create(instance, surface_index, x, y, width, height);
+	VkSurfaceKHR pSurface = VK_NULL_HANDLE;
+	if (!is_noscreen() && reader.run) window_create(instance, surface_index, x, y, width, height);
+	else pSurface = fake_handle<VkSurfaceKHR>(surface_index);
 	// Post
 	index_to_VkSurfaceKHR.set(surface_index, pSurface);
 }
@@ -1573,8 +1581,11 @@ void retrace_vkCreateXcbSurfaceKHR(lava_file_reader& reader)
 	(void)retval;
 	const uint32_t surface_index = reader.read_handle();
 	VkSurfaceKHR pSurface = VK_NULL_HANDLE;
-	if (!is_noscreen()) pSurface = window_create(instance, surface_index, x, y, width, height);
-	else pSurface = (VkSurfaceKHR)((intptr_t)surface_index + 1);
+	if (!is_noscreen() && reader.run)
+	{
+		pSurface = window_create(instance, surface_index, x, y, width, height);
+	}
+	else pSurface = fake_handle<VkSurfaceKHR>(surface_index);
 	// Post
 	index_to_VkSurfaceKHR.set(surface_index, pSurface);
 }
@@ -1604,8 +1615,8 @@ void retrace_vkCreateXlibSurfaceKHR(lava_file_reader& reader)
 	(void)retval;
 	const uint32_t surface_index = reader.read_handle();
 	VkSurfaceKHR pSurface = VK_NULL_HANDLE;
-	if (!is_noscreen()) pSurface = window_create(instance, surface_index, x, y, width, height);
-	else pSurface = (VkSurfaceKHR)((intptr_t)surface_index + 1);
+	if (!is_noscreen() && reader.run) pSurface = window_create(instance, surface_index, x, y, width, height);
+	else pSurface = fake_handle<VkSurfaceKHR>(surface_index);
 	// Post
 	index_to_VkSurfaceKHR.set(surface_index, pSurface);
 }
@@ -1632,8 +1643,8 @@ void retrace_vkCreateWaylandSurfaceKHR(lava_file_reader& reader)
 	(void)retval;
 	const uint32_t surface_index = reader.read_handle();
 	VkSurfaceKHR pSurface = VK_NULL_HANDLE;
-	if (!is_noscreen()) pSurface = window_create(instance, surface_index, x, y, width, height);
-	else pSurface = (VkSurfaceKHR)((intptr_t)surface_index + 1);
+	if (!is_noscreen() && reader.run) pSurface = window_create(instance, surface_index, x, y, width, height);
+	else pSurface = fake_handle<VkSurfaceKHR>(surface_index);
 	// Post
 	index_to_VkSurfaceKHR.set(surface_index, pSurface);
 }
@@ -1669,8 +1680,8 @@ void retrace_vkCreateHeadlessSurfaceEXT(lava_file_reader& reader)
 	(void)retval;
 	const uint32_t surface_index = reader.read_handle();
 	VkSurfaceKHR pSurface = VK_NULL_HANDLE;
-	if (!is_noscreen()) pSurface = window_create(instance, surface_index, x, y, width, height);
-	else pSurface = (VkSurfaceKHR)((intptr_t)surface_index + 1);
+	if (!is_noscreen() && reader.run) pSurface = window_create(instance, surface_index, x, y, width, height);
+	else pSurface = fake_handle<VkSurfaceKHR>(surface_index);
 	// Post
 	index_to_VkSurfaceKHR.set(surface_index, pSurface);
 }
@@ -1692,7 +1703,6 @@ void retrace_vkCreateMetalSurfaceEXT(lava_file_reader& reader)
 
 void retrace_vkGetDeviceQueue2(lava_file_reader& reader)
 {
-	VkQueue queue = VK_NULL_HANDLE;
 	const uint32_t device_index = reader.read_handle();
 	VkDevice device = index_to_VkDevice.at(device_index);
 	VkDeviceQueueInfo2 info_real = {};
@@ -1700,7 +1710,8 @@ void retrace_vkGetDeviceQueue2(lava_file_reader& reader)
 	bool virtual_family = false;
 	uint32_t realIndex = info_real.queueIndex;
 	uint32_t realFamily = info_real.queueFamilyIndex;
-	if (info_real.queueFamilyIndex == LAVATUBE_VIRTUAL_QUEUE)
+	VkQueue queue = fake_handle<VkQueue>((info_real.queueFamilyIndex << 16) + info_real.queueIndex);
+	if (info_real.queueFamilyIndex == LAVATUBE_VIRTUAL_QUEUE && reader.run)
 	{
 		virtual_family = true;
 		info_real.queueFamilyIndex = selected_queue_family_index;
@@ -1710,12 +1721,14 @@ void retrace_vkGetDeviceQueue2(lava_file_reader& reader)
 			info_real.queueIndex = 0; // map to first queue
 		}
 	}
-	wrap_vkGetDeviceQueue2(device, &info_real, &queue);
-	assert(queue != VK_NULL_HANDLE);
+	if (reader.run)
+	{
+		wrap_vkGetDeviceQueue2(device, &info_real, &queue);
+		assert(queue != VK_NULL_HANDLE);
+	}
 	const uint32_t stored_queue_index = reader.read_handle();
 	if (!index_to_VkQueue.contains(stored_queue_index))
 	{
-		const VkQueueFamilyProperties& props = device_VkQueueFamilyProperties.at(info_real.queueFamilyIndex);
 		index_to_VkQueue.set(stored_queue_index, queue);
 		auto& queue_data = VkQueue_index.at(stored_queue_index);
 		queue_data.device = device;
@@ -1724,22 +1737,26 @@ void retrace_vkGetDeviceQueue2(lava_file_reader& reader)
 		queue_data.realIndex = realIndex;
 		queue_data.realFamily = realFamily;
 		queue_data.realQueue = queue;
-		queue_data.queueFlags = props.queueFlags;
+		if (reader.run)
+		{
+			const VkQueueFamilyProperties& props = device_VkQueueFamilyProperties.at(info_real.queueFamilyIndex);
+			queue_data.queueFlags = props.queueFlags;
+		}
 		queue_data.physicalDevice = VkDevice_index.at(device_index).physicalDevice;
 	}
 }
 
 void retrace_vkGetDeviceQueue(lava_file_reader& reader)
 {
-	VkQueue queue = VK_NULL_HANDLE;
 	const uint32_t device_index = reader.read_handle();
 	VkDevice device = index_to_VkDevice.at(device_index);
 	uint32_t queueFamilyIndex = reader.read_uint32_t();
 	uint32_t queueIndex = reader.read_uint32_t();
+	VkQueue queue = fake_handle<VkQueue>((queueFamilyIndex << 16) + queueIndex);
 	bool virtual_family = false;
 	uint32_t realIndex = queueIndex;
 	uint32_t realFamily = queueFamilyIndex;
-	if (queueFamilyIndex == LAVATUBE_VIRTUAL_QUEUE)
+	if (queueFamilyIndex == LAVATUBE_VIRTUAL_QUEUE && reader.run)
 	{
 		virtual_family = true;
 		queueFamilyIndex = selected_queue_family_index;
@@ -1749,12 +1766,14 @@ void retrace_vkGetDeviceQueue(lava_file_reader& reader)
 			queueIndex = 0; // map to first queue
 		}
 	}
-	wrap_vkGetDeviceQueue(device, queueFamilyIndex, queueIndex, &queue);
-	assert(queue != VK_NULL_HANDLE);
+	if (reader.run)
+	{
+		wrap_vkGetDeviceQueue(device, queueFamilyIndex, queueIndex, &queue);
+		assert(queue != VK_NULL_HANDLE);
+	}
 	const uint32_t stored_queue_index = reader.read_handle();
 	if (!index_to_VkQueue.contains(stored_queue_index))
 	{
-		const VkQueueFamilyProperties& props = device_VkQueueFamilyProperties.at(queueFamilyIndex);
 		index_to_VkQueue.set(stored_queue_index, queue);
 		auto& queue_data = VkQueue_index.at(stored_queue_index);
 		queue_data.device = device;
@@ -1763,7 +1782,11 @@ void retrace_vkGetDeviceQueue(lava_file_reader& reader)
 		queue_data.realIndex = realIndex;
 		queue_data.realFamily = realFamily;
 		queue_data.realQueue = queue;
-		queue_data.queueFlags = props.queueFlags;
+		if (reader.run)
+		{
+			const VkQueueFamilyProperties& props = device_VkQueueFamilyProperties.at(queueFamilyIndex);
+			queue_data.queueFlags = props.queueFlags;
+		}
 		queue_data.physicalDevice = VkDevice_index.at(device_index).physicalDevice;
 	}
 }
@@ -1835,7 +1858,7 @@ void retrace_vkEnumerateInstanceLayerProperties(lava_file_reader& reader)
 	// Load
 	uint8_t do_call = reader.read_uint8_t();
 	// Execute
-	if (do_call == 1)
+	if (do_call == 1 && reader.run)
 	{
 		VkResult retval = wrap_vkEnumerateInstanceLayerProperties(&pPropertyCount, nullptr);
 		assert(retval == VK_SUCCESS);
@@ -1858,7 +1881,7 @@ void retrace_vkEnumerateInstanceExtensionProperties(lava_file_reader& reader)
 	pLayerName = reader.read_string();
 	uint8_t do_call = reader.read_uint8_t();
 	// Execute
-	if (do_call == 1)
+	if (do_call == 1 && reader.run)
 	{
 		VkResult retval = wrap_vkEnumerateInstanceExtensionProperties(pLayerName, &pPropertyCount, nullptr);
 		assert(retval == VK_SUCCESS);
@@ -1886,7 +1909,7 @@ void retrace_vkEnumerateDeviceLayerProperties(lava_file_reader& reader)
 
 	const uint8_t do_call = reader.read_uint8_t();
 	// Execute
-	if (do_call == 1)
+	if (do_call == 1 && reader.run)
 	{
 		VkResult retval = wrap_vkEnumerateDeviceLayerProperties(selected_physical_device, &pPropertyCount, nullptr);
 		assert(retval == VK_SUCCESS);
@@ -1915,7 +1938,7 @@ void retrace_vkEnumerateDeviceExtensionProperties(lava_file_reader& reader)
 	pLayerName = reader.read_string();
 	const uint8_t do_call = reader.read_uint8_t();
 	// Execute
-	if (do_call == 1)
+	if (do_call == 1 && reader.run)
 	{
 		VkResult retval = wrap_vkEnumerateDeviceExtensionProperties(selected_physical_device, pLayerName, &pPropertyCount, nullptr);
 		assert(retval == VK_SUCCESS);

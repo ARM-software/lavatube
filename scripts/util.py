@@ -139,7 +139,7 @@ ignore_on_trace = []
 replay_pre_calls = [ 'vkDestroyInstance', 'vkDestroyDevice', 'vkCreateDevice', 'vkCreateSampler', 'vkQueuePresentKHR', 'vkCreateSwapchainKHR',
 	'vkCreateSharedSwapchainsKHR', 'vkCreateGraphicsPipelines', 'vkCreateComputePipelines', 'vkCreateRayTracingPipelinesKHR', 'vkCmdPushConstants2KHR',
 	'vkQueueSubmit' ]
-replay_post_calls = [ 'vkCreateInstance', 'vkCreateDevice', 'vkDestroyInstance', 'vkQueuePresentKHR', 'vkAcquireNextImageKHR', 'vkAcquireNextImage2KHR',
+replay_post_calls = [ 'vkCreateInstance', 'vkDestroyInstance', 'vkQueuePresentKHR', 'vkAcquireNextImageKHR', 'vkAcquireNextImage2KHR',
 	'vkGetBufferDeviceAddress' ]
 trace_pre_calls = [ 'vkQueueSubmit', 'vkCreateInstance', 'vkCreateDevice', 'vkFreeMemory', 'vkQueueSubmit2', 'vkQueueSubmit2KHR' ]
 trace_post_calls = [ 'vkCreateInstance', 'vkCreateDevice', 'vkDestroyInstance', 'vkGetPhysicalDeviceFeatures', 'vkGetPhysicalDeviceProperties',
@@ -1285,10 +1285,10 @@ def load_add_pre(name):
 		z.do('indices[i] = reader.read_handle();')
 		z.brace_end()
 	elif name == 'vkDestroyPipelineCache': # TBD autogenerate
-		z.do('replay_pre_vkDestroyPipelineCache(reader, device, device_index, pipelineCache, pipelinecache_index);')
+		z.do('if (reader.run) replay_pre_vkDestroyPipelineCache(reader, device, device_index, pipelineCache, pipelinecache_index);')
 
 	if name == 'vkCreatePipelineCache': # TBD autogenerate
-		z.do('replay_pre_vkCreatePipelineCache(reader, device, device_index, pCreateInfo, pipelinecache_index);')
+		z.do('if (reader.run) replay_pre_vkCreatePipelineCache(reader, device, device_index, pCreateInfo, pipelinecache_index);')
 
 # Run after execute
 def load_add_tracking(name):
@@ -1298,9 +1298,11 @@ def load_add_tracking(name):
 	if name in spec.functions_create:
 		(param, count, type) = get_create_params(name)
 		if count == '1':
-			if type == 'VkSwapchainKHR':
-				z.do('if (is_noscreen()) pSwapchain = (VkSwapchainKHR)((intptr_t)swapchainkhr_index + 1);')
 			z.do('DLOG2("insert %s by %s index %%u", (unsigned)%s);' % (type, name, toindex(type)))
+			if type == 'VkSwapchainKHR':
+				z.do('if (is_noscreen() || !reader.run) pSwapchain = fake_handle<VkSwapchainKHR>(swapchainkhr_index);')
+			else:
+				z.do('if (!reader.run) %s = fake_handle<%s>(%s);' % (param, type, toindex(type)))
 			z.do('if (%s) index_to_%s.set(%s, %s);' % (param, type, toindex(type), param))
 			if type == 'VkSwapchainKHR':
 				z.do('trackedswapchain_replay& data = VkSwapchainKHR_index.at(swapchainkhr_index);')
@@ -1310,6 +1312,7 @@ def load_add_tracking(name):
 			elif type == 'VkDevice':
 				z.do('trackeddevice& device_data = VkDevice_index.at(device_index);')
 				z.do('device_data.physicalDevice = physicalDevice; // track parentage')
+				z.do('suballoc_setup(selected_physical_device);')
 			elif type == 'VkImage':
 				z.do('trackedimage& image_data = VkImage_index.at(image_index);')
 				z.do('image_data.initialLayout = pCreateInfo->initialLayout; // duplicates info stored in json but needed for compatibility with older traces')
@@ -1317,13 +1320,16 @@ def load_add_tracking(name):
 		else: # multiple
 			z.do('for (unsigned i = 0; i < %s; i++)' % count)
 			z.brace_begin()
+			z.do('DLOG2("insert %s into %s index %%u at pos=%%u", indices[i], i);' % (type, name))
 			if type == 'VkSwapchainKHR':
-				z.do('if (is_noscreen()) pSwapchains[i] = (VkSwapchainKHR)((intptr_t)indices[i] + 1);')
+				z.do('if (is_noscreen() || !reader.run) pSwapchains[i] = fake_handle<VkSwapchainKHR>(indices[i]);')
 			elif type == 'VkCommandBuffer':
 				z.do('trackedcmdbuffer_replay& commandbuffer_data = VkCommandBuffer_index.at(indices[i]);')
 				z.do('commandbuffer_data.device = device;')
 				z.do('commandbuffer_data.physicalDevice = VkDevice_index.at(device_index).physicalDevice;')
-			z.do('DLOG2("insert %s into %s index %%u at pos=%%u", indices[i], i);' % (type, name))
+				z.do('if (!reader.run) %s[i] = fake_handle<%s>(indices[i]);' % (param, type))
+			else:
+				z.do('if (!reader.run) %s[i] = fake_handle<%s>(indices[i]);' % (param, type))
 			z.do('if (%s[i]) index_to_%s.set(indices[i], %s[i]);' % (param, type, param))
 			if type == 'VkSwapchainKHR':
 				z.do('trackedswapchain_replay& data = VkSwapchainKHR_index.at(indices[i]);')
@@ -1335,12 +1341,15 @@ def load_add_tracking(name):
 		count = spec.functions_destroy[name][1]
 		type = spec.functions_destroy[name][2]
 		if type == 'VkSwapchainKHR':
+			z.do('if (reader.run)')
+			z.brace_begin()
 			z.do('trackedswapchain_replay& data = VkSwapchainKHR_index.at(swapchainkhr_index);')
 			z.do('for (auto i : data.virtual_images) wrap_vkDestroyImage(device, i, nullptr);')
 			z.do('if (data.virtual_cmdpool != VK_NULL_HANDLE) wrap_vkFreeCommandBuffers(device, data.virtual_cmdpool, data.virtual_cmdbuffers.size(), data.virtual_cmdbuffers.data());')
 			z.do('wrap_vkDestroyCommandPool(device, data.virtual_cmdpool, nullptr);')
 			z.do('wrap_vkDestroySemaphore(device, data.virtual_semaphore, nullptr);')
 			z.do('for (auto i : data.virtual_fences) wrap_vkDestroyFence(device, i, nullptr);')
+			z.brace_end()
 
 def func_common(name, node, read, target, header, guard_header=True):
 	proto = node.find('proto')
@@ -1411,14 +1420,19 @@ def loadfunc(name, node, target, header):
 	load_add_pre(name)
 	call_list = [ x.retrace_exec_param(name) for x in params ]
 	if name in replay_pre_calls:
-		z.do('replay_pre_%s(reader, %s);' % (name, ', '.join(call_list)))
+		z.do('if (reader.run) replay_pre_%s(reader, %s);' % (name, ', '.join(call_list)))
+
+	if retval == 'VkBool32': z.do('%s retval = VK_FALSE;' % retval)
+	elif retval == 'VkResult': z.do('%s retval = VK_RESULT_MAX_ENUM;' % retval)
+	elif retval != 'void': z.do('%s retval = (%s)0x7FFFFFFF; // hopefully an invalid value' % (retval, retval))
+
 	if debugstats:
 		z.do('uint64_t apiTime = gettime();')
 	if name in spec.special_count_funcs:
 		if name in noscreen_calls:
-			z.do('if (do_call == 1 && !is_noscreen())')
+			z.do('if (do_call == 1 && !is_noscreen() && reader.run)')
 		else:
-			z.do('if (do_call == 1)')
+			z.do('if (do_call == 1 && reader.run)')
 		z.brace_begin()
 		parlist = []
 		for vv in spec.special_count_funcs[name][2]:
@@ -1427,7 +1441,7 @@ def loadfunc(name, node, target, header):
 			call_list = call_list[:-1]
 		z.decl(spec.special_count_funcs[name][1] + '*', spec.special_count_funcs[name][0])
 		z.do('%s = reader.pool.allocate<%s>(1);' % (spec.special_count_funcs[name][0], spec.special_count_funcs[name][1]))
-		z.do('%swrap_%s(%s, %s);' % ('VkResult retval = ' if retval == 'VkResult' else '', name, ', '.join(call_list), ', '.join(parlist)))
+		z.do('%swrap_%s(%s, %s);' % ('retval = ' if retval == 'VkResult' else '', name, ', '.join(call_list), ', '.join(parlist)))
 		if retval == 'VkResult': z.do('assert(retval == VK_SUCCESS);');
 		for vv in spec.special_count_funcs[name][2]:
 			z.do('%s.resize(*%s);' % (vv[0], spec.special_count_funcs[name][0]))
@@ -1445,72 +1459,79 @@ def loadfunc(name, node, target, header):
 			z.do('(void)reader.read_uint32_t(); // ignore stored return value')
 		assert retval in ['VkResult', 'void'], 'Unhandled retval value'
 	elif name == "vkCreateInstance":
-		z.do('%s retval = vkuSetupInstance(%s);' % (retval, ', '.join(call_list)))
 		z.do('VkResult stored_retval = static_cast<VkResult>(reader.read_uint32_t());')
+		z.do('if (reader.run)')
+		z.brace_begin()
+		z.do('retval = vkuSetupInstance(%s);' % (', '.join(call_list)))
 		z.do('check_retval(stored_retval, retval);')
+		z.brace_end()
 	elif name == "vkCreateDevice":
-		z.do('%s retval = vkuSetupDevice(%s);' % (retval, ', '.join(call_list)))
 		z.do('VkResult stored_retval = static_cast<VkResult>(reader.read_uint32_t());')
+		z.do('if (reader.run)')
+		z.brace_begin()
+		z.do('retval = vkuSetupDevice(%s);' % (', '.join(call_list)))
 		z.do('check_retval(stored_retval, retval);')
+		z.brace_end()
 	elif name == "vkGetFenceStatus": # loop until success to fix synchronization if originally successful
 		z.do('VkResult stored_retval = static_cast<VkResult>(reader.read_uint32_t());')
-		z.do('VkResult retval = VK_SUCCESS;')
-		z.do('if (stored_retval == VK_SUCCESS) { while ((retval = wrap_vkGetFenceStatus(device, fence)) != VK_SUCCESS) { usleep(1); }; }')
-		z.do('else { retval = wrap_vkGetFenceStatus(device, fence); }')
+		z.do('retval = VK_SUCCESS;')
+		z.do('if (stored_retval == VK_SUCCESS && reader.run) { while ((retval = wrap_vkGetFenceStatus(device, fence)) != VK_SUCCESS) { usleep(1); }; }')
+		z.do('else if (reader.run) { retval = wrap_vkGetFenceStatus(device, fence); }')
 	elif name == "vkWaitForFences": # as above
 		z.do('VkResult stored_retval = static_cast<VkResult>(reader.read_uint32_t());')
-		z.do('VkResult retval = VK_SUCCESS;')
+		z.do('retval = VK_SUCCESS;')
 		z.do('if (stored_retval == VK_SUCCESS) { timeout = UINT64_MAX; }')
 		z.do('else if (stored_retval == VK_TIMEOUT) { timeout = 0; }')
-		z.do('retval = wrap_vkWaitForFences(device, fenceCount, pFences, waitAll, timeout);')
+		z.do('if (reader.run) retval = wrap_vkWaitForFences(device, fenceCount, pFences, waitAll, timeout);')
 	elif name == "vkGetEventStatus": # loop until same result achieved
 		z.do('VkResult stored_retval = static_cast<VkResult>(reader.read_uint32_t());')
-		z.do('VkResult retval = VK_SUCCESS;')
-		z.do('if (stored_retval == VK_EVENT_SET || stored_retval == VK_EVENT_RESET) do { retval = wrap_vkGetEventStatus(device, event); } while (retval != stored_retval && retval != VK_ERROR_DEVICE_LOST);')
+		z.do('retval = VK_SUCCESS;')
+		z.do('if (reader.run && (stored_retval == VK_EVENT_SET || stored_retval == VK_EVENT_RESET)) do { retval = wrap_vkGetEventStatus(device, event); } while (retval != stored_retval && retval != VK_ERROR_DEVICE_LOST);')
 	elif name == 'vkAcquireNextImageKHR':
 		z.do('VkResult stored_retval = static_cast<VkResult>(reader.read_uint32_t());')
-		z.do('VkResult retval = VK_INCOMPLETE; // signal we skipped it')
-		z.do('if (!is_noscreen() && (stored_retval == VK_SUCCESS || stored_retval == VK_SUBOPTIMAL_KHR))')
+		z.do('retval = VK_INCOMPLETE; // signal we skipped it')
+		z.do('if (!is_noscreen() && (stored_retval == VK_SUCCESS || stored_retval == VK_SUBOPTIMAL_KHR) && reader.run)')
 		z.brace_begin()
 		z.do('retval = wrap_vkAcquireNextImageKHR(device, swapchain, UINT64_MAX, semaphore, fence, pImageIndex); // overwriting the timeout')
 		z.do('auto& %s = VkSwapchainKHR_index.at(swapchainkhr_index);' % totrackable('VkSwapchainKHR'))
 		z.do('%s.next_swapchain_image = *pImageIndex; // do this before we overwrite this value with stored value from file below' % totrackable('VkSwapchainKHR'))
 		z.brace_end()
-		z.do('else cleanup_sync(index_to_VkQueue.at(0), 0, nullptr, 1, &semaphore, fence);') # just picking any queue here
+		z.do('else if (reader.run) cleanup_sync(index_to_VkQueue.at(0), 0, nullptr, 1, &semaphore, fence);') # just picking any queue here
 	elif name == 'vkAcquireNextImage2KHR':
 		z.do('const uint32_t %s = index_to_VkSwapchainKHR.index(pAcquireInfo->swapchain);' % toindex('VkSwapchainKHR'))
 		z.do('VkResult stored_retval = static_cast<VkResult>(reader.read_uint32_t());')
-		z.do('VkResult retval = VK_INCOMPLETE; // signal we skipped it')
-		z.do('if (!is_noscreen() && (stored_retval == VK_SUCCESS || stored_retval == VK_SUBOPTIMAL_KHR))')
+		z.do('retval = VK_INCOMPLETE; // signal we skipped it')
+		z.do('if (!is_noscreen() && reader.run && (stored_retval == VK_SUCCESS || stored_retval == VK_SUBOPTIMAL_KHR))')
 		z.brace_begin()
 		z.do('pAcquireInfo->timeout = UINT64_MAX; // sucess in tracing needs success in replay')
 		z.do('retval = wrap_vkAcquireNextImage2KHR(device, pAcquireInfo, pImageIndex);')
 		z.do('auto& %s = VkSwapchainKHR_index.at(%s);' % (totrackable('VkSwapchainKHR'), toindex('VkSwapchainKHR')))
 		z.do('%s.next_swapchain_image = *pImageIndex;' % totrackable('VkSwapchainKHR')) # do this before we overwrite this value with stored value from file
 		z.brace_end()
-		z.do('else cleanup_sync(index_to_VkQueue.at(0), 0, nullptr, 1, &pAcquireInfo->semaphore, pAcquireInfo->fence);') # just picking any queue here
+		z.do('else if (reader.run) cleanup_sync(index_to_VkQueue.at(0), 0, nullptr, 1, &pAcquireInfo->semaphore, pAcquireInfo->fence);') # just picking any queue here
 	elif name == 'vkQueuePresentKHR':
 		z.do('VkResult stored_retval = static_cast<VkResult>(reader.read_uint32_t());')
-		z.do('VkResult retval = VK_SUCCESS;')
-		z.do('if (!is_noscreen())')
+		z.do('retval = VK_SUCCESS;')
+		z.do('if (!is_noscreen() && reader.run)')
 		z.brace_begin()
 		z.do('retval = wrap_%s(%s);' % (name, ', '.join(call_list)))
 		z.brace_end()
-		z.do('else cleanup_sync(queue, pPresentInfo->waitSemaphoreCount, pPresentInfo->pWaitSemaphores, 0, nullptr, VK_NULL_HANDLE);')
+		z.do('else if (reader.run) cleanup_sync(queue, pPresentInfo->waitSemaphoreCount, pPresentInfo->pWaitSemaphores, 0, nullptr, VK_NULL_HANDLE);')
 	else:
-		prefix = ''
+		prefix = 'if (reader.run) '
 		if name in layer_implemented:
 			if name == 'vkSetDebugUtilsObjectNameEXT':
-				prefix = 'if (wrap_%s && pNameInfo->objectType != VK_OBJECT_TYPE_PHYSICAL_DEVICE && pNameInfo->objectType != VK_OBJECT_TYPE_DEVICE_MEMORY) ' % name
+				prefix = 'if (wrap_%s && reader.run && pNameInfo->objectType != VK_OBJECT_TYPE_PHYSICAL_DEVICE && pNameInfo->objectType != VK_OBJECT_TYPE_DEVICE_MEMORY) ' % name
 			elif name == 'vkDebugMarkerSetObjectNameEXT':
-				prefix = 'if (wrap_%s && pNameInfo->objectType != VK_DEBUG_REPORT_OBJECT_TYPE_PHYSICAL_DEVICE_EXT && pNameInfo->objectType != VK_DEBUG_REPORT_OBJECT_TYPE_DEVICE_MEMORY_EXT) ' % name
+				prefix = 'if (wrap_%s && reader.run && pNameInfo->objectType != VK_DEBUG_REPORT_OBJECT_TYPE_PHYSICAL_DEVICE_EXT && pNameInfo->objectType != VK_DEBUG_REPORT_OBJECT_TYPE_DEVICE_MEMORY_EXT) ' % name
 			else:
-				prefix = 'if (wrap_%s) ' % name
+				prefix = 'if (wrap_%s && reader.run) ' % name
 		elif name in noscreen_calls:
-			prefix = 'if (!is_noscreen()) '
+			prefix = 'if (!is_noscreen() && reader.run) '
 		if retval == 'void' and not name in ignore_on_read:
 			z.do('%swrap_%s(%s);' % (prefix, name, ', '.join(call_list)))
 		elif not name in ignore_on_read:
+			# stored
 			if retval == 'VkResult':
 				z.do('VkResult stored_retval = static_cast<VkResult>(reader.read_uint32_t());')
 			elif retval in ['uint64_t', 'uint32_t']:
@@ -1525,12 +1546,13 @@ def loadfunc(name, node, target, header):
 				z.do('std::vector<char> data(dataSize);')
 				call_list[5] = 'data.data()'
 				z.do('if (stored_retval == VK_SUCCESS) { flags |= VK_QUERY_RESULT_WAIT_BIT; flags &= ~VK_QUERY_RESULT_PARTIAL_BIT; }')
-			if name in layer_implemented or name in noscreen_calls:
-				if retval == 'VkBool32': z.do('%s retval = VK_FALSE;' % retval)
-				elif retval == 'VkResult': z.do('%s retval = VK_SUCCESS;' % retval)
-				else: assert False, 'Unhandled return type %s from %s' % (retval, name)
-				z.do('%sretval = wrap_%s(%s);' % (prefix, name, ', '.join(call_list)))
-			else: z.do('%s retval = wrap_%s(%s);' % (retval, name, ', '.join(call_list)))
+
+			# current
+			z.do(prefix)
+			z.brace_begin()
+			z.do('retval = wrap_%s(%s);' % (name, ', '.join(call_list)))
+
+			# comparison
 			if retval == 'VkBool32':
 				z.do('assert(stored_retval == retval);')
 			elif retval == 'VkResult' and name != 'vkQueuePresentKHR':
@@ -1540,6 +1562,7 @@ def loadfunc(name, node, target, header):
 			elif retval in ['VkDeviceAddress', 'VkDeviceSize']:
 				pass
 			else: assert name == 'vkQueuePresentKHR', 'Unhandled return value type %s from %s' % (retval, name)
+			z.brace_end()
 		else:
 			if retval in ['VkResult', 'VkBool32']:
 				z.do('// this function is ignored on replay')
@@ -1559,9 +1582,9 @@ def loadfunc(name, node, target, header):
 	load_add_tracking(name)
 	if name in replay_post_calls: # hard-coded post handling
 		if retval == 'void':
-			z.do('replay_post_%s(reader, %s);' % (name, ', '.join(call_list)))
+			z.do('if (reader.run) replay_post_%s(reader, %s);' % (name, ', '.join(call_list)))
 		else:
-			z.do('replay_post_%s(reader, retval, %s);' % (name, ', '.join(call_list)))
+			z.do('if (reader.run) replay_post_%s(reader, retval, %s);' % (name, ', '.join(call_list)))
 	if debugstats:
 		z.do('__atomic_add_fetch(&setup_time_%s, gettime() - startTime - apiTime, __ATOMIC_RELAXED);' % name)
 		z.do('__atomic_add_fetch(&vulkan_time_%s, apiTime, __ATOMIC_RELAXED);' % name)

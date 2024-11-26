@@ -421,6 +421,19 @@ add_test(NAME replayer_samples COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -
 add_test(NAME replayer_vkcube COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -B -w none -v -f 5 9 ${CMAKE_SOURCE_DIR}/traces/lunarg_vkcube.vk)
 install(TARGETS lava-replay RUNTIME)
 
+# --- lava-validate ---
+
+add_executable(lava-validate src/validate.cpp)
+target_include_directories(lava-validate ${COMMON_INCLUDE})
+target_link_libraries(lava-validate ${COMMON_LIBRARIES} lavatube)
+target_compile_options(lava-validate PRIVATE ${COMMON_FLAGS})
+add_dependencies(lava-validate sync_stuff)
+add_test(NAME validate_vulkan_demo COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-validate -f 10 20 ${CMAKE_SOURCE_DIR}/traces/demo_computeraytracing.vk)
+add_test(NAME validate_vkmark COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-validate -f 5 9 ${CMAKE_SOURCE_DIR}/traces/vkmark_cube.vk)
+add_test(NAME validate_samples COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-validate -f 5 9 ${CMAKE_SOURCE_DIR}/traces/sample_hello_triangle.vk)
+add_test(NAME validate_vkcube COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-validate -f 5 9 ${CMAKE_SOURCE_DIR}/traces/lunarg_vkcube.vk)
+install(TARGETS lava-validate RUNTIME)
+
 # --- lava-tool ---
 
 add_executable(lava-tool src/lavatool.cpp
@@ -464,6 +477,8 @@ function(layer_test test_name test_exe)
 		ENVIRONMENT "LAVATUBE_VIRTUAL_QUEUES=1;LAVATUBE_DESTINATION=vulkan_${ARGV0};VK_LAYER_PATH=${CMAKE_CURRENT_BINARY_DIR}/implicit_layer.d;VK_INSTANCE_LAYERS=VK_LAYER_ARM_lavatube;LD_LIBRARY_PATH=${CMAKE_CURRENT_BINARY_DIR}/implicit_layer.d"
 		SKIP_RETURN_CODE 77
 	)
+	add_test(NAME layer_test_${ARGV0}_validate COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-validate vulkan_${ARGV0}.vk)
+	set_tests_properties(layer_test_${ARGV0}_validate PROPERTIES FIXTURES_REQUIRED ${ARGV0})
 	add_test(NAME layer_test_${ARGV0}_replay COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -V vulkan_${ARGV0}.vk)
 	set_tests_properties(layer_test_${ARGV0}_replay PROPERTIES FIXTURES_REQUIRED ${ARGV0})
 	add_test(NAME layer_test_${ARGV0}_replay_blackhole COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -B vulkan_${ARGV0}.vk)

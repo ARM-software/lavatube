@@ -12,7 +12,7 @@ struct suballoc_location
 };
 
 /// Call as early as possible to set up internal data structures. Must be called before any other suballoc function.
-void suballoc_init(int num_images, int num_buffers, int heap_size = -1);
+void suballoc_init(int num_images, int num_buffers, int heap_size = -1, bool fake = false);
 
 void suballoc_destroy(VkDevice device);
 
@@ -35,11 +35,11 @@ void suballoc_del_image(uint32_t image_index);
 void suballoc_del_buffer(uint32_t buffer_index);
 
 /// Find an image based its index, and return its memory pool, offset and size. Thread safe as long as the usual Vulkan
-/// external synchronization rules are followed in regards to object creation. Returns true if an explicit flush is needed.
+/// external synchronization rules are followed in regards to object creation. Returns if an explicit flush is needed.
 /// Note that the size returned is the (possibly padded) allocated size, not the size of the buffer inside the allocation.
 suballoc_location suballoc_find_image_memory(uint32_t buffer_index);
 
-/// Find a buffer based its index, and return its memory pool, offset and size. See above. Returns true if an explicit flush
+/// Find a buffer based its index, and return its memory pool, offset and size. See above. Returns if an explicit flush
 /// is needed.
 /// Note that the size returned is the (possibly padded) allocated size, not the size of the image inside the allocation.
 suballoc_location suballoc_find_buffer_memory(uint32_t buffer_index);

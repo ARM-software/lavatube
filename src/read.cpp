@@ -25,6 +25,7 @@ lava_file_reader::lava_file_reader(lava_reader* _parent, const std::string& path
 	, mPreload(preload)
 {
 	parent = _parent;
+	run = parent->run;
 	global_frames = frames;
 	Json::Value frameinfo = readJson("frames_" + _to_string(tid) + ".json", path);
 
@@ -143,7 +144,7 @@ void lava_reader::init(const std::string& path, int heap_size)
 	}
 
 	// read limits and allocate the global remapping structures
-	retrace_init(readJson("limits.json", mPackedFile), heap_size);
+	retrace_init(readJson("limits.json", mPackedFile), heap_size, run);
 	Json::Value trackable = readJson("tracking.json", mPackedFile);
 	trackable_read(trackable);
 

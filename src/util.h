@@ -200,6 +200,9 @@ struct buffer
 static __attribute__((const)) inline uint64_t aligned_size(uint64_t size, uint64_t alignment) { return size + alignment - 1ull - (size + alignment - 1ull) % alignment; }
 static __attribute__((const)) inline uint64_t aligned_start(uint64_t size, uint64_t alignment) { return (size & ~(alignment - 1)); }
 
+template<typename T>
+inline T fake_handle(uint32_t index) { return (T)((intptr_t)index + 1); }
+
 void* find_extension(void* sptr, VkStructureType sType);
 const void* find_extension(const void* sptr, VkStructureType sType);
 
