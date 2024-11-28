@@ -15,6 +15,8 @@
 #include "containers.h"
 #include "util.h"
 
+#define MULTITHREADED_READ
+
 class file_reader
 {
 	file_reader(const file_reader&) = delete;
@@ -22,13 +24,18 @@ class file_reader
 
 	void new_chunk()
 	{
+#ifdef MULTITHREADED_READ
+		bool caught_decompressor = false; // if we caught up with the decompressor and had to wait
+#endif
 		// There should not be anything 'left over' in the chunk by now
 		assert(chunk.size() - uidx == 0);
 		// Grab a new chunk to process
 		uidx = 0xffff; // make sure it is a non-zero value to indicate we have work left to do
 		while (uidx != 0)
 		{
+#ifdef MULTITHREADED_READ
 			chunk_mutex.lock();
+#endif
 			if (uncompressed_chunks.size())
 			{
 				chunk.release();
@@ -44,10 +51,21 @@ class file_reader
 			{
 				assert(!done_decompressing); // if this triggers, it means we tried to read more data than there is
 			}
+#ifdef MULTITHREADED_READ
 			chunk_mutex.unlock();
+#endif
 			if (uidx != 0)
 			{
-				usleep(1000); // wait for more data
+#ifdef MULTITHREADED_READ
+				usleep(10000); // wait for more data
+				if (!caught_decompressor)
+				{
+					caught_decompressor = true;
+					times_caught_decompressor++; // only count the unique times this happened, not each iteration of the wait loop
+				}
+#else
+				if (!decompress_chunk()) break; // generate new chunk
+#endif
 			}
 		}
 	}
@@ -61,6 +79,9 @@ class file_reader
 
 protected:
 	uint64_t uncompressed_bytes GUARDED_BY(chunk_mutex) = 0;
+	uint32_t times_caught_decompressor = 0; // unique number of times we caught up with the decompressor
+
+	bool decompress_chunk();
 
 	template <typename T> inline void read_value(T* val)
 	{

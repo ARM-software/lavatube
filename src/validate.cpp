@@ -62,6 +62,10 @@ static void replay_thread(int thread_id)
 	lava_file_reader& t = replayer.file_reader(thread_id);
 	uint8_t instrtype;
 	assert(t.run == false);
+	for (const auto pair : replayer.buffer_device_address_remapping)
+	{
+		ILOG("Buffer device address range %lu -> %lu", (unsigned long)pair.first, (unsigned long)(pair.first + pair.second->size));
+	}
 	while ((instrtype = t.step()))
 	{
 		if (instrtype == PACKET_API_CALL)
