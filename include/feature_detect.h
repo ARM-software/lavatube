@@ -245,6 +245,24 @@ public:
 	void check_VkPipelineColorBlendStateCreateInfo(const VkPipelineColorBlendStateCreateInfo* info)
 	{
 		if (info->logicOpEnable == VK_TRUE) core10.logicOp = true;
+
+		if (info->attachmentCount > 1)
+		{
+			for (uint32_t i = 1; i < info->attachmentCount; i++)
+			{
+				if (info->pAttachments[i].blendEnable         != info->pAttachments[i - 1].blendEnable ||
+					info->pAttachments[i].srcColorBlendFactor != info->pAttachments[i - 1].srcColorBlendFactor ||
+					info->pAttachments[i].dstColorBlendFactor != info->pAttachments[i - 1].dstColorBlendFactor ||
+					info->pAttachments[i].colorBlendOp        != info->pAttachments[i - 1].colorBlendOp ||
+					info->pAttachments[i].srcAlphaBlendFactor != info->pAttachments[i - 1].srcAlphaBlendFactor ||
+					info->pAttachments[i].dstAlphaBlendFactor != info->pAttachments[i - 1].dstAlphaBlendFactor ||
+					info->pAttachments[i].alphaBlendOp        != info->pAttachments[i - 1].alphaBlendOp ||
+					info->pAttachments[i].colorWriteMask      != info->pAttachments[i - 1].colorWriteMask)
+				{
+					core10.independentBlend = true;
+				}
+			}
+		}
 	}
 
 	void check_VkPipelineMultisampleStateCreateInfo(const VkPipelineMultisampleStateCreateInfo* info)
@@ -294,6 +312,35 @@ public:
 		if (info->depthBoundsTestEnable == VK_TRUE) core10.depthBounds = true;
 	}
 
+	void check_VkImageViewCreateInfo(const VkImageViewCreateInfo* info)
+	{
+		if (info->viewType == VK_IMAGE_VIEW_TYPE_CUBE_ARRAY) core10.imageCubeArray = true;
+	}
+
+	void check_VkCommandBufferInheritanceInfo(const VkCommandBufferInheritanceInfo* info)
+	{
+		if (info->occlusionQueryEnable != VK_FALSE || ((info->queryFlags & ~(VK_QUERY_CONTROL_PRECISE_BIT)) == 0))
+		{
+			core10.inheritedQueries = true;
+		}
+	}
+
+	void check_VkPipelineViewportStateCreateInfo(const VkPipelineViewportStateCreateInfo* info)
+	{
+		if (info->viewportCount > 1 || info->scissorCount > 1)
+		{
+			core10.multiViewport = true;
+		}
+	}
+
+	void check_VkPipelineViewportExclusiveScissorStateCreateInfoNV(const VkPipelineViewportExclusiveScissorStateCreateInfoNV* info)
+	{
+		if (info->exclusiveScissorCount != 0 && info->exclusiveScissorCount != 1)
+		{
+			core10.multiViewport = true;
+		}
+	}
+
 	// --- Checking functions. Call these for all these Vulkan commands after they are successfully called, before returning. ---
 
 	void check_vkCmdDrawIndirect(VkCommandBuffer commandBuffer, VkBuffer buffer, VkDeviceSize offset, uint32_t drawCount, uint32_t stride)
@@ -329,6 +376,30 @@ public:
 	void check_vkCmdBeginRendering(VkCommandBuffer commandBuffer, const VkRenderingInfo* pRenderingInfo)
 	{
 		core13.dynamicRendering = true;
+	}
+
+	void check_vkCmdSetViewport(VkCommandBuffer commandBuffer, uint32_t firstViewport, uint32_t viewportCount, const VkViewport* pViewports)
+	{
+		if (firstViewport != 0 || viewportCount != 1)
+		{
+			core10.multiViewport = true;
+		}
+	}
+
+	void check_vkCmdSetScissor(VkCommandBuffer commandBuffer, uint32_t firstScissor, uint32_t scissorCount, const VkRect2D* pScissors)
+	{
+		if (firstScissor != 0 || scissorCount != 1)
+		{
+			core10.multiViewport = true;
+		}
+	}
+
+	void check_vkCmdSetExclusiveScissorNV(VkCommandBuffer commandBuffer, uint32_t firstExclusiveScissor, uint32_t exclusiveScissorCount, const VkRect2D* pExclusiveScissors)
+	{
+		if (firstExclusiveScissor != 0 || exclusiveScissorCount != 1)
+		{
+			core10.multiViewport = true;
+		}
 	}
 
 	// --- Remove unused feature bits from these structures ---
@@ -370,6 +441,10 @@ public:
 		CHECK_FEATURE10(sparseResidency8Samples);
 		CHECK_FEATURE10(sparseResidency16Samples);
 		CHECK_FEATURE10(sparseResidencyAliased);
+		CHECK_FEATURE10(independentBlend);
+		CHECK_FEATURE10(inheritedQueries);
+		CHECK_FEATURE10(multiViewport);
+		CHECK_FEATURE10(imageCubeArray);
 		#undef CHECK_FEATURE10
 	}
 

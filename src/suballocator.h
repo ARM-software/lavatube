@@ -48,4 +48,4 @@ suballoc_location suballoc_find_buffer_memory(uint32_t buffer_index);
 int suballoc_internal_test();
 
 /// Special handling of virtual swapchain images
-void suballoc_virtualswap_images(VkDevice device, const std::vector<VkImage>& images);
+void suballoc_virtualswap_images(VkDevice device, const std::vector<VkImage>& images, VkMemoryPropertyFlags flags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);

@@ -335,15 +335,13 @@ suballoc_location suballoc_add_image(uint16_t tid, VkDevice device, VkImage imag
 	return r;
 }
 
-void suballoc_virtualswap_images(VkDevice device, const std::vector<VkImage>& images)
+void suballoc_virtualswap_images(VkDevice device, const std::vector<VkImage>& images, VkMemoryPropertyFlags flags)
 {
 	assert(run);
 	VkMemoryRequirements2 req = {};
 	const bool dedicated = fill_image_memreq(device, images.at(0), req, 0);
-	VkMemoryPropertyFlags flags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
 	const uint32_t memoryTypeIndex = get_device_memory_type(req.memoryRequirements.memoryTypeBits, flags);
-	VkMemoryAllocateInfo info = {};
-	info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+	VkMemoryAllocateInfo info = { VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO, nullptr };
 	VkDeviceSize image_size = aligned_size(req.memoryRequirements.size, req.memoryRequirements.alignment);
 	info.memoryTypeIndex = memoryTypeIndex;
 	VkDeviceMemory mem = VK_NULL_HANDLE;

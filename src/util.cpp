@@ -358,7 +358,11 @@ bool shader_has_buffer_devices_addresses(const uint32_t* code, uint32_t code_siz
 	do {
 		opcode = uint16_t(insn[0]);
 		word_count = uint16_t(insn[0] >> 16);
-		if (opcode == SpvOpExtension && strcmp((char*)&insn[2], "KHR_physical_storage_buffer") == 0) return true;
+		if (opcode == SpvOpExtension)
+		{
+			if (strcmp((char*)&insn[2], "KHR_physical_storage_buffer") == 0) return true;
+			else if (strcmp((char*)&insn[2], "EXT_physical_storage_buffer") == 0) return true;
+		}
 		insn += word_count;
 	}
 	while (insn != code + code_size && opcode != SpvOpMemoryModel);
