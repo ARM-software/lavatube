@@ -23,7 +23,7 @@ file_reader::file_reader(const std::string& filename, unsigned mytid) : tid(myti
 	done_reading = false;
 	readahead_chunks.exchange(2);
 	decompressor_thread = std::thread(&file_reader::decompressor, this);
-	DLOG("%s opened for reading (size %lu) and decompressor thread launched!", filename.c_str(), (unsigned long)total_left);
+	DLOG("%s opened for reading (size %lu) and decompressor thread %u launched!", filename.c_str(), (unsigned long)total_left, tid);
 }
 
 file_reader::file_reader(packed pf, unsigned mytid) : tid(mytid), mFilename(pf.inside)
@@ -51,7 +51,7 @@ file_reader::~file_reader()
 	fclose(fp);
 	if (times_caught_decompressor) // this would be bad
 	{
-		ELOG("We caught up with the decompressor thread %u times!", (unsigned)times_caught_decompressor);
+		ELOG("We caught up with the decompressor thread %u times on thread %u!", (unsigned)times_caught_decompressor, tid);
 	}
 }
 

@@ -11,6 +11,9 @@
 #include "lavamutex.h"
 #include "util.h"
 
+#define MULTITHREADED_COMPRESS
+#define MULTITHREADED_WRITE
+
 class file_writer
 {
 	file_writer(const file_writer&) = delete;
@@ -21,9 +24,18 @@ class file_writer
 		// shrink existing chunk to actually used size
 		chunk.shrink(uidx);
 		// move chunk into list of chunks to compress
+#ifdef MULTITHREADED_COMPRESS
 		chunk_mutex.lock();
 		uncompressed_chunks.push_front(chunk);
 		chunk_mutex.unlock();
+#else
+		buffer compressed = compress_chunk(chunk);
+#ifdef MULTITHREADED_WRITE
+		compressed_chunks.push_front(compressed);
+#else
+		write_chunk(compressed);
+#endif
+#endif
 		// create a new chunk for writing into (we could employ a free list here as a possible optimization)
 		if (size > uncompressed_chunk_size) // make sure our new chunk is big enough
 		{
@@ -141,6 +153,8 @@ public:
 private:
 	void compressor(); // runs in separate thread, moves chunks from uncompressed to compressed
 	void serializer(); // runs in separate thread, moves chunks from compressed to disk
+	buffer compress_chunk(buffer& uncompressed); // returns compressed buffer
+	void write_chunk(buffer& active);
 
 	lava::mutex chunk_mutex;
 	FILE* fp = nullptr;
