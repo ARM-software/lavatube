@@ -268,6 +268,7 @@ add_test(NAME trace_test_1_0_replay COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-rep
 add_test(NAME trace_test_1_1_replay COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -D tracing_1_2_1.vk)
 add_test(NAME trace_test_1_2_replay COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -H 0 tracing_1_2_1.vk)
 add_test(NAME trace_test_2_1_replay COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -B tracing_1_2_0.vk)
+add_test(NAME trace_test_2_2_replay COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -nm tracing_1_2_0.vk)
 
 add_executable(tracing2 tests/tracing2.cpp ${VULKAN_TESTS_SRC})
 target_include_directories(tracing2 ${COMMON_INCLUDE})
@@ -283,6 +284,10 @@ add_test(NAME trace_test_2_chunksize COMMAND ${CMAKE_CURRENT_BINARY_DIR}/tracing
 set_tests_properties(trace_test_2_chunksize PROPERTIES ENVIRONMENT "LAVATUBE_CHUNK_SIZE=32767")
 add_test(NAME trace_test_2_virtqueue COMMAND ${CMAKE_CURRENT_BINARY_DIR}/tracing2)
 set_tests_properties(trace_test_2_virtqueue PROPERTIES ENVIRONMENT "LAVATUBE_VIRTUAL_QUEUES=1")
+add_test(NAME trace_test_2_nompwrite COMMAND ${CMAKE_CURRENT_BINARY_DIR}/tracing2)
+set_tests_properties(trace_test_2_nompwrite PROPERTIES ENVIRONMENT "LAVATUBE_DISABLE_MULTITHREADED_WRITEOUT=1")
+add_test(NAME trace_test_2_nompcompress COMMAND ${CMAKE_CURRENT_BINARY_DIR}/tracing2)
+set_tests_properties(trace_test_2_nompcompress PROPERTIES ENVIRONMENT "LAVATUBE_DISABLE_MULTITHREADED_COMPRESS=1")
 
 add_executable(tracing3 tests/tracing3.cpp ${VULKAN_TESTS_SRC})
 target_include_directories(tracing3 ${COMMON_INCLUDE})
@@ -495,6 +500,7 @@ set_tests_properties(layer_test_general_fencedelay PROPERTIES ENVIRONMENT "VK_LA
 add_test(NAME script_test_general COMMAND ${CMAKE_SOURCE_DIR}/scripts/lava-capture.py -o script_test_general.vk --layer-path ${CMAKE_CURRENT_BINARY_DIR}/implicit_layer.d ${CMAKE_CURRENT_BINARY_DIR}/tracetooltests/vulkan_general -f 0 -V 2)
 add_test(NAME script_test_general_fencedelay COMMAND ${CMAKE_SOURCE_DIR}/scripts/lava-capture.py -o script_test_general_fencedelay.vk --layer-path ${CMAKE_CURRENT_BINARY_DIR}/implicit_layer.d --delayfence 2 ${CMAKE_CURRENT_BINARY_DIR}/tracetooltests/vulkan_general -f 1)
 add_test(NAME script_test_copying_1 COMMAND ${CMAKE_SOURCE_DIR}/scripts/lava-capture.py -o script_test_copying_1.vk --dedicated-buffer --gpu 0 --layer-path ${CMAKE_CURRENT_BINARY_DIR}/implicit_layer.d ${CMAKE_CURRENT_BINARY_DIR}/tracetooltests/vulkan_copying_1 -V 2)
+add_test(NAME script_test_copying_nomp COMMAND ${CMAKE_SOURCE_DIR}/scripts/lava-capture.py -o script_test_copying_nomp.vk --no-multithread --automate --layer-path ${CMAKE_CURRENT_BINARY_DIR}/implicit_layer.d ${CMAKE_CURRENT_BINARY_DIR}/tracetooltests/vulkan_copying_1 -V 3)
 #layer_test(general_vulkan13 general -V 3) # crashes on replay on privatedata
 layer_test(copying_1 copying_1)
 layer_test(copying_1_q1 copying_1 -q 1)

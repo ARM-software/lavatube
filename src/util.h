@@ -62,6 +62,9 @@ extern uint_fast8_t p__delay_fence_success_frames;
 extern FILE* p__debug_destination;
 extern int p__chunksize;
 extern uint_fast8_t p__external_memory;
+extern uint_fast8_t p__disable_multithread_writeout;
+extern uint_fast8_t p__disable_multithread_compress;
+extern uint_fast8_t p__disable_multithread_read;
 
 /// Logging to be enable as needed by source recompilation
 #define NEVER(_format, ...)

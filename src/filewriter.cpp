@@ -101,16 +101,13 @@ void file_writer::finalize()
 	printf("Filewriter finalizing thread %u: %lu total bytes, %lu in last chunk, %d uncompressed chunks, and %d compressed chunks to be written out\n",
 	       mTid, (unsigned long)uncompressed_bytes, (unsigned long)uidx, (int)uncompressed_chunks.size(), (int)compressed_chunks.size());
 	chunk.shrink(uidx);
-#ifndef MULTITHREADED_COMPRESS
-	chunk = compress_chunk(chunk);
-#ifdef MULTITHREADED_WRITE
-	compressed_chunks.push_front(chunk);
-#else
-	write_chunk(chunk);
-#endif
-#else
-	uncompressed_chunks.push_front(chunk);
-#endif
+	if (!multithreaded_compress)
+	{
+		chunk = compress_chunk(chunk);
+		if (multithreaded_write) compressed_chunks.push_front(chunk);
+		else write_chunk(chunk);
+	}
+	else uncompressed_chunks.push_front(chunk);
 	chunk = buffer(uncompressed_chunk_size); // ready to go again
 	chunk_mutex.unlock();
 	// wrap up work in work lists
@@ -162,7 +159,6 @@ void file_writer::serializer()
 {
 	// lock, steal compressed buffer, unlock, store to disk, sleep, repeat
 	set_thread_name("serializer");
-#ifdef MULTITHREADED_WRITE
 	while (1)
 	{
 		buffer active;
@@ -191,7 +187,6 @@ void file_writer::serializer()
 			usleep(2000);
 		}
 	}
-#endif
 }
 
 buffer file_writer::compress_chunk(buffer& uncompressed)
@@ -218,7 +213,6 @@ void file_writer::compressor()
 {
 	// lock, grab pointer to uncompressed, make new compressed, unlock, compress, sleep, repeat
 	set_thread_name("compressor");
-#ifdef MULTITHREADED_COMPRESS
 	while (1)
 	{
 		buffer uncompressed;
@@ -241,13 +235,14 @@ void file_writer::compressor()
 		if (uncompressed.size() > 0)
 		{
 			buffer compressed = compress_chunk(uncompressed);
-#ifdef MULTITHREADED_WRITE
-			chunk_mutex.lock();
-			compressed_chunks.push_front(compressed);
-			chunk_mutex.unlock();
-#else
-			write_chunk(compressed);
-#endif
+
+			if (multithreaded_write)
+			{
+				chunk_mutex.lock();
+				compressed_chunks.push_front(compressed);
+				chunk_mutex.unlock();
+			}
+			else write_chunk(compressed);
 		}
 		// if not done and no work done, wait a bit
 		else if (!done_feeding)
@@ -255,5 +250,4 @@ void file_writer::compressor()
 			usleep(2000);
 		}
 	}
-#endif
 }

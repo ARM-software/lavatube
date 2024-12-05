@@ -52,6 +52,8 @@ lava_file_writer::lava_file_writer(uint16_t _tid, lava_writer* _parent) : parent
 {
 	mTid = _tid;
 	get_thread_name(thread_name);
+	if (p__disable_multithread_compress) disable_multithreaded_compress();
+	if (p__disable_multithread_writeout) disable_multithreaded_writeout();
 }
 
 void lava_file_writer::set(const std::string& path)

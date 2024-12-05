@@ -41,6 +41,7 @@ static void usage()
 	printf("-A/--allocator type    Use custom memory allocator callbacks [none, debug]\n");
 	printf("-N/--no-anisotropy     Disable any use of sampler anisotropy\n");
 	printf("-B/--blackhole         Do not actually submit any work to the GPU. May be useful for CPU measurements.\n");
+	printf("-nm/--no-multithread   Do not do decompression and file read in a separate thread. May save some CPU load and memory.\n");
 	exit(-1);
 }
 
@@ -230,6 +231,10 @@ int main(int argc, char **argv)
 		else if (match(argv[i], "-B", "--blackhole", remaining))
 		{
 			p__blackhole = 1;
+		}
+		else if (match(argv[i], "-nm", "--no-multithread", remaining))
+		{
+			p__disable_multithread_read = 1;
 		}
 		else if (match(argv[i], "-w", "--wsi", remaining))
 		{

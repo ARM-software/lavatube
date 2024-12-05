@@ -24,18 +24,16 @@ class file_reader
 
 	void new_chunk()
 	{
-#ifdef MULTITHREADED_READ
 		bool caught_decompressor = false; // if we caught up with the decompressor and had to wait
-#endif
+
 		// There should not be anything 'left over' in the chunk by now
 		assert(chunk.size() - uidx == 0);
 		// Grab a new chunk to process
 		uidx = 0xffff; // make sure it is a non-zero value to indicate we have work left to do
 		while (uidx != 0)
 		{
-#ifdef MULTITHREADED_READ
 			chunk_mutex.lock();
-#endif
+
 			if (uncompressed_chunks.size())
 			{
 				chunk.release();
@@ -51,21 +49,23 @@ class file_reader
 			{
 				assert(!done_decompressing); // if this triggers, it means we tried to read more data than there is
 			}
-#ifdef MULTITHREADED_READ
 			chunk_mutex.unlock();
-#endif
+
 			if (uidx != 0)
 			{
-#ifdef MULTITHREADED_READ
-				usleep(10000); // wait for more data
-				if (!caught_decompressor)
+				if (multithreaded_read)
 				{
-					caught_decompressor = true;
-					times_caught_decompressor++; // only count the unique times this happened, not each iteration of the wait loop
+					if (!caught_decompressor)
+					{
+						caught_decompressor = true;
+						times_caught_decompressor++; // only count the unique times this happened, not each iteration of the wait loop
+					}
+					usleep(10000); // wait for more data
 				}
-#else
-				if (!decompress_chunk()) break; // generate new chunk
-#endif
+				else
+				{
+					if (!decompress_chunk()) break; // generate new chunk
+				}
 			}
 		}
 	}
@@ -213,9 +213,19 @@ public:
 		return false;
 	}
 
+	void disable_multithreaded_read() // we can only disable on the fly, enable makes less sense
+	{
+		chunk_mutex.lock();
+		done_decompressing = true;
+		decompressor_thread.join();
+		multithreaded_read = false;
+		chunk_mutex.unlock();
+	}
+
 private:
 	void decompressor(); // runs in separate thread, moves chunks from file to uncompressed chunks
 
+	bool multithreaded_read = true;
 	unsigned tid = -1;
 	lava::mutex chunk_mutex;
 	FILE* fp = nullptr;

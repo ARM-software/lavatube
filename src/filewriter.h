@@ -11,9 +11,6 @@
 #include "lavamutex.h"
 #include "util.h"
 
-#define MULTITHREADED_COMPRESS
-#define MULTITHREADED_WRITE
-
 class file_writer
 {
 	file_writer(const file_writer&) = delete;
@@ -23,19 +20,21 @@ class file_writer
 	{
 		// shrink existing chunk to actually used size
 		chunk.shrink(uidx);
+
 		// move chunk into list of chunks to compress
-#ifdef MULTITHREADED_COMPRESS
-		chunk_mutex.lock();
-		uncompressed_chunks.push_front(chunk);
-		chunk_mutex.unlock();
-#else
-		buffer compressed = compress_chunk(chunk);
-#ifdef MULTITHREADED_WRITE
-		compressed_chunks.push_front(compressed);
-#else
-		write_chunk(compressed);
-#endif
-#endif
+		if (multithreaded_compress)
+		{
+			chunk_mutex.lock();
+			uncompressed_chunks.push_front(chunk);
+			chunk_mutex.unlock();
+		}
+		else
+		{
+			buffer compressed = compress_chunk(chunk);
+			if (multithreaded_write) compressed_chunks.push_front(compressed);
+			else write_chunk(compressed);
+		}
+
 		// create a new chunk for writing into (we could employ a free list here as a possible optimization)
 		if (size > uncompressed_chunk_size) // make sure our new chunk is big enough
 		{
@@ -141,6 +140,24 @@ public:
 
 	void change_default_chunk_size(size_t size) { assert(uidx < size); uncompressed_chunk_size = size; chunk.shrink(size); }
 
+	void disable_multithreaded_compress()
+	{
+		chunk_mutex.lock();
+		done_compressing.exchange(false);
+		if (compressor_thread.joinable()) compressor_thread.join();
+		multithreaded_compress = false;
+		chunk_mutex.unlock();
+	}
+
+	void disable_multithreaded_writeout()
+	{
+		chunk_mutex.lock();
+		done_feeding.exchange(false);
+		if (serializer_thread.joinable()) serializer_thread.join();
+		multithreaded_write = false;
+		chunk_mutex.unlock();
+	}
+
 protected:
 	uint64_t uncompressed_bytes = 0; // total amount of uncompressed bytes written so far
 	uint64_t checkpoint_bytes = 0; // bytes at freeze checkpoint
@@ -156,6 +173,8 @@ private:
 	buffer compress_chunk(buffer& uncompressed); // returns compressed buffer
 	void write_chunk(buffer& active);
 
+	bool multithreaded_compress = true;
+	bool multithreaded_write = true;
 	lava::mutex chunk_mutex;
 	FILE* fp = nullptr;
 	size_t uncompressed_chunk_size = 1024 * 1024 * 64; // use 64mb chunks by default

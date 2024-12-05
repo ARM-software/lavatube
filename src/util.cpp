@@ -95,6 +95,9 @@ uint_fast8_t p__no_anisotropy = get_env_bool("LAVATUBE_NO_ANISOTROPY", 0);
 uint_fast8_t p__delay_fence_success_frames = get_env_int("LAVATUBE_DELAY_FENCE_SUCCESS_FRAMES", 0); // off by default
 int p__chunksize = get_env_int("LAVATUBE_CHUNK_SIZE", 64 * 1024 * 1024);
 uint_fast8_t p__external_memory = get_env_bool("LAVATUBE_EXTERNAL_MEMORY", 0);
+uint_fast8_t p__disable_multithread_writeout = get_env_bool("LAVATUBE_DISABLE_MULTITHREADED_WRITEOUT", 0);
+uint_fast8_t p__disable_multithread_compress = get_env_bool("LAVATUBE_DISABLE_MULTITHREADED_COMPRESS", 0);
+uint_fast8_t p__disable_multithread_read = get_env_bool("LAVATUBE_DISABLE_MULTITHREADED_READ", 0);
 
 const char* errorString(const VkResult errorCode)
 {
