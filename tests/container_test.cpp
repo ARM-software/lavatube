@@ -292,6 +292,42 @@ static void test_trace_remap_test2()
 	remapper.clear();
 }
 
+struct mobj
+{
+	uint64_t device_address;
+	uint64_t size;
+};
+static void test_address_remapper()
+{
+	mobj o1 = { 1100, 50 };
+	mobj o2 = { 1200, 50 };
+	mobj o3 = { 1300, 50 };
+	address_remapper<mobj> r;
+	assert(r.get_by_address(0) == nullptr);
+	assert(r.get_by_address(500) == nullptr);
+	assert(r.translate_address(0) == 0);
+	assert(r.translate_address(500) == 0);
+	r.add(100, &o1);
+	r.add(200, &o2);
+	r.add(300, &o3);
+	assert(r.get_by_address(100) == &o1);
+	assert(r.get_by_address(200) == &o2);
+	assert(r.get_by_address(300) == &o3);
+	assert(r.get_by_address(50) == nullptr);
+	assert(r.get_by_address(150) == &o1);
+	assert(r.get_by_address(299) == nullptr);
+	assert(r.translate_address(50) == 0);
+	assert(r.translate_address(450) == 0);
+	assert(r.translate_address(199) == 0);
+	assert(r.translate_address(100) == 1100);
+	assert(r.translate_address(150) == 1150);
+	assert(r.is_candidate(0) == false);
+	assert(r.is_candidate(1) == false);
+	assert(r.is_candidate(100) == true);
+	assert(r.is_candidate((uint64_t)100 << 32) == true);
+	assert(r.is_candidate(199) == false);
+}
+
 int main()
 {
 	// single threaded
@@ -309,6 +345,8 @@ int main()
 	test_trace_remap_check_range(999);
 	test_trace_remap_test1();
 	test_trace_remap_test2();
+
+	test_address_remapper();
 
 	// multi threaded
 	test_trace_remap_mp();

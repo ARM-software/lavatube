@@ -145,13 +145,19 @@ static trackable* object_trackable(const trace_records& r, VkObjectType type, ui
 static void trace_post_vkGetAccelerationStructureDeviceAddressKHR(lava_file_writer& writer, VkDeviceAddress result, VkDevice device, const VkAccelerationStructureDeviceAddressInfoKHR* pInfo)
 {
 	auto* data = writer.parent->records.VkAccelerationStructureKHR_index.at(pInfo->accelerationStructure);
-	data->buffer_device_address = result;
+	data->device_address = result;
 }
 
 static void trace_post_vkGetBufferDeviceAddress(lava_file_writer& writer, VkDeviceAddress result, VkDevice device, const VkBufferDeviceAddressInfo* pInfo)
 {
 	auto* buffer_data = writer.parent->records.VkBuffer_index.at(pInfo->buffer);
-	buffer_data->buffer_device_address = result;
+	buffer_data->device_address = result;
+}
+
+static void trace_post_vkGetBufferDeviceAddressKHR(lava_file_writer& writer, VkDeviceAddress result, VkDevice device, const VkBufferDeviceAddressInfoKHR* pInfo)
+{
+	auto* buffer_data = writer.parent->records.VkBuffer_index.at(pInfo->buffer);
+	buffer_data->device_address = result;
 }
 
 static void trace_post_vkCreateShaderModule(lava_file_writer& writer, VkResult result, VkDevice device, const VkShaderModuleCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkShaderModule* pShaderModule)
@@ -160,7 +166,7 @@ static void trace_post_vkCreateShaderModule(lava_file_writer& writer, VkResult r
 	if (shader_has_buffer_devices_addresses(pCreateInfo->pCode, pCreateInfo->codeSize))
 	{
 		auto* shader = writer.parent->records.VkShaderModule_index.at(*pShaderModule);
-		shader->enables_buffer_device_address = true;
+		shader->enables_device_address = true;
 		ILOG("Shader %u enables buffer references!", shader->index); // remove this later
 	}
 }
@@ -2478,9 +2484,9 @@ static Json::Value trackedaccelerationstructure_json(const trackedaccelerationst
 	v["size"] = (Json::Value::UInt64)t->size;
 	v["offset"] = (Json::Value::UInt64)t->offset;
 	v["buffer_index"] = t->buffer_index;
-	if (t->buffer_device_address != 0)
+	if (t->device_address != 0)
 	{
-		v["buffer_device_address"] = (Json::Value::UInt64)t->buffer_device_address;
+		v["device_address"] = (Json::Value::UInt64)t->device_address;
 	}
 	return v;
 }
@@ -2496,9 +2502,9 @@ static Json::Value trackedbuffer_json(const trackedbuffer* t)
 	v["req_alignment"] = (unsigned)t->req.alignment;
 	v["written"] = (Json::Value::UInt64)t->written;
 	v["updates"] = (unsigned)t->updates;
-	if (t->buffer_device_address != 0)
+	if (t->device_address != 0)
 	{
-		v["buffer_device_address"] = (Json::Value::UInt64)t->buffer_device_address;
+		v["device_address"] = (Json::Value::UInt64)t->device_address;
 	}
 	return v;
 }
@@ -2624,7 +2630,7 @@ static Json::Value trackeddevice_json(const trackeddevice* t)
 static Json::Value trackedshadermodule_json(const trackedshadermodule* t)
 {
 	Json::Value v = trackable_json(t);
-	if (t->enables_buffer_device_address) v["enables_buffer_device_address"] = true;
+	if (t->enables_device_address) v["enables_device_address"] = true;
 	v["size"] = (unsigned)t->size;
 	return v;
 }

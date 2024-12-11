@@ -62,9 +62,13 @@ static void replay_thread(int thread_id)
 	lava_file_reader& t = replayer.file_reader(thread_id);
 	uint8_t instrtype;
 	assert(t.run == false);
-	for (const auto pair : replayer.buffer_device_address_remapping)
+	for (const auto pair : replayer.device_address_remapping.iter())
 	{
-		ILOG("Buffer device address range %lu -> %lu", (unsigned long)pair.first, (unsigned long)(pair.first + pair.second->size));
+		ILOG("Device address range %lu -> %lu", (unsigned long)pair.first, (unsigned long)(pair.first + pair.second->size));
+	}
+	for (const auto pair : replayer.acceleration_structure_address_remapping.iter())
+	{
+		ILOG("Acceleration structure address range %lu -> %lu", (unsigned long)pair.first, (unsigned long)(pair.first + pair.second->size));
 	}
 	while ((instrtype = t.step()))
 	{

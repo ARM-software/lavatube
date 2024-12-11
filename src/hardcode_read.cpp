@@ -290,13 +290,19 @@ void retrace_vkDestroySurfaceKHR(lava_file_reader& reader)
 static void replay_post_vkGetAccelerationStructureDeviceAddressKHR(lava_file_reader& reader, VkDeviceAddress result, VkDevice device, const VkAccelerationStructureDeviceAddressInfoKHR* pInfo)
 {
 	const uint32_t as_index = index_to_VkAccelerationStructureKHR.index(pInfo->accelerationStructure);
-	VkAccelerationStructureKHR_index.at(as_index).buffer_device_address = result;
+	VkAccelerationStructureKHR_index.at(as_index).device_address = result;
+}
+
+static void replay_post_vkGetBufferDeviceAddressKHR(lava_file_reader& reader, VkDeviceAddress result, VkDevice device, const VkBufferDeviceAddressInfoKHR* pInfo)
+{
+	const uint32_t buffer_index = index_to_VkBuffer.index(pInfo->buffer);
+	VkBuffer_index.at(buffer_index).device_address = result;
 }
 
 static void replay_post_vkGetBufferDeviceAddress(lava_file_reader& reader, VkDeviceAddress result, VkDevice device, const VkBufferDeviceAddressInfo* pInfo)
 {
 	const uint32_t buffer_index = index_to_VkBuffer.index(pInfo->buffer);
-	VkBuffer_index.at(buffer_index).buffer_device_address = result;
+	VkBuffer_index.at(buffer_index).device_address = result;
 }
 
 void replay_post_vkAcquireNextImageKHR(lava_file_reader& reader, VkResult result, VkDevice device, VkSwapchainKHR swapchain, uint64_t timeout,
@@ -1036,8 +1042,7 @@ static void translate_addresses(lava_file_reader& reader, uint32_t count, VkDevi
 		const uint64_t offset = pOffsets[i];
 		uint64_t* addr = (uint64_t*)(((char*)ptr) + offset);
 		const uint64_t current = *addr;
-		const trackedmemoryobject* data = reader.parent->buffer_device_address_remapping.at(current);
-		const uint64_t newval = data->buffer_device_address;
+		const uint64_t newval = reader.parent->device_address_remapping.translate_address(current);
 		ILOG("%u: Changing memory value at offset %lu from %lu to %lu", (unsigned)i, (unsigned long)offset, (unsigned long)current, (unsigned long)newval);
 		*addr = newval;
 	}
@@ -1414,7 +1419,10 @@ static void read_VkAccelerationStructureBuildGeometryInfoKHR(lava_file_reader& r
 			read_VkAccelerationStructureGeometryKHR(reader, ppGeometries_backing[sidx]);
 		}
 	}
-	sptr->scratchData.deviceAddress = reader.read_uint64_t();
+
+	const uint64_t stored_address = reader.read_uint64_t();
+	sptr->scratchData.deviceAddress = reader.parent->device_address_remapping.translate_address(stored_address);
+	ILOG("Changing device address from %lu to %lu", (unsigned long)stored_address, (unsigned long)sptr->scratchData.deviceAddress);
 }
 
 void retrace_vkGetSwapchainImagesKHR(lava_file_reader& reader)
@@ -2131,7 +2139,7 @@ static trackedshadermodule trackedshadermodule_json(const Json::Value& v)
 	t.frame_destroyed = v["frame_destroyed"].asInt();
 	if (v.isMember("name")) t.name = v["name"].asString();
 	if (v.isMember("size")) t.name = v["size"].asInt();
-	if (v.isMember("enables_buffer_device_address")) t.enables_buffer_device_address = v["enables_buffer_device_address"].asBool();
+	if (v.isMember("enables_device_address")) t.enables_device_address = v["enables_device_address"].asBool();
 	return t;
 }
 

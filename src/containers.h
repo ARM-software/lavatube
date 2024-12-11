@@ -14,8 +14,65 @@
 #include <memory>
 #include <mutex>
 #include <unordered_map>
+#include <map>
 
 #include "tbb/concurrent_unordered_map.h"
+
+/// Limited thread safe remapping allocator for memory addresses used for replay. The payload needs to
+/// store size in a 'size' member and its own remapped address in a 'device_address' member.
+template<typename T>
+class address_remapper
+{
+public:
+	/// Get stored object. Thread safe as long as only used after any calls to add() or iter().
+	T* get_by_address(uint64_t stored) const
+	{
+		if (remapping.empty()) return nullptr; // none kept
+		auto iter = remapping.lower_bound(stored);
+		if (iter == remapping.end() || iter->first > stored)
+		{
+			if (iter == remapping.begin()) return nullptr; // not found
+			iter--;
+		}
+		if (iter->first + iter->second->size < stored) return nullptr; // out of bounds
+		return iter->second;
+        }
+
+	/// Translate an address. Thread safe as long as only used after any calls to add() or iter().
+	uint64_t translate_address(uint64_t stored) const
+	{
+		if (remapping.empty()) return 0; // none kept
+		auto iter = remapping.lower_bound(stored);
+		if (iter == remapping.end() || iter->first > stored)
+		{
+			if (iter == remapping.begin()) return 0; // not found
+			iter--;
+		}
+		if (iter->first + iter->second->size < stored) return 0; // out of bounds
+		return iter->second->device_address + (stored - iter->first);
+        }
+
+	/// Check if a value is a candidate for being a stored memory address. Also checks 32bit swapped addresses.
+	/// Thread safe as long as only used after any calls to add() or iter().
+	bool is_candidate(uint64_t stored) const
+	{
+		return translate_address(stored) != 0 || translate_address((stored >> 32) | (stored << 32));
+	}
+
+	/// Add an address translation. 'addr' is the stored address. Unsafe. Only use before any calls to
+	/// translate_address() or get_by_address().
+	void add(uint64_t addr, T* obj)
+	{
+		remapping[addr] = obj;
+	}
+
+	/// Get underlying container. Unsafe. Only use before any calls to translate_address() or get_by_address()
+	const std::map<uint64_t, T*>& iter() const { return remapping; }
+
+private:
+	// This container is thread safe since we allocate it all before threading begins.
+	std::map<uint64_t, T*> remapping;
+};
 
 /// A very limited RCU-based lockless concurrent vector implementation. Compared to a
 /// TBB concurrent_vector, the push_back() is slower but the at() is ~2x faster and we

@@ -154,10 +154,10 @@ void lava_reader::init(const std::string& path, int heap_size)
 		for (uint32_t i = 0; i < VkBuffer_index.size(); i++)
 		{
 			Json::Value& buf = trackable["VkBuffer"][i];
-			if (buf.isMember("buffer_device_address"))
+			if (buf.isMember("device_address"))
 			{
-				VkDeviceAddress address = buf["buffer_device_address"].asUInt64();
-				buffer_device_address_remapping[address] = &VkBuffer_index.at(i);
+				VkDeviceAddress address = buf["device_address"].asUInt64();
+				device_address_remapping.add(address, &VkBuffer_index.at(i));
 			}
 		}
 	}
@@ -166,10 +166,10 @@ void lava_reader::init(const std::string& path, int heap_size)
 		for (uint32_t i = 0; i < VkAccelerationStructureKHR_index.size(); i++)
 		{
 			Json::Value& buf = trackable["VkAccelerationStructureKHR"][i];
-			if (buf.isMember("buffer_device_address"))
+			if (buf.isMember("device_address"))
 			{
-				VkDeviceAddress address = buf["buffer_device_address"].asUInt64();
-				buffer_device_address_remapping[address] = &VkAccelerationStructureKHR_index.at(i); // same parent class as above
+				VkDeviceAddress address = buf["device_address"].asUInt64();
+				acceleration_structure_address_remapping.add(address, &VkAccelerationStructureKHR_index.at(i));
 			}
 		}
 	}

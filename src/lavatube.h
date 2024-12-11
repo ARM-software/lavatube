@@ -141,14 +141,14 @@ struct trackedobject : trackable
 struct trackedshadermodule : trackedobject
 {
 	using trackedobject::trackedobject; // inherit constructor
-	bool enables_buffer_device_address = false;
+	bool enables_device_address = false;
 	size_t size = 0;
 };
 
 struct trackedmemoryobject : trackedobject
 {
 	using trackedobject::trackedobject; // inherit constructor
-	VkDeviceAddress buffer_device_address = 0;
+	VkDeviceAddress device_address = 0;
 };
 
 struct trackedbuffer : trackedmemoryobject
@@ -175,7 +175,6 @@ struct trackedaccelerationstructure : trackedmemoryobject
 	uint32_t buffer_index = CONTAINER_INVALID_INDEX;
 	VkAccelerationStructureTypeKHR type = VK_ACCELERATION_STRUCTURE_TYPE_MAX_ENUM_KHR;
 	VkDeviceSize offset = 0;
-	VkDeviceSize size = 0;
 
 	void self_test() const
 	{
