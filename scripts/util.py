@@ -93,7 +93,7 @@ functions_noop = [
 	'vkGetDeviceFaultInfoEXT', # we never want to trace this, but rather inject it during tracing if device loss happens, print the info, then abort
 	'vkGetAccelerationStructureOpaqueCaptureDescriptorDataEXT', 'vkCmdPushDescriptorSetWithTemplate2KHR', 'vkCmdSetRenderingInputAttachmentIndicesKHR',
 	'vkGetEncodedVideoSessionParametersKHR',
-	'vkCreatePipelineBinariesKHR', 'vkCreateIndirectCommandsLayoutEXT', 'vkCreateIndirectExecutionSetEXT', 'vkGetPipelineBinaryDataKHR', # TBD
+	'vkCreatePipelineBinariesKHR', 'vkCreateIndirectCommandsLayoutEXT', 'vkCreateIndirectExecutionSetEXT', 'vkGetPipelineBinaryDataKHR',
 ]
 struct_noop = []
 
@@ -591,7 +591,9 @@ class parameter(object):
 			elif self.length:
 				z.do('if (%s > 0)' % self.length)
 				z.brace_begin()
-				storedname = z.tmpmem('uint32_t', self.length)
+				storedname = 'indices'
+				z.decl('uint32_t*', storedname)
+				z.do('%s = reader.pool.allocate<uint32_t>(%s);' % (storedname, self.length))
 				z.do('reader.read_handle_array(%s, %s); // read unique indices to objects' % (storedname, self.length))
 				usename = varname
 				if not isptr(varname) or self.ptr:
@@ -604,8 +606,6 @@ class parameter(object):
 				if self.funcname == 'VkSubmitInfo' and self.name == 'pCommandBuffers':
 					z.do('if (is_blackhole_mode()) { %s = nullptr; sptr->commandBufferCount = 0; }' % varname)
 				z.do('for (unsigned li2 = 0; li2 < %s; li2++) %s[li2] = index_to_%s.at(%s[li2]);' % (self.length, usename, self.type, storedname))
-				if self.funcname in ['vkFreeDescriptorSets', 'vkFreeDescriptorSets', 'vkFreeCommandBuffers']:
-					z.do('for (unsigned li2 = 0; li2 < %s; li2++) index_to_%s.unset(%s[li2]);' % (self.length, self.type, storedname))
 				z.brace_end()
 			elif self.ptr:
 				tmpname = toindex(self.type)
@@ -772,12 +772,6 @@ class parameter(object):
 		elif self.funcname in ['VkDebugUtilsObjectNameInfoEXT', 'VkDebugUtilsObjectTagInfoEXT'] and self.name == 'objectHandle':
 			z.do('%s = object_lookup(%sobjectType, %s);' % (varname, owner, varname))
 
-		if self.funcname in spec.functions_destroy and self.name == spec.functions_destroy[self.funcname][0] and spec.functions_destroy[self.funcname][1] == '1' and self.funcname not in ['vkFreeMemory']:
-			param = spec.functions_destroy[self.funcname][0]
-			type = spec.functions_destroy[self.funcname][2]
-			if self.funcname not in ignore_on_read:
-				z.do('if (%s != VK_NULL_HANDLE) index_to_%s.unset(%s);' % (varname, type, toindex(type)))
-
 		# Track our currently executing device
 		if self.type == 'VkDevice' and self.funcname[0] == 'v' and self.name == 'device':
 			z.do('reader.device = device;')
@@ -884,8 +878,7 @@ class parameter(object):
 				z.do('auto* data = writer.parent->records.%s_index.at(%s[hi]);' % (self.type, varname))
 				z.do('writer.write_handle(data);')
 				if (self.funcname, self.name) in spec.externally_synchronized:
-					z.do('data->tid = writer.thread_index();')
-					z.do('data->call = writer.local_call_number;')
+					z.do('data->last_modified = writer.current;')
 
 				if self.funcname in [ 'vkCmdBindVertexBuffers2', 'vkCmdBindVertexBuffers2EXT' ] and self.name == 'pBuffers':
 					z.do('if (pBuffers[hi]) commandbuffer_data->touch(data, pOffsets[hi], pSizes ? pSizes[hi] : (data->size - pOffsets[hi]), __LINE__);') # TBD handle pStrides
@@ -969,8 +962,7 @@ class parameter(object):
 				if (self.funcname, self.name) in spec.externally_synchronized or (self.funcname in spec.externally_synchronized_members and self.name in spec.externally_synchronized_members[self.funcname]):
 					z.do('if (%s)' % totrackable(self.type))
 					z.brace_begin()
-					z.do('%s->tid = writer.thread_index();' % totrackable(self.type))
-					z.do('%s->call = writer.local_call_number;' % totrackable(self.type))
+					z.do('%s->last_modified = writer.current;' % totrackable(self.type))
 					z.brace_end()
 				if self.funcname in extra_optionals and self.name in extra_optionals[self.funcname]:
 					z.brace_end()
@@ -1010,8 +1002,7 @@ class parameter(object):
 			z.brace_end()
 
 		if self.funcname == 'vkEndCommandBuffer':
-			z.do('commandbuffer_data->tid = writer.thread_index();')
-			z.do('commandbuffer_data->call = writer.local_call_number;')
+			z.do('commandbuffer_data->last_modified = writer.current;')
 		if self.funcname == 'VkDebugMarkerObjectNameInfoEXT' and self.name == 'pObjectName':
 			z.do('object_data->name = sptr->pObjectName;')
 		if self.funcname == 'VkDebugUtilsObjectNameInfoEXT' and self.name == 'pObjectName':
@@ -1116,16 +1107,14 @@ def save_add_tracking(name):
 		z.do('if (flags & VK_COMMAND_POOL_RESET_RELEASE_RESOURCES_BIT) commandpool_data->commandbuffers.clear();')
 		z.do('else for (auto* i : commandpool_data->commandbuffers) i->touched.clear();')
 	elif name == 'vkResetCommandBuffer' or name == 'vkBeginCommandBuffer':
-		z.do('commandbuffer_data->tid = writer.thread_index();')
-		z.do('commandbuffer_data->call = writer.local_call_number;')
+		z.do('commandbuffer_data->last_modified = writer.current;')
 		z.do('commandbuffer_data->touched.clear();')
 	elif name == 'vkResetFences':
 		z.do('for (unsigned i = 0; i < fenceCount; i++)')
 		z.brace_begin()
 		z.do('auto* tf = writer.parent->records.VkFence_index.at(pFences[i]);')
 		z.do('tf->frame_delay = -1; // reset delay fuse')
-		z.do('tf->tid = writer.thread_index();')
-		z.do('tf->call = writer.local_call_number;')
+		z.do('tf->last_modified = writer.current;')
 		z.brace_end()
 	elif name in [ 'vkCmdCopyBufferToImage', 'vkCmdCopyImageToBuffer', 'VkCopyBufferToImageInfo2', 'VkCopyBufferToImageInfo2KHR', 'VkCopyImageToBufferInfo2', 'VkCopyImageToBufferInfo2KHR' ]:
 		if name[0] == 'V': z.decl(trackable_type_map_trace['VkCommandBuffer'] + '*', totrackable('VkCommandBuffer'), custom='writer.parent->records.VkCommandBuffer_index.at(writer.commandBuffer);')
@@ -1133,9 +1122,7 @@ def save_add_tracking(name):
 		z.do('for (unsigned ii = 0; ii < %sregionCount; ii++) commandbuffer_data->touch(buffer_data, %spRegions[ii].bufferOffset, std::min(image_data->size, buffer_data->size - %spRegions[ii].bufferOffset), __LINE__);' % (prefix, prefix, prefix))
 	elif name in spec.functions_create and spec.functions_create[name][1] == '1':
 		(param, count, type) = get_create_params(name)
-		z.do('auto* add = writer.parent->records.%s_index.add(*%s, lava_writer::instance().global_frame);' % (type, param))
-		z.do('add->tid = writer.thread_index();')
-		z.do('add->call = writer.local_call_number;')
+		z.do('auto* add = writer.parent->records.%s_index.add(*%s, writer.current);' % (type, param))
 		if type == 'VkBuffer':
 			z.do('add->size = pCreateInfo->size;')
 			z.do('add->flags = pCreateInfo->flags;')
@@ -1230,9 +1217,7 @@ def save_add_tracking(name):
 		(param, count, type) = get_create_params(name)
 		z.do('for (unsigned i = 0; i < %s; i++)' % count)
 		z.brace_begin()
-		z.do('auto* add = writer.parent->records.%s_index.add(%s[i], lava_writer::instance().global_frame);' % (type, param))
-		z.do('add->tid = writer.thread_index();')
-		z.do('add->call = writer.local_call_number;')
+		z.do('auto* add = writer.parent->records.%s_index.add(%s[i], writer.current);' % (type, param))
 		if type == 'VkCommandBuffer':
 			z.do('add->pool = pAllocateInfo->commandPool;')
 			z.do('add->device = device;')
@@ -1260,11 +1245,14 @@ def save_add_tracking(name):
 		type = spec.functions_destroy[name][2]
 		if count == '1':
 			z.do('if (%s != VK_NULL_HANDLE)' % param)
+			z.brace_begin()
 		else:
 			z.do('for (unsigned i = 0; i < %s; i++)' % count)
-		z.brace_begin()
-		z.do('auto* meta = writer.parent->records.%s_index.unset(%s%s, lava_writer::instance().global_frame);' % (type, param, '' if count == '1' else '[i]'))
+			z.brace_begin()
+			z.do('if (%s[i] == VK_NULL_HANDLE) continue;' % param)
+		z.do('auto* meta = writer.parent->records.%s_index.unset(%s%s, writer.current);' % (type, param, '' if count == '1' else '[i]'))
 		z.do('DLOG2("removing %s from %s index %%u", (unsigned)meta->index);' % (type, name))
+		z.do('meta->destroyed = writer.current;')
 		z.do('meta->self_test();')
 		if type == 'VkCommandBuffer':
 			z.do('commandpool_data->commandbuffers.erase(meta);')
@@ -1306,35 +1294,38 @@ def load_add_tracking(name):
 			else:
 				z.do('if (!reader.run) %s = fake_handle<%s>(%s);' % (param, type, toindex(type)))
 			z.do('if (%s) index_to_%s.set(%s, %s);' % (param, type, toindex(type), param))
+			z.do('auto& data = %s_index.at(%s);' % (type, toindex(type)))
+			z.do('assert(data.creation.frame == reader.current.frame);')
+			z.do('data.creation = reader.current;')
+			z.do('data.last_modified = reader.current;')
 			if type == 'VkSwapchainKHR':
-				z.do('trackedswapchain_replay& data = VkSwapchainKHR_index.at(swapchainkhr_index);')
 				z.do('data.info = *pCreateInfo; // struct copy')
 				z.do('data.index = %s;' % toindex(type))
 				z.do('data.device = device;')
 			elif type == 'VkDevice':
-				z.do('trackeddevice& device_data = VkDevice_index.at(device_index);')
-				z.do('device_data.physicalDevice = physicalDevice; // track parentage')
+				z.do('data.physicalDevice = physicalDevice; // track parentage')
 				z.do('suballoc_setup(selected_physical_device);')
 			elif type == 'VkImage':
-				z.do('trackedimage& image_data = VkImage_index.at(image_index);')
-				z.do('image_data.initialLayout = pCreateInfo->initialLayout; // duplicates info stored in json but needed for compatibility with older traces')
-				z.do('image_data.currentLayout = pCreateInfo->initialLayout;')
+				z.do('data.initialLayout = pCreateInfo->initialLayout; // duplicates info stored in json but needed for compatibility with older traces')
+				z.do('data.currentLayout = pCreateInfo->initialLayout;')
 		else: # multiple
 			z.do('for (unsigned i = 0; i < %s; i++)' % count)
 			z.brace_begin()
 			z.do('DLOG2("insert %s into %s index %%u at pos=%%u", indices[i], i);' % (type, name))
+			z.do('auto& data = %s_index.at(indices[i]);' % type)
+			z.do('assert(data.creation.frame == reader.current.frame);')
+			z.do('data.creation = reader.current;')
+			z.do('data.last_modified = reader.current;')
 			if type == 'VkSwapchainKHR':
 				z.do('if (is_noscreen() || !reader.run) pSwapchains[i] = fake_handle<VkSwapchainKHR>(indices[i]);')
 			elif type == 'VkCommandBuffer':
-				z.do('trackedcmdbuffer_replay& commandbuffer_data = VkCommandBuffer_index.at(indices[i]);')
-				z.do('commandbuffer_data.device = device;')
-				z.do('commandbuffer_data.physicalDevice = VkDevice_index.at(device_index).physicalDevice;')
+				z.do('data.device = device;')
+				z.do('data.physicalDevice = VkDevice_index.at(device_index).physicalDevice;')
 				z.do('if (!reader.run) %s[i] = fake_handle<%s>(indices[i]);' % (param, type))
 			else:
 				z.do('if (!reader.run) %s[i] = fake_handle<%s>(indices[i]);' % (param, type))
 			z.do('if (%s[i]) index_to_%s.set(indices[i], %s[i]);' % (param, type, param))
 			if type == 'VkSwapchainKHR':
-				z.do('trackedswapchain_replay& data = VkSwapchainKHR_index.at(indices[i]);')
 				z.do('data.info = pCreateInfos[i];')
 				z.do('data.index = indices[i];')
 			z.brace_end()
@@ -1342,16 +1333,44 @@ def load_add_tracking(name):
 		param = spec.functions_destroy[name][0]
 		count = spec.functions_destroy[name][1]
 		type = spec.functions_destroy[name][2]
-		if type == 'VkSwapchainKHR':
-			z.do('if (reader.run)')
-			z.brace_begin()
-			z.do('trackedswapchain_replay& data = VkSwapchainKHR_index.at(swapchainkhr_index);')
-			z.do('for (auto i : data.virtual_images) wrap_vkDestroyImage(device, i, nullptr);')
-			z.do('if (data.virtual_cmdpool != VK_NULL_HANDLE) wrap_vkFreeCommandBuffers(device, data.virtual_cmdpool, data.virtual_cmdbuffers.size(), data.virtual_cmdbuffers.data());')
-			z.do('wrap_vkDestroyCommandPool(device, data.virtual_cmdpool, nullptr);')
-			z.do('wrap_vkDestroySemaphore(device, data.virtual_semaphore, nullptr);')
-			z.do('for (auto i : data.virtual_fences) wrap_vkDestroyFence(device, i, nullptr);')
-			z.brace_end()
+		if count == '1':
+			z.do('if (%s != VK_NULL_HANDLE)' % param)
+		else:
+			z.do('for (unsigned i = 0; i < %s; i++)' % count)
+		z.brace_begin()
+		if count == '1' and name not in ignore_on_read:
+			z.do('auto& data = %s_index.at(%s);' % (type, toindex(type)))
+			z.do('assert(data.destroyed.frame == UINT32_MAX || data.destroyed.frame == reader.current.frame);')
+			z.do('data.destroyed = reader.current;')
+			z.do('data.last_modified = reader.current;')
+			if type == 'VkSwapchainKHR':
+				z.do('if (reader.run)')
+				z.brace_begin()
+				z.do('for (auto i : data.virtual_images) wrap_vkDestroyImage(device, i, nullptr);')
+				z.do('if (data.virtual_cmdpool != VK_NULL_HANDLE) wrap_vkFreeCommandBuffers(device, data.virtual_cmdpool, data.virtual_cmdbuffers.size(), data.virtual_cmdbuffers.data());')
+				z.do('wrap_vkDestroyCommandPool(device, data.virtual_cmdpool, nullptr);')
+				z.do('wrap_vkDestroySemaphore(device, data.virtual_semaphore, nullptr);')
+				z.do('for (auto i : data.virtual_fences) wrap_vkDestroyFence(device, i, nullptr);')
+				z.brace_end()
+			z.do('index_to_%s.unset(%s);' % (type, toindex(type)))
+		elif name not in ignore_on_read:
+			z.do('if (indices[i] == CONTAINER_NULL_VALUE) continue;')
+			z.do('auto& data = %s_index.at(indices[i]);' % type)
+			z.do('assert(data.destroyed.frame == UINT32_MAX || data.destroyed.frame == reader.current.frame);')
+			z.do('data.destroyed = reader.current;')
+			z.do('data.last_modified = reader.current;')
+			z.do('index_to_%s.unset(indices[i]);' % type)
+		z.brace_end()
+	elif name == 'vkQueuePresentKHR':
+		z.do('if (reader.new_frame()) // if it returns true, then we have hit the end of our global frame range, so terminate everything')
+		z.brace_begin()
+		z.do('if (reader.run) wrap_vkDeviceWaitIdle(queue_data.device);')
+		z.do('reader.parent->finalize(true);')
+		z.do('usleep(100); // hack to ensure all other, in-progress threads are completed or waiting forever before we destroy everything below')
+		z.do('if (reader.run) terminate_all(queue_data.device);')
+		z.do('if (p__debug_destination) fclose(p__debug_destination);')
+		z.do('return; // make sure we now do not run anything below this point')
+		z.brace_end()
 
 def func_common(name, node, read, target, header, guard_header=True):
 	proto = node.find('proto')

@@ -138,14 +138,14 @@ public:
 
 	debug_info new_frame(int global_frame) REQUIRES(frame_mutex);
 	void set(const std::string& path) REQUIRES(frame_mutex);
-	inline int thread_index() const { return mTid; }
+	inline int thread_index() const { return current.thread; }
 
 	debug_info debug;
 	int prev_callno = -1; // for validation
 
 	memory_pool pool;
-	int local_call_number = 0;
 	lava_writer* parent;
+	change_source current;
 
 	VkDevice device = VK_NULL_HANDLE;
 	VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
@@ -161,16 +161,16 @@ public:
 		if (t)
 		{
 			write_uint32_t(t->index);
-			write_int8_t(t->tid);
-			write_uint16_t(t->call);
-			DLOG3("%d : wrote handle idx=%u tid=%d call=%u", mTid, (unsigned)t->index, (int)t->tid, (unsigned)t->call);
+			write_int8_t(t->last_modified.thread);
+			write_uint16_t(t->last_modified.call);
+			DLOG3("%u : wrote handle idx=%u tid=%d call=%u", current.thread, (unsigned)t->index, (int)t->last_modified.thread, (unsigned)t->last_modified.call);
 		}
 		else
 		{
 			write_uint32_t(CONTAINER_NULL_VALUE);
 			write_int8_t((int8_t)-1);
 			write_uint16_t(0);
-			DLOG3("%d : wrote a null handle", mTid);
+			DLOG3("%u : wrote a null handle", current.thread);
 		}
 	}
 
@@ -178,9 +178,6 @@ public:
 
 	/// Make other threads wait for us
 	void push_thread_barriers();
-
-	/// Frame count as seen by this thread alone
-	int local_frame = 0;
 
 	std::atomic_bool pending_barrier { false };
 
@@ -255,5 +252,5 @@ inline void lava_file_writer::write_api_command(uint16_t id)
 	write_uint8_t(PACKET_API_CALL); // API call
 	write_uint16_t(id); // API call name by id
 	write_uint32_t(0); // reserved for future use
-	local_call_number++;
+	current.call++;
 }

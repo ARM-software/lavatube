@@ -6,6 +6,7 @@
 #include "packfile.h"
 #include "jsoncpp/json/reader.h"
 #include "read_auto.h"
+#include "util_auto.h"
 
 /// Mutex to enforce additional external synchronization
 lava::mutex sync_mutex;
@@ -21,13 +22,16 @@ Json::Value readJson(const std::string& filename, const std::string packedfile)
 
 lava_file_reader::lava_file_reader(lava_reader* _parent, const std::string& path, int mytid, int frames, int start, int end, bool preload)
 	: file_reader(packed_open("thread_" + std::to_string(mytid) + ".bin", path), mytid)
-	, tid(mytid)
 	, mPreload(preload)
 {
 	parent = _parent;
 	run = parent->run;
 	global_frames = frames;
-	Json::Value frameinfo = readJson("frames_" + _to_string(tid) + ".json", path);
+	Json::Value frameinfo = readJson("frames_" + _to_string(mytid) + ".json", path);
+	current.thread = mytid;
+	current.call = 0;
+	current.frame = 0;
+	current.thread = mytid;
 
 	if (frameinfo.isMember("thread_name"))
 	{
@@ -81,6 +85,20 @@ uint8_t lava_file_reader::step()
 
 lava_file_reader::~lava_file_reader()
 {
+}
+
+uint16_t lava_file_reader::read_apicall()
+{
+	const uint16_t apicall = parent->dictionary.at(read_uint16_t());
+	(void)read_uint32_t(); // reserved for future use
+	DLOG("[t%02u %06d] %s", current.thread, (int)parent->thread_call_numbers->at(current.thread).load(std::memory_order_relaxed) + 1, get_function_name(apicall));
+	lava_replay_func func = retrace_getcall(apicall);
+	current.call_id = apicall;
+	func(*this);
+	current.call++;
+	parent->thread_call_numbers->at(current.thread).fetch_add(1, std::memory_order_relaxed);
+	pool.reset();
+	return apicall;
 }
 
 // --- trace reader

@@ -11,6 +11,7 @@
 
 #include "tests/tests.h"
 
+#pragma GCC diagnostic ignored "-Wunused-variable"
 #pragma GCC diagnostic ignored "-Wunused-function"
 
 #define TEST_NAME_1 "tracing_1_1"
@@ -340,16 +341,9 @@ static void getnext(lava_file_reader& t, const char* expected_s)
 	if (instrtype == PACKET_API_CALL)
 	{
 		const uint16_t expected = retrace_getid(expected_s);
-		const uint16_t apicall = t.read_uint16_t();
-		(void)t.read_uint32_t();
-		DLOG("[t%02d %06d] %s (apicall expected=%u, apicall read=%u, expected name=%s)", t.thread_index(), (int)t.parent->thread_call_numbers->at(t.thread_index()).load(std::memory_order_relaxed) + 1,
-		     get_function_name(apicall), (unsigned)expected, (unsigned)apicall, expected_s);
+		const uint16_t apicall = t.read_apicall();
 		assert(instrtype == 2);
 		assert(apicall == expected);
-		lava_replay_func api = retrace_getcall(apicall);
-		t.parent->thread_call_numbers->at(t.thread_index()).fetch_add(1, std::memory_order_relaxed);
-		api(t);
-		t.pool.reset();
 	}
 	else if (instrtype == PACKET_THREAD_BARRIER)
 	{
@@ -416,7 +410,7 @@ static void retrace_2(int variant)
 	getnext(t, "vkDestroyImage");
 	trackedbuffer& b = VkBuffer_index.at(0);
 	assert(b.size == BUFFER_SIZE);
-	assert(b.frame_destroyed != -1);
+	assert(b.destroyed.frame != UINT32_MAX);
 	for (unsigned i = 0; i < NUM_BUFFERS; i++)
 	{
 		getnext(t, nullptr); // thread barrier

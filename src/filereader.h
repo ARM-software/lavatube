@@ -226,7 +226,7 @@ private:
 	void decompressor(); // runs in separate thread, moves chunks from file to uncompressed chunks
 
 	bool multithreaded_read = true;
-	unsigned tid = -1;
+	unsigned tid = -1; // only used for logging
 	lava::mutex chunk_mutex;
 	FILE* fp = nullptr;
 	std::string mFilename;

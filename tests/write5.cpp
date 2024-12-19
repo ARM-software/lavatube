@@ -25,7 +25,7 @@ static void write_test_pattern_stride(bool actual, int stride, int conseq)
 {
 	unsigned size = 1024 * 1024 * 8;
 	uint64_t offset = 0;
-	file_writer file;
+	file_writer file(0);
 	std::string name = "test_pattern_stride_" + std::to_string(stride) + "_conseq_" + std::to_string(conseq);
 	std::string filename = "write5_" + name + ".bin";
 	file.set(filename);
@@ -45,7 +45,7 @@ static void write_test_pattern_stride(bool actual, int stride, int conseq)
 
 static void write_test_1()
 {
-	file_writer file;
+	file_writer file(0);
 	file.set("write_5.bin");
 
 	std::vector<uint16_t> vals1(1024 * 1024 * 16, 42); // original

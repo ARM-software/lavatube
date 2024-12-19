@@ -115,7 +115,7 @@ public:
 
 	VkFlags read_VkFlags() { uint32_t t; read_value(&t); return static_cast<VkFlags>(t); }
 
-	inline int thread_index() const { return tid; }
+	inline int thread_index() const { return current.thread; }
 
 	inline VkDescriptorDataEXT read_VkDescriptorDataEXT() { return VkDescriptorDataEXT{}; } // TBD
 	inline VkAccelerationStructureNV read_VkAccelerationStructureNV() { return VK_NULL_HANDLE; }
@@ -123,19 +123,20 @@ public:
 	inline uint32_t read_handle();
 	inline void read_handle_array(uint32_t* dest, uint32_t length) { for (uint32_t i = 0; i < length; i++) dest[i] = read_handle(); }
 	inline void read_barrier();
+	uint16_t read_apicall();
 
 	/// If this one returns true, we are responsible for cleaning up all Vulkan calls and then exiting.
 	bool new_frame()
 	{
-		if (mStart == local_frame)
+		if (mStart == (int)current.frame)
 		{
 			parent->mStartTime.store(gettime());
 			if (mPreload) initiate_preload(mBytesEndPreload);
 			if (mHaveFirstFrame) ILOG("==== starting frame frange ====");
 		}
-		local_frame++;
+		current.frame++;
 		parent->global_frame++; // just use for logging purposes
-		if (mEnd != -1 && local_frame == mEnd)
+		if (mEnd != -1 && (int)current.frame == mEnd)
 		{
 			if (mPreload) reset_preload();
 			if (mHaveFinalFrame)
@@ -153,16 +154,14 @@ public:
 	/// Whether we should actually call into Vulkan or if we are just processing the data
 	bool run = true;
 
-	/// Current local frame
-	int local_frame = 0;
-
 	/// Is this reader's thread terminated?
 	std::atomic_bool terminated{ false };
+
+	change_source current;
 
 	inline void self_test();
 
 private:
-	int tid;
 	bool mPreload;
 	int mStart = 0;	///< Local start frame
 	int mEnd = -1; ///< Local end frame
@@ -188,10 +187,11 @@ inline void lava_file_reader::read_barrier()
 	for (int i = 0; i < (int)size; i++)
 	{
 		const unsigned call = read_uint32_t();
-		DLOG3("Thread barrier on thread %d, waiting for call %u on thread %d / %u", tid, call, i, size - 1);
-		while (i != tid && call > parent->thread_call_numbers->at(i).load(std::memory_order_relaxed)) usleep(1);
+		assert(call != UINT32_MAX);
+		DLOG3("Thread barrier on thread %d, waiting for call %u on thread %d / %u", current.thread, call, i, size - 1);
+		while (i != current.thread && call > parent->thread_call_numbers->at(i).load(std::memory_order_relaxed)) usleep(1);
 	}
-	DLOG2("Passed thread barrier on thread %d, waited for %u threads", tid, size);
+	DLOG2("Passed thread barrier on thread %d, waited for %u threads", current.thread, size);
 }
 
 inline uint32_t lava_file_reader::read_handle()
@@ -199,8 +199,8 @@ inline uint32_t lava_file_reader::read_handle()
 	const uint32_t index = read_uint32_t();
 	const int req_thread = read_int8_t();
 	const uint16_t req_call = read_uint16_t();
-	DLOG3("%d : read handle idx=%u tid=%d call=%u", tid, (unsigned)index, (int)req_thread, (unsigned)req_call);
-	if (req_thread < 0 || req_thread == tid) return index;
+	DLOG3("%u : read handle idx=%u tid=%d call=%u", current.thread, (unsigned)index, (int)req_thread, (unsigned)req_call);
+	if (req_thread < 0 || req_thread == (int)current.thread) return index;
 	// check for thread dependency, if we need a resource not provided yet, spin until it is
 	int currentcall = parent->thread_call_numbers->at(req_thread).load(std::memory_order_relaxed);
 	while (req_call > currentcall)

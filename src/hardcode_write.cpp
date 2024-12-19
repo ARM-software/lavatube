@@ -644,7 +644,7 @@ static void memory_update(lava_file_writer& writer, trackedqueue* queue_data, co
 			{
 				trackedobject* object_data = objpair.first;
 				if (object_data->backing != pair.first) continue; // belongs to different device memory
-				assert(object_data->frame_destroyed == -1);
+				assert(object_data->destroyed.frame == UINT32_MAX);
 				uint64_t written = 0;
 				[[maybe_unused]] uint64_t scanned = 0;
 				char* cloneptr = memory_data->clone + object_data->offset;
@@ -1222,9 +1222,7 @@ static void trace_post_vkCreateInstance(lava_file_writer& writer, VkResult resul
 	assert(num_phys_devices == physical_devices.size());
 	for (unsigned cur_dev = 0; cur_dev < num_phys_devices; cur_dev++)
 	{
-		auto* add = writer.parent->records.VkPhysicalDevice_index.add(physical_devices[cur_dev], instance.global_frame);
-		add->tid = writer.thread_index();
-		add->call = writer.local_call_number;
+		auto* add = writer.parent->records.VkPhysicalDevice_index.add(physical_devices[cur_dev], writer.current);
 		uint32_t count = 0;
 		wrap_vkGetPhysicalDeviceQueueFamilyProperties(physical_devices[cur_dev], &count, nullptr);
 		add->queueFamilyProperties.resize(count);
@@ -1242,7 +1240,9 @@ static inline lava_file_writer& write_header(const char* funcname, lava_function
 	lava_file_writer& writer = instance.file_writer();
 	if (thread_barrier) { frame_mutex.lock(); writer.inject_thread_barrier(); frame_mutex.unlock(); }
 	writer.write_api_command(id);
-	DLOG("[t%02d %06d] Seq %s%s", writer.thread_index(), writer.local_call_number, funcname, thread_barrier ? " (prefaced by thread barrier)" : "");
+	writer.current.call_id = id;
+	writer.current.frame = instance.global_frame;
+	DLOG("[t%02u %06u] Seq %s%s", writer.current.thread, writer.current.call, funcname, thread_barrier ? " (prefaced by thread barrier)" : "");
 	return writer;
 }
 
@@ -1519,8 +1519,8 @@ VKAPI_ATTR void trace_vkUpdateBufferTRACETOOLTEST(VkDevice device, VkBuffer dstB
 	writer.write_handle(buffer_data);
 	if (buffer_data)
 	{
-		buffer_data->tid = writer.thread_index();
-		buffer_data->call = writer.local_call_number;
+		buffer_data->last_modified = writer.current;
+		buffer_data->last_write = writer.current;
 		buffer_data->self_test();
 	}
 	write_VkUpdateMemoryInfoTRACETOOLTEST(writer, pInfo);
@@ -1544,8 +1544,7 @@ VKAPI_ATTR void trace_vkUpdateImageTRACETOOLTEST(VkDevice device, VkImage dstIma
 	writer.write_handle(image_data);
 	if (image_data)
 	{
-		image_data->tid = writer.thread_index();
-		image_data->call = writer.local_call_number;
+		image_data->last_modified = writer.current;
 		image_data->self_test();
 	}
 	write_VkUpdateMemoryInfoTRACETOOLTEST(writer, pInfo);
@@ -1569,8 +1568,8 @@ VKAPI_ATTR void trace_vkPatchBufferTRACETOOLTEST(VkDevice device, VkBuffer dstBu
 	writer.write_handle(buffer_data);
 	if (buffer_data)
 	{
-		buffer_data->tid = writer.thread_index();
-		buffer_data->call = writer.local_call_number;
+		buffer_data->last_modified = writer.current;
+		buffer_data->last_write = writer.current;
 		buffer_data->self_test();
 	}
 	write_VkPatchChunkListTRACETOOLTEST(writer, pList);
@@ -1587,8 +1586,7 @@ VKAPI_ATTR void trace_vkPatchImageTRACETOOLTEST(VkDevice device, VkImage dstImag
 	writer.write_handle(image_data);
 	if (image_data)
 	{
-		image_data->tid = writer.thread_index();
-		image_data->call = writer.local_call_number;
+		image_data->last_modified = writer.current;
 		image_data->self_test();
 	}
 	write_VkPatchChunkListTRACETOOLTEST(writer, pList);
@@ -1606,14 +1604,13 @@ VKAPI_ATTR void trace_vkCmdUpdateBuffer2TRACETOOLTEST(VkCommandBuffer commandBuf
 	writer.write_handle(buffer_data);
 	if (commandbuffer_data)
 	{
-		commandbuffer_data->tid = writer.thread_index();
-		commandbuffer_data->call = writer.local_call_number;
+		commandbuffer_data->last_modified = writer.current;
 		commandbuffer_data->self_test();
 	}
 	if (buffer_data)
 	{
-		buffer_data->tid = writer.thread_index();
-		buffer_data->call = writer.local_call_number;
+		buffer_data->last_modified = writer.current;
+		buffer_data->last_write = writer.current;
 		buffer_data->self_test();
 	}
 	writer.commandBuffer = commandBuffer;
@@ -1776,9 +1773,8 @@ void trace_post_vkCreateSwapchainKHR(lava_file_writer& writer, VkResult result, 
 	wrap_vkGetSwapchainImagesKHR(device, *pSwapchain, &count, pSwapchainImages.data());
 	for (unsigned i = 0; i < count; i++)
 	{
-		auto* add = writer.parent->records.VkImage_index.add(pSwapchainImages[i], lava_writer::instance().global_frame);
-		add->tid = writer.thread_index();
-		add->call = writer.local_call_number;
+		auto* add = writer.parent->records.VkImage_index.add(pSwapchainImages[i], writer.current);
+		add->last_modified = writer.current;
 		add->type = VK_OBJECT_TYPE_IMAGE;
 		add->sharingMode = pCreateInfo->imageSharingMode;
 		add->is_swapchain_image = true;
@@ -1831,9 +1827,7 @@ VKAPI_ATTR VkResult VKAPI_CALL trace_vkCreateHeadlessSurfaceEXT(VkInstance insta
 	VkResult retval = hack_vkCreateHeadlessSurfaceEXT(instance, pCreateInfo, pAllocator, pSurface);
 	writer.write_uint32_t(retval);
 	// Post
-	trackable* surface_data = writer.parent->records.VkSurfaceKHR_index.add(*pSurface, lava_writer::instance().global_frame);
-	surface_data->tid = writer.thread_index();
-	surface_data->call = writer.local_call_number;
+	trackable* surface_data = writer.parent->records.VkSurfaceKHR_index.add(*pSurface, writer.current);
 	DLOG("insert VkSurfaceKHR into vkCreateHeadlessSurfaceEXT index %u", (unsigned)surface_data->index);
 	writer.write_handle(surface_data); // id tracking
 	// Return
@@ -1892,9 +1886,7 @@ VKAPI_ATTR VkResult VKAPI_CALL trace_vkCreateXlibSurfaceKHR(VkInstance instance,
 	VkResult retval = wrap_vkCreateXlibSurfaceKHR(instance, pCreateInfo, pAllocator, pSurface);
 	writer.write_uint32_t(retval);
 	// -- Post --
-	trackable* surface_data = writer.parent->records.VkSurfaceKHR_index.add(*pSurface, lava_writer::instance().global_frame);
-	surface_data->tid = writer.thread_index();
-	surface_data->call = writer.local_call_number;
+	trackable* surface_data = writer.parent->records.VkSurfaceKHR_index.add(*pSurface, writer.current);
 	DLOG("insert VkSurfaceKHR into vkCreateXlibSurfaceKHR index %u", (unsigned)surface_data->index);
 	writer.write_handle(surface_data); // id tracking
 	// -- Return --
@@ -1951,9 +1943,7 @@ VKAPI_ATTR VkResult VKAPI_CALL trace_vkCreateXcbSurfaceKHR(VkInstance instance, 
 	assert(retval == VK_SUCCESS);
 
 	// Post
-	auto* surface_data = writer.parent->records.VkSurfaceKHR_index.add(*pSurface, lava_writer::instance().global_frame);
-	surface_data->tid = writer.thread_index();
-	surface_data->call = writer.local_call_number;
+	auto* surface_data = writer.parent->records.VkSurfaceKHR_index.add(*pSurface, writer.current);
 	DLOG("insert VkSurfaceKHR into vkCreateXcbSurfaceKHR index %u", (unsigned)surface_data->index);
 	writer.write_handle(surface_data); // id tracking
 	free(geom_reply);
@@ -1987,9 +1977,7 @@ VKAPI_ATTR VkResult VKAPI_CALL trace_vkCreateWaylandSurfaceKHR(VkInstance instan
 	writer.write_uint32_t(retval);
 	assert(retval == VK_SUCCESS);
 	// Post
-	auto* surface_data = writer.parent->records.VkSurfaceKHR_index.add(*pSurface, lava_writer::instance().global_frame);
-	surface_data->tid = writer.thread_index();
-	surface_data->call = writer.local_call_number;
+	auto* surface_data = writer.parent->records.VkSurfaceKHR_index.add(*pSurface, writer.current);
 	writer.write_handle(surface_data); // id tracking
 	// Return
 	return retval;
@@ -2007,7 +1995,7 @@ VKAPI_ATTR void VKAPI_CALL trace_vkDestroySurfaceKHR(VkInstance instance, VkSurf
 	writer.write_uint8_t(surface_opt);
 	if (surface_opt)
 	{
-		const auto* surface_data = writer.parent->records.VkSurfaceKHR_index.unset(surface, lava_writer::instance().global_frame);
+		const auto* surface_data = writer.parent->records.VkSurfaceKHR_index.unset(surface, writer.current);
 		writer.write_handle(surface_data);
 	}
 	// Execute
@@ -2065,7 +2053,7 @@ VKAPI_ATTR void VKAPI_CALL trace_vkGetDeviceQueue2(VkDevice device, const VkDevi
 
 	if (!writer.parent->records.VkQueue_index.contains(*pQueue))
 	{
-		auto* queue_data = writer.parent->records.VkQueue_index.add(*pQueue, lava_writer::instance().global_frame);
+		auto* queue_data = writer.parent->records.VkQueue_index.add(*pQueue, writer.current);
 		queue_data->queueIndex = pQueueInfo->queueIndex;
 		queue_data->queueFamily = pQueueInfo->queueFamilyIndex;
 		queue_data->queueFlags = pQueueInfo->flags;
@@ -2073,8 +2061,6 @@ VKAPI_ATTR void VKAPI_CALL trace_vkGetDeviceQueue2(VkDevice device, const VkDevi
 		queue_data->realIndex = realIndex;
 		queue_data->realFamily = realFamily;
 		queue_data->realQueue = *pQueue;
-		queue_data->tid = writer.thread_index();
-		queue_data->call = writer.local_call_number;
 		queue_data->physicalDevice = device_data->physicalDevice;
 	}
 	auto* queue_data = writer.parent->records.VkQueue_index.at(*pQueue);
@@ -2114,7 +2100,7 @@ VKAPI_ATTR void VKAPI_CALL trace_vkGetDeviceQueue(VkDevice device, uint32_t queu
 	// Post
 	if (!writer.parent->records.VkQueue_index.contains(*pQueue))
 	{
-		auto* queue_data = writer.parent->records.VkQueue_index.add(*pQueue, lava_writer::instance().global_frame);
+		auto* queue_data = writer.parent->records.VkQueue_index.add(*pQueue, writer.current);
 		queue_data->queueIndex = queueIndex;
 		queue_data->queueFamily = queueFamilyIndex;
 		queue_data->queueFlags = physicaldevice_data->queueFamilyProperties.at(queueFamilyIndex).queueFlags;
@@ -2122,8 +2108,6 @@ VKAPI_ATTR void VKAPI_CALL trace_vkGetDeviceQueue(VkDevice device, uint32_t queu
 		queue_data->realIndex = realIndex;
 		queue_data->realFamily = realFamily;
 		queue_data->realQueue = *pQueue;
-		queue_data->tid = writer.thread_index();
-		queue_data->call = writer.local_call_number;
 		queue_data->physicalDevice = device_data->physicalDevice;
 	}
 	auto* queue_data = writer.parent->records.VkQueue_index.at(*pQueue);
@@ -2155,7 +2139,7 @@ VKAPI_ATTR VkResult VKAPI_CALL trace_vkCreateAndroidSurfaceKHR(VkInstance instan
 	// Execute
 	VkResult retval = wrap_vkCreateAndroidSurfaceKHR(instance, pCreateInfo, pAllocator, pSurface);
 	// Post
-	const auto* surface_data = writer.parent->records.VkSurfaceKHR_index.add(*pSurface, lava_writer::instance().global_frame);
+	const auto* surface_data = writer.parent->records.VkSurfaceKHR_index.add(*pSurface, writer.current);
 	writer.write_handle(surface_data); // id tracking
 	// Return
 	return retval;
@@ -2472,8 +2456,19 @@ VKAPI_ATTR void VKAPI_CALL trace_vkGetPhysicalDeviceQueueFamilyProperties(VkPhys
 static Json::Value trackable_json(const trackable* t)
 {
 	Json::Value v;
-	v["frame_created"] = t->frame_created;
-	v["frame_destroyed"] = t->frame_destroyed;
+	assert(t->creation.frame != UINT32_MAX);
+	assert(t->last_modified.frame != UINT32_MAX);
+	v["frame_created"] = t->creation.frame;
+	v["call_created"] = t->creation.call; // local call number
+	v["thread_created"] = t->creation.thread;
+	v["api_created"] = t->creation.call_id;
+	if (t->destroyed.frame != UINT32_MAX)
+	{
+		v["frame_destroyed"] = t->destroyed.frame;
+		v["call_destroyed"] = t->destroyed.call;
+		v["thread_destroyed"] = t->destroyed.thread;
+		v["api_destroyed"] = t->destroyed.call_id;
+	}
 	if (!t->name.empty()) v["name"] = t->name;
 	return v;
 }
@@ -2502,6 +2497,13 @@ static Json::Value trackedbuffer_json(const trackedbuffer* t)
 	v["req_alignment"] = (unsigned)t->req.alignment;
 	v["written"] = (Json::Value::UInt64)t->written;
 	v["updates"] = (unsigned)t->updates;
+	if (t->last_write.frame != UINT32_MAX) // tho not sure if this will ever be useful
+	{
+		v["frame_last_write"] = t->destroyed.frame;
+		v["call_last_write"] = t->destroyed.call;
+		v["thread_last_write"] = t->destroyed.thread;
+		v["api_last_write"] = t->destroyed.call_id;
+	}
 	if (t->device_address != 0)
 	{
 		v["device_address"] = (Json::Value::UInt64)t->device_address;

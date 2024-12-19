@@ -43,25 +43,20 @@ enum
 struct trackable
 {
 	uintptr_t magic = ICD_LOADER_MAGIC; // in case we want to pass this around as a vulkan object
-
 	uint32_t index = 0;
-	int frame_created = 0;
-	int frame_destroyed = -1;
 	std::string name;
-	trackable(int _created) : frame_created(_created) {}
 	trackable() {}
-	int8_t tid = -1; // object last modified in this thread
-	uint16_t call = 0; // object last modified at this thread local call number
+	change_source creation;
+	change_source last_modified;
+	change_source destroyed;
 
 	void self_test() const
 	{
-		assert(frame_destroyed == -1 || frame_destroyed >= 0);
-		assert(frame_created >= 0);
-		assert(tid != -1);
+		creation.self_test();
+		last_modified.self_test();
 	}
 };
 
-// TBD is this entire block only useful to tracer now?
 struct trackedmemory : trackable
 {
 	using trackable::trackable; // inherit constructor
@@ -157,6 +152,7 @@ struct trackedbuffer : trackedmemoryobject
 	VkBufferCreateFlags flags = VK_BUFFER_CREATE_FLAG_BITS_MAX_ENUM;
 	VkSharingMode sharingMode = VK_SHARING_MODE_MAX_ENUM;
 	VkBufferUsageFlags usage = VK_BUFFER_USAGE_FLAG_BITS_MAX_ENUM;
+	change_source last_write;
 
 	void self_test() const
 	{

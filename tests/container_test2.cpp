@@ -10,8 +10,9 @@
 struct our_trackable
 {
 	uint32_t index;
-	int frame_created = 0;
-	int frame_destroyed = 0;
+	change_source creation = { 0, 0, 0, 0 };
+	change_source destroyed = { 0, 0, 0, 0 };
+	change_source last_modified = { 0, 0, 0, 0 };
 	uint32_t a;
 	uint32_t b;
 };
@@ -22,7 +23,7 @@ static lava::mutex mutex;
 static void insert(unsigned i)
 {
 	mutex.lock();
-	auto* data = remap.add(i, i);
+	auto* data = remap.add(i, change_source{ 0, i, 0, 0 });
 	data->a = i;
 	data->b = i;
 	mutex.unlock();
@@ -43,14 +44,14 @@ static void thread_test_2()
 {
 	for (int i = 0; i < 10000; i++)
 	{
-		assert(remap.at(1)->frame_created == 1);
+		assert(remap.at(1)->creation.frame == 1);
 		assert(remap.at(1)->a == 1);
 		assert(remap.at(1)->b == 1);
 	}
 	insert(11);
 	for (int i = 0; i < 100000; i++)
 	{
-		assert(remap.at(11)->frame_created == 11);
+		assert(remap.at(11)->creation.frame == 11);
 		assert(remap.at(11)->a == 11);
 		assert(remap.at(11)->b == 11);
 	}
@@ -103,7 +104,7 @@ int main()
 	{
 		if (remap.contains(i))
 		{
-			assert(remap.at(i)->frame_created == (int)i);
+			assert(remap.at(i)->creation.frame == i);
 			assert(remap.at(i)->a == i);
 			assert(remap.at(i)->b == i);
 		}

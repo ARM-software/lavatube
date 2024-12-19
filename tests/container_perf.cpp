@@ -19,8 +19,9 @@ static inline uint64_t mygettime()
 struct our_trackable
 {
 	uint32_t index;
-	int frame_created = 0;
-	int frame_destroyed = 0;
+	change_source creation = { 0, 0, 0, 0 };
+	change_source destroyed = { 0, 0, 0, 0 };
+	change_source last_modified = { 0, 0, 0, 0 };
 	uint32_t a;
 	uint32_t b;
 };
@@ -132,8 +133,7 @@ static void test_trace_remap_1(bool actual)
 	uint64_t start = mygettime();
 	for (unsigned i = 1; i < runsize; i++)
 	{
-		remapper.add(i, i);
-
+		remapper.add(i, change_source{ 0, i, 0, 0 });
 	}
 	uint64_t end = mygettime();
 	if (actual) printf("%-30s %'12" PRIu64 "\n", "trace_remap_1::set", end - start);
@@ -150,7 +150,7 @@ static void test_trace_remap_1(bool actual)
 	start = mygettime();
 	for (unsigned i = 1; i < runsize; i++)
 	{
-		remapper.unset(i);
+		remapper.unset(i, change_source{ 0, i, 0, 0 });
 	}
 	end = mygettime();
 	if (actual) printf("%-30s %'12" PRIu64 "\n", "trace_remap_1::unset", end - start);
@@ -165,7 +165,6 @@ static void test_tbb_trace_remap_1(bool actual)
 	for (unsigned i = 1; i < runsize; i++)
 	{
 		remapper.set(i, i);
-
 	}
 	uint64_t end = mygettime();
 	if (actual) printf("%-30s %'12" PRIu64 "\n", "tbb_trace_remap_1::set", end - start);

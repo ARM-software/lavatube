@@ -5,6 +5,8 @@
 #define NUM_BUFFERS 14
 #define BUFFER_SIZE (1024 * 1024)
 
+#pragma GCC diagnostic ignored "-Wunused-variable"
+
 static void trace_3()
 {
 	vulkan_setup_t vulkan = test_init(TEST_NAME_1);
@@ -179,14 +181,8 @@ static bool getnext(lava_file_reader& t)
 	const uint8_t instrtype = t.read_uint8_t();
 	if (instrtype == PACKET_API_CALL)
 	{
-		const uint16_t apicall = t.read_uint16_t();
-		(void)t.read_int32_t();
-		lava_replay_func api = retrace_getcall(apicall);
-		api(t);
+		const uint16_t apicall = t.read_apicall();
 		if (apicall == 1) done = true; // is vkDestroyInstance
-		DLOG("[t%02d %06d] %s", t.thread_index(), (int)t.parent->thread_call_numbers->at(t.thread_index()).load(std::memory_order_relaxed) + 1, get_function_name(apicall));
-		t.parent->thread_call_numbers->at(t.thread_index()).fetch_add(1, std::memory_order_relaxed);
-		t.pool.reset();
 	}
 	else if (instrtype == PACKET_BUFFER_UPDATE)
 	{

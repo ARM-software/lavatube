@@ -48,9 +48,10 @@ static void writeJson(const std::string& path, const Json::Value& v)
 
 // --- trace file writer
 
-lava_file_writer::lava_file_writer(uint16_t _tid, lava_writer* _parent) : parent(_parent)
+lava_file_writer::lava_file_writer(uint16_t _tid, lava_writer* _parent) : file_writer(_tid), parent(_parent)
 {
-	mTid = _tid;
+	current.thread = _tid;
+	current.call = 0;
 	get_thread_name(thread_name);
 	if (p__disable_multithread_compress) disable_multithreaded_compress();
 	if (p__disable_multithread_writeout) disable_multithreaded_writeout();
@@ -59,7 +60,7 @@ lava_file_writer::lava_file_writer(uint16_t _tid, lava_writer* _parent) : parent
 void lava_file_writer::set(const std::string& path)
 {
 	assert(mPath.empty());
-	std::string fname = path + "/thread_" + _to_string(mTid) + ".bin";
+	std::string fname = path + "/thread_" + _to_string(current.thread) + ".bin";
 	mPath = path;
 	file_writer::set(fname);
 }
@@ -84,7 +85,8 @@ void lava_file_writer::inject_thread_barrier()
 	write_uint8_t(size); // threads to sync
 	for (int i = 0; i < size; i++)
 	{
-		const uint32_t call = parent->thread_streams.at(i)->local_call_number;
+		const uint32_t call = parent->thread_streams.at(i)->current.call;
+		assert(call != UINT32_MAX);
 		write_uint32_t(call);
 	}
 	DLOG2("Injected thread barrier on thread %d with %d targets", thread_index(), size);
@@ -109,9 +111,9 @@ lava_file_writer::~lava_file_writer()
 		v["frames"].append(k);
 		highest = std::max(highest, frame.global_frame);
 	}
-	DLOG("Wrapping up thread %d with %d frames", (int)mTid, highest);
+	DLOG("Wrapping up thread %u with %d frames", current.thread, highest);
 	v["highest_global_frame"] = highest;
-	const std::string path = mPath + "/frames_" + _to_string(mTid) + ".json";
+	const std::string path = mPath + "/frames_" + _to_string(current.thread) + ".json";
 	writeJson(path, v);
 }
 
@@ -120,10 +122,10 @@ debug_info lava_file_writer::new_frame(int global_frame)
 	framedata data;
 	data.start_pos = uncompressed_bytes;
 	data.global_frame = global_frame;
-	data.local_frame = local_frame;
+	data.local_frame = current.frame;
 	frames.push_back(data);
-	assert(global_frame >= local_frame);
-	local_frame++;
+	assert(global_frame >= (int)current.frame);
+	current.frame++;
 	debug_info retval = debug;
 	debug = {};
 	return retval;

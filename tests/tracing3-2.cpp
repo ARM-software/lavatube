@@ -12,6 +12,8 @@ static VkCommandBuffer cmds[THREADS * BUFFERS];
 static std::unordered_set<VkCommandBuffer> used;
 static std::mutex order;
 
+#pragma GCC diagnostic ignored "-Wunused-variable"
+
 static void hack_vkFreeCommandBuffers(VkDevice device, VkCommandPool commandPool, uint32_t commandBufferCount, const VkCommandBuffer* pCommandBuffers)
 {
 	order.lock();

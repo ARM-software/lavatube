@@ -66,7 +66,7 @@ uint64_t file_writer::write_patch(char* __restrict__ orig, const char* __restric
 	return changed;
 }
 
-file_writer::file_writer() : done_feeding(false), done_compressing(false)
+file_writer::file_writer(int mytid) : mTid(mytid), done_feeding(false), done_compressing(false)
 {
 	uncompressed_chunk_size = p__chunksize;
 	chunk = buffer(uncompressed_chunk_size);

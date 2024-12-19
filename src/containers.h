@@ -18,6 +18,22 @@
 
 #include "tbb/concurrent_unordered_map.h"
 
+struct change_source
+{
+	uint32_t call = UINT32_MAX;
+	uint32_t frame = UINT32_MAX;
+	uint16_t thread = UINT16_MAX;
+	uint16_t call_id = UINT16_MAX;
+
+	void self_test() const
+	{
+		assert(call != UINT32_MAX);
+		assert(thread < 4096);
+		assert(call_id != UINT16_MAX);
+		assert(frame != UINT32_MAX);
+	}
+};
+
 /// Limited thread safe remapping allocator for memory addresses used for replay. The payload needs to
 /// store size in a 'size' member and its own remapped address in a 'device_address' member.
 template<typename T>
@@ -245,24 +261,25 @@ public:
 	~trace_remap() { clear(); }
 
 	/// Might be called simultaneously with itself and at() but never with the same key.
-	inline U* add(T key, int frame = 0)
+	inline U* add(T key, const change_source& current)
 	{
 		mutex.lock();
 		assert(key != 0);
 		U* p = new U;
 		p->index = _size++;
-		p->frame_created = frame;
+		p->creation = current;
+		p->last_modified = current;
 		lookup[key] = p;
 		storage.push_back(p);
 		mutex.unlock();
 		return p;
 	}
 
-	inline U* unset(T key, int frame = 0)
+	inline U* unset(T key, change_source current)
 	{
 		if (key == 0) return nullptr;
 		U* p = lookup.at(key);
-		p->frame_destroyed = frame;
+		p->destroyed = current;
 		lookup[key] = nullptr;
 		return p;
 	}

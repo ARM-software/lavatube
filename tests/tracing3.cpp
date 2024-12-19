@@ -3,6 +3,9 @@
 #include "tests/common.h"
 #include "util_auto.h"
 
+#pragma GCC diagnostic ignored "-Wunused-variable"
+#pragma GCC diagnostic ignored "-Wunused-but-set-variable"
+
 #define TEST_NAME_3 "tracing_3"
 #define NUM_BUFFERS 48
 
@@ -80,13 +83,7 @@ static bool getnext(lava_file_reader& t)
 	if (instrtype == PACKET_API_CALL)
 	{
 		assert(instrtype == 2);
-		const uint16_t apicall = t.read_uint16_t();
-		(void)t.read_int32_t();
-		DLOG("[t%02d %06d] %s", t.thread_index(), (int)t.parent->thread_call_numbers->at(t.thread_index()).load(std::memory_order_relaxed) + 1, get_function_name(apicall));
-		lava_replay_func api = retrace_getcall(apicall);
-		api(t);
-		t.parent->thread_call_numbers->at(t.thread_index()).fetch_add(1, std::memory_order_relaxed);
-		t.pool.reset();
+		const uint16_t apicall = t.read_apicall();
 	}
 	else if (instrtype == PACKET_THREAD_BARRIER)
 	{

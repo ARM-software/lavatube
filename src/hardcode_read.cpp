@@ -516,17 +516,6 @@ void replay_post_vkQueuePresentKHR(lava_file_reader& reader, VkResult result, Vk
 		assert(result == VK_SUCCESS);
 	}
 	else if (!is_virtualswapchain()) assert(result == VK_SUCCESS || result == VK_SUBOPTIMAL_KHR);
-
-	if (reader.new_frame()) // if it returns true, then we have hit the end of our global frame range, so terminate everything
-	{
-		const uint32_t queue_index = index_to_VkQueue.index(queue);
-		auto& queue_data = VkQueue_index.at(queue_index);
-		wrap_vkDeviceWaitIdle(queue_data.device);
-		reader.parent->finalize(true);
-		usleep(100); // hack to ensure all other, in-progress threads are completed or waiting forever before we destroy everything below
-		if (reader.run) terminate_all(queue_data.device);
-		if (p__debug_destination) fclose(p__debug_destination);
-	}
 }
 
 void replay_pre_vkCreateSharedSwapchainsKHR(lava_file_reader& reader, VkDevice device, uint32_t swapchainCount, VkSwapchainCreateInfoKHR* pCreateInfos, VkAllocationCallbacks* pAllocator, VkSwapchainKHR* pSwapchains)
@@ -983,7 +972,7 @@ static void retrace_vkFrameEndTRACETOOLTEST(lava_file_reader& reader)
 {
 	const uint32_t device_index = reader.read_handle();
 	VkDevice device = index_to_VkDevice.at(device_index);
-	DLOG("End of thread %u local frame %d signaled by vkFrameEndTRACETOOLTEST", reader.thread_index(), reader.local_frame);
+	DLOG("End of thread %u local frame %d signaled by vkFrameEndTRACETOOLTEST", reader.thread_index(), reader.current.frame);
 	reader.new_frame();
 }
 
@@ -1970,28 +1959,42 @@ void retrace_vkGetPhysicalDeviceXlibPresentationSupportKHR(lava_file_reader& rea
 
 // --- JSON helpers ---
 
+static void trackable_helper(trackable& t, const Json::Value& v)
+{
+	t.creation.frame = v["frame_created"].asUInt();
+	if (v.isMember("call_created")) t.creation.call = v["call_created"].asUInt();
+	if (v.isMember("thread_created")) t.creation.thread = v["thread_created"].asUInt();
+	if (v.isMember("api_created")) t.creation.call_id = v["api_created"].asUInt();
+	if (v.isMember("frame_destroyed")) // check for legacy value of -1
+	{
+		if (v["frame_destroyed"].type() == Json::intValue && v["frame_destroyed"].asInt() == -1) { t.destroyed.frame = UINT32_MAX; }
+		else t.destroyed.frame = v["frame_destroyed"].asUInt();
+	}
+	if (v.isMember("call_destroyed")) t.destroyed.call = v["call_destroyed"].asUInt();
+	if (v.isMember("thread_destroyed")) t.destroyed.thread = v["thread_destroyed"].asUInt();
+	if (v.isMember("api_destroyed")) t.destroyed.call_id = v["api_destroyed"].asUInt();
+	if (v.isMember("name")) t.name = v["name"].asString();
+}
+
 static trackable trackable_json(const Json::Value& v)
 {
-	trackable t(v["frame_created"].asInt());
-	t.frame_destroyed = v["frame_destroyed"].asInt();
-	if (v.isMember("name")) t.name = v["name"].asString();
+	trackable t;
+	trackable_helper(t, v);
 	return t;
 }
 
 static trackedfence trackedfence_json(const Json::Value& v)
 {
-	trackedfence t(v["frame_created"].asInt());
-	t.frame_destroyed = v["frame_destroyed"].asInt();
-	if (v.isMember("name")) t.name = v["name"].asString();
+	trackedfence t;
+	trackable_helper(t, v);
 	t.flags = v["flags"].asInt();
 	return t;
 }
 
 static trackedpipeline trackedpipeline_json(const Json::Value& v)
 {
-	trackedpipeline t(v["frame_created"].asInt());
-	t.frame_destroyed = v["frame_destroyed"].asInt();
-	if (v.isMember("name")) t.name = v["name"].asString();
+	trackedpipeline t;
+	trackable_helper(t, v);
 	t.flags = v["flags"].asUInt();
 	t.type = (VkPipelineBindPoint)v["type"].asUInt();
 	return t;
@@ -1999,9 +2002,8 @@ static trackedpipeline trackedpipeline_json(const Json::Value& v)
 
 static trackedaccelerationstructure trackedaccelerationstructure_json(const Json::Value& v)
 {
-	trackedaccelerationstructure t(v["frame_created"].asInt());
-	t.frame_destroyed = v["frame_destroyed"].asInt();
-	if (v.isMember("name")) t.name = v["name"].asString();
+	trackedaccelerationstructure t;
+	trackable_helper(t, v);
 	t.size = (VkDeviceSize)v["size"].asUInt64();
 	t.offset = (VkDeviceSize)v["offset"].asUInt64();
 	t.buffer_index = v["buffer_index"].asUInt();
@@ -2010,9 +2012,8 @@ static trackedaccelerationstructure trackedaccelerationstructure_json(const Json
 
 static trackedbuffer trackedbuffer_json(const Json::Value& v)
 {
-	trackedbuffer t(v["frame_created"].asInt());
-	t.frame_destroyed = v["frame_destroyed"].asInt();
-	if (v.isMember("name")) t.name = v["name"].asString();
+	trackedbuffer t;
+	trackable_helper(t, v);
 	t.size = (VkDeviceSize)v["size"].asUInt64();
 	t.flags = (VkBufferCreateFlags)v["flags"].asUInt();
 	t.sharingMode = (VkSharingMode)v["sharingMode"].asUInt();
@@ -2026,9 +2027,8 @@ static trackedbuffer trackedbuffer_json(const Json::Value& v)
 
 static trackedimage trackedimage_json(const Json::Value& v)
 {
-	trackedimage t(v["frame_created"].asInt());
-	t.frame_destroyed = v["frame_destroyed"].asInt();
-	if (v.isMember("name")) t.name = v["name"].asString();
+	trackedimage t;
+	trackable_helper(t, v);
 	t.tiling = (VkImageTiling)v["tiling"].asUInt();
 	t.flags = (VkImageCreateFlags)v["flags"].asUInt();
 	t.sharingMode = (VkSharingMode)v["sharingMode"].asUInt();
@@ -2054,9 +2054,8 @@ static trackedimage trackedimage_json(const Json::Value& v)
 
 static trackedswapchain_replay trackedswapchain_replay_json(const Json::Value& v)
 {
-	trackedswapchain_replay t(v["frame_created"].asInt());
-	t.frame_destroyed = v["frame_destroyed"].asInt();
-	if (v.isMember("name")) t.name = v["name"].asString();
+	trackedswapchain_replay t;
+	trackable_helper(t, v);
 	t.info.imageFormat = (VkFormat)v["imageFormat"].asUInt();
 	t.info.imageUsage = (VkImageUsageFlags)v["imageUsage"].asUInt();
 	t.info.imageExtent.width = v["width"].asUInt();
@@ -2067,77 +2066,68 @@ static trackedswapchain_replay trackedswapchain_replay_json(const Json::Value& v
 
 static trackedcmdbuffer_replay trackedcmdbuffer_replay_json(const Json::Value& v)
 {
-	trackedcmdbuffer_replay t(v["frame_created"].asInt());
-	t.frame_destroyed = v["frame_destroyed"].asInt();
-	if (v.isMember("name")) t.name = v["name"].asString();
+	trackedcmdbuffer_replay t;
+	trackable_helper(t, v);
 	t.pool = v["pool"].asUInt();
 	return t;
 }
 
 static trackedimageview trackedimageview_json(const Json::Value& v)
 {
-	trackedimageview t(v["frame_created"].asInt());
-	t.frame_destroyed = v["frame_destroyed"].asInt();
-	if (v.isMember("name")) t.name = v["name"].asString();
+	trackedimageview t;
+	trackable_helper(t, v);
 	t.image_index = v["image"].asUInt();
 	return t;
 }
 
 static trackedbufferview trackedbufferview_json(const Json::Value& v)
 {
-	trackedbufferview t(v["frame_created"].asInt());
-	t.frame_destroyed = v["frame_destroyed"].asInt();
-	if (v.isMember("name")) t.name = v["name"].asString();
+	trackedbufferview t;
+	trackable_helper(t, v);
 	t.buffer_index = v["buffer"].asUInt();
 	return t;
 }
 
 static trackeddescriptorset_replay trackeddescriptorset_replay_json(const Json::Value& v)
 {
-	trackeddescriptorset_replay t(v["frame_created"].asInt());
-	t.frame_destroyed = v["frame_destroyed"].asInt();
-	if (v.isMember("name")) t.name = v["name"].asString();
+	trackeddescriptorset_replay t;
+	trackable_helper(t, v);
 	t.pool = v["pool"].asUInt();
 	return t;
 }
 
 static trackedqueue trackedqueue_json(const Json::Value& v)
 {
-	trackedqueue t(v["frame_created"].asInt());
-	t.frame_destroyed = v["frame_destroyed"].asInt();
-	if (v.isMember("name")) t.name = v["name"].asString();
+	trackedqueue t;
+	trackable_helper(t, v);
 	return t;
 }
 
 static trackeddevice trackeddevice_json(const Json::Value& v)
 {
-	trackeddevice t(v["frame_created"].asInt());
-	t.frame_destroyed = v["frame_destroyed"].asInt();
-	if (v.isMember("name")) t.name = v["name"].asString();
+	trackeddevice t;
+	trackable_helper(t, v);
 	return t;
 }
 
 static trackedphysicaldevice trackedphysicaldevice_json(const Json::Value& v)
 {
-	trackedphysicaldevice t(v["frame_created"].asInt());
-	t.frame_destroyed = v["frame_destroyed"].asInt();
-	if (v.isMember("name")) t.name = v["name"].asString();
+	trackedphysicaldevice t;
+	trackable_helper(t, v);
 	return t;
 }
 
 static trackedframebuffer trackedframebuffer_json(const Json::Value& v)
 {
-	trackedframebuffer t(v["frame_created"].asInt());
-	t.frame_destroyed = v["frame_destroyed"].asInt();
-	if (v.isMember("name")) t.name = v["name"].asString();
+	trackedframebuffer t;
+	trackable_helper(t, v);
 	return t;
 }
 
 static trackedshadermodule trackedshadermodule_json(const Json::Value& v)
 {
-	trackedshadermodule t(v["frame_created"].asInt());
-	t.frame_destroyed = v["frame_destroyed"].asInt();
-	if (v.isMember("name")) t.name = v["name"].asString();
+	trackedshadermodule t;
+	trackable_helper(t, v);
 	if (v.isMember("size")) t.name = v["size"].asInt();
 	if (v.isMember("enables_device_address")) t.enables_device_address = v["enables_device_address"].asBool();
 	return t;
@@ -2145,9 +2135,8 @@ static trackedshadermodule trackedshadermodule_json(const Json::Value& v)
 
 static trackedrenderpass trackedrenderpass_json(const Json::Value& v)
 {
-	trackedrenderpass t(v["frame_created"].asInt());
-	t.frame_destroyed = v["frame_destroyed"].asInt();
-	if (v.isMember("name")) t.name = v["name"].asString();
+	trackedrenderpass t;
+	trackable_helper(t, v);
 	return t;
 }
 

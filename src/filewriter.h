@@ -64,8 +64,8 @@ class file_writer
 	}
 
 public:
-	file_writer(const std::string& name) : file_writer() { set(name); }
-	file_writer();
+	file_writer(const std::string& name, int mytid = 0) : file_writer(mytid) { set(name); }
+	file_writer(int mytid = 0);
 	~file_writer();
 	void finalize(); // basically our destructor, but we need to call it out of the normal destructor call order
 
@@ -161,7 +161,6 @@ public:
 protected:
 	uint64_t uncompressed_bytes = 0; // total amount of uncompressed bytes written so far
 	uint64_t checkpoint_bytes = 0; // bytes at freeze checkpoint
-	int mTid = -1;
 
 public:
 	inline void freeze() { checkpoint_bytes = uncompressed_bytes; }
@@ -173,6 +172,7 @@ private:
 	buffer compress_chunk(buffer& uncompressed); // returns compressed buffer
 	void write_chunk(buffer& active);
 
+	int mTid = -1; // only used for logging
 	bool multithreaded_compress = true;
 	bool multithreaded_write = true;
 	lava::mutex chunk_mutex;

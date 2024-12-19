@@ -14,7 +14,7 @@ void write_test_1()
 	std::vector<uint64_t> val64s = { 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19 };
 	std::vector<uint16_t> big(65535, 99);
 
-	file_writer file;
+	file_writer file(0);
 	file.set("write_4.bin");
 	file.write_uint8_t(8);
 	file.write_uint16_t(16);
@@ -65,7 +65,7 @@ void write_test_1()
 
 void write_test_2()
 {
-	file_writer file;
+	file_writer file(0);
 	file.write_uint8_t(8);
 	file.write_uint16_t(16);
 	file.write_uint32_t(32);
@@ -77,7 +77,7 @@ void write_test_2()
 
 void write_test_3()
 {
-	file_writer file;
+	file_writer file(0);
 	file.write_uint8_t(8);
 	file.write_uint16_t(16);
 	file.write_uint32_t(32);

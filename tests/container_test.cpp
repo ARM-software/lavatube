@@ -34,8 +34,9 @@ struct big
 struct our_trackable
 {
 	uint32_t index;
-	int frame_created = 0;
-	int frame_destroyed = -1;
+	change_source creation = { 0, 0, 0, 0 };
+	change_source destroyed = { 0, 0, 0, 0 };
+	change_source last_modified = { 0, 0, 0, 0 };
 };
 
 static trace_data<track> mp_tracks;
@@ -94,24 +95,24 @@ static void test_trace_data_2()
 static void test_trace_1()
 {
 	trace_remap<uint64_t, our_trackable> trace;
-	our_trackable* v = trace.add(1000, 0);
+	our_trackable* v = trace.add(1000, change_source{ 0, 0, 0, 0 });
 	assert(v->index == 0);
-	assert(v->frame_created == 0);
-	v = trace.add(2000, 1);
+	assert(v->creation.frame == 0);
+	v = trace.add(2000, change_source{ 0, 1, 0, 0 });
 	assert(v->index == 1);
-	assert(v->frame_created == 1);
+	assert(v->creation.frame == 1);
 	v = trace.at(1000);
 	assert(v->index == 0);
-	assert(v->frame_created == 0);
+	assert(v->creation.frame == 0);
 	v = trace.at(2000);
 	assert(v->index == 1);
-	assert(v->frame_created == 1);
-	v = trace.unset(1000);
+	assert(v->creation.frame == 1);
+	v = trace.unset(1000, change_source{ 0, 1, 0, 0 });
 	assert(v->index == 0);
-	assert(v->frame_created == 0);
-	v = trace.unset(2000);
+	assert(v->creation.frame == 0);
+	v = trace.unset(2000, change_source{0, 1, 0, 0 });
 	assert(v->index == 1);
-	assert(v->frame_created == 1);
+	assert(v->creation.frame == 1);
 }
 
 static void test_replay_1()
@@ -139,7 +140,7 @@ static void thread_test_1(trace_remap<uint64_t, our_trackable>* mp_vals)
 	while (true)
 	{
 		idmutex.lock();
-		auto* v = mp_vals->add(idx, 1);
+		auto* v = mp_vals->add(idx, change_source{ 0, 1, 0, 0 });
 		ids[idx] = 1;
 		idx++;
 		idmutex.unlock();
@@ -149,7 +150,7 @@ static void thread_test_1(trace_remap<uint64_t, our_trackable>* mp_vals)
 	while (!done.load(std::memory_order_relaxed))
 	{
 		idmutex.lock();
-		mp_vals->unset(idx);
+		mp_vals->unset(idx, change_source{ 0, 1, 0, 0 });
 		ids[idx] = 0;
 		idx++;
 		if (idx == itercount) done.store(true);
@@ -167,7 +168,7 @@ static void thread_test_2(trace_remap<uint64_t, our_trackable>* mp_vals)
 
 		idmutex.lock();
 		found = (ids[current] == 1);
-		if (found) assert(mp_vals->at(current)->frame_created == 1);
+		if (found) assert(mp_vals->at(current)->creation.frame == 1);
 		current++;
 		idmutex.unlock();
 	}
@@ -257,9 +258,9 @@ static void test_trace_remap_check_range(unsigned max)
 {
 	trace_remap<uint64_t, our_trackable> remapper;
 	assert(remapper.contains(9999) == false);
-	for (unsigned i = 1; i < max; i++) remapper.add(i, i * 4);
-	for (unsigned i = 1; i < max; i++) assert((unsigned)remapper.at(i)->frame_created == i * 4);
-	for (unsigned i = 1; i < max; i++) assert((unsigned)remapper.unset(i)->frame_created == i * 4);
+	for (unsigned i = 1; i < max; i++) remapper.add(i, change_source{ 0, i * 4, 0, 0 });
+	for (unsigned i = 1; i < max; i++) assert((unsigned)remapper.at(i)->creation.frame == i * 4);
+	for (unsigned i = 1; i < max; i++) assert((unsigned)remapper.unset(i, change_source{ 0, i * 4, 0, 0 })->creation.frame == i * 4);
 	for (unsigned i = 1; i < max; i++) assert(remapper.contains(i) == false);
 	remapper.clear();
 }
@@ -267,28 +268,28 @@ static void test_trace_remap_check_range(unsigned max)
 static void test_trace_remap_test1()
 {
 	trace_remap<uint64_t, our_trackable> remapper;
-	remapper.add(1, 1);
+	remapper.add(1, change_source{ 0, 1, 0, 0 });
 	assert(remapper.contains(999) == false);
 	assert(remapper.contains(9999) == false);
 	assert(remapper.at(1)->index == 0);
-	for (unsigned i = 2; i < 2048; i++) remapper.add(i, i);
-	for (int i = 2; i < 2048; i++) assert(remapper.at(i)->frame_created == i);
+	for (unsigned i = 2; i < 2048; i++) remapper.add(i, change_source{ 0, i, 0, 0 });
+	for (unsigned i = 2; i < 2048; i++) assert(remapper.at(i)->creation.frame == i);
 	remapper.clear();
 
-	static_alloc.add(1, 1);
+	static_alloc.add(1, change_source{ 0, 1, 0, 0 });
 	assert(static_alloc.at(1)->index == 0);
-	static_alloc.unset(1);
+	static_alloc.unset(1, change_source{ 0, 1, 0, 0 });
 }
 
 static void test_trace_remap_test2()
 {
 	trace_remap<uint64_t, our_trackable> remapper;
 	for (unsigned i = 1; i < 2048; i++) assert(remapper.contains(i) == false);
-	for (unsigned i = 1; i < 2048; i++) remapper.add(i, i);
-	for (unsigned i = 1; i < 2048; i++) remapper.unset(i);
+	for (unsigned i = 1; i < 2048; i++) remapper.add(i, change_source{ 0, i, 0, 0 });
+	for (unsigned i = 1; i < 2048; i++) remapper.unset(i, change_source{ 0, i, 0, 0 });
 	for (unsigned i = 1; i < 2048; i++) assert(remapper.contains(i) == false);
-	for (unsigned i = 1; i < 2048; i++) remapper.add(i, i);
-	for (int i = 1; i < 2048; i++) assert(remapper.at(i)->frame_created == i);
+	for (unsigned i = 1; i < 2048; i++) remapper.add(i, change_source{ 0, i, 0, 0 });
+	for (unsigned i = 1; i < 2048; i++) assert(remapper.at(i)->creation.frame == i);
 	remapper.clear();
 }
 

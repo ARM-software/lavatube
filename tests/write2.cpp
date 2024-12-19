@@ -11,14 +11,12 @@
 
 #include "tests/tests.h"
 
-#define THREADS 16
-
 static std::vector<uint32_t> data(65535);
 static lava_writer& writer = lava_writer::instance();
 static lava_reader* reader = nullptr;
 static std::atomic_int read_tid;
 
-void write_test_stress()
+static void write_test_stress()
 {
 	lava_file_writer& file = writer.file_writer();
 	for (int i = 0; i < 200; i++)
@@ -31,9 +29,11 @@ void write_test_stress()
 	}
 }
 
-void write_test()
+static void write_test(const char* name, int num_threads)
 {
-	std::vector<std::thread*> threads(THREADS);
+	ILOG("%s", name);
+	writer.set(name, 1);
+	std::vector<std::thread*> threads(num_threads);
 	for (auto& t : threads)
 	{
 		t = new std::thread(write_test_stress);
@@ -48,7 +48,7 @@ void write_test()
 	writer.finish();
 }
 
-void read_test_stress()
+static void read_test_stress()
 {
 	const int mytid = read_tid.fetch_add(1);
 	lava_file_reader& r = reader->file_reader(mytid);
@@ -71,11 +71,12 @@ void read_test_stress()
 	}
 }
 
-void read_test()
+static void read_test(const char* name, int num_threads)
 {
+	std::string filename = std::string(name) + ".vk";
 	read_tid = 0;
-	reader = new lava_reader("write_2.vk");
-	std::vector<std::thread*> threads(THREADS);
+	reader = new lava_reader(filename);
+	std::vector<std::thread*> threads(num_threads);
 	for (auto& t : threads)
 	{
 		t = new std::thread(read_test_stress);
@@ -90,17 +91,21 @@ void read_test()
 	reader = nullptr;
 }
 
-// this will generate a lot of threads - 32 * 3!
 int main()
 {
 	// populate with a number series
 	std::iota(std::begin(data), std::end(data), 0);
 
-	ILOG("write_2");
-	writer.set("write_2", 1);
+	// simple variant
+	write_test("write_2_1", 1);
+	read_test("write_2_1", 1);
 
-	write_test();
-	read_test();
+	write_test("write_2_2", 2);
+	read_test("write_2_2", 2);
+
+	// this will generate a lot of threads - 32 * 3!
+	write_test("write_2_3", 16);
+	read_test("write_2_3", 16);
 
 	return 0;
 }

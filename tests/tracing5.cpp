@@ -5,6 +5,9 @@
 #define TEST_NAME_1 "tracing_5"
 #define NUM_BUFFERS 3
 
+#pragma GCC diagnostic ignored "-Wunused-variable"
+#pragma GCC diagnostic ignored "-Wunused-but-set-variable"
+
 typedef uint32_t (VKAPI_PTR *PFN_vkAssertBufferTRACETOOLTEST)(VkDevice device, VkBuffer buffer);
 typedef void (VKAPI_PTR *PFN_vkSyncBufferTRACETOOLTEST)(VkDevice device, VkBuffer buffer);
 
@@ -95,14 +98,8 @@ static bool getnext(lava_file_reader& t)
 	const uint8_t instrtype = t.read_uint8_t();
 	if (instrtype == PACKET_API_CALL)
 	{
-		const uint16_t apicall = t.read_uint16_t();
-		(void)t.read_int32_t();
-		DLOG("[t%02d %06d] %s", t.thread_index(), (int)t.parent->thread_call_numbers->at(t.thread_index()).load(std::memory_order_relaxed) + 1, get_function_name(apicall));
-		lava_replay_func api = retrace_getcall(apicall);
-		api(t);
-		t.parent->thread_call_numbers->at(t.thread_index()).fetch_add(1, std::memory_order_relaxed);
+		const uint16_t apicall = t.read_apicall();
 		suballoc_internal_test();
-		t.pool.reset();
 		if (apicall == 1) done = true; // is vkDestroyInstance
 	}
 	else if (instrtype == PACKET_THREAD_BARRIER)
