@@ -2536,7 +2536,7 @@ static Json::Value trackedimage_json(const trackedimage* t)
 	return v;
 }
 
-static Json::Value trackedswapchain_trace_json(const trackedswapchain_trace* t)
+static Json::Value trackedswapchain_json(const trackedswapchain* t)
 {
 	Json::Value v = trackable_json(t);
 	v["imageFormat"] = (unsigned)t->info.imageFormat;
@@ -2655,5 +2655,12 @@ static Json::Value trackedframebuffer_json(const trackedframebuffer* t)
 static Json::Value trackedrenderpass_json(const trackedrenderpass* t)
 {
 	Json::Value v = trackable_json(t);
+	return v;
+}
+
+static Json::Value trackedpipelinelayout_json(const trackedpipelinelayout* t)
+{
+	Json::Value v = trackable_json(t);
+	v["push_constant_space_used"] = t->push_constant_space_used;
 	return v;
 }

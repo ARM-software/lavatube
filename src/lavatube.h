@@ -263,16 +263,6 @@ struct trackedswapchain : trackable
 	}
 };
 
-struct trackedswapchain_trace : trackedswapchain
-{
-	using trackedswapchain::trackedswapchain; // inherit constructor
-
-	void self_test() const
-	{
-		trackedswapchain::self_test();
-	}
-};
-
 struct trackedswapchain_replay : trackedswapchain
 {
 	using trackedswapchain::trackedswapchain; // inherit constructor
@@ -329,13 +319,45 @@ struct trackedpipeline : trackable
 	}
 };
 
-struct trackedcmdbuffer_trace : trackable
+struct trackedpipelinelayout : trackable
 {
 	using trackable::trackable; // inherit constructor
-	VkCommandPool pool = VK_NULL_HANDLE;
+	uint32_t push_constant_space_used = 0;
+
+	void self_test() const
+	{
+		trackable::self_test();
+	}
+};
+
+struct trackedcmdbuffer : trackable
+{
+	using trackable::trackable; // inherit constructor
 	VkDevice device = VK_NULL_HANDLE;
 	VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
 	uint32_t pool_index = CONTAINER_INVALID_INDEX;
+
+	void self_test() const
+	{
+		assert(device != VK_NULL_HANDLE);
+		assert(physicalDevice != VK_NULL_HANDLE);
+		assert(pool_index != CONTAINER_INVALID_INDEX);
+		trackable::self_test();
+	}
+};
+
+struct trackedcmdbuffer_replay : trackedcmdbuffer
+{
+	using trackedcmdbuffer::trackedcmdbuffer; // inherit constructor
+
+	/// For now, this field is ONLY used during post-processing runs
+	std::vector<uint8_t> push_constants; // current state of the push constants, updated during cmdbuffer creation
+};
+
+struct trackedcmdbuffer_trace : trackedcmdbuffer
+{
+	using trackedcmdbuffer::trackedcmdbuffer; // inherit constructor
+	VkCommandPool pool = VK_NULL_HANDLE;
 	VkCommandBufferLevel level = VK_COMMAND_BUFFER_LEVEL_MAX_ENUM;
 	struct
 	{
@@ -387,15 +409,28 @@ struct trackedcmdbuffer_trace : trackable
 		assert(physicalDevice != VK_NULL_HANDLE);
 		assert(pool_index != CONTAINER_INVALID_INDEX);
 		assert(level != VK_COMMAND_BUFFER_LEVEL_MAX_ENUM);
+		trackedcmdbuffer::self_test();
+	}
+};
+
+struct trackeddescriptorset : trackable
+{
+	using trackable::trackable; // inherit constructor
+	uint32_t pool_index = CONTAINER_INVALID_INDEX;
+	VkDescriptorPool pool = VK_NULL_HANDLE;
+
+	void self_test() const
+	{
+		assert(pool != VK_NULL_HANDLE);
+		assert(pool != VK_NULL_HANDLE);
+		assert(pool_index != CONTAINER_INVALID_INDEX);
 		trackable::self_test();
 	}
 };
 
-struct trackeddescriptorset_trace : trackable
+struct trackeddescriptorset_trace : trackeddescriptorset
 {
-	using trackable::trackable; // inherit constructor
-	VkDescriptorPool pool = VK_NULL_HANDLE;
-	uint32_t pool_index = CONTAINER_INVALID_INDEX;
+	using trackeddescriptorset::trackeddescriptorset; // inherit constructor
 	std::unordered_map<trackedobject*, exposure> touched; // track memory updates
 	std::vector<VkDescriptorBufferInfo> dynamic_buffers; // must be resolved on bind
 
@@ -409,10 +444,8 @@ struct trackeddescriptorset_trace : trackable
 
 	void self_test() const
 	{
-		assert(pool != VK_NULL_HANDLE);
-		assert(pool_index != CONTAINER_INVALID_INDEX);
 		for (const auto& pair : touched) { pair.first->self_test(); pair.second.self_test(); }
-		trackable::self_test();
+		trackeddescriptorset::self_test();
 	}
 };
 

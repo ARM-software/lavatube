@@ -1037,6 +1037,30 @@ static void translate_addresses(lava_file_reader& reader, uint32_t count, VkDevi
 	}
 }
 
+static void postprocess_push_constants(lava_file_reader& reader, VkCommandBuffer commandBuffer, uint32_t offset, uint32_t size, const void* pValues)
+{
+	uint32_t cmdbuffer_index = index_to_VkCommandBuffer.index(commandBuffer);
+	auto& cmdbuffer_data = VkCommandBuffer_index.at(cmdbuffer_index);
+	if (cmdbuffer_data.push_constants.size() < offset + size) cmdbuffer_data.push_constants.resize(offset + size);
+	memcpy(cmdbuffer_data.push_constants.data() + offset, pValues, size);
+	DLOG2("Updating internal tracking of push constants with size=%u and offset=%u", size, offset);
+}
+
+void replay_postprocess_vkCmdPushConstants(lava_file_reader& reader, VkCommandBuffer commandBuffer, VkPipelineLayout layout, VkShaderStageFlags stageFlags, uint32_t offset, uint32_t size, const void* pValues)
+{
+	postprocess_push_constants(reader, commandBuffer, offset, size, pValues);
+}
+
+void replay_postprocess_vkCmdPushConstants2KHR(lava_file_reader& reader, VkCommandBuffer commandBuffer, const VkPushConstantsInfoKHR* pPushConstantsInfo)
+{
+	postprocess_push_constants(reader, commandBuffer, pPushConstantsInfo->offset, pPushConstantsInfo->size, pPushConstantsInfo->pValues);
+}
+
+void replay_postprocess_vkCmdPushConstants2(lava_file_reader& reader, VkCommandBuffer commandBuffer, const VkPushConstantsInfoKHR* pPushConstantsInfo)
+{
+	replay_postprocess_vkCmdPushConstants2KHR(reader, commandBuffer, pPushConstantsInfo);
+}
+
 void replay_pre_vkCmdPushConstants2KHR(lava_file_reader& reader, VkCommandBuffer commandBuffer, const VkPushConstantsInfoKHR* pPushConstantsInfo)
 {
 	assert(pPushConstantsInfo);
@@ -1048,6 +1072,11 @@ void replay_pre_vkCmdPushConstants2KHR(lava_file_reader& reader, VkCommandBuffer
 	translate_addresses(reader, remap->count, remap->pOffsets, const_cast<void*>(pPushConstantsInfo->pValues));
 	// make sure we don't leak this to the driver, as this would break validation
 	purge_extension_parent(const_cast<VkPushConstantsInfoKHR*>(pPushConstantsInfo), VK_STRUCTURE_TYPE_ADDRESS_REMAP_TRACETOOLTEST);
+}
+
+void replay_pre_vkCmdPushConstants2(lava_file_reader& reader, VkCommandBuffer commandBuffer, const VkPushConstantsInfoKHR* pPushConstantsInfo)
+{
+	replay_pre_vkCmdPushConstants2KHR(reader, commandBuffer, pPushConstantsInfo);
 }
 
 void replay_pre_vkCreateComputePipelines(lava_file_reader& reader, VkDevice device, VkPipelineCache pipelineCache, uint32_t createInfoCount,
@@ -2042,6 +2071,7 @@ static trackedimage trackedimage_json(const Json::Value& v)
 	t.samples = (VkSampleCountFlagBits)(v.get("samples", 0).asUInt());
 	t.mipLevels = (unsigned)v.get("mipLevels", 0).asUInt();
 	t.arrayLayers = (unsigned)v.get("arrayLevels", 0).asUInt();
+	t.format = (VkFormat)v.get("format", VK_FORMAT_MAX_ENUM).asUInt();
 	if (v.isMember("extent"))
 	{
 		t.extent.width = v["extent"][0].asUInt();
@@ -2068,7 +2098,7 @@ static trackedcmdbuffer_replay trackedcmdbuffer_replay_json(const Json::Value& v
 {
 	trackedcmdbuffer_replay t;
 	trackable_helper(t, v);
-	t.pool = v["pool"].asUInt();
+	t.pool_index = v["pool"].asUInt();
 	return t;
 }
 
@@ -2088,11 +2118,11 @@ static trackedbufferview trackedbufferview_json(const Json::Value& v)
 	return t;
 }
 
-static trackeddescriptorset_replay trackeddescriptorset_replay_json(const Json::Value& v)
+static trackeddescriptorset trackeddescriptorset_json(const Json::Value& v)
 {
-	trackeddescriptorset_replay t;
+	trackeddescriptorset t;
 	trackable_helper(t, v);
-	t.pool = v["pool"].asUInt();
+	t.pool_index = v["pool"].asUInt();
 	return t;
 }
 
@@ -2137,6 +2167,14 @@ static trackedrenderpass trackedrenderpass_json(const Json::Value& v)
 {
 	trackedrenderpass t;
 	trackable_helper(t, v);
+	return t;
+}
+
+static trackedpipelinelayout trackedpipelinelayout_json(const Json::Value& v)
+{
+	trackedpipelinelayout t;
+	trackable_helper(t, v);
+	if (v.isMember("push_constant_space_used")) t.push_constant_space_used = v["push_constant_space_used"].asUInt();
 	return t;
 }
 

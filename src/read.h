@@ -26,22 +26,6 @@ class lava_file_reader;
 
 extern lava::mutex sync_mutex;
 
-// these are implemented differently for trace and replay cases
-
-struct trackedcmdbuffer_replay : trackable
-{
-	using trackable::trackable; // inherit constructor
-	uint32_t pool = 0;
-	VkDevice device = VK_NULL_HANDLE;
-	VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
-};
-
-struct trackeddescriptorset_replay : trackable
-{
-	using trackable::trackable; // inherit constructor
-	uint32_t pool = 0;
-};
-
 class lava_reader
 {
 	friend lava_file_reader;

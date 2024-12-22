@@ -138,9 +138,10 @@ ignore_on_trace = []
 # these functions have hard-coded post-execute callbacks
 replay_pre_calls = [ 'vkDestroyInstance', 'vkDestroyDevice', 'vkCreateDevice', 'vkCreateSampler', 'vkQueuePresentKHR', 'vkCreateSwapchainKHR',
 	'vkCreateSharedSwapchainsKHR', 'vkCreateGraphicsPipelines', 'vkCreateComputePipelines', 'vkCreateRayTracingPipelinesKHR', 'vkCmdPushConstants2KHR',
-	'vkQueueSubmit' ]
+	'vkCmdPushConstants2', 'vkQueueSubmit' ]
 replay_post_calls = [ 'vkCreateInstance', 'vkDestroyInstance', 'vkQueuePresentKHR', 'vkAcquireNextImageKHR', 'vkAcquireNextImage2KHR',
 	'vkGetBufferDeviceAddress', 'vkGetBufferDeviceAddressKHR', 'vkGetAccelerationStructureDeviceAddressKHR' ]
+replay_postprocess_calls = [ 'vkCmdPushConstants', 'vkCmdPushConstants2', 'vkCmdPushConstants2KHR' ]
 trace_pre_calls = [ 'vkQueueSubmit', 'vkCreateInstance', 'vkCreateDevice', 'vkFreeMemory', 'vkQueueSubmit2', 'vkQueueSubmit2KHR' ]
 trace_post_calls = [ 'vkCreateInstance', 'vkCreateDevice', 'vkDestroyInstance', 'vkGetPhysicalDeviceFeatures', 'vkGetPhysicalDeviceProperties',
 		'vkGetPhysicalDeviceSurfaceCapabilitiesKHR', 'vkBindImageMemory', 'vkBindBufferMemory', 'vkBindImageMemory2', 'vkBindImageMemory2KHR',
@@ -173,12 +174,12 @@ deconst_struct = [
 trackable_type_map_general = { 'VkBuffer': 'trackedbuffer', 'VkImage': 'trackedimage', 'VkCommandBuffer': 'trackedcmdbuffer', 'VkDescriptorSet': 'trackeddescriptorset',
 	'VkDeviceMemory': 'trackedmemory', 'VkFence': 'trackedfence', 'VkPipeline': 'trackedpipeline', 'VkImageView': 'trackedimageview', 'VkBufferView': 'trackedbufferview',
 	'VkDevice': 'trackeddevice', 'VkFramebuffer': 'trackedframebuffer', 'VkRenderPass': 'trackedrenderpass', 'VkQueue': 'trackedqueue', 'VkPhysicalDevice': 'trackedphysicaldevice',
-	'VkShaderModule': 'trackedshadermodule', 'VkAccelerationStructureKHR': 'trackedaccelerationstructure' }
+	'VkShaderModule': 'trackedshadermodule', 'VkAccelerationStructureKHR': 'trackedaccelerationstructure', 'VkPipelineLayout': 'trackedpipelinelayout' }
 trackable_type_map_trace = trackable_type_map_general.copy()
-trackable_type_map_trace.update({ 'VkCommandBuffer': 'trackedcmdbuffer_trace', 'VkSwapchainKHR': 'trackedswapchain_trace', 'VkDescriptorSet': 'trackeddescriptorset_trace',
+trackable_type_map_trace.update({ 'VkCommandBuffer': 'trackedcmdbuffer_trace', 'VkSwapchainKHR': 'trackedswapchain', 'VkDescriptorSet': 'trackeddescriptorset_trace',
 	'VkEvent': 'trackedevent_trace', 'VkDescriptorPool': 'trackeddescriptorpool_trace', 'VkCommandPool': 'trackedcommandpool_trace' })
 trackable_type_map_replay = trackable_type_map_general.copy()
-trackable_type_map_replay.update({ 'VkCommandBuffer': 'trackedcmdbuffer_replay', 'VkDescriptorSet': 'trackeddescriptorset_replay', 'VkSwapchainKHR': 'trackedswapchain_replay' })
+trackable_type_map_replay.update({ 'VkCommandBuffer': 'trackedcmdbuffer_replay', 'VkDescriptorSet': 'trackeddescriptorset', 'VkSwapchainKHR': 'trackedswapchain_replay' })
 
 # Parse element size, which can be weird
 def getraw(val):
@@ -779,11 +780,11 @@ class parameter(object):
 		if self.type == 'VkPhysicalDevice' and self.funcname[0] == 'v' and self.name == 'physicalDevice':
 			z.do('reader.physicalDevice = physicalDevice;')
 		if self.type == 'VkQueue' and self.funcname[0] == 'v' and self.name == 'queue':
-			z.do('trackedqueue& queue_data = VkQueue_index.at(queue_index);')
+			z.do('%s& queue_data = VkQueue_index.at(queue_index);' % trackable_type_map_replay[self.type])
 			z.do('reader.device = queue_data.device;')
 			z.do('reader.physicalDevice = queue_data.physicalDevice;')
 		if self.type == 'VkCommandBuffer' and self.name == 'commandBuffer' and self.funcname[0] == 'v':
-			z.do('trackedcmdbuffer_replay& commandbuffer_data = VkCommandBuffer_index.at(commandbuffer_index);')
+			z.do('%s& commandbuffer_data = VkCommandBuffer_index.at(commandbuffer_index);' % trackable_type_map_replay[self.type])
 			z.do('reader.device = commandbuffer_data.device;')
 			z.do('reader.physicalDevice = commandbuffer_data.physicalDevice;')
 
@@ -1129,6 +1130,8 @@ def save_add_tracking(name):
 			z.do('add->usage = pCreateInfo->usage;')
 			z.do('add->sharingMode = pCreateInfo->sharingMode;')
 			z.do('add->type = VK_OBJECT_TYPE_BUFFER;')
+		elif type == 'VkPipelineLayout':
+			z.do('for (uint32_t i = 0; i < pCreateInfo->pushConstantRangeCount; i++) { const auto& v = pCreateInfo->pPushConstantRanges[i]; if (add->push_constant_space_used < v.offset + v.size) add->push_constant_space_used = v.offset + v.size; }')
 		elif type == 'VkImage':
 			z.do('add->tiling = pCreateInfo->tiling;')
 			z.do('add->usage = pCreateInfo->usage;')
@@ -1308,6 +1311,9 @@ def load_add_tracking(name):
 			elif type == 'VkImage':
 				z.do('data.initialLayout = pCreateInfo->initialLayout; // duplicates info stored in json but needed for compatibility with older traces')
 				z.do('data.currentLayout = pCreateInfo->initialLayout;')
+				z.do('data.format = pCreateInfo->format; // as above, might be missing in json')
+			elif type == 'VkDescriptorSet':
+				z.do('data.pool = pAllocateInfo->descriptorPool;')
 		else: # multiple
 			z.do('for (unsigned i = 0; i < %s; i++)' % count)
 			z.brace_begin()
@@ -1602,10 +1608,9 @@ def loadfunc(name, node, target, header):
 		z.do('%s.next_stored_image = *pImageIndex;' % totrackable('VkSwapchainKHR'))
 	load_add_tracking(name)
 	if name in replay_post_calls: # hard-coded post handling
-		if retval == 'void':
-			z.do('if (reader.run) replay_post_%s(reader, %s);' % (name, ', '.join(call_list)))
-		else:
-			z.do('if (reader.run) replay_post_%s(reader, retval, %s);' % (name, ', '.join(call_list)))
+		z.do('if (reader.run) replay_post_%s(reader, %s%s);' % (name, 'retval, ' if retval != 'void' else '', ', '.join(call_list)))
+	if name in replay_postprocess_calls:
+		z.do('if (!reader.run) replay_postprocess_%s(reader, %s%s);' % (name, 'retval, ' if retval != 'void' else '', ', '.join(call_list)))
 	if debugstats:
 		z.do('__atomic_add_fetch(&setup_time_%s, gettime() - startTime - apiTime, __ATOMIC_RELAXED);' % name)
 		z.do('__atomic_add_fetch(&vulkan_time_%s, apiTime, __ATOMIC_RELAXED);' % name)

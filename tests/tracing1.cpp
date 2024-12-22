@@ -378,18 +378,35 @@ static void retrace_2(int variant)
 	getnext(t, "vkEnumeratePhysicalDevices");
 	getnext(t, "vkEnumeratePhysicalDevices");
 	getnext(t, "vkCreateDevice");
+	auto& device_data = VkDevice_index.at(0);
+	assert(device_data.index == 0);
+	device_data.self_test();
 	getnext(t, "vkCreateCommandPool");
 	assert(index_to_VkCommandPool.size() == 1);
+	auto& commandpool_data = VkCommandPool_index.at(0);
+	assert(commandpool_data.index == 0);
+	commandpool_data.self_test();
 	getnext(t, "vkAllocateCommandBuffers");
 	assert(index_to_VkCommandBuffer.size() == NUM_CMDBUFFERS);
-	trackedcmdbuffer_replay& cmdb = VkCommandBuffer_index.at(0);
-	assert(cmdb.pool == 0);
+	auto& cmdbuffer_data = VkCommandBuffer_index.at(0);
+	assert(cmdbuffer_data.index == 0);
+	assert(cmdbuffer_data.pool_index == 0);
+	cmdbuffer_data.self_test();
 	getnext(t, nullptr); // thread barrier
 	getnext(t, "vkResetCommandPool");
 	getnext(t, "vkCreateSemaphore");
+	auto& semaphore_data = VkSemaphore_index.at(0);
+	assert(semaphore_data.index == 0);
+	semaphore_data.self_test();
 	getnext(t, "vkCreateSampler");
+	auto& sampler_data = VkSampler_index.at(0);
+	assert(sampler_data.index == 0);
+	sampler_data.self_test();
 	getnext(t, nullptr); // thread barrier
 	getnext(t, "vkDestroySampler");
+	sampler_data = VkSampler_index.at(0);
+	sampler_data.destroyed.self_test();
+	sampler_data.self_test();
 	for (unsigned i = 0; i < NUM_BUFFERS; i++) getnext(t, "vkCreateBuffer");
 	assert(index_to_VkBuffer.size() == NUM_BUFFERS);
 	getnext(t, "vkGetPhysicalDeviceMemoryProperties");
@@ -397,6 +414,8 @@ static void retrace_2(int variant)
 	getnext(t, "vkAllocateMemory");
 	for (unsigned i = 0; i < NUM_BUFFERS; i++) getnext(t, "vkBindBufferMemory");
 	getnext(t, "vkCreateImage");
+	auto& image_data = VkImage_index.at(0);
+	image_data.self_test();
 	getnext(t, nullptr); // thread barrier
 	getnext(t, "vkDestroyImage");
 	getnext(t, "vkCreateImage");
