@@ -1148,7 +1148,6 @@ def save_add_tracking(name):
 			z.do('add->arrayLayers = pCreateInfo->arrayLayers;')
 			z.do('if (pCreateInfo->flags & VK_IMAGE_CREATE_ALIAS_BIT) ELOG("Image aliasing detected! We need to implement support for this!");')
 		elif type == 'VkShaderModule':
-			z.do('add->type = VK_OBJECT_TYPE_SHADER_MODULE;')
 			z.do('add->size = pCreateInfo->codeSize;')
 		elif type == 'VkRenderPass' and name == 'vkCreateRenderPass':
 			z.do('add->attachments.resize(pCreateInfo->attachmentCount);')

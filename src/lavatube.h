@@ -133,9 +133,9 @@ struct trackedobject : trackable
 	}
 };
 
-struct trackedshadermodule : trackedobject
+struct trackedshadermodule : trackable
 {
-	using trackedobject::trackedobject; // inherit constructor
+	using trackable::trackable; // inherit constructor
 	bool enables_device_address = false;
 	size_t size = 0;
 };
