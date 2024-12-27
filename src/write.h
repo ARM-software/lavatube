@@ -181,6 +181,12 @@ public:
 
 	std::atomic_bool pending_barrier { false };
 
+	void self_test() const
+	{
+		assert(parent != nullptr);
+		file_writer::self_test();
+	}
+
 private:
 	std::string mPath;
 	std::vector<framedata> frames;

@@ -94,6 +94,7 @@ void lava_file_writer::inject_thread_barrier()
 
 lava_file_writer::~lava_file_writer()
 {
+	self_test();
 	file_writer::finalize();
 
 	// Write out per-frame data
@@ -128,6 +129,7 @@ debug_info lava_file_writer::new_frame(int global_frame)
 	current.frame++;
 	debug_info retval = debug;
 	debug = {};
+	self_test();
 	return retval;
 }
 

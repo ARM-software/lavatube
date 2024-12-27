@@ -47,6 +47,11 @@ struct heap
 	/// up deletes in this concurrency safe vector instead.
 	tbb::concurrent_vector<uint32_t> deletes;
 	VkImageTiling tiling = VK_IMAGE_TILING_LINEAR; // buffers are assumed to be linear
+
+	void self_test() const
+	{
+		assert(free <= total);
+	}
 };
 
 struct lookup
@@ -524,10 +529,10 @@ int suballoc_internal_test()
 	// walk the heaps to check consistency
 	for (const heap& h : heaps)
 	{
+		h.self_test();
 		uint64_t freed = 0;
 		if (h.subs.size() > 0) freed = h.subs.front().offset;
 		uint64_t used = 0;
-		assert(h.free <= h.total);
 		int64_t prev_end = -1; // end of previous allocation
 		for (auto it = h.subs.cbegin(); it != h.subs.cend(); ++it)
 		{

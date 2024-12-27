@@ -143,7 +143,13 @@ public:
 
 	change_source current;
 
-	inline void self_test();
+	void self_test() const
+	{
+		assert(parent);
+		assert(run == parent->run);
+		assert(global_frames >= local_frames);
+		file_reader::self_test();
+	}
 
 private:
 	bool mPreload;
@@ -158,12 +164,6 @@ private:
 	unsigned global_frames = 0;
 	unsigned local_frames = 0;
 };
-
-inline void lava_file_reader::self_test()
-{
-	assert(parent);
-	assert(run == parent->run);
-}
 
 inline void lava_file_reader::read_barrier()
 {

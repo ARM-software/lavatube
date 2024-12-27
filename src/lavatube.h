@@ -17,6 +17,11 @@
 #include <unordered_set>
 #include <list>
 #include <vulkan/vk_icd.h>
+#include <type_traits>
+
+// Basically just assuming this will be fixed in later versions of the standard and that existing
+// implementations will continue doing the only sensible thing here.
+#pragma GCC diagnostic ignored "-Winvalid-offsetof"
 
 class lava_file_reader;
 class lava_file_writer;
@@ -52,6 +57,11 @@ struct trackable
 
 	void self_test() const
 	{
+		// We assume child classes put their fields after parent classes. This is not guaranteed
+		// by the standard. If this is not happening, we're in trouble, so assert on it.
+		static_assert(offsetof(trackable, magic) == 0, "ICD loader magic must be at offset zero!");
+		static_assert(std::is_standard_layout_v<trackable> == true); // only applies to base class
+
 		creation.self_test();
 		last_modified.self_test();
 	}
@@ -91,6 +101,7 @@ struct trackedmemory : trackable
 
 	void self_test() const
 	{
+		static_assert(offsetof(trackedmemory, magic) == 0, "ICD loader magic must be at offset zero!"); \
 		assert(backing != VK_NULL_HANDLE);
 		assert(offset + size <= allocationSize);
 		assert(exposed.span().last <= allocationSize);
@@ -127,6 +138,7 @@ struct trackedobject : trackable
 
 	void self_test() const
 	{
+		static_assert(offsetof(trackedobject, magic) == 0, "ICD loader magic must be at offset zero!"); \
 		assert(type != VK_OBJECT_TYPE_UNKNOWN);
 		assert(size != VK_WHOLE_SIZE);
 		trackable::self_test();
@@ -156,6 +168,7 @@ struct trackedbuffer : trackedmemoryobject
 
 	void self_test() const
 	{
+		static_assert(offsetof(trackedbuffer, magic) == 0, "ICD loader magic must be at offset zero!");
 		assert(flags != VK_BUFFER_CREATE_FLAG_BITS_MAX_ENUM);
 		assert(sharingMode != VK_SHARING_MODE_MAX_ENUM);
 		assert(usage != VK_BUFFER_USAGE_FLAG_BITS_MAX_ENUM);
@@ -174,6 +187,7 @@ struct trackedaccelerationstructure : trackedmemoryobject
 
 	void self_test() const
 	{
+		static_assert(offsetof(trackedaccelerationstructure, magic) == 0, "ICD loader magic must be at offset zero!");
 		assert(buffer != VK_NULL_HANDLE);
 		assert(buffer_index != CONTAINER_INVALID_INDEX);
 		assert(type != VK_ACCELERATION_STRUCTURE_TYPE_MAX_ENUM_KHR);
@@ -199,6 +213,7 @@ struct trackedimage : trackedobject
 
 	void self_test() const
 	{
+		static_assert(offsetof(trackedimage, magic) == 0, "ICD loader magic must be at offset zero!");
 		assert(tiling != VK_IMAGE_TILING_MAX_ENUM);
 		assert(usage != VK_IMAGE_USAGE_FLAG_BITS_MAX_ENUM);
 		assert(sharingMode != VK_SHARING_MODE_MAX_ENUM);
@@ -225,6 +240,7 @@ struct trackedimageview : trackable
 
 	void self_test() const
 	{
+		static_assert(offsetof(trackedimageview, magic) == 0, "ICD loader magic must be at offset zero!");
 		assert(image != VK_NULL_HANDLE);
 		assert(image_index != CONTAINER_INVALID_INDEX);
 		assert(format != VK_FORMAT_UNDEFINED);
@@ -244,6 +260,7 @@ struct trackedbufferview : trackable
 
 	void self_test() const
 	{
+		static_assert(offsetof(trackedbufferview, magic) == 0, "ICD loader magic must be at offset zero!");
 		assert(buffer != VK_NULL_HANDLE);
 		assert(buffer_index != CONTAINER_INVALID_INDEX);
 		assert(format != VK_FORMAT_UNDEFINED);
@@ -258,6 +275,7 @@ struct trackedswapchain : trackable
 
 	void self_test() const
 	{
+		static_assert(offsetof(trackedswapchain, magic) == 0, "ICD loader magic must be at offset zero!");
 		assert(info.sType == VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR);
 		trackable::self_test();
 	}
@@ -282,6 +300,7 @@ struct trackedswapchain_replay : trackedswapchain
 
 	void self_test() const
 	{
+		static_assert(offsetof(trackedswapchain_replay, magic) == 0, "ICD loader magic must be at offset zero!");
 		if (!initialized) return;
 		assert(swapchain != VK_NULL_HANDLE);
 		if (p__virtualswap)
@@ -314,6 +333,7 @@ struct trackedpipeline : trackable
 
 	void self_test() const
 	{
+		static_assert(offsetof(trackedpipeline, magic) == 0, "ICD loader magic must be at offset zero!");
 		assert(type != VK_PIPELINE_BIND_POINT_MAX_ENUM);
 		trackable::self_test();
 	}
@@ -339,6 +359,7 @@ struct trackedcmdbuffer : trackable
 
 	void self_test() const
 	{
+		static_assert(offsetof(trackedcmdbuffer, magic) == 0, "ICD loader magic must be at offset zero!");
 		assert(device != VK_NULL_HANDLE);
 		assert(physicalDevice != VK_NULL_HANDLE);
 		assert(pool_index != CONTAINER_INVALID_INDEX);
@@ -403,6 +424,7 @@ struct trackedcmdbuffer_trace : trackedcmdbuffer
 
 	void self_test() const
 	{
+		static_assert(offsetof(trackedcmdbuffer_trace, magic) == 0, "ICD loader magic must be at offset zero!");
 		for (const auto& pair : touched) { assert(pair.first->accessible); pair.first->self_test(); pair.second.self_test(); }
 		assert(pool != VK_NULL_HANDLE);
 		assert(device != VK_NULL_HANDLE);
@@ -421,6 +443,7 @@ struct trackeddescriptorset : trackable
 
 	void self_test() const
 	{
+		static_assert(offsetof(trackeddescriptorset, magic) == 0, "ICD loader magic must be at offset zero!");
 		assert(pool != VK_NULL_HANDLE);
 		assert(pool != VK_NULL_HANDLE);
 		assert(pool_index != CONTAINER_INVALID_INDEX);
@@ -444,6 +467,7 @@ struct trackeddescriptorset_trace : trackeddescriptorset
 
 	void self_test() const
 	{
+		static_assert(offsetof(trackeddescriptorset_trace, magic) == 0, "ICD loader magic must be at offset zero!");
 		for (const auto& pair : touched) { pair.first->self_test(); pair.second.self_test(); }
 		trackeddescriptorset::self_test();
 	}
@@ -463,6 +487,7 @@ struct trackedqueue : trackable
 
 	void self_test() const
 	{
+		static_assert(offsetof(trackedqueue, magic) == 0, "ICD loader magic must be at offset zero!");
 		assert(device != VK_NULL_HANDLE);
 		assert(physicalDevice != VK_NULL_HANDLE);
 		assert(queueFlags != VK_QUEUE_FLAG_BITS_MAX_ENUM);
@@ -509,6 +534,7 @@ struct trackedframebuffer : trackable
 
 	void self_test() const
 	{
+		static_assert(offsetof(trackedframebuffer, magic) == 0, "ICD loader magic must be at offset zero!");
 		for (const auto v : imageviews) v->self_test();
 		trackable::self_test();
 	}

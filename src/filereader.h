@@ -222,6 +222,11 @@ public:
 		chunk_mutex.unlock();
 	}
 
+	void self_test() const
+	{
+		if (done_decompressing.load()) assert(done_reading.load());
+	}
+
 private:
 	void decompressor(); // runs in separate thread, moves chunks from file to uncompressed chunks
 

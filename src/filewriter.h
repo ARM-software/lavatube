@@ -31,7 +31,12 @@ class file_writer
 		else
 		{
 			buffer compressed = compress_chunk(chunk);
-			if (multithreaded_write) compressed_chunks.push_front(compressed);
+			if (multithreaded_write)
+			{
+				chunk_mutex.lock();
+				compressed_chunks.push_front(compressed);
+				chunk_mutex.unlock();
+			}
 			else write_chunk(compressed);
 		}
 
@@ -156,6 +161,11 @@ public:
 		if (serializer_thread.joinable()) serializer_thread.join();
 		multithreaded_write = false;
 		chunk_mutex.unlock();
+	}
+
+	void self_test() const
+	{
+		if (done_compressing.load()) assert(done_feeding.load());
 	}
 
 protected:
