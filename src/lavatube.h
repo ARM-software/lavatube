@@ -47,13 +47,39 @@ enum
 
 struct trackable
 {
-	uintptr_t magic = ICD_LOADER_MAGIC; // in case we want to pass this around as a vulkan object
-	uint32_t index = 0;
+	uintptr_t magic = ICD_LOADER_MAGIC; // in case we want to pass this around as a vulkan object; must be first
+	uint32_t index = UINT32_MAX;
+	enum class states { uninitialized, initialized, created, destroyed };
+	uint8_t state = (uint8_t)states::uninitialized;
 	std::string name;
 	trackable() {}
 	change_source creation;
 	change_source last_modified;
 	change_source destroyed;
+
+	bool is_state(states s) const { return (uint8_t)s == state; }
+	void set_state(states s) { state = (uint8_t)s; }
+
+	void enter_initialized() // call after initialized to transition state and verify contents
+	{
+		assert(is_state(states::uninitialized));
+		set_state(states::initialized);
+		self_test();
+	}
+
+	void enter_created() // tracer initializes and creates at same time, replayer does it in two steps
+	{
+		assert(is_state(states::initialized) || is_state(states::uninitialized));
+		set_state(states::created);
+		self_test();
+	}
+
+	void enter_destroyed()
+	{
+		assert(is_state(states::created));
+		set_state(states::destroyed);
+		self_test();
+	}
 
 	void self_test() const
 	{
@@ -62,8 +88,10 @@ struct trackable
 		static_assert(offsetof(trackable, magic) == 0, "ICD loader magic must be at offset zero!");
 		static_assert(std::is_standard_layout_v<trackable> == true); // only applies to base class
 
-		creation.self_test();
-		last_modified.self_test();
+		assert(is_state(states::uninitialized) != (index != UINT32_MAX));
+		if (is_state(states::created)) creation.self_test();
+		if (is_state(states::created)) last_modified.self_test();
+		if (is_state(states::destroyed)) destroyed.self_test();
 	}
 };
 
@@ -125,8 +153,9 @@ struct trackeddevice : trackable
 
 struct trackedobject : trackable
 {
+	enum class states : uint8_t { uninitialized, initialized, created, destroyed, bound }; // must add at end
 	using trackable::trackable; // inherit constructor
-	VkDeviceMemory backing = (VkDeviceMemory)0;
+	VkDeviceMemory backing = VK_NULL_HANDLE;
 	VkDeviceSize size = 0;
 	VkDeviceSize offset = 0; // our offset into our backing memory
 	VkMemoryRequirements req = {};
@@ -136,9 +165,27 @@ struct trackedobject : trackable
 	bool accessible = false; // whether our backing memory is host visible and understandable
 	int source = 0; // code line that is the last source for us to be scanned, only for debugging
 
+	bool is_state(states s) const { return (uint8_t)s == state; }
+	void set_state(states s) { state = (uint8_t)s; }
+
+	void enter_bound()
+	{
+		assert(is_state(states::created));
+		set_state(states::bound);
+		self_test();
+	}
+
+	void enter_destroyed() // must override to allow exit from bound
+	{
+		assert(is_state(states::created) || is_state(states::bound));
+		set_state(states::destroyed);
+		self_test();
+	}
+
 	void self_test() const
 	{
 		static_assert(offsetof(trackedobject, magic) == 0, "ICD loader magic must be at offset zero!"); \
+		if (is_state(states::bound)) assert(backing != VK_NULL_HANDLE);
 		assert(type != VK_OBJECT_TYPE_UNKNOWN);
 		assert(size != VK_WHOLE_SIZE);
 		trackable::self_test();
@@ -173,6 +220,7 @@ struct trackedbuffer : trackedmemoryobject
 		assert(sharingMode != VK_SHARING_MODE_MAX_ENUM);
 		assert(usage != VK_BUFFER_USAGE_FLAG_BITS_MAX_ENUM);
 		assert(type == VK_OBJECT_TYPE_BUFFER);
+		if (is_state(states::bound)) assert(size != 0);
 		trackedobject::self_test();
 	}
 };

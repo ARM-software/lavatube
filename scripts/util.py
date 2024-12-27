@@ -766,6 +766,7 @@ class parameter(object):
 			z.do('const VkMemoryPropertyFlags special_flags = static_cast<VkMemoryPropertyFlags>(reader.read_uint32_t()); // fetch memory flags especially added')
 			z.do('const VkImageTiling tiling = static_cast<VkImageTiling>(reader.read_uint32_t()); // fetch tiling property especially added')
 			z.do('const VkDeviceSize min_size = static_cast<VkDeviceSize>(reader.read_uint64_t()); // fetch padded memory size')
+			z.do('trackedimage& image_data = VkImage_index.at(image_index);')
 			z.do('suballoc_location loc = suballoc_add_image(reader.thread_index(), device, %s, image_index, special_flags, tiling, min_size);' % varname)
 		elif self.funcname in ['vkBindBufferMemory', 'VkBindBufferMemoryInfo', 'VkBindBufferMemoryInfoKHR'] and self.name == 'buffer':
 			z.do('const VkMemoryPropertyFlags special_flags = static_cast<VkMemoryPropertyFlags>(reader.read_uint32_t()); // fetch memory flags especially added')
@@ -1045,9 +1046,8 @@ class parameter(object):
 			z.do('const auto* meminfo = writer.parent->records.VkDeviceMemory_index.at(%s);' % (owner + 'memory'))
 			z.do('writer.write_uint32_t(static_cast<uint32_t>(meminfo->propertyFlags)); // save memory flags')
 		if self.funcname in ['vkBindImageMemory', 'VkBindImageMemoryInfo', 'VkBindImageMemoryInfoKHR'] and self.name == 'image':
-			z.do('const auto* imageinfo = writer.parent->records.VkImage_index.at(%s);' % varname)
-			z.do('writer.write_uint32_t(static_cast<uint32_t>(imageinfo->tiling)); // save tiling info')
-			z.do('writer.write_uint64_t(static_cast<uint64_t>(imageinfo->size)); // save padded image size')
+			z.do('writer.write_uint32_t(static_cast<uint32_t>(image_data->tiling)); // save tiling info')
+			z.do('writer.write_uint64_t(static_cast<uint64_t>(image_data->size)); // save padded image size')
 		if self.funcname == 'vkAllocateMemory' and self.name == 'pAllocateInfo':
 			z.do('frame_mutex.lock();')
 			z.do('assert(real_memory_properties.memoryTypeCount > 0);')
@@ -1235,6 +1235,7 @@ def save_add_tracking(name):
 			z.do('add->buffer_index = writer.parent->records.VkBuffer_index.at(pCreateInfo->buffer)->index;')
 			z.do('add->size = pCreateInfo->size;')
 		z.do('DLOG2("insert %s into %s index %%u", (unsigned)add->index);' % (type, name))
+		z.do('add->enter_created();')
 		z.do('writer.write_handle(add);')
 	elif name in spec.functions_create: # multiple
 		(param, count, type) = get_create_params(name)
@@ -1260,6 +1261,7 @@ def save_add_tracking(name):
 		elif type == 'VkSwapchainKHR':
 			z.do('add->info = pCreateInfos[i];')
 		z.do('DLOG2("insert %s into %s index %%u", (unsigned)add->index);' % (type, name))
+		z.do('add->enter_created();')
 		z.do('writer.write_handle(add);')
 		z.brace_end()
 	elif name in spec.functions_destroy:
@@ -1276,7 +1278,7 @@ def save_add_tracking(name):
 		z.do('auto* meta = writer.parent->records.%s_index.unset(%s%s, writer.current);' % (type, param, '' if count == '1' else '[i]'))
 		z.do('DLOG2("removing %s from %s index %%u", (unsigned)meta->index);' % (type, name))
 		z.do('meta->destroyed = writer.current;')
-		z.do('meta->self_test();')
+		z.do('meta->enter_destroyed();')
 		if type == 'VkCommandBuffer':
 			z.do('commandpool_data->commandbuffers.erase(meta);')
 		z.brace_end()
@@ -1334,6 +1336,7 @@ def load_add_tracking(name):
 				z.do('data.format = pCreateInfo->format; // as above, might be missing in json')
 			elif type == 'VkDescriptorSet':
 				z.do('data.pool = pAllocateInfo->descriptorPool;')
+			z.do('data.enter_created();')
 		else: # multiple
 			z.do('for (unsigned i = 0; i < %s; i++)' % count)
 			z.brace_begin()
@@ -1354,6 +1357,7 @@ def load_add_tracking(name):
 			if type == 'VkSwapchainKHR':
 				z.do('data.info = pCreateInfos[i];')
 				z.do('data.index = indices[i];')
+			z.do('data.enter_created();')
 			z.brace_end()
 	elif name in spec.functions_destroy:
 		param = spec.functions_destroy[name][0]
@@ -1378,6 +1382,7 @@ def load_add_tracking(name):
 				z.do('wrap_vkDestroySemaphore(device, data.virtual_semaphore, nullptr);')
 				z.do('for (auto i : data.virtual_fences) wrap_vkDestroyFence(device, i, nullptr);')
 				z.brace_end()
+			z.do('data.enter_destroyed();')
 			z.do('index_to_%s.unset(%s);' % (type, toindex(type)))
 		elif name not in ignore_on_read:
 			z.do('if (indices[i] == CONTAINER_NULL_VALUE) continue;')
@@ -1385,6 +1390,7 @@ def load_add_tracking(name):
 			z.do('assert(data.destroyed.frame == UINT32_MAX || data.destroyed.frame == reader.current.frame);')
 			z.do('data.destroyed = reader.current;')
 			z.do('data.last_modified = reader.current;')
+			z.do('data.enter_destroyed();')
 			z.do('index_to_%s.unset(indices[i]);' % type)
 		z.brace_end()
 	elif name == 'vkQueuePresentKHR':
@@ -1397,6 +1403,15 @@ def load_add_tracking(name):
 		z.do('if (p__debug_destination) fclose(p__debug_destination);')
 		z.do('return; // make sure we now do not run anything below this point')
 		z.brace_end()
+	elif name in ['vkBindImageMemory', 'VkBindImageMemoryInfoKHR', 'VkBindImageMemoryInfo']:
+		z.do('image_data.backing = memory;')
+		z.do('image_data.offset = memoryOffset;')
+		z.do('image_data.size = loc.size;')
+		z.do('image_data.enter_bound();')
+	elif name in ['vkBindBufferMemory', 'VkBindBufferMemoryInfo', 'VkBindBufferMemoryInfoKHR']:
+		z.do('buffer_data.backing = memory;')
+		z.do('buffer_data.offset = memoryOffset;')
+		z.do('buffer_data.enter_bound();')
 
 def func_common(name, node, read, target, header, guard_header=True):
 	proto = node.find('proto')

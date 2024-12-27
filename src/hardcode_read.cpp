@@ -1990,6 +1990,7 @@ void retrace_vkGetPhysicalDeviceXlibPresentationSupportKHR(lava_file_reader& rea
 
 static void trackable_helper(trackable& t, const Json::Value& v)
 {
+	t.index = v["index"].asUInt();
 	t.creation.frame = v["frame_created"].asUInt();
 	if (v.isMember("call_created")) t.creation.call = v["call_created"].asUInt();
 	if (v.isMember("thread_created")) t.creation.thread = v["thread_created"].asUInt();
@@ -2009,6 +2010,7 @@ static trackable trackable_json(const Json::Value& v)
 {
 	trackable t;
 	trackable_helper(t, v);
+	t.enter_initialized();
 	return t;
 }
 
@@ -2017,6 +2019,7 @@ static trackedfence trackedfence_json(const Json::Value& v)
 	trackedfence t;
 	trackable_helper(t, v);
 	t.flags = v["flags"].asInt();
+	t.enter_initialized();
 	return t;
 }
 
@@ -2026,6 +2029,7 @@ static trackedpipeline trackedpipeline_json(const Json::Value& v)
 	trackable_helper(t, v);
 	t.flags = v["flags"].asUInt();
 	t.type = (VkPipelineBindPoint)v["type"].asUInt();
+	t.enter_initialized();
 	return t;
 }
 
@@ -2036,6 +2040,7 @@ static trackedaccelerationstructure trackedaccelerationstructure_json(const Json
 	t.size = (VkDeviceSize)v["size"].asUInt64();
 	t.offset = (VkDeviceSize)v["offset"].asUInt64();
 	t.buffer_index = v["buffer_index"].asUInt();
+	t.enter_initialized();
 	return t;
 }
 
@@ -2051,6 +2056,7 @@ static trackedbuffer trackedbuffer_json(const Json::Value& v)
 	t.req.alignment = v["req_alignment"].asUInt();
 	t.req.memoryTypeBits = 0;
 	t.type = VK_OBJECT_TYPE_BUFFER;
+	t.enter_initialized();
 	return t;
 }
 
@@ -2079,6 +2085,7 @@ static trackedimage trackedimage_json(const Json::Value& v)
 		t.extent.depth = v["extent"][2].asUInt();
 	}
 	t.type = VK_OBJECT_TYPE_IMAGE;
+	t.enter_initialized();
 	return t;
 }
 
@@ -2091,6 +2098,7 @@ static trackedswapchain_replay trackedswapchain_replay_json(const Json::Value& v
 	t.info.imageExtent.width = v["width"].asUInt();
 	t.info.imageExtent.height = v["height"].asUInt();
 	t.info.imageSharingMode = (VkSharingMode)v["imageSharingMode"].asUInt();
+	t.enter_initialized();
 	return t;
 }
 
@@ -2099,6 +2107,7 @@ static trackedcmdbuffer_replay trackedcmdbuffer_replay_json(const Json::Value& v
 	trackedcmdbuffer_replay t;
 	trackable_helper(t, v);
 	t.pool_index = v["pool"].asUInt();
+	t.enter_initialized();
 	return t;
 }
 
@@ -2107,6 +2116,7 @@ static trackedimageview trackedimageview_json(const Json::Value& v)
 	trackedimageview t;
 	trackable_helper(t, v);
 	t.image_index = v["image"].asUInt();
+	t.enter_initialized();
 	return t;
 }
 
@@ -2115,6 +2125,7 @@ static trackedbufferview trackedbufferview_json(const Json::Value& v)
 	trackedbufferview t;
 	trackable_helper(t, v);
 	t.buffer_index = v["buffer"].asUInt();
+	t.enter_initialized();
 	return t;
 }
 
@@ -2123,6 +2134,7 @@ static trackeddescriptorset trackeddescriptorset_json(const Json::Value& v)
 	trackeddescriptorset t;
 	trackable_helper(t, v);
 	t.pool_index = v["pool"].asUInt();
+	t.enter_initialized();
 	return t;
 }
 
@@ -2130,6 +2142,7 @@ static trackedqueue trackedqueue_json(const Json::Value& v)
 {
 	trackedqueue t;
 	trackable_helper(t, v);
+	t.enter_initialized();
 	return t;
 }
 
@@ -2137,6 +2150,7 @@ static trackeddevice trackeddevice_json(const Json::Value& v)
 {
 	trackeddevice t;
 	trackable_helper(t, v);
+	t.enter_initialized();
 	return t;
 }
 
@@ -2144,6 +2158,7 @@ static trackedphysicaldevice trackedphysicaldevice_json(const Json::Value& v)
 {
 	trackedphysicaldevice t;
 	trackable_helper(t, v);
+	t.enter_initialized();
 	return t;
 }
 
@@ -2151,6 +2166,7 @@ static trackedframebuffer trackedframebuffer_json(const Json::Value& v)
 {
 	trackedframebuffer t;
 	trackable_helper(t, v);
+	t.enter_initialized();
 	return t;
 }
 
@@ -2160,6 +2176,7 @@ static trackedshadermodule trackedshadermodule_json(const Json::Value& v)
 	trackable_helper(t, v);
 	if (v.isMember("size")) t.name = v["size"].asInt();
 	if (v.isMember("enables_device_address")) t.enables_device_address = v["enables_device_address"].asBool();
+	t.enter_initialized();
 	return t;
 }
 
@@ -2167,6 +2184,7 @@ static trackedrenderpass trackedrenderpass_json(const Json::Value& v)
 {
 	trackedrenderpass t;
 	trackable_helper(t, v);
+	t.enter_initialized();
 	return t;
 }
 
@@ -2175,6 +2193,7 @@ static trackedpipelinelayout trackedpipelinelayout_json(const Json::Value& v)
 	trackedpipelinelayout t;
 	trackable_helper(t, v);
 	if (v.isMember("push_constant_space_used")) t.push_constant_space_used = v["push_constant_space_used"].asUInt();
+	t.enter_initialized();
 	return t;
 }
 

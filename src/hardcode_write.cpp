@@ -381,6 +381,7 @@ static void trace_post_vkBindImageMemory(lava_file_writer& writer, VkResult resu
 	}
 	image_data->size = image_data->req.size; // we do not try to second guess this for images
 	image_data->accessible = ((image_data->tiling != VK_IMAGE_TILING_OPTIMAL) && (memory_data->propertyFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT));
+	image_data->enter_bound();
 	writer.parent->memory_mutex.unlock();
 }
 
@@ -400,6 +401,7 @@ static void trace_post_vkBindBufferMemory(lava_file_writer& writer, VkResult res
 	}
 	// we pass in size recorded from vkCreateBuffer, which is the actually used size, rather than required allocation size
 	buffer_data->accessible = (memory_data->propertyFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
+	buffer_data->enter_bound();
 	writer.parent->memory_mutex.unlock();
 }
 
@@ -1227,6 +1229,7 @@ static void trace_post_vkCreateInstance(lava_file_writer& writer, VkResult resul
 		wrap_vkGetPhysicalDeviceQueueFamilyProperties(physical_devices[cur_dev], &count, nullptr);
 		add->queueFamilyProperties.resize(count);
 		wrap_vkGetPhysicalDeviceQueueFamilyProperties(physical_devices[cur_dev], &count, add->queueFamilyProperties.data());
+		add->enter_initialized();
 	}
 
 	frame_mutex.unlock();
@@ -2062,6 +2065,7 @@ VKAPI_ATTR void VKAPI_CALL trace_vkGetDeviceQueue2(VkDevice device, const VkDevi
 		queue_data->realFamily = realFamily;
 		queue_data->realQueue = *pQueue;
 		queue_data->physicalDevice = device_data->physicalDevice;
+		queue_data->enter_initialized();
 	}
 	auto* queue_data = writer.parent->records.VkQueue_index.at(*pQueue);
 	assert(queue_data);
@@ -2109,6 +2113,7 @@ VKAPI_ATTR void VKAPI_CALL trace_vkGetDeviceQueue(VkDevice device, uint32_t queu
 		queue_data->realFamily = realFamily;
 		queue_data->realQueue = *pQueue;
 		queue_data->physicalDevice = device_data->physicalDevice;
+		queue_data->enter_initialized();
 	}
 	auto* queue_data = writer.parent->records.VkQueue_index.at(*pQueue);
 	assert(queue_data);

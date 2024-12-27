@@ -160,6 +160,7 @@ public:
 	{
 		if (t)
 		{
+			assert(!t->is_state(trackable::states::uninitialized) && !t->is_state(trackable::states::destroyed));
 			write_uint32_t(t->index);
 			write_int8_t(t->last_modified.thread);
 			write_uint16_t(t->last_modified.call);
