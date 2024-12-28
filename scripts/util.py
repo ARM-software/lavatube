@@ -24,6 +24,7 @@ for name in spec.structures:
 		feature_detection_structs.append(name)
 
 def validate_funcs(lst):
+	assert len(lst) == len(set(lst))
 	for x in lst: assert x in spec.valid_functions, '%s is not a valid function' % x
 
 # Set this to zero to enable injecting sentinel values between each real value.
@@ -94,7 +95,7 @@ validate_funcs(push_thread_barrier_funcs)
 # TODO : Add support for these functions and structures
 functions_noop = [
 	"vkUpdateDescriptorSetWithTemplateKHR", "vkUpdateDescriptorSetWithTemplate", "vkCmdPushDescriptorSetWithTemplateKHR", 'vkGetImageViewOpaqueCaptureDescriptorDataEXT',
-	'vkGetPipelinePropertiesEXT', 'vkUpdateDescriptorSetWithTemplate', 'vkGetBufferOpaqueCaptureDescriptorDataEXT',
+	'vkGetPipelinePropertiesEXT', 'vkGetBufferOpaqueCaptureDescriptorDataEXT',
 	'vkCmdBuildMicromapsEXT', 'vkBuildMicromapsEXT', 'vkGetMicromapBuildSizesEXT', 'vkGetImageOpaqueCaptureDescriptorDataEXT', 'vkGetSamplerOpaqueCaptureDescriptorDataEXT',
 	'vkGetDeviceFaultInfoEXT', # we never want to trace this, but rather inject it during tracing if device loss happens, print the info, then abort
 	'vkGetAccelerationStructureOpaqueCaptureDescriptorDataEXT', 'vkCmdPushDescriptorSetWithTemplate2KHR', 'vkCmdSetRenderingInputAttachmentIndicesKHR',
