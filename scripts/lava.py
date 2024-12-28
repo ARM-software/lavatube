@@ -219,6 +219,7 @@ out(targets_read, '#include "struct_read_auto.h"')
 out(targets_write, '#include "struct_write_auto.h"')
 
 out(targets_read)
+out(targets_read, '#include "execute_commands.cpp"')
 out(targets_read, '#include "hardcode_read.cpp"')
 out(targets_read)
 

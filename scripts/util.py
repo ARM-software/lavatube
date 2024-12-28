@@ -159,7 +159,7 @@ replay_post_calls = [ 'vkCreateInstance', 'vkDestroyInstance', 'vkQueuePresentKH
 	'vkGetBufferDeviceAddress', 'vkGetBufferDeviceAddressKHR', 'vkGetAccelerationStructureDeviceAddressKHR' ]
 validate_funcs(replay_post_calls)
 replay_postprocess_calls = [ 'vkCmdPushConstants', 'vkCmdPushConstants2KHR', 'vkCreateRayTracingPipelinesKHR', 'vkCreateGraphicsPipelines',
-	'vkCreateComputePipelines' ]
+	'vkCreateComputePipelines', 'vkCmdBindPipeline', 'vkQueueSubmit', 'vkQueueSubmit2', 'vkQueueSubmit2KHR' ]
 validate_funcs(replay_postprocess_calls)
 trace_pre_calls = [ 'vkQueueSubmit', 'vkCreateInstance', 'vkCreateDevice', 'vkFreeMemory', 'vkQueueSubmit2', 'vkQueueSubmit2KHR' ]
 validate_funcs(trace_pre_calls)
@@ -1652,6 +1652,12 @@ def loadfunc(name, node, target, header):
 		z.do('if (reader.run) replay_post_%s(reader, %s%s);' % (name, 'retval, ' if retval != 'void' else '', ', '.join(call_list)))
 	if name in replay_postprocess_calls:
 		z.do('if (!reader.run) replay_postprocess_%s(reader, %s%s);' % (name, 'retval, ' if retval != 'void' else '', ', '.join(call_list)))
+	if name in spec.draw_commands:
+		z.do('if (!reader.run) replay_postprocess_draw_command(reader, commandbuffer_index, commandbuffer_data);')
+	if name in spec.compute_commands:
+		z.do('if (!reader.run) replay_postprocess_compute_command(reader, commandbuffer_index, commandbuffer_data);')
+	if name in spec.raytracing_commands:
+		z.do('if (!reader.run) replay_postprocess_raytracing_command(reader, commandbuffer_index, commandbuffer_data);')
 	if debugstats:
 		z.do('__atomic_add_fetch(&setup_time_%s, gettime() - startTime - apiTime, __ATOMIC_RELAXED);' % name)
 		z.do('__atomic_add_fetch(&vulkan_time_%s, apiTime, __ATOMIC_RELAXED);' % name)
@@ -1712,33 +1718,45 @@ def savefunc(name, node, target, header):
 	if debugstats:
 		z.do('uint64_t apiTime = gettime();')
 	if name == "vkCreateInstance":
+		assert retval == 'VkResult'
+		z.do('%s retval = VK_SUCCESS;' % retval)
 		z.do('#ifdef COMPILE_LAYER')
-		z.do('%s retval = vkuSetupInstanceLayer(%s);' % (retval, ', '.join(call_list)))
-		z.do('#else')
-		z.do('%s retval = vkuSetupInstance(%s);' % (retval, ', '.join(call_list)))
+		z.do('if (writer.run) retval = vkuSetupInstanceLayer(%s);' % (', '.join(call_list)))
+		z.do('#else');
+		z.do('if (writer.run) retval = vkuSetupInstance(%s);' % (', '.join(call_list)))
 		z.do('#endif')
+		z.do('else retval = writer.use_result.result;')
 	elif name == "vkCreateDevice":
+		assert retval == 'VkResult'
+		z.do('%s retval = VK_SUCCESS;' % retval)
 		z.do('#ifdef COMPILE_LAYER')
-		z.do('%s retval = vkuSetupDeviceLayer(%s);' % (retval, ', '.join(call_list)))
-		z.do('#else')
-		z.do('%s retval = vkuSetupDevice(%s);' % (retval, ', '.join(call_list)))
+		z.do('if (writer.run) retval = vkuSetupDeviceLayer(%s);' % (', '.join(call_list)))
+		z.do('#else');
+		z.do('if (writer.run) retval = vkuSetupDevice(%s);' % (', '.join(call_list)))
 		z.do('#endif')
+		z.do('else retval = writer.use_result.result;')
 	elif name in ignore_on_trace:
 		z.do('// native call skipped')
 		if retval == 'VkResult':
 			z.do('VkResult retval = VK_SUCCESS;')
 		assert retval in ['void', 'VkResult'], 'Bad return type for ignore case'
-	elif name in layer_implemented:
-		if retval != 'void':
-			z.do('%s retval = VK_SUCCESS;' % (retval))
-			z.do('if (wrap_%s) retval = wrap_%s(%s);' % (name, name, ', '.join(call_list)))
-		else:
-			z.do('if (wrap_%s) wrap_%s(%s);' % (name, name, ', '.join(call_list)))
 	else:
+		extra = ('&& wrap_%s' % name) if name in layer_implemented else ''
+		if retval == 'VkBool32': z.do('%s retval = VK_FALSE;' % retval)
+		elif retval == 'VkResult': z.do('%s retval = VK_RESULT_MAX_ENUM;' % retval)
+		elif retval != 'void': z.do('%s retval = (%s)0x7FFFFFFF; // hopefully an invalid value' % (retval, retval))
 		if retval != 'void':
-			z.do('%s retval = wrap_%s(%s);' % (retval, name, ', '.join(call_list)))
+			z.do('if (writer.run%s) retval = wrap_%s(%s);' % (extra, name, ', '.join(call_list)))
+			if retval == 'VkResult': z.do('else retval = writer.use_result.result;')
+			elif retval == 'VkDeviceAddress': z.do('else retval = writer.use_result.device_address;')
+			elif retval == 'VkDeviceSize': z.do('else retval = writer.use_result.device_size;')
+			elif retval == 'uint32_t': z.do('else retval = writer.use_result.uint_32;')
+			elif retval == 'uint64_t': z.do('else retval = writer.use_result.uint_64;')
+			elif retval == 'VkBool32': z.do('else retval = writer.use_result.uint_32;')
+			elif retval == 'PFN_vkVoidFunction': z.do('else retval = writer.use_result.function;')
+			else: assert False, 'Unhandled return type %s' % retval
 		else:
-			z.do('wrap_%s(%s);' % (name, ', '.join(call_list)))
+			z.do('if (writer.run%s) wrap_%s(%s);' % (extra, name, ', '.join(call_list)))
 	if debugstats:
 		z.do('apiTime = gettime() - apiTime;')
 	if name in extra_sync:

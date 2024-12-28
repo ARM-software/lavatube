@@ -1037,13 +1037,111 @@ static void translate_addresses(lava_file_reader& reader, uint32_t count, VkDevi
 	}
 }
 
+void replay_postprocess_vkQueueSubmit2(lava_file_reader& reader, VkResult result, VkQueue queue, uint32_t submitCount, const VkSubmitInfo2* pSubmits, VkFence fence)
+{
+	for (uint32_t i = 0; i < submitCount; i++)
+	{
+		for (uint32_t j = 0; j < pSubmits[i].commandBufferInfoCount; j++)
+		{
+			execute_commands(reader, pSubmits[i].pCommandBufferInfos[j].commandBuffer);
+		}
+	}
+}
+
+void replay_postprocess_vkQueueSubmit2KHR(lava_file_reader& reader, VkResult result, VkQueue queue, uint32_t submitCount, const VkSubmitInfo2KHR* pSubmits, VkFence fence)
+{
+	replay_pre_vkQueueSubmit2(reader, queue, submitCount, pSubmits, fence);
+}
+
+void replay_postprocess_vkQueueSubmit(lava_file_reader& reader, VkResult result, VkQueue queue, uint32_t submitCount, const VkSubmitInfo* pSubmits, VkFence fence)
+{
+	for (uint32_t i = 0; i < submitCount; i++)
+	{
+		for (uint32_t j = 0; j < pSubmits[i].commandBufferCount; j++)
+		{
+			execute_commands(reader, pSubmits[i].pCommandBuffers[j]);
+		}
+	}
+}
+
+static void replay_postprocess_vkCmdBindPipeline(lava_file_reader& reader, VkCommandBuffer commandBuffer, VkPipelineBindPoint pipelineBindPoint, VkPipeline pipeline)
+{
+	const uint32_t cmdbuffer_index = index_to_VkCommandBuffer.index(commandBuffer);
+	const uint32_t pipeline_index = index_to_VkPipeline.index(pipeline);
+	auto& cmdbuffer_data = VkCommandBuffer_index.at(cmdbuffer_index);
+	trackedcommand cmd { VKCMDBINDPIPELINE };
+	cmd.data.bind_pipeline.pipelineBindPoint = pipelineBindPoint;
+	cmd.data.bind_pipeline.pipeline_index = pipeline_index;
+	cmdbuffer_data.commands.push_back(cmd);
+}
+
+static void replay_postprocess_draw_command(lava_file_reader& reader, uint32_t commandbuffer_index, trackedcmdbuffer_replay& commandbuffer_data)
+{
+	trackedcommand cmd { VKCMDDRAW };
+	commandbuffer_data.commands.push_back(cmd);
+}
+
+static void replay_postprocess_raytracing_command(lava_file_reader& reader, uint32_t commandbuffer_index, trackedcmdbuffer_replay& commandbuffer_data)
+{
+	trackedcommand cmd { VKCMDTRACERAYSKHR };
+	commandbuffer_data.commands.push_back(cmd);
+}
+
+static void replay_postprocess_compute_command(lava_file_reader& reader, uint32_t commandbuffer_index, trackedcmdbuffer_replay& commandbuffer_data)
+{
+	trackedcommand cmd { VKCMDDISPATCH };
+	commandbuffer_data.commands.push_back(cmd);
+}
+
+static void replay_postprocess_vkCmdUpdateBuffer(VkCommandBuffer commandBuffer, VkBuffer dstBuffer, VkDeviceSize dstOffset, VkDeviceSize dataSize, const void* pData)
+{
+	uint32_t cmdbuffer_index = index_to_VkCommandBuffer.index(commandBuffer);
+	auto& cmdbuffer_data = VkCommandBuffer_index.at(cmdbuffer_index);
+	trackedcommand cmd { VKCMDUPDATEBUFFER };
+	cmd.data.update_buffer.size = dataSize;
+	cmd.data.update_buffer.offset = dstOffset;
+	cmd.data.update_buffer.buffer_index = index_to_VkBuffer.index(dstBuffer);
+	cmd.data.update_buffer.values = (char*)malloc(dataSize);
+	memcpy(cmd.data.update_buffer.values, pData, dataSize);
+	cmdbuffer_data.commands.push_back(cmd);
+}
+
+static void replay_postprocess_vkCmdCopyBuffer(VkCommandBuffer commandBuffer, VkBuffer srcBuffer, VkBuffer dstBuffer, uint32_t regionCount, const VkBufferCopy* pRegions)
+{
+	uint32_t cmdbuffer_index = index_to_VkCommandBuffer.index(commandBuffer);
+	auto& cmdbuffer_data = VkCommandBuffer_index.at(cmdbuffer_index);
+	trackedcommand cmd { VKCMDCOPYBUFFER };
+	cmd.data.copy_buffer.src_buffer_index = index_to_VkBuffer.index(srcBuffer);
+	cmd.data.copy_buffer.dst_buffer_index = index_to_VkBuffer.index(dstBuffer);
+	cmd.data.copy_buffer.regionCount = regionCount;
+	cmd.data.copy_buffer.pRegions = (VkBufferCopy*)malloc(regionCount * sizeof(VkBufferCopy));
+	memcpy(cmd.data.copy_buffer.pRegions, pRegions, regionCount * sizeof(VkBufferCopy));
+	cmdbuffer_data.commands.push_back(cmd);
+}
+
+static void replay_postprocess_vkCmdCopyBuffer2(VkCommandBuffer commandBuffer, const VkCopyBufferInfo2* pCopyBufferInfo)
+{
+	uint32_t cmdbuffer_index = index_to_VkCommandBuffer.index(commandBuffer);
+	auto& cmdbuffer_data = VkCommandBuffer_index.at(cmdbuffer_index);
+	trackedcommand cmd { VKCMDCOPYBUFFER };
+	cmd.data.copy_buffer.src_buffer_index = index_to_VkBuffer.index(pCopyBufferInfo->srcBuffer);
+	cmd.data.copy_buffer.dst_buffer_index = index_to_VkBuffer.index(pCopyBufferInfo->dstBuffer);
+	cmd.data.copy_buffer.regionCount = pCopyBufferInfo->regionCount;
+	cmd.data.copy_buffer.pRegions = (VkBufferCopy*)malloc(pCopyBufferInfo->regionCount * sizeof(VkBufferCopy));
+	memcpy(cmd.data.copy_buffer.pRegions, pCopyBufferInfo->pRegions, pCopyBufferInfo->regionCount * sizeof(VkBufferCopy));
+	cmdbuffer_data.commands.push_back(cmd);
+}
+
 static void postprocess_push_constants(lava_file_reader& reader, VkCommandBuffer commandBuffer, uint32_t offset, uint32_t size, const void* pValues)
 {
 	uint32_t cmdbuffer_index = index_to_VkCommandBuffer.index(commandBuffer);
 	auto& cmdbuffer_data = VkCommandBuffer_index.at(cmdbuffer_index);
-	if (cmdbuffer_data.push_constants.size() < offset + size) cmdbuffer_data.push_constants.resize(offset + size);
-	memcpy(cmdbuffer_data.push_constants.data() + offset, pValues, size);
-	DLOG2("Updating internal tracking of push constants with size=%u and offset=%u", size, offset);
+	trackedcommand cmd { VKCMDPUSHCONSTANTS };
+	cmd.data.push_constants.offset = offset;
+	cmd.data.push_constants.size = size;
+	cmd.data.push_constants.values = (char*)malloc(size);
+	memcpy(cmd.data.push_constants.values, pValues, size);
+	cmdbuffer_data.commands.push_back(cmd);
 }
 
 void replay_postprocess_vkCmdPushConstants(lava_file_reader& reader, VkCommandBuffer commandBuffer, VkPipelineLayout layout, VkShaderStageFlags stageFlags, uint32_t offset, uint32_t size, const void* pValues)
@@ -1066,6 +1164,7 @@ static void copy_shader_stage(shader_stage& stage, const VkPipelineShaderStageCr
 	stage.flags = info.flags;
 	stage.module = info.module;
 	stage.name = info.pName;
+	stage.stage = info.stage;
 	if (info.pSpecializationInfo)
 	{
 		stage.specialization_constants.resize(info.pSpecializationInfo->mapEntryCount);

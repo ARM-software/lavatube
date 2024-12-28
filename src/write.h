@@ -35,6 +35,16 @@ struct framedata
 	int local_frame;
 };
 
+union result_value
+{
+	VkResult result;
+	VkDeviceAddress device_address;
+	VkDeviceSize device_size;
+	uint32_t uint_32;
+	uint64_t uint_64;
+	PFN_vkVoidFunction function;
+};
+
 struct trace_capabilities
 {
 	void reset()
@@ -142,6 +152,8 @@ public:
 
 	debug_info debug;
 	int prev_callno = -1; // for validation
+	bool run = true;
+	result_value use_result; // for post-processing to set which result to store
 
 	memory_pool pool;
 	lava_writer* parent;
@@ -216,6 +228,7 @@ public:
 
 	std::atomic_int global_frame;
 	trace_records records;
+	bool run = true;
 
 	trace_metadata meta GUARDED_BY(frame_mutex);
 

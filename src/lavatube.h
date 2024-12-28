@@ -13,6 +13,7 @@
 #include "rangetracking.h"
 #include "vulkan_ext.h"
 #include "containers.h"
+#include "util_auto.h"
 
 #include <unordered_set>
 #include <list>
@@ -427,12 +428,44 @@ struct trackedcmdbuffer : trackable
 	}
 };
 
+struct trackedcommand // does _not_ inherit trackable
+{
+	lava_function_id id;
+	union data
+	{
+		struct bind_pipeline
+		{
+			VkPipelineBindPoint pipelineBindPoint;
+			uint32_t pipeline_index;
+		} bind_pipeline;
+		struct push_constants
+		{
+			uint32_t offset;
+			uint32_t size;
+			char* values;
+		} push_constants;
+		struct update_buffer
+		{
+			uint32_t offset;
+			uint32_t size;
+			uint32_t buffer_index;
+			char* values;
+		} update_buffer;
+		struct copy_buffer
+		{
+			uint32_t src_buffer_index;
+			uint32_t dst_buffer_index;
+			uint32_t regionCount;
+			VkBufferCopy* pRegions;
+		} copy_buffer;
+	} data;
+};
+
 struct trackedcmdbuffer_replay : trackedcmdbuffer
 {
 	using trackedcmdbuffer::trackedcmdbuffer; // inherit constructor
 
-	/// For now, this field is ONLY used during post-processing runs
-	std::vector<uint8_t> push_constants; // current state of the push constants, updated during cmdbuffer creation
+	std::list<trackedcommand> commands; // track select commands for post-processing
 };
 
 struct trackedcmdbuffer_trace : trackedcmdbuffer
