@@ -171,7 +171,7 @@ static uint64_t object_lookup(VkObjectType type, uint32_t index)
 	return 0;
 }
 
-void replay_pre_vkQueueSubmit2(VkQueue queue, uint32_t submitCount, const VkSubmitInfo2* pSubmits, VkFence fence)
+void replay_pre_vkQueueSubmit2(lava_file_reader& reader, VkQueue queue, uint32_t submitCount, const VkSubmitInfo2* pSubmits, VkFence fence)
 {
 	for (uint32_t i = 0; i < submitCount; i++)
 	{
@@ -179,9 +179,9 @@ void replay_pre_vkQueueSubmit2(VkQueue queue, uint32_t submitCount, const VkSubm
 	}
 }
 
-void replay_pre_vkQueueSubmit2KHR(VkQueue queue, uint32_t submitCount, const VkSubmitInfo2KHR* pSubmits, VkFence fence)
+void replay_pre_vkQueueSubmit2KHR(lava_file_reader& reader, VkQueue queue, uint32_t submitCount, const VkSubmitInfo2KHR* pSubmits, VkFence fence)
 {
-	replay_pre_vkQueueSubmit2(queue, submitCount, pSubmits, fence);
+	replay_pre_vkQueueSubmit2(reader, queue, submitCount, pSubmits, fence);
 }
 
 void replay_pre_vkQueueSubmit(lava_file_reader& reader, VkQueue queue, uint32_t submitCount, const VkSubmitInfo* pSubmits, VkFence fence)

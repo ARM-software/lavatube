@@ -23,6 +23,9 @@ for name in spec.structures:
 	if name in detect_words:
 		feature_detection_structs.append(name)
 
+def validate_funcs(lst):
+	for x in lst: assert x in spec.valid_functions, '%s is not a valid function' % x
+
 # Set this to zero to enable injecting sentinel values between each real value.
 debugcount = -1
 
@@ -75,15 +78,18 @@ extra_optionals = {
 }
 
 # Need to make extra sure these are externally synchronized
-extra_sync = [ 'vkQueueSubmit', 'vkQueueSubmit2', 'vkQueueWaitIdle', 'vkQueueBindSparse', 'vkDestroyDevice' ]
+extra_sync = [ 'vkQueueSubmit', 'vkQueueSubmit2', 'vkQueueSubmit2KHR', 'vkQueueWaitIdle', 'vkQueueBindSparse', 'vkDestroyDevice' ]
+validate_funcs(extra_sync)
 
 skip_opt_check = ['pAllocator', 'pUserData', 'pfnCallback', 'pfnUserCallback', 'pNext' ]
 # for these, thread barrier goes before the function call to sync us up to other threads:
 thread_barrier_funcs = [ 'vkQueueSubmit', 'vkResetDescriptorPool', 'vkResetCommandPool', 'vkUnmapMemory', 'vkFlushMappedMemoryRanges', 'vkResetQueryPool',
-	'vkResetQueryPoolEXT', 'vkQueueSubmit2', 'vkQueueSubmit2EXT', 'vkQueuePresentKHR', 'vkFrameEndTRACETOOLTEST', 'vkUnmapMemory2KHR' ]
+	'vkResetQueryPoolEXT', 'vkQueueSubmit2', 'vkQueueSubmit2KHR', 'vkQueuePresentKHR', 'vkUnmapMemory2KHR' ]
+validate_funcs(thread_barrier_funcs)
 # for these, thread barrier goes after the function call to sync other threads up to us:
 push_thread_barrier_funcs = [ 'vkQueueWaitIdle', 'vkDeviceWaitIdle', 'vkResetDescriptorPool', 'vkResetQueryPool', 'vkResetQueryPoolEXT', 'vkResetCommandPool',
-	'vkQueuePresentKHR', 'vkWaitForFences', 'vkGetFenceStatus', 'vkFrameEndTRACETOOLTEST' ]
+	'vkQueuePresentKHR', 'vkWaitForFences', 'vkGetFenceStatus' ]
+validate_funcs(push_thread_barrier_funcs)
 
 # TODO : Add support for these functions and structures
 functions_noop = [
@@ -95,6 +101,7 @@ functions_noop = [
 	'vkGetEncodedVideoSessionParametersKHR',
 	'vkCreatePipelineBinariesKHR', 'vkCreateIndirectCommandsLayoutEXT', 'vkCreateIndirectExecutionSetEXT', 'vkGetPipelineBinaryDataKHR',
 ]
+validate_funcs(functions_noop)
 struct_noop = []
 
 # these should skip their native/upstream call and leave everything up to the post-execute callback
@@ -108,24 +115,29 @@ noscreen_calls = [ 'vkDestroySurfaceKHR', 'vkAcquireNextImageKHR', 'vkCreateSwap
 
 # make sure we've thought about all the ways virtual swapchains interact with everything else
 virtualswap_calls = [ 'vkCreateSwapchainKHR', 'vkDestroySwapchainKHR', 'vkCreateSharedSwapchainsKHR', 'vkGetSwapchainStatusKHR', 'vkGetSwapchainCounterEXT' ]
+validate_funcs(virtualswap_calls)
 
 # Set this to true to generate packet statistics. The generated code will be quite a lot more bloated.
 debugstats = False
 
-# These functions are hard-coded in hardcoded_{write|read}.cpp
+# These functions are hard-coded in hardcode_{write|read}.cpp
 hardcoded = [ 'vkGetSwapchainImagesKHR', 'vkCreateAndroidSurfaceKHR', 'vkGetDeviceProcAddr',
 	'vkGetInstanceProcAddr', 'vkCreateWaylandSurfaceKHR', 'vkCreateHeadlessSurfaceEXT', 'vkCreateXcbSurfaceKHR', 'vkCreateXlibSurfaceKHR',
 	'vkDestroySurfaceKHR', 'vkGetDeviceQueue', 'vkGetDeviceQueue2', "vkGetAndroidHardwareBufferPropertiesANDROID", "vkGetMemoryAndroidHardwareBufferANDROID",
 	'vkEnumerateInstanceLayerProperties', 'vkEnumerateInstanceExtensionProperties', 'vkEnumerateDeviceLayerProperties', 'vkEnumerateDeviceExtensionProperties',
 	'vkGetPhysicalDeviceXlibPresentationSupportKHR', 'vkCreateWin32SurfaceKHR', 'vkCreateDirectFBSurfaceEXT', 'vkCreateMetalSurfaceEXT' ]
+validate_funcs(hardcoded)
 hardcoded_write = [ 'vkGetPhysicalDeviceToolPropertiesEXT', 'vkGetPhysicalDeviceToolProperties', 'vkGetPhysicalDeviceQueueFamilyProperties' ]
+validate_funcs(hardcoded_write)
 hardcoded_read = [ 'vkCmdBuildAccelerationStructuresIndirectKHR' ]
+validate_funcs(hardcoded_read)
 # For these functions it is ok if the function pointer is missing, since we implement them ourselves
 layer_implemented = [ 'vkCreateDebugReportCallbackEXT', 'vkDestroyDebugReportCallbackEXT', 'vkDebugReportMessageEXT', 'vkDebugMarkerSetObjectTagEXT',
 	'vkDebugMarkerSetObjectNameEXT', 'vkCmdDebugMarkerBeginEXT', 'vkCmdDebugMarkerEndEXT', 'vkCmdDebugMarkerInsertEXT', 'vkSetDebugUtilsObjectNameEXT',
 	'vkSetDebugUtilsObjectTagEXT',	'vkQueueBeginDebugUtilsLabelEXT', 'vkQueueEndDebugUtilsLabelEXT', 'vkQueueInsertDebugUtilsLabelEXT',
 	'vkCmdBeginDebugUtilsLabelEXT', 'vkCmdEndDebugUtilsLabelEXT', 'vkCmdInsertDebugUtilsLabelEXT', 'vkCreateDebugUtilsMessengerEXT',
 	'vkDestroyDebugUtilsMessengerEXT', 'vkSubmitDebugUtilsMessageEXT', 'vkGetPhysicalDeviceToolPropertiesEXT', 'vkGetPhysicalDeviceToolProperties' ]
+validate_funcs(layer_implemented)
 # functions we should ignore on replay
 ignore_on_read = [ 'vkGetMemoryHostPointerPropertiesEXT', 'vkCreateDebugUtilsMessengerEXT', 'vkDestroyDebugUtilsMessengerEXT', 'vkAllocateMemory',
 	'vkMapMemory', 'vkUnmapMemory', 'vkCreateDebugReportCallbackEXT', 'vkDestroyDebugReportCallbackEXT', 'vkFlushMappedMemoryRanges',
@@ -133,20 +145,26 @@ ignore_on_read = [ 'vkGetMemoryHostPointerPropertiesEXT', 'vkCreateDebugUtilsMes
 	'vkGetImageMemoryRequirements2KHR', 'vkGetBufferMemoryRequirements2KHR', 'vkGetImageSparseMemoryRequirements2KHR', 'vkGetImageMemoryRequirements',
 	'vkGetBufferMemoryRequirements', 'vkGetImageSparseMemoryRequirements', 'vkGetImageMemoryRequirements2', 'vkGetBufferMemoryRequirements2',
 	'vkGetImageSparseMemoryRequirements2' ]
+validate_funcs(ignore_on_read)
 # functions we should not call natively when tracing - let pre or post calls handle it
 ignore_on_trace = []
+validate_funcs(ignore_on_trace)
 # these functions have hard-coded post-execute callbacks
 replay_pre_calls = [ 'vkDestroyInstance', 'vkDestroyDevice', 'vkCreateDevice', 'vkCreateSampler', 'vkQueuePresentKHR', 'vkCreateSwapchainKHR',
 	'vkCreateSharedSwapchainsKHR', 'vkCreateGraphicsPipelines', 'vkCreateComputePipelines', 'vkCreateRayTracingPipelinesKHR', 'vkCmdPushConstants2KHR',
-	'vkCmdPushConstants2', 'vkQueueSubmit' ]
+	'vkQueueSubmit', 'vkQueueSubmit2', 'vkQueueSubmit2KHR' ]
+validate_funcs(replay_pre_calls)
 replay_post_calls = [ 'vkCreateInstance', 'vkDestroyInstance', 'vkQueuePresentKHR', 'vkAcquireNextImageKHR', 'vkAcquireNextImage2KHR',
 	'vkGetBufferDeviceAddress', 'vkGetBufferDeviceAddressKHR', 'vkGetAccelerationStructureDeviceAddressKHR' ]
-replay_postprocess_calls = [ 'vkCmdPushConstants', 'vkCmdPushConstants2', 'vkCmdPushConstants2KHR' ]
+validate_funcs(replay_post_calls)
+replay_postprocess_calls = [ 'vkCmdPushConstants', 'vkCmdPushConstants2KHR' ]
+validate_funcs(replay_postprocess_calls)
 trace_pre_calls = [ 'vkQueueSubmit', 'vkCreateInstance', 'vkCreateDevice', 'vkFreeMemory', 'vkQueueSubmit2', 'vkQueueSubmit2KHR' ]
+validate_funcs(trace_pre_calls)
 trace_post_calls = [ 'vkCreateInstance', 'vkCreateDevice', 'vkDestroyInstance', 'vkGetPhysicalDeviceFeatures', 'vkGetPhysicalDeviceProperties',
 		'vkGetPhysicalDeviceSurfaceCapabilitiesKHR', 'vkBindImageMemory', 'vkBindBufferMemory', 'vkBindImageMemory2', 'vkBindImageMemory2KHR',
 		'vkBindBufferMemory2', 'vkUpdateDescriptorSets', 'vkFlushMappedMemoryRanges', 'vkQueuePresentKHR', 'vkMapMemory2KHR',
-		'vkMapMemory', 'vkCmdBindDescriptorSets', 'vkBindBufferMemory2KHR', 'vkCmdPushDescriptorSet',
+		'vkMapMemory', 'vkCmdBindDescriptorSets', 'vkBindBufferMemory2KHR', 'vkCmdPushDescriptorSet2KHR',
 		'vkGetImageMemoryRequirements', 'vkGetPipelineCacheData', 'vkAcquireNextImageKHR', 'vkAcquireNextImage2KHR',
 		'vkGetBufferMemoryRequirements', 'vkGetBufferMemoryRequirements2', 'vkGetImageMemoryRequirements2', 'vkGetPhysicalDeviceMemoryProperties',
 		'vkGetPhysicalDeviceFormatProperties', 'vkGetPhysicalDeviceFormatProperties2', 'vkCmdPushDescriptorSetKHR', 'vkCreateSwapchainKHR',
@@ -154,7 +172,9 @@ trace_post_calls = [ 'vkCreateInstance', 'vkCreateDevice', 'vkDestroyInstance', 
 		'vkGetDeviceImageMemoryRequirements', 'vkGetDeviceImageMemoryRequirementsKHR', 'vkGetPhysicalDeviceFeatures2', 'vkGetPhysicalDeviceFeatures2KHR',
 		'vkGetPhysicalDeviceMemoryProperties2', 'vkGetDeviceImageSparseMemoryRequirementsKHR', 'vkGetDeviceImageSparseMemoryRequirements',
 		'vkCreateShaderModule', 'vkGetBufferDeviceAddress', 'vkGetBufferDeviceAddressKHR', 'vkGetAccelerationStructureDeviceAddressKHR' ]
+validate_funcs(trace_post_calls)
 skip_post_calls = [ 'vkGetQueryPoolResults', 'vkGetPhysicalDeviceXcbPresentationSupportKHR' ]
+validate_funcs(skip_post_calls)
 # Workaround to be able to rewrite parameter inputs while tracing: These input variables are copied and replaced to not be const anymore.
 deconstify = {
 	'vkAllocateMemory' : 'pAllocateInfo',
@@ -166,6 +186,7 @@ deconstify = {
 	'vkGetPhysicalDeviceQueueFamilyPerformanceQueryPassesKHR' : 'pPerformanceQueryCreateInfo',
 	'vkCreateVideoSessionKHR' : 'pCreateInfo',
 }
+validate_funcs(deconstify.keys())
 # Workaround to deconstify nested structures
 deconst_struct = [
 	'VkDeviceQueueCreateInfo', 'VkDeviceQueueInfo2', 'VkQueryPoolPerformanceCreateInfoKHR', 'VkVideoSessionCreateInfoKHR', 'VkDeviceCreateInfo', 'VkCommandPoolCreateInfo'
@@ -1574,7 +1595,7 @@ def loadfunc(name, node, target, header):
 				z.do('if (stored_retval == VK_SUCCESS) { flags |= VK_QUERY_RESULT_WAIT_BIT; flags &= ~VK_QUERY_RESULT_PARTIAL_BIT; }')
 
 			# current
-			z.do(prefix)
+			z.do(prefix.strip())
 			z.brace_begin()
 			z.do('retval = wrap_%s(%s);' % (name, ', '.join(call_list)))
 
