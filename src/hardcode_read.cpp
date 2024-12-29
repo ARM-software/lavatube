@@ -1061,6 +1061,63 @@ void replay_postprocess_vkCmdPushConstants2(lava_file_reader& reader, VkCommandB
 	replay_postprocess_vkCmdPushConstants2KHR(reader, commandBuffer, pPushConstantsInfo);
 }
 
+static void copy_shader_stage(shader_stage& stage, const VkPipelineShaderStageCreateInfo& info)
+{
+	stage.flags = info.flags;
+	stage.module = info.module;
+	stage.name = info.pName;
+	if (info.pSpecializationInfo)
+	{
+		stage.specialization_constants.resize(info.pSpecializationInfo->mapEntryCount);
+		memcpy(stage.specialization_constants.data(), info.pSpecializationInfo->pMapEntries, info.pSpecializationInfo->mapEntryCount * sizeof(uint32_t));
+		stage.specialization_data.resize(info.pSpecializationInfo->dataSize);
+		memcpy(stage.specialization_data.data(), info.pSpecializationInfo->pData, info.pSpecializationInfo->dataSize);
+	}
+}
+
+void replay_postprocess_vkCreateComputePipelines(lava_file_reader& reader, VkResult result, VkDevice device, VkPipelineCache pipelineCache, uint32_t createInfoCount,
+	const VkComputePipelineCreateInfo* pCreateInfos, const VkAllocationCallbacks* pAllocator, VkPipeline* pPipelines)
+{
+	for (uint32_t i = 0; i < createInfoCount; i++)
+	{
+		const uint32_t pipeline_index = index_to_VkPipeline.index(pPipelines[i]);
+		trackedpipeline& pipeline_data = VkPipeline_index.at(pipeline_index);
+		pipeline_data.shader_stages.resize(1);
+		copy_shader_stage(pipeline_data.shader_stages[0], pCreateInfos[i].stage);
+	}
+}
+
+void replay_postprocess_vkCreateGraphicsPipelines(lava_file_reader& reader, VkResult result, VkDevice device, VkPipelineCache pipelineCache, uint32_t createInfoCount,
+	const VkGraphicsPipelineCreateInfo* pCreateInfos, const VkAllocationCallbacks* pAllocator, VkPipeline* pPipelines)
+{
+	for (uint32_t i = 0; i < createInfoCount; i++)
+	{
+		const uint32_t pipeline_index = index_to_VkPipeline.index(pPipelines[i]);
+		trackedpipeline& pipeline_data = VkPipeline_index.at(pipeline_index);
+		pipeline_data.shader_stages.resize(pCreateInfos[i].stageCount);
+		for (uint32_t stage = 0; stage < pCreateInfos[i].stageCount; stage++)
+		{
+			copy_shader_stage(pipeline_data.shader_stages[0], pCreateInfos[i].pStages[stage]);
+		}
+	}
+}
+
+
+void replay_postprocess_vkCreateRayTracingPipelinesKHR(lava_file_reader& reader, VkResult result, VkDevice device, VkDeferredOperationKHR deferredOperation, VkPipelineCache pipelineCache,
+	uint32_t createInfoCount, const VkRayTracingPipelineCreateInfoKHR* pCreateInfos, const VkAllocationCallbacks* pAllocator, VkPipeline* pPipelines)
+{
+	for (uint32_t i = 0; i < createInfoCount; i++)
+	{
+		const uint32_t pipeline_index = index_to_VkPipeline.index(pPipelines[i]);
+		trackedpipeline& pipeline_data = VkPipeline_index.at(pipeline_index);
+		pipeline_data.shader_stages.resize(pCreateInfos[i].stageCount);
+		for (uint32_t stage = 0; stage < pCreateInfos[i].stageCount; stage++)
+		{
+			copy_shader_stage(pipeline_data.shader_stages[0], pCreateInfos[i].pStages[stage]);
+		}
+	}
+}
+
 void replay_pre_vkCmdPushConstants2KHR(lava_file_reader& reader, VkCommandBuffer commandBuffer, const VkPushConstantsInfoKHR* pPushConstantsInfo)
 {
 	assert(pPushConstantsInfo);

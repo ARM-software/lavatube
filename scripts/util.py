@@ -158,7 +158,8 @@ validate_funcs(replay_pre_calls)
 replay_post_calls = [ 'vkCreateInstance', 'vkDestroyInstance', 'vkQueuePresentKHR', 'vkAcquireNextImageKHR', 'vkAcquireNextImage2KHR',
 	'vkGetBufferDeviceAddress', 'vkGetBufferDeviceAddressKHR', 'vkGetAccelerationStructureDeviceAddressKHR' ]
 validate_funcs(replay_post_calls)
-replay_postprocess_calls = [ 'vkCmdPushConstants', 'vkCmdPushConstants2KHR' ]
+replay_postprocess_calls = [ 'vkCmdPushConstants', 'vkCmdPushConstants2KHR', 'vkCreateRayTracingPipelinesKHR', 'vkCreateGraphicsPipelines',
+	'vkCreateComputePipelines' ]
 validate_funcs(replay_postprocess_calls)
 trace_pre_calls = [ 'vkQueueSubmit', 'vkCreateInstance', 'vkCreateDevice', 'vkFreeMemory', 'vkQueueSubmit2', 'vkQueueSubmit2KHR' ]
 validate_funcs(trace_pre_calls)
@@ -1259,6 +1260,7 @@ def save_add_tracking(name):
 			z.do('add->cache = pipelineCache;')
 			if name == 'vkCreateGraphicsPipelines': z.do('add->type = VK_PIPELINE_BIND_POINT_GRAPHICS;')
 			elif name == 'vkCreateComputePipelines': z.do('add->type = VK_PIPELINE_BIND_POINT_COMPUTE;')
+			elif name == 'PFN_vkCreateRayTracingPipelinesKHR': z.do('add->type = VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR;')
 		elif type == 'VkSwapchainKHR':
 			z.do('add->info = pCreateInfos[i];')
 		z.do('DLOG2("insert %s into %s index %%u", (unsigned)add->index);' % (type, name))
@@ -1337,6 +1339,9 @@ def load_add_tracking(name):
 				z.do('data.format = pCreateInfo->format; // as above, might be missing in json')
 			elif type == 'VkDescriptorSet':
 				z.do('data.pool = pAllocateInfo->descriptorPool;')
+			elif type == 'VkShaderModule':
+				z.do('data.code.resize(pCreateInfo->codeSize);')
+				z.do('memcpy(data.code.data(), pCreateInfo->pCode, pCreateInfo->codeSize * sizeof(uint32_t));')
 			z.do('data.enter_created();')
 		else: # multiple
 			z.do('for (unsigned i = 0; i < %s; i++)' % count)

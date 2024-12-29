@@ -197,6 +197,7 @@ struct trackedshadermodule : trackable
 	using trackable::trackable; // inherit constructor
 	bool enables_device_address = false;
 	size_t size = 0;
+	std::vector<uint32_t> code; // only for replayer
 };
 
 struct trackedmemoryobject : trackedobject
@@ -372,12 +373,23 @@ struct trackedfence : trackable
 	int frame_delay = -1; // delay fuse uninitialized
 };
 
+struct shader_stage
+{
+	VkPipelineShaderStageCreateFlags flags;
+	VkShaderStageFlagBits stage;
+	VkShaderModule module;
+	std::string name;
+	std::vector<VkSpecializationMapEntry> specialization_constants;
+	std::vector<char> specialization_data;
+};
+
 struct trackedpipeline : trackable
 {
 	using trackable::trackable; // inherit constructor
 	VkPipelineBindPoint type = VK_PIPELINE_BIND_POINT_MAX_ENUM;
 	VkPipelineCreateFlags flags = 0;
 	VkPipelineCache cache = VK_NULL_HANDLE;
+	std::vector<shader_stage> shader_stages; // only set for postprocessing
 
 	void self_test() const
 	{
