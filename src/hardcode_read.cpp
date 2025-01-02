@@ -2197,6 +2197,7 @@ static trackedaccelerationstructure trackedaccelerationstructure_json(const Json
 	t.offset = (VkDeviceSize)v["offset"].asUInt64();
 	t.buffer_index = v["buffer_index"].asUInt();
 	t.enter_initialized();
+	t.object_type = VK_OBJECT_TYPE_ACCELERATION_STRUCTURE_KHR;
 	return t;
 }
 
@@ -2211,7 +2212,7 @@ static trackedbuffer trackedbuffer_json(const Json::Value& v)
 	t.req.size = v["req_size"].asUInt64();
 	t.req.alignment = v["req_alignment"].asUInt();
 	t.req.memoryTypeBits = 0;
-	t.type = VK_OBJECT_TYPE_BUFFER;
+	t.object_type = VK_OBJECT_TYPE_BUFFER;
 	t.enter_initialized();
 	return t;
 }
@@ -2240,7 +2241,7 @@ static trackedimage trackedimage_json(const Json::Value& v)
 		t.extent.height = v["extent"][1].asUInt();
 		t.extent.depth = v["extent"][2].asUInt();
 	}
-	t.type = VK_OBJECT_TYPE_IMAGE;
+	t.object_type = VK_OBJECT_TYPE_IMAGE;
 	t.enter_initialized();
 	return t;
 }

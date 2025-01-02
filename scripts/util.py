@@ -1152,7 +1152,7 @@ def save_add_tracking(name):
 			z.do('add->flags = pCreateInfo->flags;')
 			z.do('add->usage = pCreateInfo->usage;')
 			z.do('add->sharingMode = pCreateInfo->sharingMode;')
-			z.do('add->type = VK_OBJECT_TYPE_BUFFER;')
+			z.do('add->object_type = VK_OBJECT_TYPE_BUFFER;')
 		elif type == 'VkPipelineLayout':
 			z.do('for (uint32_t i = 0; i < pCreateInfo->pushConstantRangeCount; i++) { const auto& v = pCreateInfo->pPushConstantRanges[i]; if (add->push_constant_space_used < v.offset + v.size) add->push_constant_space_used = v.offset + v.size; }')
 		elif type == 'VkImage':
@@ -1162,7 +1162,7 @@ def save_add_tracking(name):
 			z.do('add->imageType = pCreateInfo->imageType;')
 			z.do('add->flags = pCreateInfo->flags;')
 			z.do('add->format = pCreateInfo->format;')
-			z.do('add->type = VK_OBJECT_TYPE_IMAGE;')
+			z.do('add->object_type = VK_OBJECT_TYPE_IMAGE;')
 			z.do('add->initialLayout = pCreateInfo->initialLayout;')
 			z.do('add->currentLayout = pCreateInfo->initialLayout;')
 			z.do('add->samples = pCreateInfo->samples;')
@@ -1236,6 +1236,7 @@ def save_add_tracking(name):
 			z.do('add->buffer = pCreateInfo->buffer;')
 			z.do('add->buffer_index = writer.parent->records.VkBuffer_index.at(pCreateInfo->buffer)->index;')
 			z.do('add->size = pCreateInfo->size;')
+			z.do('add->object_type = VK_OBJECT_TYPE_ACCELERATION_STRUCTURE_KHR;')
 		z.do('DLOG2("insert %s into %s index %%u", (unsigned)add->index);' % (type, name))
 		z.do('add->enter_created();')
 		z.do('writer.write_handle(add);')

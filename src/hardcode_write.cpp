@@ -656,7 +656,7 @@ static void memory_update(lava_file_writer& writer, trackedqueue* queue_data, co
 					range r2 = { r.first + object_data->offset, r.last + object_data->offset };
 					assert(r2.last < object_data->offset + object_data->size);
 					range v = memory_data->exposed.fetch(r2, memory_data->ptr != nullptr);
-					writer.write_uint8_t((uint8_t)(object_data->type == VK_OBJECT_TYPE_IMAGE) ? PACKET_IMAGE_UPDATE : PACKET_BUFFER_UPDATE);
+					writer.write_uint8_t((uint8_t)(object_data->object_type == VK_OBJECT_TYPE_IMAGE) ? PACKET_IMAGE_UPDATE : PACKET_BUFFER_UPDATE);
 					writer.write_handle(device_data);
 					writer.write_handle(object_data);
 					written += writer.write_patch(cloneptr, changedptr, v.first - object_data->offset, v.last - v.first + 1);
@@ -1778,7 +1778,7 @@ void trace_post_vkCreateSwapchainKHR(lava_file_writer& writer, VkResult result, 
 	{
 		auto* add = writer.parent->records.VkImage_index.add(pSwapchainImages[i], writer.current);
 		add->last_modified = writer.current;
-		add->type = VK_OBJECT_TYPE_IMAGE;
+		add->object_type = VK_OBJECT_TYPE_IMAGE;
 		add->sharingMode = pCreateInfo->imageSharingMode;
 		add->is_swapchain_image = true;
 		add->tiling = VK_IMAGE_TILING_OPTIMAL;

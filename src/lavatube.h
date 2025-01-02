@@ -160,7 +160,7 @@ struct trackedobject : trackable
 	VkDeviceSize size = 0;
 	VkDeviceSize offset = 0; // our offset into our backing memory
 	VkMemoryRequirements req = {};
-	VkObjectType type = VK_OBJECT_TYPE_UNKNOWN;
+	VkObjectType object_type = VK_OBJECT_TYPE_UNKNOWN;
 	uint64_t written = 0; // bytes written out for this object
 	uint32_t updates = 0; // number of times it was updated
 	bool accessible = false; // whether our backing memory is host visible and understandable
@@ -187,7 +187,7 @@ struct trackedobject : trackable
 	{
 		static_assert(offsetof(trackedobject, magic) == 0, "ICD loader magic must be at offset zero!"); \
 		if (is_state(states::bound)) assert(backing != VK_NULL_HANDLE);
-		assert(type != VK_OBJECT_TYPE_UNKNOWN);
+		assert(object_type != VK_OBJECT_TYPE_UNKNOWN);
 		assert(size != VK_WHOLE_SIZE);
 		trackable::self_test();
 	}
@@ -221,7 +221,7 @@ struct trackedbuffer : trackedmemoryobject
 		assert(flags != VK_BUFFER_CREATE_FLAG_BITS_MAX_ENUM);
 		assert(sharingMode != VK_SHARING_MODE_MAX_ENUM);
 		assert(usage != VK_BUFFER_USAGE_FLAG_BITS_MAX_ENUM);
-		assert(type == VK_OBJECT_TYPE_BUFFER);
+		assert(object_type == VK_OBJECT_TYPE_BUFFER);
 		if (is_state(states::bound)) assert(size != 0);
 		trackedobject::self_test();
 	}
@@ -241,6 +241,7 @@ struct trackedaccelerationstructure : trackedmemoryobject
 		assert(buffer != VK_NULL_HANDLE);
 		assert(buffer_index != CONTAINER_INVALID_INDEX);
 		assert(type != VK_ACCELERATION_STRUCTURE_TYPE_MAX_ENUM_KHR);
+		assert(object_type == VK_OBJECT_TYPE_ACCELERATION_STRUCTURE_KHR);
 	}
 };
 
@@ -272,7 +273,7 @@ struct trackedimage : trackedobject
 		assert(format != VK_FORMAT_MAX_ENUM);
 		assert(initialLayout != VK_IMAGE_LAYOUT_MAX_ENUM);
 		assert(currentLayout != VK_IMAGE_LAYOUT_MAX_ENUM);
-		assert(type == VK_OBJECT_TYPE_IMAGE);
+		assert(object_type == VK_OBJECT_TYPE_IMAGE);
 		trackedobject::self_test();
 	}
 };
