@@ -5,7 +5,6 @@
 #include <inttypes.h>
 
 #include "util.h"
-#include "read.h"
 
 #include "filewriter.h"
 #include "filereader.h"

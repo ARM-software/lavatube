@@ -1523,7 +1523,6 @@ VKAPI_ATTR void trace_vkUpdateBufferTRACETOOLTEST(VkDevice device, VkBuffer dstB
 	if (buffer_data)
 	{
 		buffer_data->last_modified = writer.current;
-		buffer_data->last_write = writer.current;
 		buffer_data->self_test();
 	}
 	write_VkUpdateMemoryInfoTRACETOOLTEST(writer, pInfo);
@@ -1572,7 +1571,6 @@ VKAPI_ATTR void trace_vkPatchBufferTRACETOOLTEST(VkDevice device, VkBuffer dstBu
 	if (buffer_data)
 	{
 		buffer_data->last_modified = writer.current;
-		buffer_data->last_write = writer.current;
 		buffer_data->self_test();
 	}
 	write_VkPatchChunkListTRACETOOLTEST(writer, pList);
@@ -1613,7 +1611,6 @@ VKAPI_ATTR void trace_vkCmdUpdateBuffer2TRACETOOLTEST(VkCommandBuffer commandBuf
 	if (buffer_data)
 	{
 		buffer_data->last_modified = writer.current;
-		buffer_data->last_write = writer.current;
 		buffer_data->self_test();
 	}
 	writer.commandBuffer = commandBuffer;
@@ -2502,13 +2499,6 @@ static Json::Value trackedbuffer_json(const trackedbuffer* t)
 	v["req_alignment"] = (unsigned)t->req.alignment;
 	v["written"] = (Json::Value::UInt64)t->written;
 	v["updates"] = (unsigned)t->updates;
-	if (t->last_write.frame != UINT32_MAX) // tho not sure if this will ever be useful
-	{
-		v["frame_last_write"] = t->destroyed.frame;
-		v["call_last_write"] = t->destroyed.call;
-		v["thread_last_write"] = t->destroyed.thread;
-		v["api_last_write"] = t->destroyed.call_id;
-	}
 	if (t->device_address != 0)
 	{
 		v["device_address"] = (Json::Value::UInt64)t->device_address;

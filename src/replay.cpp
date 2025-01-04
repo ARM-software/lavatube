@@ -20,7 +20,7 @@ static lava_reader replayer;
 
 static void usage()
 {
-	printf("replay %d.%d.%d-" RELTYPE " command line options\n", LAVATUBE_VERSION_MAJOR, LAVATUBE_VERSION_MINOR, LAVATUBE_VERSION_PATCH);
+	printf("lava-replay %d.%d.%d-" RELTYPE " command line options\n", LAVATUBE_VERSION_MAJOR, LAVATUBE_VERSION_MINOR, LAVATUBE_VERSION_PATCH);
 	printf("-h/--help              This help\n");
 	printf("-d/--debug level       Set debug level [0,1,2,3]\n");
 	printf("-g/--gpu gpu           Select physical device to use (by index value)\n");

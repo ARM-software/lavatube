@@ -55,7 +55,7 @@ struct trackable
 	std::string name;
 	trackable() {}
 	change_source creation;
-	change_source last_modified;
+	change_source last_modified; // used by tracer to track thread synchronization dependencies and by post-processor
 	change_source destroyed;
 
 	bool is_state(states s) const { return (uint8_t)s == state; }

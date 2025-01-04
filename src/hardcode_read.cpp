@@ -1368,6 +1368,7 @@ VKAPI_ATTR void retrace_vkUpdateBufferTRACETOOLTEST(lava_file_reader& reader)
 	char* ptr = mem_map(reader, device, loc);
 	memcpy(ptr, info.pData, info.dataSize);
 	mem_unmap(reader, device, loc, ar, ptr);
+	tbuf.last_modified = reader.current;
 }
 
 VKAPI_ATTR void retrace_vkUpdateImageTRACETOOLTEST(lava_file_reader& reader)
@@ -1392,6 +1393,7 @@ VKAPI_ATTR void retrace_vkUpdateImageTRACETOOLTEST(lava_file_reader& reader)
 	char* ptr = mem_map(reader, device, loc);
 	memcpy(ptr, info.pData, info.dataSize);
 	mem_unmap(reader, device, loc, ar, ptr);
+	timg.last_modified = reader.current;
 }
 
 VKAPI_ATTR void retrace_vkPatchBufferTRACETOOLTEST(lava_file_reader& reader)
@@ -1416,6 +1418,7 @@ VKAPI_ATTR void retrace_vkPatchBufferTRACETOOLTEST(lava_file_reader& reader)
 	char* ptr = mem_map(reader, device, loc);
 	int32_t changed = reader.read_patch(ptr, loc.size);
 	mem_unmap(reader, device, loc, ar, ptr);
+	tbuf.last_modified = reader.current;
 }
 
 VKAPI_ATTR void retrace_vkPatchImageTRACETOOLTEST(lava_file_reader& reader)
@@ -1440,6 +1443,7 @@ VKAPI_ATTR void retrace_vkPatchImageTRACETOOLTEST(lava_file_reader& reader)
 	char* ptr = mem_map(reader, device, loc);
 	memcpy(ptr, info.pData, info.dataSize);
 	mem_unmap(reader, device, loc, ar, ptr);
+	timg.last_modified = reader.current;
 }
 
 void read_VkUpdateMemoryInfoTRACETOOLTEST(lava_file_reader& reader, VkUpdateMemoryInfoTRACETOOLTEST* sptr)
@@ -1465,6 +1469,7 @@ VKAPI_ATTR void retrace_vkCmdUpdateBuffer2TRACETOOLTEST(lava_file_reader& reader
 	const uint32_t commandbuffer_index = reader.read_handle();
 	const uint32_t buffer_index = reader.read_handle();
 	VkBuffer dstBuffer = index_to_VkBuffer.at(buffer_index);
+	trackedobject& tbuf = VkBuffer_index.at(buffer_index);
 	VkCommandBuffer commandBuffer = index_to_VkCommandBuffer.at(commandbuffer_index);
 	read_VkUpdateMemoryInfoTRACETOOLTEST(reader, &info);
 	VkAddressRemapTRACETOOLTEST* ar = (VkAddressRemapTRACETOOLTEST*)find_extension(&info, VK_STRUCTURE_TYPE_ADDRESS_REMAP_TRACETOOLTEST);
@@ -1472,6 +1477,7 @@ VKAPI_ATTR void retrace_vkCmdUpdateBuffer2TRACETOOLTEST(lava_file_reader& reader
 	if (ar) translate_addresses(reader, ar->count, ar->pOffsets, const_cast<void*>(info.pData));
 	if (reader.run) wrap_vkCmdUpdateBuffer(commandBuffer, dstBuffer, info.dstOffset, info.dataSize, info.pData);
 	ILOG("Ran vkCmdUpdateBuffer2TRACETOOLTEST"); // TBD REMOVE ME
+	tbuf.last_modified = reader.current;
 }
 
 void retrace_vkCmdBuildAccelerationStructuresIndirectKHR(lava_file_reader& reader)

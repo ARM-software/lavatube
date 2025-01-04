@@ -18,12 +18,14 @@ static lava_reader replayer;
 
 static void usage()
 {
-	printf("lava-validate %d.%d.%d-" RELTYPE " command line options\n", LAVATUBE_VERSION_MAJOR, LAVATUBE_VERSION_MINOR, LAVATUBE_VERSION_PATCH);
+	printf("lava-convert [options] <input filename> <output filename>\n");
+	printf("\n");
+	printf("lava-coonvert %d.%d.%d-" RELTYPE " command line options\n", LAVATUBE_VERSION_MAJOR, LAVATUBE_VERSION_MINOR, LAVATUBE_VERSION_PATCH);
 	printf("-h/--help              This help\n");
 	printf("-d/--debug level       Set debug level [0,1,2,3]\n");
 	printf("-o/--debugfile FILE    Output debug output to the given file\n");
 	printf("-f/--frames start end  Select a frame range\n");
-	//printf("-p/--preload           Load entire selected frame range into memory before running it\n");
+	printf("-r/--remap             Adding remapping of device addresses\n");
 	exit(-1);
 }
 
@@ -116,8 +118,9 @@ int main(int argc, char **argv)
 	int end = -1;
 	int heap_size = -1;
 	int remaining = argc - 1; // zeroth is name of program
-	std::string filename;
-	bool preload = false;
+	std::string filename_input;
+	std::string filename_output;
+	bool remap = false;
 	for (int i = 1; i < argc; i++)
 	{
 		if (match(argv[i], "-h", "--help", remaining))
@@ -141,20 +144,22 @@ int main(int argc, char **argv)
 			start = get_int(argv[++i], remaining);
 			end = get_int(argv[++i], remaining);
 		}
-		else if (match(argv[i], "-p", "--preload", remaining))
+		else if (match(argv[i], "-r", "--remap", remaining))
 		{
-			preload = true;
+			remap = true;
 		}
 		else if (strcmp(argv[i], "--") == 0) // eg in case you have a file named -f ...
 		{
 			remaining--;
-			filename = get_str(argv[++i], remaining);
+			filename_input = get_str(argv[++i], remaining);
+			filename_output = get_str(argv[++i], remaining);
 			if (remaining > 0) usage();
 			break; // stop parsing cmd line options
 		}
 		else
 		{
-			filename = get_str(argv[i], remaining);
+			filename_input = get_str(argv[i], remaining);
+			filename_output = get_str(argv[i], remaining);
 			if (remaining > 0)
 			{
 				printf("Options after filename is not valid!\n\n");
@@ -163,19 +168,19 @@ int main(int argc, char **argv)
 		}
 	}
 
-	if (filename.empty())
+	if (filename_input.empty())
 	{
-		printf("No file argument given\n\n");
+		printf("No file arguments given\n\n");
 		usage();
 	}
 
 	replayer.run = false; // do not actually run anything
-	replayer.init(filename, heap_size);
+	replayer.init(filename_input, heap_size);
 	replayer.parameters(start, end, preload);
 
 	// Read all thread files
-	std::vector<std::string> threadfiles = packed_files(filename, "thread_");
-	if (threadfiles.size() == 0) DIE("Failed to find any threads in %s!", filename.c_str());
+	std::vector<std::string> threadfiles = packed_files(filename_input, "thread_");
+	if (threadfiles.size() == 0) DIE("Failed to find any threads in %s!", filename_input.c_str());
 	run_multithreaded(threadfiles.size());
 	if (p__debug_destination) fclose(p__debug_destination);
 	return 0;
