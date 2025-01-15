@@ -1021,7 +1021,7 @@ void read_VkAddressRemapTRACETOOLTEST(lava_file_reader& reader, VkAddressRemapTR
 		reader.read_array(backing, sptr->count);
 		sptr->pOffsets = backing;
 	}
-	ILOG("Got a memory markup struct with target=%u count=%u", (unsigned)sptr->target, (unsigned)sptr->count);
+	DLOG("Got a memory markup struct with target=%u count=%u", (unsigned)sptr->target, (unsigned)sptr->count);
 }
 
 static void translate_addresses(lava_file_reader& reader, uint32_t count, VkDeviceSize* pOffsets, void* ptr)
@@ -1032,7 +1032,7 @@ static void translate_addresses(lava_file_reader& reader, uint32_t count, VkDevi
 		uint64_t* addr = (uint64_t*)(((char*)ptr) + offset);
 		const uint64_t current = *addr;
 		const uint64_t newval = reader.parent->device_address_remapping.translate_address(current);
-		ILOG("%u: Changing memory value at offset %lu from %lu to %lu", (unsigned)i, (unsigned long)offset, (unsigned long)current, (unsigned long)newval);
+		DLOG("%u: Changing memory value at offset %lu from %lu to %lu", (unsigned)i, (unsigned long)offset, (unsigned long)current, (unsigned long)newval);
 		*addr = newval;
 	}
 }
@@ -1355,7 +1355,7 @@ VKAPI_ATTR void retrace_vkUpdateBufferTRACETOOLTEST(lava_file_reader& reader)
 
 	// Lookup
 	VkDevice device = index_to_VkDevice.at(device_index);
-	trackedobject& tbuf = VkBuffer_index.at(buffer_index);
+	trackedbuffer& tbuf = VkBuffer_index.at(buffer_index);
 	suballoc_location loc = suballoc_find_buffer_memory(buffer_index);
 	VkAddressRemapTRACETOOLTEST* ar = (VkAddressRemapTRACETOOLTEST*)find_extension(&info, (VkStructureType)VK_STRUCTURE_TYPE_ADDRESS_REMAP_TRACETOOLTEST);
 
@@ -1367,6 +1367,11 @@ VKAPI_ATTR void retrace_vkUpdateBufferTRACETOOLTEST(lava_file_reader& reader)
 	// Act
 	char* ptr = mem_map(reader, device, loc);
 	memcpy(ptr, info.pData, info.dataSize);
+	if (reader.parent->remap)
+	{
+		reader.parent->find_address_candidates(tbuf, info.dataSize, info.pData, reader.current);
+		if (ar) assert(tbuf.candidates.size() >= ar->count);
+	}
 	mem_unmap(reader, device, loc, ar, ptr);
 	tbuf.last_modified = reader.current;
 }
@@ -2379,7 +2384,9 @@ void buffer_update(lava_file_reader& reader, uint32_t device_index, uint32_t buf
 	DLOG2("buffer update idx=%u flush=%s init=%s size=%lu", buffer_index, loc.needs_flush ? "yes" : "no", loc.needs_init ? "yes" : "no", (unsigned long)loc.size);
 	VkDevice device = index_to_VkDevice.at(device_index);
 	char* ptr = mem_map(reader, device, loc);
-	int32_t changed = reader.read_patch(ptr, loc.size);
+	int32_t changed = 0;
+	if (!reader.parent->remap) reader.read_patch(ptr, loc.size);
+	else reader.read_patch_remapping(ptr, loc.size, VkBuffer_index.at(buffer_index));
 	mem_unmap(reader, device, loc, nullptr, ptr);
 }
 

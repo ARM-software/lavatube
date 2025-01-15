@@ -13,7 +13,8 @@ typedef void (VKAPI_PTR *PFN_vkSyncBufferTRACETOOLTEST)(VkDevice device, VkBuffe
 
 static void trace_3()
 {
-	vulkan_setup_t vulkan = test_init(TEST_NAME_1);
+	vulkan_req_t reqs;
+	vulkan_setup_t vulkan = test_init(TEST_NAME_1, reqs);
 	VkResult result;
 
 	PFN_vkAssertBufferTRACETOOLTEST vkAssertBuffer = (PFN_vkAssertBufferTRACETOOLTEST)trace_vkGetDeviceProcAddr(vulkan.device, "vkAssertBufferTRACETOOLTEST");

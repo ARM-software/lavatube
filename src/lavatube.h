@@ -207,13 +207,24 @@ struct trackedmemoryobject : trackedobject
 	VkDeviceAddress device_address = 0;
 };
 
+/// Tracking device address candidates
+struct remap_candidate
+{
+	VkDeviceAddress address; // contained value
+	VkDeviceSize offset; // the offset of the candidate
+	change_source source; // last write to memory area from which we came
+
+	remap_candidate(VkDeviceAddress a, VkDeviceSize b, change_source c) { address = a; offset = b; source = c; }
+	remap_candidate(const remap_candidate& c) { address = c.address; offset = c.offset; source = c.source; }
+	remap_candidate(remap_candidate&& c) { address = c.address; offset = c.offset; source = c.source; }
+};
+
 struct trackedbuffer : trackedmemoryobject
 {
 	using trackedmemoryobject::trackedmemoryobject; // inherit constructor
 	VkBufferCreateFlags flags = VK_BUFFER_CREATE_FLAG_BITS_MAX_ENUM;
 	VkSharingMode sharingMode = VK_SHARING_MODE_MAX_ENUM;
 	VkBufferUsageFlags usage = VK_BUFFER_USAGE_FLAG_BITS_MAX_ENUM;
-	change_source last_write;
 
 	void self_test() const
 	{
@@ -223,7 +234,28 @@ struct trackedbuffer : trackedmemoryobject
 		assert(usage != VK_BUFFER_USAGE_FLAG_BITS_MAX_ENUM);
 		assert(object_type == VK_OBJECT_TYPE_BUFFER);
 		if (is_state(states::bound)) assert(size != 0);
+		assert(candidates.size() == candidate_lookup.size());
 		trackedobject::self_test();
+	}
+
+	// -- The below is only used during remap post-processing --
+
+	std::list<remap_candidate> candidates;
+	std::unordered_map<VkDeviceSize, std::list<remap_candidate>::iterator> candidate_lookup;
+
+	void add_candidate(VkDeviceSize off, VkDeviceAddress candidate, change_source origin)
+	{
+		assert(candidate_lookup.count(off) == 0);
+		candidates.emplace_back(candidate, off, origin);
+		candidate_lookup[off] = --candidates.end();
+	}
+
+	void remove_candidate(VkDeviceSize off)
+	{
+		assert(candidate_lookup.count(off) > 0);
+		auto it = candidate_lookup.at(off);
+		candidate_lookup.erase(off);
+		candidates.erase(it);
 	}
 };
 

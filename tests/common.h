@@ -25,7 +25,16 @@ struct vulkan_setup_t
 	VkPhysicalDevice physical = VK_NULL_HANDLE;
 };
 
-vulkan_setup_t test_init(const std::string& testname, size_t size = 0);
+struct vulkan_req_t // Vulkan context requirements
+{
+	VkPhysicalDeviceVulkan13Features reqfeat13 = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES, nullptr };
+	VkPhysicalDeviceVulkan12Features reqfeat12 = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES, &reqfeat13 };
+	VkPhysicalDeviceVulkan11Features reqfeat11 = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES, &reqfeat12 };
+	VkPhysicalDeviceFeatures2 reqfeat2 = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2, &reqfeat11 };
+	uint32_t apiVersion = VK_API_VERSION_1_1;
+};
+
+vulkan_setup_t test_init(const std::string& testname, vulkan_req_t& reqs, size_t chunk_size = 0);
 void test_done(vulkan_setup_t s);
 uint32_t get_device_memory_type(uint32_t type_filter, VkMemoryPropertyFlags properties);
 void test_set_name(VkDevice device, VkObjectType type, uint64_t handle, const char* name);

@@ -60,7 +60,8 @@ static void thread_test_stress()
 
 static void trace_3()
 {
-	vulkan = test_init(TEST_NAME_3);
+	vulkan_req_t reqs;
+	vulkan = test_init(TEST_NAME_3, reqs);
 
 	std::vector<std::thread*> threads(THREADS);
 	for (auto& t : threads)

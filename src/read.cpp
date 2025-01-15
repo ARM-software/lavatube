@@ -238,3 +238,59 @@ void lava_reader::dump_info()
 		}
 	}
 }
+
+uint32_t lava_reader::find_address_candidates(trackedbuffer& buffer_data, VkDeviceSize size, const void* ptr, change_source source) const
+{
+	buffer_data.self_test();
+	// Search on a 4-byte aligned boundary
+	if ((uintptr_t)ptr % sizeof(uint32_t) != 0)
+	{
+		ptr = (const void*)aligned_size((uintptr_t)ptr, sizeof(uint32_t));
+	}
+	const uint32_t* start = (const uint32_t*)ptr;
+	const uint32_t* end = (const uint32_t*)((char*)ptr + size);
+	uint32_t found = 0;
+	for (const uint32_t* p = start; p + 2 <= end; p++)
+	{
+		const VkDeviceSize offset = (VkDeviceSize)p;
+		const VkDeviceAddress candidate = *((uintptr_t*)p); // read full 64bit word at current position
+
+		// Do we already have a candidate for this address?
+		if (buffer_data.candidate_lookup.count(offset) > 0)
+		{
+			auto it = buffer_data.candidate_lookup.at(offset);
+			if (it->address != candidate) // did it change? if so, update or remove it
+			{
+				if (device_address_remapping.get_by_address(candidate) || acceleration_structure_address_remapping.get_by_address(candidate))
+				{
+					it->address = candidate;
+					it->source = source;
+				}
+				else
+				{
+					buffer_data.remove_candidate(offset);
+				}
+			}
+			continue;
+		}
+
+		// First check for whole buffer
+		const trackedmemoryobject* data = device_address_remapping.get_by_address(candidate);
+		if (data)
+		{
+			buffer_data.add_candidate(offset, candidate, source);
+			found++;
+			continue;
+		}
+		// Then check for the more restricted acceleration structure subset. Need to check both since user may not have
+		// taken the device address of the whole buffer.
+		data = acceleration_structure_address_remapping.get_by_address(candidate);
+		if (data)
+		{
+			buffer_data.add_candidate(offset, candidate, source);
+			found++;
+		}
+	}
+	buffer_data.self_test();
+	return found;
+}

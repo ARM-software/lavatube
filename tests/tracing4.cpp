@@ -91,9 +91,10 @@ static void waitfence(vulkan_setup_t& vulkan, VkFence fence)
 
 static void trace_4()
 {
+	vulkan_req_t reqs;
 	std::string name = filename();
 	printf("Creating %s.vk\n", name.c_str());
-	vulkan_setup_t vulkan = test_init(name);
+	vulkan_setup_t vulkan = test_init(name, reqs);
 	VkResult result;
 
 	VkQueue queue;

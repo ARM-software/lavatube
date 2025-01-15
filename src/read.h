@@ -54,9 +54,17 @@ public:
 
 	std::vector<std::atomic_uint_fast32_t>* thread_call_numbers; // thread local call numbers
 
+	// Use the remapping lists below to find possible candidates for remapping in a buffer.
+	// Return the number of candidates found. Will search from 'ptr', which is a mapped buffer,
+	// a 'size' sized window. Caller must make sure access is thread safe.
+	uint32_t find_address_candidates(trackedbuffer& buffer_data, VkDeviceSize size, const void* ptr, change_source source) const;
+
 	// This is thread safe since we allocate it all before threading begins.
 	address_remapper<trackedmemoryobject> device_address_remapping;
 	address_remapper<trackedaccelerationstructure> acceleration_structure_address_remapping;
+
+	/// Are we currently looking for remap and rewrite candidates?
+	bool remap = false;
 
 	/// Current global frame (only use for logging)
 	std::atomic_int global_frame{ 0 };
@@ -108,6 +116,35 @@ public:
 	inline void read_handle_array(uint32_t* dest, uint32_t length) { for (uint32_t i = 0; i < length; i++) dest[i] = read_handle(); }
 	inline void read_barrier();
 	uint16_t read_apicall();
+
+	uint32_t read_patch_remapping(char* buf, uint64_t maxsize, trackedbuffer& buffer_data)
+	{
+		char* ptr = buf;
+		uint32_t offset;
+		uint32_t size;
+		uint64_t changed = 0;
+		do {
+			offset = read_uint32_t();
+			ptr += offset;
+			// cppcheck-suppress nullPointerRedundantCheck
+			assert(maxsize == 0 || ptr <= buf + maxsize);
+			size = read_uint32_t();
+			check_space(size);
+			const char* uptr = chunk.data() + uidx; // pointer into current uncompressed chunk
+			if (buf && size)
+			{
+				memcpy(ptr, uptr, size);
+				parent->find_address_candidates(buffer_data, size, ptr, current);
+			}
+			uidx += size;
+			ptr += size;
+			changed += size;
+			// cppcheck-suppress nullPointerRedundantCheck
+			assert(maxsize == 0 || ptr <= buf + maxsize);
+		}
+		while (!(offset == 0 && size == 0));
+		return changed;
+	}
 
 	/// If this one returns true, we are responsible for cleaning up all Vulkan calls and then exiting.
 	bool new_frame()

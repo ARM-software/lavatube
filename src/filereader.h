@@ -70,6 +70,7 @@ class file_reader
 		}
 	}
 
+protected:
 	inline void check_space(unsigned size)
 	{
 		assert(chunk.size() >= uidx);
@@ -77,7 +78,6 @@ class file_reader
 		assert(chunk.size() >= uidx);
 	}
 
-protected:
 	uint64_t uncompressed_bytes GUARDED_BY(chunk_mutex) = 0;
 	uint32_t times_caught_decompressor = 0; // unique number of times we caught up with the decompressor
 
@@ -235,9 +235,13 @@ private:
 	lava::mutex chunk_mutex;
 	FILE* fp = nullptr;
 	std::string mFilename;
+
+protected:
 	unsigned uidx = 0; // index into current uncompressed chunk
 	uint64_t total_left = 0; // amount of compressed bytes left in input file
 	buffer chunk; // current uncompressed chunk
+
+private:
 	std::list<buffer> uncompressed_chunks GUARDED_BY(chunk_mutex);
 	std::thread decompressor_thread;
 	std::atomic_bool done_decompressing;

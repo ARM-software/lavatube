@@ -176,7 +176,8 @@ int main(int argc, char **argv)
 
 	replayer.run = false; // do not actually run anything
 	replayer.init(filename_input, heap_size);
-	replayer.parameters(start, end, preload);
+	replayer.parameters(start, end, false);
+	replayer.remap = remap;
 
 	// Read all thread files
 	std::vector<std::string> threadfiles = packed_files(filename_input, "thread_");

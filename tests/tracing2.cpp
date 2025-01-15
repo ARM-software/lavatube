@@ -9,7 +9,8 @@
 
 static void trace_3()
 {
-	vulkan_setup_t vulkan = test_init(TEST_NAME_1);
+	vulkan_req_t reqs;
+	vulkan_setup_t vulkan = test_init(TEST_NAME_1, reqs);
 
 	PFN_vkVoidFunction badptr = trace_vkGetInstanceProcAddr(nullptr, "vkNonsense");
 	assert(!badptr);

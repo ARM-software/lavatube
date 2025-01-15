@@ -77,16 +77,16 @@ void test_done(vulkan_setup_t vulkan)
 	trace_vkDestroyInstance(vulkan.instance, nullptr);
 }
 
-vulkan_setup_t test_init(const std::string& testname, size_t size)
+vulkan_setup_t test_init(const std::string& testname, vulkan_req_t& reqs, size_t chunk_size)
 {
 	const char* wsi = getenv("LAVATUBE_WINSYS");
 	vulkan_setup_t vulkan;
 
-	if (size != 0) // change default chunk size
+	if (chunk_size != 0) // change default chunk size
 	{
 		lava_writer& instance = lava_writer::instance();
 		lava_file_writer& writer = instance.file_writer();
-		writer.change_default_chunk_size(size);
+		writer.change_default_chunk_size(chunk_size);
 	}
 
 	// Create instance
@@ -97,7 +97,7 @@ vulkan_setup_t test_init(const std::string& testname, size_t size)
 	app.applicationVersion = VK_MAKE_VERSION( 1, 0, 0 );
 	app.pEngineName = "testEngine";
 	app.engineVersion = VK_MAKE_VERSION( 1, 0, 0 );
-	app.apiVersion = VK_API_VERSION_1_1;
+	app.apiVersion = reqs.apiVersion;
 	pCreateInfo.pApplicationInfo = &app;
 	pCreateInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
 
@@ -171,25 +171,15 @@ vulkan_setup_t test_init(const std::string& testname, size_t size)
 	printf("Found %d physical devices!\n", (int)num_devices);
 	vulkan.physical = physical_devices[0]; // just grab first one
 
-	VkPhysicalDeviceVulkan13Features feat13 = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES, nullptr };
-	VkPhysicalDeviceVulkan12Features feat12 = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES, &feat13 };
-	VkPhysicalDeviceVulkan11Features feat11 = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES, &feat12 };
-	VkPhysicalDeviceFeatures2 feat2 = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2, &feat11 };
-	trace_vkGetPhysicalDeviceFeatures2(physical_devices[0], &feat2);
-	if (feat13.privateData) printf("private data supported!\n");
-
 	// Create logical device
-	VkDeviceQueueCreateInfo queueCreateInfo = {};
-	queueCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+	VkDeviceQueueCreateInfo queueCreateInfo = { VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO, nullptr };
 	queueCreateInfo.queueFamilyIndex = 0;
 	queueCreateInfo.queueCount = 1;
 	float queuePriorities[] = { 1.0f };
 	queueCreateInfo.pQueuePriorities = queuePriorities;
-	VkPhysicalDeviceProperties2 vprops = {};
-	vprops.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
+	VkPhysicalDeviceProperties2 vprops = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2, nullptr };
 	trace_vkGetPhysicalDeviceProperties2(vulkan.physical, &vprops);
-	VkDeviceCreateInfo deviceInfo = {};
-	deviceInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+	VkDeviceCreateInfo deviceInfo = { VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO, nullptr };
 	deviceInfo.queueCreateInfoCount = 1;
 	deviceInfo.pQueueCreateInfos = &queueCreateInfo;
 	deviceInfo.enabledLayerCount = 0;
@@ -216,8 +206,14 @@ vulkan_setup_t test_init(const std::string& testname, size_t size)
 		deviceInfo.ppEnabledExtensionNames = enabledExtensions.data();
 	}
 	deviceInfo.enabledExtensionCount = enabledExtensions.size();
-	VkPhysicalDeviceFeatures features = {};
-	deviceInfo.pEnabledFeatures = &features;
+	if (VK_VERSION_MAJOR(reqs.apiVersion) >= 1 && VK_VERSION_MINOR(reqs.apiVersion) >= 2)
+	{
+		deviceInfo.pNext = &reqs.reqfeat2;
+	}
+	else // Vulkan 1.1 or below
+	{
+		deviceInfo.pEnabledFeatures = &reqs.reqfeat2.features;
+	}
 	result = trace_vkCreateDevice(vulkan.physical, &deviceInfo, NULL, &vulkan.device);
 	check(result);
 	test_set_name(vulkan.device, VK_OBJECT_TYPE_DEVICE, (uint64_t)vulkan.device, "Our device");

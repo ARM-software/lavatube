@@ -73,7 +73,8 @@ static void thread_runner(int tid)
 
 static void trace_me()
 {
-	vulkan = test_init(TEST_NAME, PACKET_SIZE); // override the default chunk size
+	vulkan_req_t reqs;
+	vulkan = test_init(TEST_NAME, reqs, PACKET_SIZE); // override the default chunk size
 
 	// Check that you can access them from vkGetDeviceProcAddr, although we won't
 	auto ptr = trace_vkGetDeviceProcAddr(vulkan.device, "vkAssertBufferTRACETOOLTEST");

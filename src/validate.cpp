@@ -23,7 +23,7 @@ static void usage()
 	printf("-d/--debug level       Set debug level [0,1,2,3]\n");
 	printf("-o/--debugfile FILE    Output debug output to the given file\n");
 	printf("-f/--frames start end  Select a frame range\n");
-	//printf("-p/--preload           Load entire selected frame range into memory before running it\n");
+	printf("-r/--remap-validate    Validate existing device address remappings - abort if we find less or more addresses than already marked\n");
 	exit(-1);
 }
 
@@ -117,7 +117,7 @@ int main(int argc, char **argv)
 	int heap_size = -1;
 	int remaining = argc - 1; // zeroth is name of program
 	std::string filename;
-	bool preload = false;
+	bool validate_remap = false;
 	for (int i = 1; i < argc; i++)
 	{
 		if (match(argv[i], "-h", "--help", remaining))
@@ -141,9 +141,9 @@ int main(int argc, char **argv)
 			start = get_int(argv[++i], remaining);
 			end = get_int(argv[++i], remaining);
 		}
-		else if (match(argv[i], "-p", "--preload", remaining))
+		else if (match(argv[i], "-r", "-r/--remap-validate", remaining))
 		{
-			preload = true;
+			validate_remap = true;
 		}
 		else if (strcmp(argv[i], "--") == 0) // eg in case you have a file named -f ...
 		{
@@ -171,7 +171,8 @@ int main(int argc, char **argv)
 
 	replayer.run = false; // do not actually run anything
 	replayer.init(filename, heap_size);
-	replayer.parameters(start, end, preload);
+	replayer.parameters(start, end, false);
+	replayer.remap = validate_remap;
 
 	// Read all thread files
 	std::vector<std::string> threadfiles = packed_files(filename, "thread_");
