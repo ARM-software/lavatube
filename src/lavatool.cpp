@@ -6,6 +6,7 @@
 #include <sys/sendfile.h>
 #include <vector>
 #include <map>
+#include "util.h"
 #include "packfile.h"
 
 int main(int argc, char* argv[])
@@ -35,15 +36,13 @@ int main(int argc, char* argv[])
 			if (strncmp(s.c_str(), "thread_", 6) == 0) threads_bin++;
 			if (strncmp(s.c_str(), "frames_", 6) == 0) threads_json++;
 		}
-		assert(threads_bin > 0);
-		assert(threads_bin == threads_json);
-		assert(map.at("limits.json") == true);
-		assert(map.at("dictionary.json") == true);
-		assert(map.at("metadata.json") == true);
-		assert(map.at("tracking.json") == true);
-		assert(map.at("frames_0.json") == true);
-		(void)threads_bin;
-		(void)threads_json;
+		if (threads_bin == 0) DIE("No threads in trace file");
+		if (threads_bin != threads_json) DIE("Mismatched number of binaries and JSON files");
+		if (!map.at("limits.json")) DIE("No limits.json file in container");
+		if (!map.at("dictionary.json")) DIE("No dictionary.json in container");
+		if (!map.at("metadata.json")) DIE("No metadata.json in container");
+		if (!map.at("tracking.json")) DIE("No tracking.json in container");
+		if (!map.at("frames_0.json")) DIE("No frames_0.json in container");
 		printf("Success\n");
 		return 0;
 	}
