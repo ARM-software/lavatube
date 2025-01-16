@@ -147,8 +147,8 @@ public:
 	/// Create a 4mb size memory pool
 	memory_pool(unsigned mbs = 4) : pool(mbs * 1024 * 1024) {}
 
-	template<typename T> __attribute__((malloc))
-	inline T* allocate(uint32_t _count)
+	template<typename T> __attribute__((alloc_size(2, 3)))
+	inline T* allocate(uint32_t _count, const uint32_t _size = sizeof(T))
 	{
 		if (_count == 0) return nullptr;
 		const size_t alignment = std::max<size_t>(alignof(T), 2);
