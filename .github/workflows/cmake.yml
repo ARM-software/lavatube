@@ -19,13 +19,13 @@ jobs:
     - name: Install deps
       run: |
          sudo apt-get update
-         sudo apt-get install git cmake pkg-config python3 libxcb1-dev libxrandr-dev libxcb-randr0-dev libtbb-dev libvulkan-dev spirv-headers
+         sudo apt-get install git cmake pkg-config python3 libxcb1-dev libxrandr-dev libxcb-randr0-dev libtbb-dev libvulkan-dev spirv-headers clang
 
     - name: Checkout
       run: git submodule update --init --recursive --force
 
     - name: Configure CMake
-      run: cmake -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}
+      run: CXX=clang++ CC=clang cmake -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}
 
     - name: Build
       run: cmake --build ${{github.workspace}}/build --config ${{env.BUILD_TYPE}}
