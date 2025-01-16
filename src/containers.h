@@ -147,7 +147,7 @@ public:
 	/// Create a 4mb size memory pool
 	memory_pool(unsigned mbs = 4) : pool(mbs * 1024 * 1024) {}
 
-	template<typename T>
+	template<typename T> __attribute__((malloc))
 	inline T* allocate(uint32_t _count)
 	{
 		if (_count == 0) return nullptr;

@@ -16,7 +16,7 @@ feature_detection_funcs = []
 detect_words = []
 with open('include/feature_detect.h', 'r') as f:
 	for line in f:
-		m = re.search('check_(\w+)', line)
+		m = re.search(r'check_(\w+)', line)
 		if m:
 			detect_words.append(m.group(1))
 for name in spec.structures:
@@ -216,7 +216,7 @@ def getraw(val):
 
 def getsize(raw):
 	if '[' in raw and not type == 'char':
-		return re.search('.*\[(.+)\]', raw).group(1)
+		return re.search(r'.*\[(.+)\]', raw).group(1)
 	return None
 
 def typetmpname(root):
