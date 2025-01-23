@@ -1242,8 +1242,9 @@ def save_add_tracking(name):
 		z.do('writer.write_handle(add);')
 	elif name in spec.functions_create: # multiple
 		(param, count, type) = get_create_params(name)
-		z.do('for (unsigned i = 0; i < %s && retval == VK_SUCCESS; i++)' % count)
+		z.do('for (unsigned i = 0; i < %s; i++)' % count)
 		z.brace_begin()
+		z.do('if (retval != VK_SUCCESS) { writer.write_handle(nullptr); continue; }')
 		z.do('auto* add = writer.parent->records.%s_index.add(%s[i], writer.current);' % (type, param))
 		if type == 'VkCommandBuffer':
 			z.do('add->pool = pAllocateInfo->commandPool;')
@@ -1345,7 +1346,7 @@ def load_add_tracking(name):
 				z.do('memcpy(data.code.data(), pCreateInfo->pCode, pCreateInfo->codeSize * sizeof(uint32_t));')
 			z.do('data.enter_created();')
 		else: # multiple
-			z.do('for (unsigned i = 0; i < %s; i++)' % count)
+			z.do('for (unsigned i = 0; i < %s && retval == VK_SUCCESS; i++)' % count)
 			z.brace_begin()
 			z.do('DLOG2("insert %s into %s index %%u at pos=%%u", indices[i], i);' % (type, name))
 			z.do('auto& data = %s_index.at(indices[i]);' % type)
@@ -1597,6 +1598,8 @@ def loadfunc(name, node, target, header):
 				prefix = 'if (wrap_%s && reader.run) ' % name
 		elif name in noscreen_calls:
 			prefix = 'if (!is_noscreen() && reader.run) '
+		elif name in spec.functions_create and spec.functions_create[name][1] != '1':
+			prefix = 'if (reader.run && stored_retval == VK_SUCCESS) '
 		if retval == 'void' and not name in ignore_on_read:
 			z.do('%swrap_%s(%s);' % (prefix, name, ', '.join(call_list)))
 		elif not name in ignore_on_read:
@@ -1608,7 +1611,7 @@ def loadfunc(name, node, target, header):
 			elif retval == 'VkBool32':
 				z.do('VkBool32 stored_retval = static_cast<VkBool32>(reader.read_uint32_t());')
 			elif retval in ['VkDeviceAddress', 'VkDeviceSize']:
-				z.do('(void)reader.read_uint64_t();')
+				z.do('%s stored_retval = reader.read_uint64_t();' % retval)
 			# if query succeeded in trace, make it succeed in replay (TBD: we need better fix here;
 			# as this breaks dumping! yeah, it breaks if the app does this, too...)
 			if name == 'vkGetQueryPoolResults':
@@ -1632,6 +1635,9 @@ def loadfunc(name, node, target, header):
 				pass
 			else: assert name == 'vkQueuePresentKHR', 'Unhandled return value type %s from %s' % (retval, name)
 			z.brace_end()
+
+			# Fallback
+			if retval != 'void': z.do('else retval = stored_retval;')
 		else:
 			if retval in ['VkResult', 'VkBool32']:
 				z.do('// this function is ignored on replay')
