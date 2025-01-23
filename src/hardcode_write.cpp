@@ -1785,6 +1785,7 @@ void trace_post_vkCreateSwapchainKHR(lava_file_writer& writer, VkResult result, 
 		add->format = pCreateInfo->imageFormat;
 		add->initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 		add->currentLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+		add->enter_created();
 		DLOG("Image index %u is swapchain image %u", add->index, i);
 	}
 }
@@ -1829,6 +1830,7 @@ VKAPI_ATTR VkResult VKAPI_CALL trace_vkCreateHeadlessSurfaceEXT(VkInstance insta
 	// Post
 	trackable* surface_data = writer.parent->records.VkSurfaceKHR_index.add(*pSurface, writer.current);
 	DLOG("insert VkSurfaceKHR into vkCreateHeadlessSurfaceEXT index %u", (unsigned)surface_data->index);
+	surface_data->enter_created();
 	writer.write_handle(surface_data); // id tracking
 	// Return
 	return retval;
@@ -1888,6 +1890,7 @@ VKAPI_ATTR VkResult VKAPI_CALL trace_vkCreateXlibSurfaceKHR(VkInstance instance,
 	// -- Post --
 	trackable* surface_data = writer.parent->records.VkSurfaceKHR_index.add(*pSurface, writer.current);
 	DLOG("insert VkSurfaceKHR into vkCreateXlibSurfaceKHR index %u", (unsigned)surface_data->index);
+	surface_data->enter_created();
 	writer.write_handle(surface_data); // id tracking
 	// -- Return --
 	return retval;
@@ -1945,6 +1948,7 @@ VKAPI_ATTR VkResult VKAPI_CALL trace_vkCreateXcbSurfaceKHR(VkInstance instance, 
 	// Post
 	auto* surface_data = writer.parent->records.VkSurfaceKHR_index.add(*pSurface, writer.current);
 	DLOG("insert VkSurfaceKHR into vkCreateXcbSurfaceKHR index %u", (unsigned)surface_data->index);
+	surface_data->enter_created();
 	writer.write_handle(surface_data); // id tracking
 	free(geom_reply);
 	free(tree_reply);
@@ -1978,6 +1982,7 @@ VKAPI_ATTR VkResult VKAPI_CALL trace_vkCreateWaylandSurfaceKHR(VkInstance instan
 	assert(retval == VK_SUCCESS);
 	// Post
 	auto* surface_data = writer.parent->records.VkSurfaceKHR_index.add(*pSurface, writer.current);
+	surface_data->enter_created();
 	writer.write_handle(surface_data); // id tracking
 	// Return
 	return retval;
@@ -2142,6 +2147,7 @@ VKAPI_ATTR VkResult VKAPI_CALL trace_vkCreateAndroidSurfaceKHR(VkInstance instan
 	VkResult retval = wrap_vkCreateAndroidSurfaceKHR(instance, pCreateInfo, pAllocator, pSurface);
 	// Post
 	const auto* surface_data = writer.parent->records.VkSurfaceKHR_index.add(*pSurface, writer.current);
+	surface_data->enter_created();
 	writer.write_handle(surface_data); // id tracking
 	// Return
 	return retval;

@@ -42,6 +42,8 @@ int main(int argc, char* argv[])
 		assert(map.at("metadata.json") == true);
 		assert(map.at("tracking.json") == true);
 		assert(map.at("frames_0.json") == true);
+		(void)threads_bin;
+		(void)threads_json;
 		printf("Success\n");
 		return 0;
 	}

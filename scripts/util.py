@@ -1242,7 +1242,7 @@ def save_add_tracking(name):
 		z.do('writer.write_handle(add);')
 	elif name in spec.functions_create: # multiple
 		(param, count, type) = get_create_params(name)
-		z.do('for (unsigned i = 0; i < %s; i++)' % count)
+		z.do('for (unsigned i = 0; i < %s && retval == VK_SUCCESS; i++)' % count)
 		z.brace_begin()
 		z.do('auto* add = writer.parent->records.%s_index.add(%s[i], writer.current);' % (type, param))
 		if type == 'VkCommandBuffer':
