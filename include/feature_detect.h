@@ -363,6 +363,16 @@ public:
 		core12.drawIndirectCount = true;
 	}
 
+	void check_vkCmdBindIndexBuffer(VkCommandBuffer commandBuffer, VkBuffer buffer, VkDeviceSize offset, VkIndexType indexType)
+	{
+		if (indexType == VK_INDEX_TYPE_UINT32) core10.fullDrawIndexUint32 = true; // defensive assumption
+	}
+
+	void check_vkCmdBindIndexBuffer2(VkCommandBuffer commandBuffer, VkBuffer buffer, VkDeviceSize offset, VkDeviceSize size, VkIndexType indexType)
+	{
+		if (indexType == VK_INDEX_TYPE_UINT32) core10.fullDrawIndexUint32 = true; // defensive assumptiom
+	}
+
 	void check_vkCmdDrawIndexedIndirectCount(VkCommandBuffer commandBuffer, VkBuffer buffer, VkDeviceSize offset, VkBuffer countBuffer, VkDeviceSize countBufferOffset, uint32_t maxDrawCount, uint32_t stride)
 	{
 		core12.drawIndirectCount = true;
@@ -420,6 +430,7 @@ public:
 	{
 		// Only turn off the features we have checking code for
 		#define CHECK_FEATURE10(_x) if (!core10._x) incore10._x = false;
+		CHECK_FEATURE10(fullDrawIndexUint32);
 		CHECK_FEATURE10(dualSrcBlend);
 		CHECK_FEATURE10(geometryShader);
 		CHECK_FEATURE10(tessellationShader);
