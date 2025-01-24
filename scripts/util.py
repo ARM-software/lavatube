@@ -1463,10 +1463,17 @@ def loadfunc(name, node, target, header):
 	if debugcount >= 0: debugcount = 0
 
 	retval, params, paramlist = func_common(name, node, read=True, target=target, header=header, guard_header=False)
+	if header:
+		if name in spec.protected_funcs:
+			print('#ifdef %s' % spec.protected_funcs[name], file=header)
+		print('typedef void(*replay_%s_callback)(lava_file_reader& reader, %s%s);' % (name, ('%s result, ' % retval) if retval != 'void' else '', ', '.join(paramlist)), file=header)
+		if name in spec.protected_funcs:
+			print('#endif', file=header)
 	if name in spec.disabled or name in functions_noop or name in spec.disabled_functions or spec.str_contains_vendor(name):
 		func_common_end(name, target=target, header=header, add_dummy=True)
 		return
-	if header: print('void retrace_%s(lava_file_reader& reader);' % name, file=header)
+	if header:
+		print('void retrace_%s(lava_file_reader& reader);' % name, file=header)
 	if name in hardcoded or name in hardcoded_read:
 		func_common_end(name, target=target, header=header, add_dummy=True)
 		return
@@ -1504,23 +1511,24 @@ def loadfunc(name, node, target, header):
 		else:
 			z.do('if (do_call == 1 && reader.run)')
 		z.brace_begin()
-		parlist = []
 		for vv in spec.special_count_funcs[name][2]:
 			z.decl('std::vector<%s>' % vv[1], vv[0])
-			parlist.append('nullptr')
 			call_list = call_list[:-1]
+		for vv in spec.special_count_funcs[name][2]:
+			call_list.append('nullptr')
 		z.decl(spec.special_count_funcs[name][1] + '*', spec.special_count_funcs[name][0])
 		z.do('%s = reader.pool.allocate<%s>(1);' % (spec.special_count_funcs[name][0], spec.special_count_funcs[name][1]))
-		z.do('%swrap_%s(%s, %s);' % ('retval = ' if retval == 'VkResult' else '', name, ', '.join(call_list), ', '.join(parlist)))
+		z.do('%swrap_%s(%s);' % ('retval = ' if retval == 'VkResult' else '', name, ', '.join(call_list)))
 		if retval == 'VkResult': z.do('assert(retval == VK_SUCCESS);');
 		for vv in spec.special_count_funcs[name][2]:
 			z.do('%s.resize(*%s);' % (vv[0], spec.special_count_funcs[name][0]))
 			if vv[1] in spec.type2sType:
 				z.do('for (auto& i : %s) { i.sType = %s; i.pNext = nullptr; }' % (vv[0], spec.type2sType[vv[1]]))
-		parlist = []
 		for vv in spec.special_count_funcs[name][2]:
-			parlist.append(vv[0] + '.data()')
-		z.do('%swrap_%s(%s, %s);' % ('retval = ' if retval == 'VkResult' else '', name, ', '.join(call_list), ', '.join(parlist)))
+			call_list = call_list[:-1]
+		for vv in spec.special_count_funcs[name][2]:
+			call_list.append(vv[0] + '.data()')
+		z.do('%swrap_%s(%s);' % ('retval = ' if retval == 'VkResult' else '', name, ', '.join(call_list)))
 		if retval == 'VkResult':
 			z.do('assert(retval == VK_SUCCESS);');
 			z.do('(void)retval; // ignore return value');
@@ -1657,6 +1665,9 @@ def loadfunc(name, node, target, header):
 	load_add_tracking(name)
 	if name in replay_post_calls: # hard-coded post handling
 		z.do('if (reader.run) replay_post_%s(reader, %s%s);' % (name, 'retval, ' if retval != 'void' else '', ', '.join(call_list)))
+	# Flexible post-handling
+	if not name in spec.special_count_funcs and not name in ignore_on_read:
+		z.do('for (auto* c : %s_callbacks) c(reader, %s%s);' % (name, 'retval, ' if retval != 'void' else '', ', '.join(call_list)))
 	if name in replay_postprocess_calls:
 		z.do('if (!reader.run) replay_postprocess_%s(reader, %s%s);' % (name, 'retval, ' if retval != 'void' else '', ', '.join(call_list)))
 	if name in spec.draw_commands:

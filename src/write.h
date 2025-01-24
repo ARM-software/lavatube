@@ -269,7 +269,7 @@ inline void lava_file_writer::write_api_command(uint16_t id)
 		pending_barrier.store(false, std::memory_order_relaxed);
 		frame_mutex.unlock();
 	}
-	write_uint8_t(PACKET_API_CALL); // API call
+	write_uint8_t(PACKET_VULKAN_API_CALL); // API call
 	write_uint16_t(id); // API call name by id
 	write_uint32_t(0); // reserved for future use
 	current.call++;

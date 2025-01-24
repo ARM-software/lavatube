@@ -338,7 +338,7 @@ static void trace_2(int variant)
 static void getnext(lava_file_reader& t, const char* expected_s)
 {
 	const uint8_t instrtype = t.read_uint8_t();
-	if (instrtype == PACKET_API_CALL)
+	if (instrtype == PACKET_VULKAN_API_CALL)
 	{
 		const uint16_t expected = retrace_getid(expected_s);
 		const uint16_t apicall = t.read_apicall();

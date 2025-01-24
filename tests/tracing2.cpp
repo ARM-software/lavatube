@@ -180,7 +180,7 @@ static bool getnext(lava_file_reader& t)
 {
 	bool done = false;
 	const uint8_t instrtype = t.read_uint8_t();
-	if (instrtype == PACKET_API_CALL)
+	if (instrtype == PACKET_VULKAN_API_CALL)
 	{
 		const uint16_t apicall = t.read_apicall();
 		if (apicall == 1) done = true; // is vkDestroyInstance
@@ -200,15 +200,28 @@ static bool getnext(lava_file_reader& t)
 	return !done;
 }
 
+static std::atomic_bool triggered_VkCreateInstance_callback { false };
+static void my_VkCreateInstance_callback(lava_file_reader& reader, VkResult result, const VkInstanceCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkInstance* pInstance)
+{
+	assert(result == VK_SUCCESS);
+	assert(triggered_VkCreateInstance_callback.load() == false);
+	triggered_VkCreateInstance_callback.store(true);
+}
+
 static void retrace_3()
 {
 	lava_reader r(TEST_NAME_1 ".vk");
 	lava_file_reader& t = r.file_reader(0);
 	int remaining = suballoc_internal_test();
 	assert(remaining == 0); // there should be nothing now
+
+	// set up callbacks
+	vkCreateInstance_callbacks.push_back(my_VkCreateInstance_callback);
+
 	while (getnext(t)) {}
 	remaining = suballoc_internal_test();
 	assert(remaining == 0); // everything should be destroyed now
+	assert(triggered_VkCreateInstance_callback.load());
 }
 
 int main()

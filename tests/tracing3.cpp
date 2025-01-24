@@ -81,7 +81,7 @@ static void trace_3()
 static bool getnext(lava_file_reader& t)
 {
 	const uint8_t instrtype = t.step();
-	if (instrtype == PACKET_API_CALL)
+	if (instrtype == PACKET_VULKAN_API_CALL)
 	{
 		assert(instrtype == 2);
 		const uint16_t apicall = t.read_apicall();

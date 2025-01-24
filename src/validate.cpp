@@ -72,7 +72,7 @@ static void replay_thread(int thread_id)
 	}
 	while ((instrtype = t.step()))
 	{
-		if (instrtype == PACKET_API_CALL)
+		if (instrtype == PACKET_VULKAN_API_CALL)
 		{
 			t.read_apicall();
 		}

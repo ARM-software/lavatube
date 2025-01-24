@@ -500,6 +500,16 @@ for e in extra_tracked_structs:
 	out(targets_read, '\tif (v.isMember("%s")) { has_%s = true; read%s(v["%s"], stored_%s); }' % (e, e, e, e, e))
 out(targets_read, '}')
 
+# Make callbacks
+out(targets_read)
+for f in spec.functions:
+	if f in spec.protected_funcs:
+		out(targets_read + targets_read_headers, '#ifdef %s' % (spec.protected_funcs[f]))
+	out(targets_read, 'std::vector<replay_%s_callback> %s_callbacks;' % (f, f))
+	out(targets_read_headers, 'extern std::vector<replay_%s_callback> %s_callbacks;' % (f, f))
+	if f in spec.protected_funcs:
+		out(targets_read + targets_read_headers, '#endif')
+
 # Clean up
 for n in targets_all:
 	n.close()
