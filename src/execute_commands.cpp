@@ -5,7 +5,7 @@ static bool run_spirv(lava_file_reader& reader, const shader_stage& stage, const
 	const uint32_t shader_index = index_to_VkShaderModule.index(stage.module);
 	trackedshadermodule& shader_data = VkShaderModule_index.at(shader_index);
 	std::unordered_map<std::string, uint32_t> functions; // function name -> index in spirv
-	std::unordered_map<std::string, uint64_t> globals; // store everything as a uint64
+	std::unordered_map<std::string, uint64_t> globals; // store everything as an uint64
 	std::vector<std::unordered_map<std::string, uint64_t>> locals; // stack
 
 	assert(shader_data.code[0] == SpvMagicNumber);
@@ -39,16 +39,57 @@ static bool execute_commands(lava_file_reader& reader, VkCommandBuffer commandBu
 	uint32_t raytracing_pipeline_bound = CONTAINER_INVALID_INDEX; // currently bound pipeline
 	uint32_t cmdbuffer_index = index_to_VkCommandBuffer.index(commandBuffer);
 	auto& cmdbuffer_data = VkCommandBuffer_index.at(cmdbuffer_index);
+	std::unordered_map<uint32_t, std::unordered_map<uint32_t, buffer_access>> descriptorsets; // descriptorset binding : set internal binding point : buffer
 	for (const auto& c : cmdbuffer_data.commands)
 	{
 		switch (c.id)
 		{
+		case VKCMDBINDDESCRIPTORSETS:
+			for (uint32_t i = 0; i < c.data.bind_descriptorsets.descriptorSetCount; i++)
+			{
+				const uint32_t pipeline_index = c.data.bind_descriptorsets.pipelineBindPoint;
+				uint32_t set = c.data.bind_descriptorsets.firstSet + i;
+				auto& tds = VkDescriptorSet_index.at(c.data.bind_descriptorsets.pDescriptorSets[i]); // is index now
+				for (auto pair : tds.bound_buffers)
+				{
+					descriptorsets[set][pair.first] = pair.second;
+				}
+				uint32_t binding = 0;
+				for (auto pair : tds.dynamic_buffers)
+				{
+					buffer_access access;
+					const uint32_t buffer_index = index_to_VkBuffer.index(pair.second.buffer);
+					auto& buffer_data = VkBuffer_index.at(buffer_index);
+					access.buffer_data = &buffer_data;
+					access.offset = pair.second.offset;
+					if (c.data.bind_descriptorsets.pDynamicOffsets) access.offset += c.data.bind_descriptorsets.pDynamicOffsets[binding];
+					access.size = pair.second.range;
+					if (access.size == VK_WHOLE_SIZE) access.size = buffer_data.size - access.offset;
+					descriptorsets[set][pair.first] = access;
+					binding++;
+					assert(!c.data.bind_descriptorsets.pDynamicOffsets || c.data.bind_descriptorsets.dynamicOffsetCount >= binding);
+				}
+			}
+			free((void*)c.data.bind_descriptorsets.pDescriptorSets);
+			free((void*)c.data.bind_descriptorsets.pDynamicOffsets);
+			break;
 		case VKCMDCOPYBUFFER:
-			// TBD
+			{
+				suballoc_location src = suballoc_find_buffer_memory(c.data.copy_buffer.src_buffer_index);
+				suballoc_location dst = suballoc_find_buffer_memory(c.data.copy_buffer.dst_buffer_index);
+				for (uint32_t i = 0; i < c.data.copy_buffer.regionCount; i++)
+				{
+					VkBufferCopy& r = c.data.copy_buffer.pRegions[i];
+					memcpy((char*)dst.memory + r.dstOffset, (char*)src.memory + r.srcOffset, r.size);
+				}
+			}
 			free(c.data.copy_buffer.pRegions);
 			break;
 		case VKCMDUPDATEBUFFER:
-			// TBD
+			{
+				suballoc_location sub = suballoc_find_buffer_memory(c.data.update_buffer.buffer_index);
+				memcpy((char*)sub.memory + c.data.update_buffer.offset, c.data.update_buffer.values, c.data.update_buffer.size);
+			}
 			free(c.data.update_buffer.values);
 			break;
 		case VKCMDPUSHCONSTANTS:

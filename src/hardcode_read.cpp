@@ -1065,6 +1065,155 @@ static void translate_addresses(lava_file_reader& reader, uint32_t count, VkDevi
 	}
 }
 
+static void handle_VkWriteDescriptorSets(lava_file_reader& reader, uint32_t descriptorWriteCount, const VkWriteDescriptorSet* pDescriptorWrites, bool clear)
+{
+	for (unsigned i = 0; i < descriptorWriteCount; i++)
+	{
+		const VkDescriptorType type = pDescriptorWrites[i].descriptorType;
+		const uint32_t descriptorset_index = index_to_VkDescriptorSet.index(pDescriptorWrites[i].dstSet);
+		auto& tds = VkDescriptorSet_index.at(descriptorset_index);
+		// TBD I do not think this is correct. We are allowed to keep descriptor state for bindings not touched here from a previous call.
+		// Not sure how to handle this well, and not seen any content where this breaks anything, but should fix it...
+		if (clear) { tds.bound_buffers.clear(); tds.dynamic_buffers.clear(); }
+	}
+	for (unsigned i = 0; i < descriptorWriteCount; i++)
+	{
+		const VkDescriptorType type = pDescriptorWrites[i].descriptorType;
+		const uint32_t descriptorset_index = index_to_VkDescriptorSet.index(pDescriptorWrites[i].dstSet);
+		auto& tds = VkDescriptorSet_index.at(descriptorset_index);
+
+		switch (type)
+		{
+		case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
+		case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
+			for (unsigned j = 0; j < pDescriptorWrites[i].descriptorCount; j++)
+			{
+				if (pDescriptorWrites[i].pBufferInfo[j].buffer == VK_NULL_HANDLE) continue;
+				const uint32_t buffer_index = index_to_VkBuffer.index(pDescriptorWrites[i].pBufferInfo[j].buffer);
+				auto& buffer_data = VkBuffer_index.at(buffer_index);
+				VkDeviceSize size = pDescriptorWrites[i].pBufferInfo[j].range;
+				if (size == VK_WHOLE_SIZE) size = buffer_data.size - pDescriptorWrites[i].pBufferInfo[j].offset;
+				tds.bound_buffers[j] = buffer_access { &buffer_data, pDescriptorWrites[i].pBufferInfo[j].offset, size };
+			}
+			break;
+		case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC:
+		case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC:
+			for (unsigned j = 0; j < pDescriptorWrites[i].descriptorCount; j++)
+			{
+				tds.dynamic_buffers[j] = pDescriptorWrites[i].pBufferInfo[j];
+			}
+			break;
+		case VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK: // Provided by VK_VERSION_1_3
+			{
+				auto* ptr = (VkWriteDescriptorSetInlineUniformBlock*)find_extension(pDescriptorWrites[i].pNext, VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_INLINE_UNIFORM_BLOCK);
+				assert(ptr);
+				assert(ptr->sType == VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_INLINE_UNIFORM_BLOCK);
+				// TBD
+			}
+			break;
+		case VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR: // Provided by VK_KHR_acceleration_structure
+			{
+				auto* ptr = (VkWriteDescriptorSetAccelerationStructureKHR *)find_extension(pDescriptorWrites[i].pNext, VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR);
+				assert(ptr);
+				assert(ptr->sType == VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR);
+				assert(ptr->accelerationStructureCount == pDescriptorWrites[i].descriptorCount);
+				// TBD
+			}
+			break;
+		case VK_DESCRIPTOR_TYPE_MUTABLE_EXT: // Provided by VK_EXT_mutable_descriptor_type
+			ABORT("vkUpdateDescriptorSets using VK_EXT_mutable_descriptor_type not yet implemented");
+			break;
+		case VK_DESCRIPTOR_TYPE_BLOCK_MATCH_IMAGE_QCOM: // Provided by VK_QCOM_image_processing
+		case VK_DESCRIPTOR_TYPE_SAMPLE_WEIGHT_IMAGE_QCOM: // Provided by VK_QCOM_image_processing
+			ABORT("VK_QCOM_image_processing not supported");
+			break;
+		case VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_NV: // Provided by VK_NV_ray_tracing
+			ABORT("VK_NV_ray_tracing not supported");
+			break;
+		default:
+			break;
+		case VK_DESCRIPTOR_TYPE_MAX_ENUM:
+			ABORT("Bad descriptor type in vkUpdateDescriptorSets");
+			break;
+		}
+	}
+}
+
+void replay_postprocess_vkCmdPushDescriptorSetKHR(lava_file_reader& reader, VkCommandBuffer commandBuffer, VkPipelineBindPoint pipelineBindPoint, VkPipelineLayout layout, uint32_t set, uint32_t descriptorWriteCount, const VkWriteDescriptorSet* pDescriptorWrites)
+{
+	assert(false);
+	//trackedcommand cmd { VKCMDPUSHDESCRIPTORSETKHR };
+	// TBD - need to delay
+	// handle_VkWriteDescriptorSets(writer, descriptorWriteCount, pDescriptorWrites, false);
+}
+
+void replay_postprocess_vkCmdPushDescriptorSet2KHR(lava_file_reader& reader, VkCommandBuffer commandBuffer, const VkPushDescriptorSetInfoKHR* pPushDescriptorSetInfo)
+{
+	assert(false);
+	//trackedcommand cmd { VKCMDPUSHDESCRIPTORSET2KHR };
+	// TBD - need to delay
+	//handle_VkWriteDescriptorSets(writer, pPushDescriptorSetInfo->descriptorWriteCount, pPushDescriptorSetInfo->pDescriptorWrites, false);
+}
+
+void replay_postprocess_vkUpdateDescriptorSets(lava_file_reader& reader, VkDevice device, uint32_t descriptorWriteCount, const VkWriteDescriptorSet* pDescriptorWrites, uint32_t descriptorCopyCount, const VkCopyDescriptorSet* pDescriptorCopies)
+{
+	handle_VkWriteDescriptorSets(reader, descriptorWriteCount, pDescriptorWrites, true);
+
+	// TBD handle copy
+	assert(descriptorCopyCount == 0);
+}
+
+void replay_postprocess_vkCmdBindDescriptorSets(lava_file_reader& reader, VkCommandBuffer commandBuffer, VkPipelineBindPoint pipelineBindPoint, VkPipelineLayout layout,
+	uint32_t firstSet, uint32_t descriptorSetCount, const VkDescriptorSet* pDescriptorSets, uint32_t dynamicOffsetCount, const uint32_t* pDynamicOffsets)
+{
+	const uint32_t cmdbuffer_index = index_to_VkCommandBuffer.index(commandBuffer);
+	auto& cmdbuffer_data = VkCommandBuffer_index.at(cmdbuffer_index);
+	trackedcommand cmd { VKCMDBINDDESCRIPTORSETS };
+	cmd.data.bind_descriptorsets.pipelineBindPoint = pipelineBindPoint;
+	cmd.data.bind_descriptorsets.layout = layout;
+	cmd.data.bind_descriptorsets.firstSet = firstSet;
+	cmd.data.bind_descriptorsets.descriptorSetCount = descriptorSetCount;
+	if (descriptorSetCount > 0)
+	{
+		cmd.data.bind_descriptorsets.pDescriptorSets = (uint32_t*)malloc(descriptorSetCount * sizeof(uint32_t));
+		for (uint32_t i = 0; i < descriptorSetCount; i++)
+		{
+			const uint32_t descriptorset_index = index_to_VkDescriptorSet.index(pDescriptorSets[i]);
+			cmd.data.bind_descriptorsets.pDescriptorSets[i] = descriptorset_index;
+		}
+	}
+	else cmd.data.bind_descriptorsets.pDescriptorSets = nullptr;
+	cmd.data.bind_descriptorsets.dynamicOffsetCount = dynamicOffsetCount;
+	if (dynamicOffsetCount > 0 && pDynamicOffsets)
+	{
+		cmd.data.bind_descriptorsets.pDynamicOffsets = (uint32_t*)malloc(dynamicOffsetCount * sizeof(uint32_t));
+		memcpy(cmd.data.bind_descriptorsets.pDynamicOffsets, pDynamicOffsets, dynamicOffsetCount * sizeof(uint32_t));
+	}
+	else cmd.data.bind_descriptorsets.pDynamicOffsets = nullptr;
+	cmdbuffer_data.commands.push_back(cmd);
+}
+
+void replay_postprocess_vkCmdBindDescriptorSets2KHR(lava_file_reader& reader, VkCommandBuffer commandBuffer, const VkBindDescriptorSetsInfoKHR* pBindDescriptorSetsInfo)
+{
+	if ((pBindDescriptorSetsInfo->stageFlags & VK_SHADER_STAGE_VERTEX_BIT) || (pBindDescriptorSetsInfo->stageFlags & VK_SHADER_STAGE_FRAGMENT_BIT))
+	{
+		replay_postprocess_vkCmdBindDescriptorSets(reader, commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pBindDescriptorSetsInfo->layout,
+			pBindDescriptorSetsInfo->firstSet, pBindDescriptorSetsInfo->descriptorSetCount, pBindDescriptorSetsInfo->pDescriptorSets,
+			pBindDescriptorSetsInfo->dynamicOffsetCount, pBindDescriptorSetsInfo->pDynamicOffsets);
+	}
+	if (pBindDescriptorSetsInfo->stageFlags & VK_SHADER_STAGE_COMPUTE_BIT)
+	{
+		replay_postprocess_vkCmdBindDescriptorSets(reader, commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pBindDescriptorSetsInfo->layout,
+			pBindDescriptorSetsInfo->firstSet, pBindDescriptorSetsInfo->descriptorSetCount, pBindDescriptorSetsInfo->pDescriptorSets,
+			pBindDescriptorSetsInfo->dynamicOffsetCount, pBindDescriptorSetsInfo->pDynamicOffsets);
+	}
+}
+
+void replay_postprocess_vkCmdBindDescriptorSets2(lava_file_reader& reader, VkCommandBuffer commandBuffer, const VkBindDescriptorSetsInfoKHR* pBindDescriptorSetsInfo)
+{
+	replay_postprocess_vkCmdBindDescriptorSets2KHR(reader, commandBuffer, pBindDescriptorSetsInfo);
+}
+
 void replay_postprocess_vkQueueSubmit2(lava_file_reader& reader, VkResult result, VkQueue queue, uint32_t submitCount, const VkSubmitInfo2* pSubmits, VkFence fence)
 {
 	for (uint32_t i = 0; i < submitCount; i++)
@@ -1103,19 +1252,19 @@ static void replay_postprocess_vkCmdBindPipeline(lava_file_reader& reader, VkCom
 	cmdbuffer_data.commands.push_back(cmd);
 }
 
-static void replay_postprocess_draw_command(lava_file_reader& reader, uint32_t commandbuffer_index, trackedcmdbuffer_replay& commandbuffer_data)
+static void replay_postprocess_draw_command(lava_file_reader& reader, uint32_t commandbuffer_index, trackedcmdbuffer& commandbuffer_data)
 {
 	trackedcommand cmd { VKCMDDRAW };
 	commandbuffer_data.commands.push_back(cmd);
 }
 
-static void replay_postprocess_raytracing_command(lava_file_reader& reader, uint32_t commandbuffer_index, trackedcmdbuffer_replay& commandbuffer_data)
+static void replay_postprocess_raytracing_command(lava_file_reader& reader, uint32_t commandbuffer_index, trackedcmdbuffer& commandbuffer_data)
 {
 	trackedcommand cmd { VKCMDTRACERAYSKHR };
 	commandbuffer_data.commands.push_back(cmd);
 }
 
-static void replay_postprocess_compute_command(lava_file_reader& reader, uint32_t commandbuffer_index, trackedcmdbuffer_replay& commandbuffer_data)
+static void replay_postprocess_compute_command(lava_file_reader& reader, uint32_t commandbuffer_index, trackedcmdbuffer& commandbuffer_data)
 {
 	trackedcommand cmd { VKCMDDISPATCH };
 	commandbuffer_data.commands.push_back(cmd);
@@ -2246,9 +2395,9 @@ static trackedswapchain_replay trackedswapchain_replay_json(const Json::Value& v
 	return t;
 }
 
-static trackedcmdbuffer_replay trackedcmdbuffer_replay_json(const Json::Value& v)
+static trackedcmdbuffer trackedcmdbuffer_json(const Json::Value& v)
 {
-	trackedcmdbuffer_replay t;
+	trackedcmdbuffer t;
 	trackable_helper(t, v);
 	t.pool_index = v["pool"].asUInt();
 	t.enter_initialized();

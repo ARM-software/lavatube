@@ -464,6 +464,27 @@ static void trace_post_vkCmdBindDescriptorSets(lava_file_writer& writer,
 	}
 }
 
+static void trace_post_vkCmdBindDescriptorSets2KHR(lava_file_writer& writer, VkCommandBuffer commandBuffer, const VkBindDescriptorSetsInfoKHR* pBindDescriptorSetsInfo)
+{
+	if ((pBindDescriptorSetsInfo->stageFlags & VK_SHADER_STAGE_VERTEX_BIT) || (pBindDescriptorSetsInfo->stageFlags & VK_SHADER_STAGE_FRAGMENT_BIT))
+	{
+		trace_post_vkCmdBindDescriptorSets(writer, commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pBindDescriptorSetsInfo->layout,
+			pBindDescriptorSetsInfo->firstSet, pBindDescriptorSetsInfo->descriptorSetCount, pBindDescriptorSetsInfo->pDescriptorSets,
+			pBindDescriptorSetsInfo->dynamicOffsetCount, pBindDescriptorSetsInfo->pDynamicOffsets);
+	}
+	if (pBindDescriptorSetsInfo->stageFlags & VK_SHADER_STAGE_COMPUTE_BIT)
+	{
+		trace_post_vkCmdBindDescriptorSets(writer, commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pBindDescriptorSetsInfo->layout,
+			pBindDescriptorSetsInfo->firstSet, pBindDescriptorSetsInfo->descriptorSetCount, pBindDescriptorSetsInfo->pDescriptorSets,
+			pBindDescriptorSetsInfo->dynamicOffsetCount, pBindDescriptorSetsInfo->pDynamicOffsets);
+	}
+}
+
+static void trace_post_vkCmdBindDescriptorSets2(lava_file_writer& writer, VkCommandBuffer commandBuffer, const VkBindDescriptorSetsInfoKHR* pBindDescriptorSetsInfo)
+{
+	trace_post_vkCmdBindDescriptorSets2KHR(writer, commandBuffer, pBindDescriptorSetsInfo);
+}
+
 static void handle_VkWriteDescriptorSets(lava_file_writer& writer, uint32_t descriptorWriteCount, const VkWriteDescriptorSet* pDescriptorWrites, bool clear)
 {
 	for (unsigned i = 0; i < descriptorWriteCount; i++)

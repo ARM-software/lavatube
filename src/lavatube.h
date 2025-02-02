@@ -445,28 +445,21 @@ struct trackedpipelinelayout : trackable
 	}
 };
 
-struct trackedcmdbuffer : trackable
-{
-	using trackable::trackable; // inherit constructor
-	VkDevice device = VK_NULL_HANDLE;
-	VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
-	uint32_t pool_index = CONTAINER_INVALID_INDEX;
-
-	void self_test() const
-	{
-		static_assert(offsetof(trackedcmdbuffer, magic) == 0, "ICD loader magic must be at offset zero!");
-		assert(device != VK_NULL_HANDLE);
-		assert(physicalDevice != VK_NULL_HANDLE);
-		assert(pool_index != CONTAINER_INVALID_INDEX);
-		trackable::self_test();
-	}
-};
-
 struct trackedcommand // does _not_ inherit trackable
 {
 	lava_function_id id;
 	union data
 	{
+		struct bind_descriptorsets
+		{
+			VkPipelineBindPoint pipelineBindPoint;
+			VkPipelineLayout layout;
+			uint32_t firstSet;
+			uint32_t descriptorSetCount;
+			uint32_t* pDescriptorSets; // indices
+			uint32_t dynamicOffsetCount;
+			uint32_t* pDynamicOffsets;
+		} bind_descriptorsets;
 		struct bind_pipeline
 		{
 			VkPipelineBindPoint pipelineBindPoint;
@@ -495,11 +488,22 @@ struct trackedcommand // does _not_ inherit trackable
 	} data;
 };
 
-struct trackedcmdbuffer_replay : trackedcmdbuffer
+struct trackedcmdbuffer : trackable
 {
-	using trackedcmdbuffer::trackedcmdbuffer; // inherit constructor
+	using trackable::trackable; // inherit constructor
+	VkDevice device = VK_NULL_HANDLE;
+	VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
+	uint32_t pool_index = CONTAINER_INVALID_INDEX;
+	std::list<trackedcommand> commands; // track select commands for later processing
 
-	std::list<trackedcommand> commands; // track select commands for post-processing
+	void self_test() const
+	{
+		static_assert(offsetof(trackedcmdbuffer, magic) == 0, "ICD loader magic must be at offset zero!");
+		assert(device != VK_NULL_HANDLE);
+		assert(physicalDevice != VK_NULL_HANDLE);
+		assert(pool_index != CONTAINER_INVALID_INDEX);
+		trackable::self_test();
+	}
 };
 
 struct trackedcmdbuffer_trace : trackedcmdbuffer
@@ -562,11 +566,22 @@ struct trackedcmdbuffer_trace : trackedcmdbuffer
 	}
 };
 
+struct buffer_access
+{
+	trackedbuffer* buffer_data;
+	VkDeviceSize offset;
+	VkDeviceSize size; // not sure if we need this
+};
+
 struct trackeddescriptorset : trackable
 {
 	using trackable::trackable; // inherit constructor
 	uint32_t pool_index = CONTAINER_INVALID_INDEX;
 	VkDescriptorPool pool = VK_NULL_HANDLE;
+
+	// postprocess only
+	std::unordered_map<uint32_t, buffer_access> bound_buffers; // binding point to buffer access
+	std::unordered_map<uint32_t, VkDescriptorBufferInfo> dynamic_buffers; // must be resolved on bind
 
 	void self_test() const
 	{
