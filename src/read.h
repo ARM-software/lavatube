@@ -89,6 +89,7 @@ private:
 	int mEnd = -1;
 	int mGlobalFrames = 0;
 	bool mPreload = false;
+	FILE* out_fptr = nullptr;
 };
 
 class lava_file_reader : public file_reader

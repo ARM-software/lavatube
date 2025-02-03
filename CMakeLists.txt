@@ -393,7 +393,7 @@ add_test(NAME write_test_5 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/write5)
 
 # --- lava-replay ---
 
-add_executable(lava-replay src/replay.cpp)
+add_executable(lava-replay src/replay.cpp src/sandbox.cpp)
 target_include_directories(lava-replay ${COMMON_INCLUDE})
 target_link_libraries(lava-replay ${COMMON_LIBRARIES} lavatube)
 target_compile_options(lava-replay PRIVATE ${COMMON_FLAGS})
