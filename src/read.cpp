@@ -136,6 +136,7 @@ void lava_reader::finalize(bool terminate)
 
 lava_file_reader& lava_reader::file_reader(uint16_t thread_id)
 {
+	lava::lock_guard keep(global_mutex);
 	return *thread_streams.at(thread_id);
 }
 
