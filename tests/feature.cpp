@@ -47,5 +47,35 @@ int main()
 	assert(find_extension(&root, (VkStructureType)1) == &first);
 	assert(find_extension(&root, (VkStructureType)2) == &second);
 
+	std::unordered_set<std::string> exts;
+	exts.insert("VK_KHR_shader_atomic_int64");
+	assert(exts.size() == 1);
+	VkDeviceCreateInfo dci = { VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO, nullptr };
+	const char* extname = "VK_KHR_shader_atomic_int64";
+	const char** namelist = { &extname };
+	dci.ppEnabledExtensionNames = namelist;
+	dci.enabledExtensionCount = 1;
+	detect.check_VkDeviceCreateInfo(&dci);
+	assert(detect.has_VkPhysicalDeviceShaderAtomicInt64Features == false);
+	VkPhysicalDeviceShaderAtomicInt64Features pdsai64f = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_ATOMIC_INT64_FEATURES, nullptr, VK_FALSE, VK_FALSE };
+	dci.pNext = &pdsai64f;
+	detect.check_VkDeviceCreateInfo(&dci);
+	assert(detect.has_VkPhysicalDeviceShaderAtomicInt64Features == false);
+	pdsai64f = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_ATOMIC_INT64_FEATURES, nullptr, VK_TRUE, VK_TRUE };
+	detect.check_VkDeviceCreateInfo(&dci);
+	assert(detect.has_VkPhysicalDeviceShaderAtomicInt64Features == true);
+	detect.adjust_VkDeviceCreateInfo(&dci, exts);
+	assert(dci.enabledExtensionCount == 1);
+	assert(dci.pNext != nullptr);
+	detect.has_VkPhysicalDeviceShaderAtomicInt64Features.store(false);
+	pdsai64f = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_ATOMIC_INT64_FEATURES, nullptr, VK_FALSE, VK_FALSE };
+	detect.check_VkDeviceCreateInfo(&dci);
+	assert(detect.has_VkPhysicalDeviceShaderAtomicInt64Features == false);
+	std::unordered_set<std::string> removed = detect.adjust_device_extensions(exts);
+	assert(removed.size() == 1);
+	assert(exts.size() == 0);
+	detect.adjust_VkDeviceCreateInfo(&dci, exts);
+	assert(dci.pNext == nullptr);
+
 	return 0;
 }

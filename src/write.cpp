@@ -223,8 +223,13 @@ void lava_writer::serialize()
 	if (meta.app.stored_VkPhysicalDeviceVulkan11Features) usage_detection.adjust_VkPhysicalDeviceVulkan11Features(*meta.app.stored_VkPhysicalDeviceVulkan11Features);
 	if (meta.app.stored_VkPhysicalDeviceVulkan12Features) usage_detection.adjust_VkPhysicalDeviceVulkan12Features(*meta.app.stored_VkPhysicalDeviceVulkan12Features);
 	if (meta.app.stored_VkPhysicalDeviceVulkan13Features) usage_detection.adjust_VkPhysicalDeviceVulkan13Features(*meta.app.stored_VkPhysicalDeviceVulkan13Features);
-	usage_detection.adjust_device_extensions(meta.app.device_extensions);
-	usage_detection.adjust_instance_extensions(meta.app.instance_extensions);
+	auto removed_device_exts = usage_detection.adjust_device_extensions(meta.app.device_extensions);
+	auto removed_instance_exts = usage_detection.adjust_instance_extensions(meta.app.instance_extensions);
+	Json::Value& r = mJson;
+	r["instanceRequested"]["removedExtensions"] = Json::arrayValue;
+	for (const std::string& name : removed_instance_exts) r["instanceRequested"]["removedExtensions"].append(name);
+	r["deviceRequested"]["removedExtensions"] = Json::arrayValue;
+	for (const std::string& name : removed_device_exts) r["deviceRequested"]["removedExtensions"].append(name);
 
 	// write metadata to JSON file
 	mJson["global_frames"] = global_frame + 1; // +1 since zero-indexed
