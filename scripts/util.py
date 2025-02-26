@@ -153,7 +153,7 @@ validate_funcs(ignore_on_trace)
 # these functions have hard-coded post-execute callbacks
 replay_pre_calls = [ 'vkDestroyInstance', 'vkDestroyDevice', 'vkCreateDevice', 'vkCreateSampler', 'vkQueuePresentKHR', 'vkCreateSwapchainKHR',
 	'vkCreateSharedSwapchainsKHR', 'vkCreateGraphicsPipelines', 'vkCreateComputePipelines', 'vkCreateRayTracingPipelinesKHR', 'vkCmdPushConstants2KHR',
-	'vkQueueSubmit', 'vkQueueSubmit2', 'vkQueueSubmit2KHR', 'vkDestroyPipelineCache' ]
+	'vkQueueSubmit', 'vkQueueSubmit2', 'vkQueueSubmit2KHR', 'vkDestroyPipelineCache', 'vkDestroySwapchainKHR' ]
 validate_funcs(replay_pre_calls)
 replay_post_calls = [ 'vkCreateInstance', 'vkDestroyInstance', 'vkQueuePresentKHR', 'vkAcquireNextImageKHR', 'vkAcquireNextImage2KHR',
 	'vkGetBufferDeviceAddress', 'vkGetBufferDeviceAddressKHR', 'vkGetAccelerationStructureDeviceAddressKHR' ]
@@ -1390,15 +1390,6 @@ def load_add_tracking(name):
 			z.do('assert(data.destroyed.frame == UINT32_MAX || data.destroyed.frame == reader.current.frame);')
 			z.do('data.destroyed = reader.current;')
 			z.do('data.last_modified = reader.current;')
-			if type == 'VkSwapchainKHR':
-				z.do('if (reader.run)')
-				z.brace_begin()
-				z.do('for (auto i : data.virtual_images) wrap_vkDestroyImage(device, i, nullptr);')
-				z.do('if (data.virtual_cmdpool != VK_NULL_HANDLE) wrap_vkFreeCommandBuffers(device, data.virtual_cmdpool, data.virtual_cmdbuffers.size(), data.virtual_cmdbuffers.data());')
-				z.do('wrap_vkDestroyCommandPool(device, data.virtual_cmdpool, nullptr);')
-				z.do('wrap_vkDestroySemaphore(device, data.virtual_semaphore, nullptr);')
-				z.do('for (auto i : data.virtual_fences) wrap_vkDestroyFence(device, i, nullptr);')
-				z.brace_end()
 			z.do('data.enter_destroyed();')
 			z.do('index_to_%s.unset(%s);' % (type, toindex(type)))
 		elif name not in ignore_on_read:

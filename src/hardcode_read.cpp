@@ -289,6 +289,28 @@ void retrace_vkDestroySurfaceKHR(lava_file_reader& reader)
 	}
 }
 
+static void replay_pre_vkDestroySwapchainKHR(lava_file_reader& reader, VkDevice device, VkSwapchainKHR swapchain, const VkAllocationCallbacks* pAllocator)
+{
+	trackedswapchain_replay& t = VkSwapchainKHR_index.at(index_to_VkSwapchainKHR.index(swapchain));
+	assert(device == t.device);
+	for (unsigned i = 0; i < t.virtual_fences.size(); i++)
+	{
+		if (!t.inflight.at(i)) continue;
+		// check status, wait if needed, then delete
+		VkResult r = wrap_vkGetFenceStatus(device, t.virtual_fences.at(i));
+		if (r == VK_NOT_READY)
+		{
+			r = wrap_vkWaitForFences(device, 1, &t.virtual_fences.at(i), VK_TRUE, UINT64_MAX);
+		}
+		wrap_vkDestroyFence(device, t.virtual_fences.at(i), nullptr);
+		wrap_vkDestroyImage(device, t.virtual_images.at(i), nullptr);
+	}
+	if (t.virtual_cmdpool != VK_NULL_HANDLE) wrap_vkResetCommandPool(device, t.virtual_cmdpool, VK_COMMAND_POOL_RESET_RELEASE_RESOURCES_BIT);
+	if (t.virtual_cmdpool != VK_NULL_HANDLE) wrap_vkFreeCommandBuffers(device, t.virtual_cmdpool, t.virtual_cmdbuffers.size(), t.virtual_cmdbuffers.data());
+	wrap_vkDestroyCommandPool(device, t.virtual_cmdpool, nullptr);
+	wrap_vkDestroySemaphore(device, t.virtual_semaphore, nullptr);
+}
+
 static void replay_post_vkGetAccelerationStructureDeviceAddressKHR(lava_file_reader& reader, VkDeviceAddress result, VkDevice device, const VkAccelerationStructureDeviceAddressInfoKHR* pInfo)
 {
 	const uint32_t as_index = index_to_VkAccelerationStructureKHR.index(pInfo->accelerationStructure);
@@ -2417,6 +2439,10 @@ void terminate_all(lava_file_reader& reader, VkDevice stored_device)
 	terminate(index_to_VkDebugReportCallbackEXT, stored_instance, wrap_vkDestroyDebugReportCallbackEXT);
 	terminate(index_to_VkSamplerYcbcrConversion, stored_device, wrap_vkDestroySamplerYcbcrConversionKHR);
 	terminate(index_to_VkDescriptorUpdateTemplate, stored_device, wrap_vkDestroyDescriptorUpdateTemplateKHR);
+	for (trackedswapchain_replay& t : VkSwapchainKHR_index)
+	{
+		replay_pre_vkDestroySwapchainKHR(reader, stored_device, index_to_VkSwapchainKHR.at(t.index), nullptr);
+	}
 	if (!is_noscreen()) terminate(index_to_VkSwapchainKHR, stored_device, wrap_vkDestroySwapchainKHR);
 	if (!is_noscreen()) terminate(index_to_VkSurfaceKHR, stored_instance, wrap_vkDestroySurfaceKHR);
 	for (uint32_t i = 0; i < index_to_VkSurfaceKHR.size() && !is_noscreen(); i++)
@@ -2431,6 +2457,10 @@ void terminate_all(lava_file_reader& reader, VkDevice stored_device)
 	terminate(index_to_VkSampler, stored_device, wrap_vkDestroySampler);
 	terminate(index_to_VkPipelineLayout, stored_device, wrap_vkDestroyPipelineLayout);
 	terminate(index_to_VkPipeline, stored_device, wrap_vkDestroyPipeline);
+	for (auto& t : VkPipelineCache_index)
+	{
+		replay_pre_vkDestroyPipelineCache(reader, stored_device, index_to_VkPipelineCache.at(t.index), nullptr);
+	}
 	terminate(index_to_VkPipelineCache, stored_device, wrap_vkDestroyPipelineCache);
 	terminate(index_to_VkShaderModule, stored_device, wrap_vkDestroyShaderModule);
 	terminate(index_to_VkImageView, stored_device, wrap_vkDestroyImageView);
@@ -2454,17 +2484,11 @@ void terminate_all(lava_file_reader& reader, VkDevice stored_device)
 	terminate(index_to_VkEvent, stored_device, wrap_vkDestroyEvent);
 	terminate(index_to_VkSemaphore, stored_device, wrap_vkDestroySemaphore);
 	terminate(index_to_VkFence, stored_device, wrap_vkDestroyFence);
-	for (trackedswapchain_replay& t : VkSwapchainKHR_index)
-	{
-		if (t.virtual_cmdpool != VK_NULL_HANDLE) wrap_vkResetCommandPool(t.device, t.virtual_cmdpool, VK_COMMAND_POOL_RESET_RELEASE_RESOURCES_BIT);
-		if (t.virtual_cmdpool != VK_NULL_HANDLE) wrap_vkFreeCommandBuffers(t.device, t.virtual_cmdpool, t.virtual_cmdbuffers.size(), t.virtual_cmdbuffers.data());
-		wrap_vkDestroyCommandPool(t.device, t.virtual_cmdpool, nullptr);
-		wrap_vkDestroySemaphore(t.device, t.virtual_semaphore, nullptr);
-	}
-	suballoc_destroy(stored_device);
 	VkAllocationCallbacks allocator = {};
 	VkAllocationCallbacks* pAllocator = &allocator;
 	allocators_set(pAllocator);
+	replay_pre_vkDestroyDevice(reader, stored_device, nullptr);
 	wrap_vkDestroyDevice(stored_device, pAllocator);
+	replay_pre_vkDestroyInstance(reader, stored_instance, nullptr);
 	wrap_vkDestroyInstance(stored_instance, pAllocator);
 }
