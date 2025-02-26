@@ -9,7 +9,7 @@
 static void trace()
 {
 	vulkan_req_t reqs;
-	reqs.apiVersion = VK_API_VERSION_1_2;
+	reqs.apiVersion = VK_API_VERSION_1_3;
 	reqs.reqfeat12.bufferDeviceAddress = VK_TRUE;
 	vulkan_setup_t vulkan = test_init(TEST_NAME_1, reqs);
 

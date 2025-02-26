@@ -269,11 +269,11 @@ endfunction()
 
 internal_test(tracing1)
 add_test(NAME trace_test_1_2 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/tracing1 1)
-add_test(NAME trace_test_1_0_replay COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay tracing_1_2_0.vk)
-add_test(NAME trace_test_1_1_replay COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -D tracing_1_2_1.vk)
-add_test(NAME trace_test_1_2_replay COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -H 0 tracing_1_2_1.vk)
-add_test(NAME trace_test_2_1_replay COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -B tracing_1_2_0.vk)
-add_test(NAME trace_test_2_2_replay COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -nm tracing_1_2_0.vk)
+add_test(NAME trace_test_1_0_replay COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -V tracing_1_2_0.vk)
+add_test(NAME trace_test_1_1_replay COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -V -D tracing_1_2_1.vk)
+add_test(NAME trace_test_1_2_replay COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -V -H 0 tracing_1_2_1.vk)
+add_test(NAME trace_test_2_1_replay COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -V -B tracing_1_2_0.vk)
+add_test(NAME trace_test_2_2_replay COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -V -nm tracing_1_2_0.vk)
 
 internal_test(tracing2)
 add_test(NAME trace_test_2_replay COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -H 0 tracing_2.vk)
@@ -289,7 +289,7 @@ add_test(NAME trace_test_2_nompcompress COMMAND ${CMAKE_CURRENT_BINARY_DIR}/trac
 set_tests_properties(trace_test_2_nompcompress PROPERTIES ENVIRONMENT "LAVATUBE_DISABLE_MULTITHREADED_COMPRESS=1")
 
 internal_test(tracing3)
-add_test(NAME trace_test_3_replay_mp COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay tracing_3.vk)
+add_test(NAME trace_test_3_replay_mp COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -V tracing_3.vk)
 
 internal_test(tracing4)
 add_test(NAME trace_test_4_0_0 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/tracing4 -q 0 -m 0)
@@ -320,16 +320,16 @@ set_tests_properties(trace_test_4_virtqueue PROPERTIES ENVIRONMENT "LAVATUBE_DES
 add_test(NAME trace_test_4_virtqueue_replay COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay tracing_4_virtqueue.vk)
 
 internal_test(tracing5)
-add_test(NAME trace_test_5_replay COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay tracing_5.vk)
+add_test(NAME trace_test_5_replay COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -V tracing_5.vk)
 
 internal_test(tracing6)
-add_test(NAME trace_test_6_replay COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay tracing_6.vk)
+add_test(NAME trace_test_6_replay COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -V tracing_6.vk)
 
 internal_test(tracing7)
-add_test(NAME trace_test_7_replay COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay tracing_7.vk)
+add_test(NAME trace_test_7_replay COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -V tracing_7.vk)
 
 internal_test(tracing_remap)
-add_test(NAME trace_test_remap_replay COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay tracing_remap.vk)
+add_test(NAME trace_test_remap_replay COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -V tracing_remap.vk)
 add_test(NAME trace_test_remap_validate COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-validate tracing_remap.vk)
 add_test(NAME trace_test_remap_validate_remap COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-validate -r tracing_remap.vk)
 

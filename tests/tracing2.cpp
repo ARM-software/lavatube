@@ -10,6 +10,7 @@
 static void trace_3()
 {
 	vulkan_req_t reqs;
+	reqs.apiVersion = VK_API_VERSION_1_3;
 	vulkan_setup_t vulkan = test_init(TEST_NAME_1, reqs);
 
 	PFN_vkVoidFunction badptr = trace_vkGetInstanceProcAddr(nullptr, "vkNonsense");
