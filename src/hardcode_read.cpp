@@ -230,8 +230,10 @@ void replay_pre_vkCreatePipelineCache(lava_file_reader& reader, VkDevice device,
 	}
 }
 
-void replay_pre_vkDestroyPipelineCache(lava_file_reader& reader, VkDevice device, uint32_t device_index, VkPipelineCache pipelineCache, uint32_t cache_index)
+void replay_pre_vkDestroyPipelineCache(lava_file_reader& reader, VkDevice device, VkPipelineCache pipelineCache, const VkAllocationCallbacks* pAllocator)
 {
+	const uint32_t device_index = index_to_VkDevice.index(device);
+	const uint32_t cache_index = index_to_VkPipelineCache.index(pipelineCache);
 	const char* savedir = save_pipelinecache();
 	if (savedir && pipelineCache != VK_NULL_HANDLE)
 	{
@@ -475,8 +477,7 @@ static void cleanup_sync(VkQueue queue, uint32_t waitSemaphoreCount, const VkSem
 {
 	const VkPipelineStageFlags flags = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
 	VkSubmitInfo submit_info = { VK_STRUCTURE_TYPE_SUBMIT_INFO, nullptr, waitSemaphoreCount, waitSemaphores, &flags, 0, nullptr, signalSemaphoreCount, signalSemaphores };
-	VkResult result = VK_SUCCESS;
-	wrap_vkQueueSubmit(queue, 1, &submit_info, fence);
+	VkResult result = wrap_vkQueueSubmit(queue, 1, &submit_info, fence);
 	assert(result == VK_SUCCESS);
 }
 
@@ -2404,7 +2405,7 @@ void terminate(T vec, U owner, V destroyer)
 	}
 }
 
-void terminate_all(VkDevice stored_device)
+void terminate_all(lava_file_reader& reader, VkDevice stored_device)
 {
 	for (unsigned i = 0; i < index_to_VkCommandPool.size(); i++)
 	{

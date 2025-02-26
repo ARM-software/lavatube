@@ -220,9 +220,7 @@ static void trace_2(int variant)
 	result = trace_vkResetCommandPool(device, cmdpool, VK_COMMAND_POOL_RESET_RELEASE_RESOURCES_BIT);
 	assert(result == VK_SUCCESS);
 
-	VkSemaphoreCreateInfo semaphoreCreateInfo = {};
-	semaphoreCreateInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-	if (variant == 1) semaphoreCreateInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+	VkSemaphoreCreateInfo semaphoreCreateInfo = { VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO, nullptr };
 	VkSemaphore pSemaphore = VK_NULL_HANDLE;
 	result = trace_vkCreateSemaphore(device, &semaphoreCreateInfo, nullptr, &pSemaphore);
 	assert(pSemaphore != 0);

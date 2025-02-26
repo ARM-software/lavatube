@@ -345,7 +345,7 @@ out(targets_all)
 
 out(targets_read_headers, 'void image_update(lava_file_reader& reader, uint32_t device_index, uint32_t image_index);')
 out(targets_read_headers, 'void buffer_update(lava_file_reader& reader, uint32_t device_index, uint32_t buffer_index);')
-out(targets_read_headers, 'void terminate_all(VkDevice device);')
+out(targets_read_headers, 'void terminate_all(lava_file_reader& reader, VkDevice device);')
 out(targets_read_headers)
 
 out(targets_read, 'void retrace_init(const Json::Value& v, int heap_size, bool run)')
