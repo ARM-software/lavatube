@@ -553,7 +553,8 @@ class parameter(object):
 			z.do('allocators_set(pAllocator);')
 		elif self.name in ['pUserData']:
 			pass
-		elif self.funcname in ['VkDebugUtilsObjectNameInfoEXT', 'VkDebugUtilsObjectTagInfoEXT'] and self.name == 'objectHandle':
+		elif self.funcname in ['VkDebugUtilsObjectNameInfoEXT', 'VkDebugUtilsObjectTagInfoEXT', 'vkSetPrivateData', 'vkSetPrivateDataEXT', 'vkGetPrivateData', 'vkGetPrivateDataEXT'] and self.name == 'objectHandle':
+			z.decl('uint64_t', 'objectHandle')
 			z.do('%s = reader.read_handle();' % varname)
 		elif self.type == 'VkAccelerationStructureBuildRangeInfoKHR':
 			assert(self.funcname == 'vkBuildAccelerationStructuresKHR' or self.funcname == 'vkCmdBuildAccelerationStructuresKHR')
@@ -794,7 +795,7 @@ class parameter(object):
 			z.do('window_destroy(instance, surfacekhr_index);')
 		elif self.funcname in ['VkDebugMarkerObjectNameInfoEXT', 'VkDebugMarkerObjectTagInfoEXT', 'vkDebugReportMessageEXT'] and self.name == 'object':
 			z.do('%s = debug_object_lookup(%sobjectType, %s);' % (varname, owner, varname))
-		elif self.funcname in ['VkDebugUtilsObjectNameInfoEXT', 'VkDebugUtilsObjectTagInfoEXT'] and self.name == 'objectHandle':
+		elif self.funcname in ['VkDebugUtilsObjectNameInfoEXT', 'VkDebugUtilsObjectTagInfoEXT', 'vkSetPrivateData', 'vkSetPrivateDataEXT', 'vkGetPrivateData', 'vkGetPrivateDataEXT'] and self.name == 'objectHandle':
 			z.do('%s = object_lookup(%sobjectType, %s);' % (varname, owner, varname))
 
 		# Track our currently executing device
@@ -858,7 +859,7 @@ class parameter(object):
 			z.do('writer.write_handle(object_data);')
 		elif 'CaptureReplayHandle' in self.name:
 			z.do('writer.write_uint64_t((uint64_t)%s);' % varname)
-		elif self.funcname in ['VkDebugUtilsObjectNameInfoEXT', 'VkDebugUtilsObjectTagInfoEXT'] and self.name == 'objectHandle':
+		elif self.funcname in ['VkDebugUtilsObjectNameInfoEXT', 'VkDebugUtilsObjectTagInfoEXT', 'vkSetPrivateData', 'vkSetPrivateDataEXT', 'vkGetPrivateData', 'vkGetPrivateDataEXT'] and self.name == 'objectHandle':
 			z.do('auto* object_data = object_trackable(writer.parent->records, %sobjectType, %s);' % (owner, varname))
 			z.do('writer.write_handle(object_data);')
 		elif self.name == 'pNext':
@@ -1597,6 +1598,8 @@ def loadfunc(name, node, target, header):
 		z.do('else if (reader.run) cleanup_sync(queue, pPresentInfo->waitSemaphoreCount, pPresentInfo->pWaitSemaphores, 0, nullptr, VK_NULL_HANDLE);')
 	else:
 		prefix = 'if (reader.run) '
+		if name == 'vkGetQueryPoolResults':
+			prefix = 'if (reader.run && !is_blackhole_mode())'
 		if name in layer_implemented:
 			if name == 'vkSetDebugUtilsObjectNameEXT':
 				prefix = 'if (wrap_%s && reader.run && pNameInfo->objectType != VK_OBJECT_TYPE_PHYSICAL_DEVICE && pNameInfo->objectType != VK_OBJECT_TYPE_DEVICE_MEMORY) ' % name

@@ -468,11 +468,11 @@ function(layer_test test_name test_exe)
 	set_tests_properties(layer_test_${ARGV0}_validate PROPERTIES FIXTURES_REQUIRED ${ARGV0})
 	add_test(NAME layer_test_${ARGV0}_replay COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -V vulkan_${ARGV0}.vk)
 	set_tests_properties(layer_test_${ARGV0}_replay PROPERTIES FIXTURES_REQUIRED ${ARGV0})
-	add_test(NAME layer_test_${ARGV0}_replay_blackhole COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -B vulkan_${ARGV0}.vk)
+	add_test(NAME layer_test_${ARGV0}_replay_blackhole COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -V -B vulkan_${ARGV0}.vk)
 	set_tests_properties(layer_test_${ARGV0}_replay_blackhole PROPERTIES FIXTURES_REQUIRED ${ARGV0})
-	add_test(NAME layer_test_${ARGV0}_replay_blackhole_nonewsi COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -B -v -w none vulkan_${ARGV0}.vk)
+	add_test(NAME layer_test_${ARGV0}_replay_blackhole_nonewsi COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -V -B -v -w none vulkan_${ARGV0}.vk)
 	set_tests_properties(layer_test_${ARGV0}_replay_blackhole_nonewsi PROPERTIES FIXTURES_REQUIRED ${ARGV0})
-	add_test(NAME layer_test_${ARGV0}_replay_nonewsi COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -v -w none vulkan_${ARGV0}.vk)
+	add_test(NAME layer_test_${ARGV0}_replay_nonewsi COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -V -v -w none vulkan_${ARGV0}.vk)
 	set_tests_properties(layer_test_${ARGV0}_replay_nonewsi PROPERTIES FIXTURES_REQUIRED ${ARGV0})
 endfunction()
 
@@ -549,5 +549,12 @@ layer_test(deferred_1 deferred_1)
 layer_test(pipelinecache_1 pipelinecache_1)
 layer_test(pnext_chain pnext_chain)
 layer_test(as_1 as_1)
+layer_test(as_2 as_2)
+layer_test(as_3 as_3)
+#layer_test(as_4 as_4) # crashes
+#layer_test(as_5 as_5) # crashes
+#layer_test(aliasing_1 aliasing_1) # TBD need to implement aliasing support
+layer_test(privatedata privatedata)
 #layer_test(multidevice_1 multidevice_1) # assert failure on memory type
-#layer_test(mesh_1 mesh_1)
+#layer_test(multiinstance multiinstance)
+layer_test(mesh_1 mesh_1)
