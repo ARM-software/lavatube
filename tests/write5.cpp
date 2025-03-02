@@ -40,6 +40,7 @@ static void write_test_pattern_stride(bool actual, int stride, int conseq)
 	total += end - start;
 	if (actual) printf("test_pattern_stride_%03d_conseq_%03d   %'12" PRIu64 " (%'8" PRIu64 " bytes stored, ideal would be %'8u)\n", stride, conseq, end - start, changed, changes);
 	assert(memcmp(ptr, clone, size) == 0);
+	unlink(filename.c_str());
 }
 
 static void write_test_1()
@@ -89,6 +90,7 @@ int main()
 	write_test_1();
 	sync();
 	read_test_1();
+	unlink("write_5.bin");
 
 	// warmup
 	for (int i = 2; i <= 16; i++) write_test_pattern_stride(false, i, 1);

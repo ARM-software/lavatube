@@ -269,14 +269,14 @@ static void extend_bits(VkMemoryRequirements* pMemoryRequirements)
 static void trace_post_vkGetBufferMemoryRequirements(lava_file_writer& writer, VkDevice device, VkBuffer buffer, VkMemoryRequirements* pMemoryRequirements)
 {
 	auto* buffer_data = writer.parent->records.VkBuffer_index.at(buffer);
-	buffer_data->req = *pMemoryRequirements;
+	buffer_data->req = *pMemoryRequirements; // if this is not set here, we'll request this info explicitly on bind
 	extend_bits(pMemoryRequirements);
 }
 
 static void trace_post_vkGetImageMemoryRequirements(lava_file_writer& writer, VkDevice device, VkImage image, VkMemoryRequirements* pMemoryRequirements)
 {
 	auto* image_data = writer.parent->records.VkImage_index.at(image);
-	image_data->req = *pMemoryRequirements;
+	image_data->req = *pMemoryRequirements; // if this is not set here, we'll request this info explicitly on bind
 	extend_bits(pMemoryRequirements);
 }
 
