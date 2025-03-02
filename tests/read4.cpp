@@ -1,3 +1,5 @@
+// You need to run the write4 test first.
+
 #include <limits>
 #include <cmath>
 #include <vector>
@@ -78,5 +80,7 @@ void read_test_1()
 int main()
 {
 	read_test_1();
+	unlink("write_4.bin");
+	unlink("write_4-2.bin");
 	return 0;
 }

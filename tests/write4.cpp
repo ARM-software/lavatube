@@ -61,8 +61,6 @@ void write_test_1()
 	assert(big.at(64) == 77);
 	assert(big.at(65) == 99);
 	assert(big.at(80) == 78);
-
-	unlink("write_4.bin");
 }
 
 void write_test_2()
@@ -75,8 +73,6 @@ void write_test_2()
 	file.write_int8_t(8);
 	file.set("write_4-2.bin");
 	file.write_int8_t(8);
-
-	unlink("write_4-2.bin");
 }
 
 void write_test_3()

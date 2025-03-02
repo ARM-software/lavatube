@@ -163,7 +163,7 @@ static void trace_post_vkGetBufferDeviceAddressKHR(lava_file_writer& writer, VkD
 static void trace_post_vkCreateShaderModule(lava_file_writer& writer, VkResult result, VkDevice device, const VkShaderModuleCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkShaderModule* pShaderModule)
 {
 	if (result != VK_SUCCESS) return; // ignore rest on failure
-	if (shader_has_buffer_devices_addresses(pCreateInfo->pCode, pCreateInfo->codeSize))
+	if (shader_has_device_addresses(pCreateInfo->pCode, pCreateInfo->codeSize))
 	{
 		auto* shader = writer.parent->records.VkShaderModule_index.at(*pShaderModule);
 		shader->enables_device_address = true;
@@ -537,6 +537,9 @@ static void handle_VkWriteDescriptorSets(lava_file_writer& writer, uint32_t desc
 				assert(ptr->sType == VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR);
 				assert(ptr->accelerationStructureCount == pDescriptorWrites[i].descriptorCount);
 			}
+			break;
+		case VK_DESCRIPTOR_TYPE_PARTITIONED_ACCELERATION_STRUCTURE_NV:
+			ABORT("VK_NV_partitioned_acceleration_structure not supported");
 			break;
 		case VK_DESCRIPTOR_TYPE_MUTABLE_EXT: // Provided by VK_EXT_mutable_descriptor_type
 			ABORT("vkUpdateDescriptorSets using VK_EXT_mutable_descriptor_type not yet implemented");
@@ -1704,6 +1707,11 @@ void trace_post_vkMapMemory(lava_file_writer& writer, VkResult result, VkDevice 
 }
 
 void trace_post_vkMapMemory2KHR(lava_file_writer& writer, VkResult result, VkDevice device, const VkMemoryMapInfoKHR* pMemoryMapInfo, void** ppData)
+{
+	trace_post_vkMapMemory(writer, result, device, pMemoryMapInfo->memory, pMemoryMapInfo->offset, pMemoryMapInfo->size, pMemoryMapInfo->flags, ppData);
+}
+
+void trace_post_vkMapMemory2(lava_file_writer& writer, VkResult result, VkDevice device, const VkMemoryMapInfoKHR* pMemoryMapInfo, void** ppData)
 {
 	trace_post_vkMapMemory(writer, result, device, pMemoryMapInfo->memory, pMemoryMapInfo->offset, pMemoryMapInfo->size, pMemoryMapInfo->flags, ppData);
 }

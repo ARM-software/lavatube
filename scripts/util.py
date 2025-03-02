@@ -94,11 +94,12 @@ validate_funcs(push_thread_barrier_funcs)
 
 # TODO : Add support for these functions and structures
 functions_noop = [
-	"vkUpdateDescriptorSetWithTemplateKHR", "vkUpdateDescriptorSetWithTemplate", "vkCmdPushDescriptorSetWithTemplateKHR", 'vkGetImageViewOpaqueCaptureDescriptorDataEXT',
+	"vkUpdateDescriptorSetWithTemplateKHR", "vkUpdateDescriptorSetWithTemplate", 'vkGetImageViewOpaqueCaptureDescriptorDataEXT',
+	'vkCmdPushDescriptorSetWithTemplateKHR', 'vkCmdPushDescriptorSetWithTemplate2KHR', 'vkCmdPushDescriptorSetWithTemplate2', 'vkCmdPushDescriptorSetWithTemplate',
 	'vkGetPipelinePropertiesEXT', 'vkGetBufferOpaqueCaptureDescriptorDataEXT',
 	'vkCmdBuildMicromapsEXT', 'vkBuildMicromapsEXT', 'vkGetMicromapBuildSizesEXT', 'vkGetImageOpaqueCaptureDescriptorDataEXT', 'vkGetSamplerOpaqueCaptureDescriptorDataEXT',
 	'vkGetDeviceFaultInfoEXT', # we never want to trace this, but rather inject it during tracing if device loss happens, print the info, then abort
-	'vkGetAccelerationStructureOpaqueCaptureDescriptorDataEXT', 'vkCmdPushDescriptorSetWithTemplate2KHR', 'vkCmdSetRenderingInputAttachmentIndicesKHR',
+	'vkGetAccelerationStructureOpaqueCaptureDescriptorDataEXT', 'vkCmdSetRenderingInputAttachmentIndicesKHR',
 	'vkGetEncodedVideoSessionParametersKHR',
 	'vkCreatePipelineBinariesKHR', 'vkCreateIndirectCommandsLayoutEXT', 'vkCreateIndirectExecutionSetEXT', 'vkGetPipelineBinaryDataKHR',
 ]
@@ -145,7 +146,7 @@ ignore_on_read = [ 'vkGetMemoryHostPointerPropertiesEXT', 'vkCreateDebugUtilsMes
 	'vkInvalidateMappedMemoryRanges', 'vkFreeMemory', 'vkGetPhysicalDeviceXcbPresentationSupportKHR', 'vkMapMemory2KHR', 'vkUnmapMemory2KHR',
 	'vkGetImageMemoryRequirements2KHR', 'vkGetBufferMemoryRequirements2KHR', 'vkGetImageSparseMemoryRequirements2KHR', 'vkGetImageMemoryRequirements',
 	'vkGetBufferMemoryRequirements', 'vkGetImageSparseMemoryRequirements', 'vkGetImageMemoryRequirements2', 'vkGetBufferMemoryRequirements2',
-	'vkGetImageSparseMemoryRequirements2' ]
+	'vkGetImageSparseMemoryRequirements2', 'vkMapMemory2' ]
 validate_funcs(ignore_on_read)
 # functions we should not call natively when tracing - let pre or post calls handle it
 ignore_on_trace = []
@@ -165,7 +166,7 @@ trace_pre_calls = [ 'vkQueueSubmit', 'vkCreateInstance', 'vkCreateDevice', 'vkFr
 validate_funcs(trace_pre_calls)
 trace_post_calls = [ 'vkCreateInstance', 'vkCreateDevice', 'vkDestroyInstance', 'vkGetPhysicalDeviceFeatures', 'vkGetPhysicalDeviceProperties',
 		'vkGetPhysicalDeviceSurfaceCapabilitiesKHR', 'vkBindImageMemory', 'vkBindBufferMemory', 'vkBindImageMemory2', 'vkBindImageMemory2KHR',
-		'vkBindBufferMemory2', 'vkUpdateDescriptorSets', 'vkFlushMappedMemoryRanges', 'vkQueuePresentKHR', 'vkMapMemory2KHR',
+		'vkBindBufferMemory2', 'vkUpdateDescriptorSets', 'vkFlushMappedMemoryRanges', 'vkQueuePresentKHR', 'vkMapMemory2KHR', 'vkMapMemory2',
 		'vkMapMemory', 'vkCmdBindDescriptorSets', 'vkBindBufferMemory2KHR', 'vkCmdPushDescriptorSet2KHR',
 		'vkGetImageMemoryRequirements', 'vkGetPipelineCacheData', 'vkAcquireNextImageKHR', 'vkAcquireNextImage2KHR',
 		'vkGetBufferMemoryRequirements', 'vkGetBufferMemoryRequirements2', 'vkGetImageMemoryRequirements2', 'vkGetPhysicalDeviceMemoryProperties',
@@ -191,7 +192,7 @@ deconstify = {
 validate_funcs(deconstify.keys())
 # Workaround to deconstify nested structures
 deconst_struct = [
-	'VkDeviceQueueCreateInfo', 'VkDeviceQueueInfo2', 'VkQueryPoolPerformanceCreateInfoKHR', 'VkVideoSessionCreateInfoKHR', 'VkDeviceCreateInfo', 'VkCommandPoolCreateInfo'
+	'VkDeviceQueueCreateInfo', 'VkDeviceQueueInfo2', 'VkQueryPoolPerformanceCreateInfoKHR', 'VkVideoSessionCreateInfoKHR', 'VkDeviceCreateInfo', 'VkCommandPoolCreateInfo',
 ]
 # Subclassing of trackable
 trackable_type_map_general = { 'VkBuffer': 'trackedbuffer', 'VkImage': 'trackedimage', 'VkCommandBuffer': 'trackedcmdbuffer', 'VkDescriptorSet': 'trackeddescriptorset',
@@ -569,7 +570,7 @@ class parameter(object):
 			z.do('%s = reader.read_uint32_t();' % self.name)
 			z.do('if (%s == LAVATUBE_VIRTUAL_QUEUE) %s = selected_queue_family_index;' % (self.name, self.name))
 			if not is_root: z.do('%s = %s;' % (varname, self.name))
-		elif (self.name == 'ppData' and self.funcname in ['vkMapMemory', 'vkMapMemory2KHR']) or self.name == 'pHostPointer':
+		elif (self.name == 'ppData' and self.funcname in ['vkMapMemory', 'vkMapMemory2KHR', 'vkMapMemory2']) or self.name == 'pHostPointer':
 			z.decl('%s%s%s' % (self.mod, self.type, self.param_ptrstr), self.name)
 		elif self.name == 'pfnUserCallback' and self.funcname == 'VkDebugUtilsMessengerCreateInfoEXT':
 			z.do('%s = messenger_callback; // hijacking this pointer with our own callback function' % varname)
@@ -719,6 +720,9 @@ class parameter(object):
 					z.do('*%s = static_cast<%s>(reader.read_%s());' % (self.name, self.type, storedtype))
 					if isptr(varname):
 						z.do('%s = *%s;' % (varname, self.name))
+				elif self.ptr: # but not root
+					z.do('%s = reader.pool.allocate<%s>(1);' % (varname, self.type))
+					z.do('*%s = static_cast<%s>(reader.read_%s());' % (varname, self.type, storedtype))
 				elif iscount(self): # need to store in temporary in case used by other variables as size
 					storedname = z.tmp(storedtype)
 					z.do('%s = reader.read_%s(); // for %s' % (storedname, storedtype, varname))
@@ -739,7 +743,7 @@ class parameter(object):
 			z.do('reader.read_array(%s, %s); // array of dynamic length' % (vname, self.length))
 			if is_root:
 				z.decl('%s%s' % (self.type, self.inline_ptrstr), self.name)
-				z.access(self.name, self.name) # avoid a & being add
+				z.access(self.name, self.name) # avoid a & being added
 			z.do('%s = %s;' % (varname, vname))
 			z.brace_end()
 			if not is_root:
@@ -753,6 +757,11 @@ class parameter(object):
 			if iscount(self):
 				z.decl(self.type, self.name)
 				z.do('%s = reader.read_%s(); // indirect read because it is a count' % (self.name, self.type))
+				z.do('%s = %s;' % (varname, self.name))
+			elif not is_root and self.ptr:
+				z.decl('%s%s' % (self.type, self.inline_ptrstr), self.name)
+				z.do('%s = reader.pool.allocate<%s>(1);' % (self.name, self.type))
+				z.do('*%s = reader.read_%s();' % (self.name, self.type))
 				z.do('%s = %s;' % (varname, self.name))
 			else:
 				z.do('%s = reader.read_%s();' % (varname, self.type))
@@ -850,7 +859,7 @@ class parameter(object):
 			z.do('initialDataSize = 0;')
 		elif (self.name == 'pInitialData' and self.funcname == 'VkPipelineCacheCreateInfo'):
 			z.do('assert(false); // pInitialData')
-		elif (self.name == 'ppData' and self.funcname in ['vkMapMemory', 'vkMapMemory2KHR']) or self.name == 'pHostPointer':
+		elif (self.name == 'ppData' and self.funcname in ['vkMapMemory', 'vkMapMemory2KHR', 'vkMapMemory2']) or self.name == 'pHostPointer':
 			pass
 		elif self.structure:
 			self.print_struct(self.type, varname, owner, size=self.length)

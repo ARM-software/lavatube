@@ -17,7 +17,7 @@
 #include <string>
 
 #define VK_NO_PROTOTYPES
-#include "vulkan/vulkan.h"
+#include "vulkan_utility.h"
 
 #if defined(_MSC_VER)
 	#define EXPORT __declspec(dllexport)
@@ -181,9 +181,6 @@ static __attribute__((pure)) inline uint64_t gettime()
 
 std::string get_vulkan_lib_path();
 
-/// Whether a SPIRV shader has enabled support for buffer device addresses
-bool shader_has_buffer_devices_addresses(const uint32_t* code, uint32_t codeSize);
-
 /// Faster than std::vector but with much the same interface. The performance improvement mostly
 /// comes from not filling memory beforehand.
 struct buffer
@@ -205,12 +202,5 @@ static __attribute__((const)) inline uint64_t aligned_start(uint64_t size, uint6
 
 template<typename T>
 inline T fake_handle(uint32_t index) { return (T)((intptr_t)index + 1); }
-
-void* find_extension(void* sptr, VkStructureType sType);
-const void* find_extension(const void* sptr, VkStructureType sType);
-
-// "parent" methods require you to pass the owner of the pNext chain
-void* find_extension_parent(void* sptr, VkStructureType sType); // returns the parent object to the searched for type
-void purge_extension_parent(void* sptr, VkStructureType sType); // removes this extension from a pNext chain
 
 const char* pretty_print_VkObjectType(VkObjectType val);

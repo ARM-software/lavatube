@@ -13,7 +13,7 @@ skiplist = [ 'VkXlibSurfaceCreateInfoKHR', 'VkXcbSurfaceCreateInfoKHR', 'VkBaseO
 	'VkVideoDecodeH264PictureInfoKHR', 'VkVideoDecodeH264DpbSlotInfoKHR', 'VkVideoDecodeH265ProfileInfoKHR', 'VkVideoDecodeH265SessionParametersAddInfoKHR',
 	'VkVideoDecodeH265CapabilitiesKHR', 'VkVideoDecodeH265SessionParametersCreateInfoKHR', 'VkVideoDecodeH265PictureInfoKHR', 'VkVideoDecodeH265DpbSlotInfoKHR',
 	'VkOpaqueCaptureDescriptorDataCreateInfoEXT',
-	'VkPushDescriptorSetWithTemplateInfoKHR',
+	'VkPushDescriptorSetWithTemplateInfoKHR', 'VkPushDescriptorSetWithTemplateInfo',
 	'VkMemoryMapPlacedInfoEXT',
 	'VkBindMemoryStatusKHR',
 	'VkRenderingInputAttachmentIndexInfoKHR',
