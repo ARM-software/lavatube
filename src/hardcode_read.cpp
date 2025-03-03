@@ -23,6 +23,33 @@ static bool has_VkPhysicalDeviceVulkan12Features = false;
 static bool has_VkPhysicalDeviceVulkan13Features = false;
 static bool host_has_frame_boundary = false;
 
+// this is a big hack until we have something better
+void reset_for_tools()
+{
+	stored_VkPhysicalDeviceFeatures2 = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2, nullptr };
+	stored_VkPhysicalDeviceVulkan13Features = {};
+	stored_VkPhysicalDeviceVulkan12Features = {};
+	stored_VkPhysicalDeviceVulkan11Features = {};
+	device_VkQueueFamilyProperties.clear();
+	has_VkPhysicalDeviceFeatures2 = false;
+	has_VkPhysicalDeviceVulkan11Features = false;
+	has_VkPhysicalDeviceVulkan12Features = false;
+	has_VkPhysicalDeviceVulkan13Features = false;
+	host_has_frame_boundary = false;
+	stored_instance = VK_NULL_HANDLE;
+	selected_physical_device = VK_NULL_HANDLE;
+	stored_callback = VK_NULL_HANDLE;
+	has_pipeline_feedback = false;
+	has_pipeline_control = false;
+	has_debug_report = false;
+	has_debug_utils = false;
+	has_dedicated_allocation = 0;
+	selected_queue_family_index = 0xdeadbeef;
+	callback_initialized = false;
+	stored_instance = VK_NULL_HANDLE;
+	reset_all();
+}
+
 static void memory_report_callback(
 	const VkDeviceMemoryReportCallbackDataEXT*  pCallbackData,
 	void*                                       pUserData)
@@ -959,7 +986,6 @@ void replay_pre_vkDestroyDevice(lava_file_reader& reader, VkDevice device, const
 	if (device != VK_NULL_HANDLE)
 	{
 		wrap_vkDeviceWaitIdle(device);
-		suballoc_destroy(device);
 		selected_physical_device = VK_NULL_HANDLE;
 	}
 }

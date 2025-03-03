@@ -26,6 +26,13 @@ class lava_file_reader;
 
 extern lava::mutex sync_mutex;
 
+struct address_rewrite
+{
+	VkDeviceSize offset;
+	VkDeviceSize size;
+	change_source source;
+};
+
 class lava_reader
 {
 	friend lava_file_reader;
@@ -62,6 +69,10 @@ public:
 	// This is thread safe since we allocate it all before threading begins.
 	address_remapper<trackedmemoryobject> device_address_remapping;
 	address_remapper<trackedaccelerationstructure> acceleration_structure_address_remapping;
+
+	// Our rewrite queue. Only used during post-processing. During first pass entries are ordered by entry time. During second
+	// pass they must be ordered by change time.
+	std::list<address_rewrite> rewrite_queue;
 
 	/// Are we currently looking for remap and rewrite candidates?
 	bool remap = false;

@@ -14,7 +14,6 @@
 #include "packfile.h"
 #include "util_auto.h"
 
-static lava_reader replayer;
 static bool validate = false;
 static bool verbose = false;
 static bool report_unused = false;
@@ -65,18 +64,18 @@ static std::string get_str(const char* in, int& remaining)
 	return in;
 }
 
-static void replay_thread(int thread_id)
+static void replay_thread(lava_reader* replayer, int thread_id)
 {
-	lava_file_reader& t = replayer.file_reader(thread_id);
+	lava_file_reader& t = replayer->file_reader(thread_id);
 	uint8_t instrtype;
 	assert(t.run == false);
 	if (verbose)
 	{
-		for (const auto pair : replayer.device_address_remapping.iter())
+		for (const auto pair : replayer->device_address_remapping.iter())
 		{
 			ILOG("Device address range %lu -> %lu", (unsigned long)pair.first, (unsigned long)(pair.first + pair.second->size));
 		}
-		for (const auto pair : replayer.acceleration_structure_address_remapping.iter())
+		for (const auto pair : replayer->acceleration_structure_address_remapping.iter())
 		{
 			ILOG("Acceleration structure address range %lu -> %lu", (unsigned long)pair.first, (unsigned long)(pair.first + pair.second->size));
 		}
@@ -109,15 +108,15 @@ static void replay_thread(int thread_id)
 	}
 }
 
-static void run_multithreaded(int n)
+static void run_multithreaded(lava_reader* replayer, int n)
 {
 	for (int i = 0; i < n; i++)
 	{
-		replayer.threads.emplace_back(replay_thread, i);
+		replayer->threads.emplace_back(&replay_thread, replayer, i);
 	}
-	for (unsigned i = 0; i < replayer.threads.size(); i++)
+	for (unsigned i = 0; i < replayer->threads.size(); i++)
 	{
-		replayer.threads[i].join();
+		replayer->threads[i].join();
 	}
 }
 
@@ -199,15 +198,48 @@ int main(int argc, char **argv)
 
 	if (!filename_output.empty()) DIE("Output file support still to be done!");
 
-	replayer.run = false; // do not actually run anything
-	replayer.init(filename_input, heap_size);
-	replayer.parameters(start, end, false);
-	replayer.remap = validate_remap;
+	std::list<address_rewrite> rewrite_queue_copy;
 
-	// Read all thread files
-	std::vector<std::string> threadfiles = packed_files(filename_input, "thread_");
-	if (threadfiles.size() == 0) DIE("Failed to find any threads in %s!", filename_input.c_str());
-	run_multithreaded(threadfiles.size());
+	// run first round
+	{
+		lava_reader replayer;
+		replayer.run = false; // do not actually run anything
+		replayer.init(filename_input, heap_size);
+		replayer.parameters(start, end, false);
+		replayer.remap = validate_remap;
+
+		// Read all thread files
+		std::vector<std::string> threadfiles = packed_files(filename_input, "thread_");
+		if (threadfiles.size() == 0) DIE("Failed to find any threads in %s!", filename_input.c_str());
+		run_multithreaded(&replayer, threadfiles.size());
+
+		// Copy out the rewrite queue
+		if (validate_remap) rewrite_queue_copy = replayer.rewrite_queue;
+
+		reset_for_tools();
+		replayer.finalize(false);
+	}
+
+	if (validate_remap) // run second round
+	{
+		lava_reader replayer;
+		replayer.run = false; // do not actually run anything
+		replayer.init(filename_input, heap_size);
+		replayer.parameters(start, end, false);
+		replayer.remap = false;
+
+		// Add in the rewrite queue from the previous run
+		replayer.rewrite_queue = rewrite_queue_copy;
+
+		// Read all thread files
+		std::vector<std::string> threadfiles = packed_files(filename_input, "thread_");
+		if (threadfiles.size() == 0) DIE("Failed to find any threads in %s!", filename_input.c_str());
+		run_multithreaded(&replayer, threadfiles.size());
+
+		reset_for_tools();
+		replayer.finalize(false);
+	}
+
 	if (p__debug_destination) fclose(p__debug_destination);
 	return 0;
 }
