@@ -30,10 +30,10 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_CXX_VISIBILITY_PRESET hidden)
 set(CMAKE_CTEST_ARGUMENTS "--output-on-failure")
 
-set(SRC_ROOT ${CMAKE_SOURCE_DIR})
+set(SRC_ROOT ${PROJECT_SOURCE_DIR})
 set(THIRD_PARTY_DIR ${SRC_ROOT}/external)
 set(PYTHON_EXECUTABLE python3)
-set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake")
+set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${PROJECT_SOURCE_DIR}/cmake")
 set(LAYER_NAME VkLayer_lavatube)
 find_package(PkgConfig REQUIRED)
 
@@ -48,7 +48,7 @@ else()
     message(STATUS "XCB and X11 support not added")
 endif()
 
-if(NOT EXISTS "${CMAKE_SOURCE_DIR}/external/tracetooltests/external/Vulkan-Headers/.git")
+if(NOT EXISTS "${PROJECT_SOURCE_DIR}/external/tracetooltests/external/Vulkan-Headers/.git")
     message(SEND_ERROR "git submodules not available. Please run: git submodule update --init --recursive")
 endif()
 
@@ -69,19 +69,19 @@ endif()
 # --- density ---
 
 set(DENSITY_SOURCES
-    ${CMAKE_SOURCE_DIR}/external/density/src/globals.c
-    ${CMAKE_SOURCE_DIR}/external/density/src/buffers/buffer.c
-    ${CMAKE_SOURCE_DIR}/external/density/src/structure/header.c
-    ${CMAKE_SOURCE_DIR}/external/density/src/algorithms/dictionaries.c
-    ${CMAKE_SOURCE_DIR}/external/density/src/algorithms/algorithms.c
-    ${CMAKE_SOURCE_DIR}/external/density/src/algorithms/cheetah/core/cheetah_decode.c
-    ${CMAKE_SOURCE_DIR}/external/density/src/algorithms/cheetah/core/cheetah_encode.c
-    ${CMAKE_SOURCE_DIR}/external/density/src/algorithms/chameleon/core/chameleon_decode.c
-    ${CMAKE_SOURCE_DIR}/external/density/src/algorithms/chameleon/core/chameleon_encode.c
-    ${CMAKE_SOURCE_DIR}/external/density/src/algorithms/lion/forms/lion_form_model.c
-    ${CMAKE_SOURCE_DIR}/external/density/src/algorithms/lion/core/lion_decode.c
-    ${CMAKE_SOURCE_DIR}/external/density/src/algorithms/lion/core/lion_encode.c
-    ${CMAKE_SOURCE_DIR}/external/density/benchmark/src/benchmark.c)
+    ${PROJECT_SOURCE_DIR}/external/density/src/globals.c
+    ${PROJECT_SOURCE_DIR}/external/density/src/buffers/buffer.c
+    ${PROJECT_SOURCE_DIR}/external/density/src/structure/header.c
+    ${PROJECT_SOURCE_DIR}/external/density/src/algorithms/dictionaries.c
+    ${PROJECT_SOURCE_DIR}/external/density/src/algorithms/algorithms.c
+    ${PROJECT_SOURCE_DIR}/external/density/src/algorithms/cheetah/core/cheetah_decode.c
+    ${PROJECT_SOURCE_DIR}/external/density/src/algorithms/cheetah/core/cheetah_encode.c
+    ${PROJECT_SOURCE_DIR}/external/density/src/algorithms/chameleon/core/chameleon_decode.c
+    ${PROJECT_SOURCE_DIR}/external/density/src/algorithms/chameleon/core/chameleon_encode.c
+    ${PROJECT_SOURCE_DIR}/external/density/src/algorithms/lion/forms/lion_form_model.c
+    ${PROJECT_SOURCE_DIR}/external/density/src/algorithms/lion/core/lion_decode.c
+    ${PROJECT_SOURCE_DIR}/external/density/src/algorithms/lion/core/lion_encode.c
+    ${PROJECT_SOURCE_DIR}/external/density/benchmark/src/benchmark.c)
 
 add_library(density STATIC ${DENSITY_SOURCES})
 target_compile_options(density PRIVATE -std=c99 -Wall -O2 -ggdb -Wno-unused-variable -Werror -fno-strict-aliasing -fvisibility=hidden -fPIC ${SANITIZER})
@@ -121,58 +121,58 @@ set(COMMON_INCLUDE
 )
 
 set(VULKAN_TESTS_SRC
-   ${CMAKE_SOURCE_DIR}/tests/tests.h
-   ${CMAKE_SOURCE_DIR}/tests/common.cpp
-   ${CMAKE_SOURCE_DIR}/tests/common.h
+   ${PROJECT_SOURCE_DIR}/tests/tests.h
+   ${PROJECT_SOURCE_DIR}/tests/common.cpp
+   ${PROJECT_SOURCE_DIR}/tests/common.h
 )
 
 set(COMMON_SRC
-    ${CMAKE_SOURCE_DIR}/external/jsoncpp/src/lib_json/json_writer.cpp
-    ${CMAKE_SOURCE_DIR}/external/jsoncpp/src/lib_json/json_reader.cpp
-    ${CMAKE_SOURCE_DIR}/external/jsoncpp/src/lib_json/json_value.cpp
-    ${CMAKE_SOURCE_DIR}/external/tracetooltests/include/vulkan_feature_detect.h
-    ${CMAKE_SOURCE_DIR}/src/vk_wrapper.cpp
-    ${CMAKE_SOURCE_DIR}/src/util.cpp
-    ${CMAKE_SOURCE_DIR}/src/util.h
-    ${CMAKE_SOURCE_DIR}/src/vkjson.cpp
-    ${CMAKE_SOURCE_DIR}/src/vkjson.h
-    ${CMAKE_SOURCE_DIR}/src/packfile.cpp
-    ${CMAKE_SOURCE_DIR}/src/packfile.h
-    ${CMAKE_SOURCE_DIR}/src/lavamutex.h
-    ${CMAKE_SOURCE_DIR}/src/containers.h
+    ${PROJECT_SOURCE_DIR}/external/jsoncpp/src/lib_json/json_writer.cpp
+    ${PROJECT_SOURCE_DIR}/external/jsoncpp/src/lib_json/json_reader.cpp
+    ${PROJECT_SOURCE_DIR}/external/jsoncpp/src/lib_json/json_value.cpp
+    ${PROJECT_SOURCE_DIR}/external/tracetooltests/include/vulkan_feature_detect.h
+    ${PROJECT_SOURCE_DIR}/src/vk_wrapper.cpp
+    ${PROJECT_SOURCE_DIR}/src/util.cpp
+    ${PROJECT_SOURCE_DIR}/src/util.h
+    ${PROJECT_SOURCE_DIR}/src/vkjson.cpp
+    ${PROJECT_SOURCE_DIR}/src/vkjson.h
+    ${PROJECT_SOURCE_DIR}/src/packfile.cpp
+    ${PROJECT_SOURCE_DIR}/src/packfile.h
+    ${PROJECT_SOURCE_DIR}/src/lavamutex.h
+    ${PROJECT_SOURCE_DIR}/src/containers.h
 
-    ${CMAKE_SOURCE_DIR}/src/filewriter.cpp
-    ${CMAKE_SOURCE_DIR}/src/filewriter.h
-    ${CMAKE_SOURCE_DIR}/src/write.cpp
-    ${CMAKE_SOURCE_DIR}/src/write.h
-    ${CMAKE_SOURCE_DIR}/src/rangetracking.h
+    ${PROJECT_SOURCE_DIR}/src/filewriter.cpp
+    ${PROJECT_SOURCE_DIR}/src/filewriter.h
+    ${PROJECT_SOURCE_DIR}/src/write.cpp
+    ${PROJECT_SOURCE_DIR}/src/write.h
+    ${PROJECT_SOURCE_DIR}/src/rangetracking.h
 
-    ${CMAKE_SOURCE_DIR}/generated/vk_wrapper_auto.cpp
-    ${CMAKE_SOURCE_DIR}/generated/vk_wrapper_auto.h
-    ${CMAKE_SOURCE_DIR}/generated/util_auto.cpp
-    ${CMAKE_SOURCE_DIR}/generated/util_auto.h
-    ${CMAKE_SOURCE_DIR}/generated/write_auto.cpp
-    ${CMAKE_SOURCE_DIR}/generated/write_auto.h
-    ${CMAKE_SOURCE_DIR}/generated/write_resource_auto.cpp
-    ${CMAKE_SOURCE_DIR}/generated/write_resource_auto.h
-    ${CMAKE_SOURCE_DIR}/generated/tostring.cpp
-    ${CMAKE_SOURCE_DIR}/generated/tostring.h
+    ${PROJECT_SOURCE_DIR}/generated/vk_wrapper_auto.cpp
+    ${PROJECT_SOURCE_DIR}/generated/vk_wrapper_auto.h
+    ${PROJECT_SOURCE_DIR}/generated/util_auto.cpp
+    ${PROJECT_SOURCE_DIR}/generated/util_auto.h
+    ${PROJECT_SOURCE_DIR}/generated/write_auto.cpp
+    ${PROJECT_SOURCE_DIR}/generated/write_auto.h
+    ${PROJECT_SOURCE_DIR}/generated/write_resource_auto.cpp
+    ${PROJECT_SOURCE_DIR}/generated/write_resource_auto.h
+    ${PROJECT_SOURCE_DIR}/generated/tostring.cpp
+    ${PROJECT_SOURCE_DIR}/generated/tostring.h
 )
 
 set(LAVATUBE_SRC
-    ${CMAKE_SOURCE_DIR}/src/window.cpp
-    ${CMAKE_SOURCE_DIR}/src/window.h
-    ${CMAKE_SOURCE_DIR}/src/filereader.cpp
-    ${CMAKE_SOURCE_DIR}/src/filereader.h
-    ${CMAKE_SOURCE_DIR}/src/read.cpp
-    ${CMAKE_SOURCE_DIR}/src/read.h
-    ${CMAKE_SOURCE_DIR}/src/allocators.cpp
-    ${CMAKE_SOURCE_DIR}/src/allocators.h
-    ${CMAKE_SOURCE_DIR}/src/suballocator.cpp
-    ${CMAKE_SOURCE_DIR}/src/suballocator.h
+    ${PROJECT_SOURCE_DIR}/src/window.cpp
+    ${PROJECT_SOURCE_DIR}/src/window.h
+    ${PROJECT_SOURCE_DIR}/src/filereader.cpp
+    ${PROJECT_SOURCE_DIR}/src/filereader.h
+    ${PROJECT_SOURCE_DIR}/src/read.cpp
+    ${PROJECT_SOURCE_DIR}/src/read.h
+    ${PROJECT_SOURCE_DIR}/src/allocators.cpp
+    ${PROJECT_SOURCE_DIR}/src/allocators.h
+    ${PROJECT_SOURCE_DIR}/src/suballocator.cpp
+    ${PROJECT_SOURCE_DIR}/src/suballocator.h
 
-    ${CMAKE_SOURCE_DIR}/generated/read_auto.cpp
-    ${CMAKE_SOURCE_DIR}/generated/read_auto.h
+    ${PROJECT_SOURCE_DIR}/generated/read_auto.cpp
+    ${PROJECT_SOURCE_DIR}/generated/read_auto.h
 )
 
 add_custom_command(
@@ -204,7 +204,7 @@ add_dependencies(lavatube sync_stuff)
 
 # --- tracer layer ---
 
-add_library(VkLayer_lavatube SHARED ${CMAKE_SOURCE_DIR}/src/vulkan_layer.cpp ${COMMON_SRC})
+add_library(VkLayer_lavatube SHARED ${PROJECT_SOURCE_DIR}/src/vulkan_layer.cpp ${COMMON_SRC})
 target_include_directories(VkLayer_lavatube ${COMMON_INCLUDE})
 target_link_libraries(VkLayer_lavatube ${COMMON_LIBRARIES})
 target_compile_options(VkLayer_lavatube PRIVATE ${COMMON_FLAGS})
@@ -394,11 +394,11 @@ target_compile_options(lava-replay PRIVATE ${COMMON_FLAGS})
 add_dependencies(lava-replay sync_stuff)
 add_test(NAME replayer_info COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -i tracing_2.vk)
 set_tests_properties(replayer_info PROPERTIES FIXTURES_REQUIRED tracing_2)
-add_test(NAME replayer_vulkan_demo COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -B -w none -v ${CMAKE_SOURCE_DIR}/traces/demo_computeraytracing.vk)
-add_test(NAME replayer_vulkan_demo2 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -B -w none -v -f 10 20 ${CMAKE_SOURCE_DIR}/traces/demo_computeraytracing.vk)
-add_test(NAME replayer_vkmark COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -B -w none -v -f 5 9 ${CMAKE_SOURCE_DIR}/traces/vkmark_cube.vk)
-add_test(NAME replayer_samples COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -B -w none -v -f 5 9 ${CMAKE_SOURCE_DIR}/traces/sample_hello_triangle.vk)
-add_test(NAME replayer_vkcube COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -B -w none -v -f 5 9 ${CMAKE_SOURCE_DIR}/traces/lunarg_vkcube.vk)
+add_test(NAME replayer_vulkan_demo COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -B -w none -v ${PROJECT_SOURCE_DIR}/traces/demo_computeraytracing.vk)
+add_test(NAME replayer_vulkan_demo2 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -B -w none -v -f 10 20 ${PROJECT_SOURCE_DIR}/traces/demo_computeraytracing.vk)
+add_test(NAME replayer_vkmark COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -B -w none -v -f 5 9 ${PROJECT_SOURCE_DIR}/traces/vkmark_cube.vk)
+add_test(NAME replayer_samples COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -B -w none -v -f 5 9 ${PROJECT_SOURCE_DIR}/traces/sample_hello_triangle.vk)
+add_test(NAME replayer_vkcube COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -B -w none -v -f 5 9 ${PROJECT_SOURCE_DIR}/traces/lunarg_vkcube.vk)
 install(TARGETS lava-replay RUNTIME)
 
 # --- lava-validate ---
@@ -408,23 +408,23 @@ target_include_directories(lava-validate ${COMMON_INCLUDE})
 target_link_libraries(lava-validate ${COMMON_LIBRARIES} lavatube)
 target_compile_options(lava-validate PRIVATE ${COMMON_FLAGS})
 add_dependencies(lava-validate sync_stuff)
-add_test(NAME validate_vulkan_demo COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-validate ${CMAKE_SOURCE_DIR}/traces/demo_computeraytracing.vk)
-add_test(NAME validate_vulkan_demo2 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-validate -f 10 20 ${CMAKE_SOURCE_DIR}/traces/demo_computeraytracing.vk)
-add_test(NAME validate_vkmark COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-validate -f 5 9 ${CMAKE_SOURCE_DIR}/traces/vkmark_cube.vk)
-add_test(NAME validate_samples COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-validate -f 5 9 ${CMAKE_SOURCE_DIR}/traces/sample_hello_triangle.vk)
-add_test(NAME validate_vkcube COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-validate -f 5 9 ${CMAKE_SOURCE_DIR}/traces/lunarg_vkcube.vk)
+add_test(NAME validate_vulkan_demo COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-validate ${PROJECT_SOURCE_DIR}/traces/demo_computeraytracing.vk)
+add_test(NAME validate_vulkan_demo2 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-validate -f 10 20 ${PROJECT_SOURCE_DIR}/traces/demo_computeraytracing.vk)
+add_test(NAME validate_vkmark COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-validate -f 5 9 ${PROJECT_SOURCE_DIR}/traces/vkmark_cube.vk)
+add_test(NAME validate_samples COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-validate -f 5 9 ${PROJECT_SOURCE_DIR}/traces/sample_hello_triangle.vk)
+add_test(NAME validate_vkcube COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-validate -f 5 9 ${PROJECT_SOURCE_DIR}/traces/lunarg_vkcube.vk)
 install(TARGETS lava-validate RUNTIME)
 
 # --- lava-tool ---
 
 add_executable(lava-tool src/lavatool.cpp
-	${CMAKE_SOURCE_DIR}/external/jsoncpp/src/lib_json/json_writer.cpp
-	${CMAKE_SOURCE_DIR}/external/jsoncpp/src/lib_json/json_reader.cpp
-	${CMAKE_SOURCE_DIR}/external/jsoncpp/src/lib_json/json_value.cpp
-	${CMAKE_SOURCE_DIR}/src/packfile.cpp
-	${CMAKE_SOURCE_DIR}/src/packfile.h
-	${CMAKE_SOURCE_DIR}/src/util.cpp
-	${CMAKE_SOURCE_DIR}/src/util.h
+	${PROJECT_SOURCE_DIR}/external/jsoncpp/src/lib_json/json_writer.cpp
+	${PROJECT_SOURCE_DIR}/external/jsoncpp/src/lib_json/json_reader.cpp
+	${PROJECT_SOURCE_DIR}/external/jsoncpp/src/lib_json/json_value.cpp
+	${PROJECT_SOURCE_DIR}/src/packfile.cpp
+	${PROJECT_SOURCE_DIR}/src/packfile.h
+	${PROJECT_SOURCE_DIR}/src/util.cpp
+	${PROJECT_SOURCE_DIR}/src/util.h
 )
 target_include_directories(lava-tool ${COMMON_INCLUDE})
 target_link_libraries(lava-tool ${MOST_COMMON_LIBRARIES})
@@ -475,10 +475,10 @@ layer_test(fence_delay fence_delay)
 # TBD : Fence delay tests need to be fixed since they were rewritten in tracetooltests for gfxr (and now is in its own test file)
 #add_test(NAME layer_test_fence_delay_ COMMAND ${CMAKE_CURRENT_BINARY_DIR}/tracetooltests/vulkan_general -f 1)
 #set_tests_properties(layer_test_general_fencedelay PROPERTIES ENVIRONMENT "VK_LAYER_PATH=${CMAKE_CURRENT_BINARY_DIR}/implicit_layer.d;VK_INSTANCE_LAYERS=VK_LAYER_ARM_lavatube;LD_LIBRARY_PATH=${CMAKE_CURRENT_BINARY_DIR}/implicit_layer.d;LAVATUBE_DELAY_FENCE_SUCCESS_FRAMES=2;")
-#add_test(NAME script_test_general COMMAND ${CMAKE_SOURCE_DIR}/scripts/lava-capture.py -o script_test_general.vk --layer-path ${CMAKE_CURRENT_BINARY_DIR}/implicit_layer.d ${CMAKE_CURRENT_BINARY_DIR}/tracetooltests/vulkan_general -f 0 -V 2)
-#add_test(NAME script_test_general_fencedelay COMMAND ${CMAKE_SOURCE_DIR}/scripts/lava-capture.py -o script_test_general_fencedelay.vk --layer-path ${CMAKE_CURRENT_BINARY_DIR}/implicit_layer.d --delayfence 2 ${CMAKE_CURRENT_BINARY_DIR}/tracetooltests/vulkan_general -f 1)
-add_test(NAME script_test_copying_1 COMMAND ${CMAKE_SOURCE_DIR}/scripts/lava-capture.py -o script_test_copying_1.vk --dedicated-buffer --gpu 0 --layer-path ${CMAKE_CURRENT_BINARY_DIR}/implicit_layer.d ${CMAKE_CURRENT_BINARY_DIR}/tracetooltests/vulkan_copying_1 -V 2)
-add_test(NAME script_test_copying_nomp COMMAND ${CMAKE_SOURCE_DIR}/scripts/lava-capture.py -o script_test_copying_nomp.vk --no-multithread --automate --layer-path ${CMAKE_CURRENT_BINARY_DIR}/implicit_layer.d ${CMAKE_CURRENT_BINARY_DIR}/tracetooltests/vulkan_copying_1 -V 3)
+#add_test(NAME script_test_general COMMAND ${PROJECT_SOURCE_DIR}/scripts/lava-capture.py -o script_test_general.vk --layer-path ${CMAKE_CURRENT_BINARY_DIR}/implicit_layer.d ${CMAKE_CURRENT_BINARY_DIR}/tracetooltests/vulkan_general -f 0 -V 2)
+#add_test(NAME script_test_general_fencedelay COMMAND ${PROJECT_SOURCE_DIR}/scripts/lava-capture.py -o script_test_general_fencedelay.vk --layer-path ${CMAKE_CURRENT_BINARY_DIR}/implicit_layer.d --delayfence 2 ${CMAKE_CURRENT_BINARY_DIR}/tracetooltests/vulkan_general -f 1)
+add_test(NAME script_test_copying_1 COMMAND ${PROJECT_SOURCE_DIR}/scripts/lava-capture.py -o script_test_copying_1.vk --dedicated-buffer --gpu 0 --layer-path ${CMAKE_CURRENT_BINARY_DIR}/implicit_layer.d ${CMAKE_CURRENT_BINARY_DIR}/tracetooltests/vulkan_copying_1 -V 2)
+add_test(NAME script_test_copying_nomp COMMAND ${PROJECT_SOURCE_DIR}/scripts/lava-capture.py -o script_test_copying_nomp.vk --no-multithread --automate --layer-path ${CMAKE_CURRENT_BINARY_DIR}/implicit_layer.d ${CMAKE_CURRENT_BINARY_DIR}/tracetooltests/vulkan_copying_1 -V 3)
 layer_test(general_vulkan13 general -V 3)
 layer_test(copying_1 copying_1)
 layer_test(copying_1_q1 copying_1 -q 1)
