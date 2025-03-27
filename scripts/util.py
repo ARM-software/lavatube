@@ -14,7 +14,7 @@ spec.init()
 feature_detection_structs = []
 feature_detection_funcs = []
 detect_words = []
-with open('include/feature_detect.h', 'r') as f:
+with open('external/tracetooltests/include/vulkan_feature_detect.h', 'r') as f:
 	for line in f:
 		m = re.search(r'check_(\w+)', line)
 		if m:

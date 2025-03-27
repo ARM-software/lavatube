@@ -130,7 +130,7 @@ set(COMMON_SRC
     ${CMAKE_SOURCE_DIR}/external/jsoncpp/src/lib_json/json_writer.cpp
     ${CMAKE_SOURCE_DIR}/external/jsoncpp/src/lib_json/json_reader.cpp
     ${CMAKE_SOURCE_DIR}/external/jsoncpp/src/lib_json/json_value.cpp
-    ${CMAKE_SOURCE_DIR}/include/feature_detect.h
+    ${CMAKE_SOURCE_DIR}/external/tracetooltests/include/vulkan_feature_detect.h
     ${CMAKE_SOURCE_DIR}/src/vk_wrapper.cpp
     ${CMAKE_SOURCE_DIR}/src/util.cpp
     ${CMAKE_SOURCE_DIR}/src/util.h
@@ -217,12 +217,6 @@ install(FILES ${CMAKE_BINARY_DIR}/implicit_layer.d/VkLayer_lavatube.json ${CMAKE
 install(PROGRAMS scripts/lava-capture.py TYPE BIN)
 
 # --- unit tests ---
-
-add_executable(featuretest tests/feature.cpp include/feature_detect.h src/util.cpp src/util.h)
-target_include_directories(featuretest ${COMMON_INCLUDE})
-target_link_libraries(featuretest ${MOST_COMMON_LIBRARIES} pthread)
-target_compile_options(featuretest PRIVATE ${COMMON_FLAGS})
-add_test(NAME feature_test COMMAND ${CMAKE_CURRENT_BINARY_DIR}/featuretest)
 
 add_executable(mprotect tests/mprotect.cpp src/util.cpp src/util.h)
 target_include_directories(mprotect ${COMMON_INCLUDE})
