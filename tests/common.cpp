@@ -3,17 +3,6 @@
 
 static VkPhysicalDeviceMemoryProperties memory_properties = {};
 
-static VkBool32 messenger_callback(
-    VkDebugUtilsMessageSeverityFlagBitsEXT           messageSeverity,
-    VkDebugUtilsMessageTypeFlagsEXT                  messageTypes,
-    const VkDebugUtilsMessengerCallbackDataEXT*      pCallbackData,
-    void*                                            pUserData)
-{
-	if (!is_debug() && (messageSeverity == VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT || messageSeverity == VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT)) return VK_TRUE;
-	fprintf(stderr, "messenger (s%d, t%d): %s\n", (int)messageSeverity, (int)messageTypes, pCallbackData->pMessage);
-	return VK_TRUE;
-}
-
 static VkBool32 report_callback(
     VkDebugReportFlagsEXT                       flags,
     VkDebugReportObjectTypeEXT                  objectType,
@@ -138,23 +127,12 @@ vulkan_setup_t test_init(const std::string& testname, vulkan_req_t& reqs, size_t
 	}
 	pCreateInfo.enabledExtensionCount = enabledExtensions.size();
 
-	VkDebugReportCallbackCreateInfoEXT debugcallbackext = {};
-	debugcallbackext.pNext = nullptr;
-	debugcallbackext.sType = VK_STRUCTURE_TYPE_DEBUG_REPORT_CALLBACK_CREATE_INFO_EXT;
+	VkDebugReportCallbackCreateInfoEXT debugcallbackext = { VK_STRUCTURE_TYPE_DEBUG_REPORT_CALLBACK_CREATE_INFO_EXT, nullptr };
 	debugcallbackext.flags = VK_DEBUG_REPORT_INFORMATION_BIT_EXT | VK_DEBUG_REPORT_WARNING_BIT_EXT | VK_DEBUG_REPORT_PERFORMANCE_WARNING_BIT_EXT
 				| VK_DEBUG_REPORT_ERROR_BIT_EXT | VK_DEBUG_REPORT_DEBUG_BIT_EXT;
 	debugcallbackext.pfnCallback = report_callback;
 	debugcallbackext.pUserData = nullptr;
-
-	VkDebugUtilsMessengerCreateInfoEXT messext = {};
-	messext.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
-	messext.pNext = &debugcallbackext;
-	messext.flags = 0;
-	messext.pfnUserCallback = messenger_callback;
-	messext.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
-	messext.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
-	pCreateInfo.pNext = &messext;
-
+	pCreateInfo.pNext = &debugcallbackext;
 	result = trace_vkCreateInstance(&pCreateInfo, NULL, &vulkan.instance);
 	check(result);
 

@@ -553,3 +553,4 @@ layer_test(privatedata privatedata)
 #layer_test(multidevice_1 multidevice_1) # assert failure on memory type
 #layer_test(multiinstance multiinstance)
 layer_test(mesh_1 mesh_1)
+layer_test(graphics_1 graphics_1)

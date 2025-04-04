@@ -29,16 +29,6 @@
 
 static VkPhysicalDeviceMemoryProperties memory_properties = {};
 
-static VkBool32 messenger_callback(
-    VkDebugUtilsMessageSeverityFlagBitsEXT           messageSeverity,
-    VkDebugUtilsMessageTypeFlagsEXT                  messageTypes,
-    const VkDebugUtilsMessengerCallbackDataEXT*      pCallbackData,
-    void*                                            pUserData)
-{
-	fprintf(stderr, "messenger: %s\n", pCallbackData->pMessage);
-	return VK_TRUE;
-}
-
 static VkBool32 report_callback(
     VkDebugReportFlagsEXT                       flags,
     VkDebugReportObjectTypeEXT                  objectType,
@@ -146,22 +136,12 @@ static void trace_2(int variant)
 	}
 	pCreateInfo.enabledExtensionCount = enabledExtensions.size();
 
-	VkDebugReportCallbackCreateInfoEXT debugcallbackext = {};
-	debugcallbackext.sType = VK_STRUCTURE_TYPE_DEBUG_REPORT_CALLBACK_CREATE_INFO_EXT;
+	VkDebugReportCallbackCreateInfoEXT debugcallbackext = { VK_STRUCTURE_TYPE_DEBUG_REPORT_CALLBACK_CREATE_INFO_EXT, nullptr };
 	debugcallbackext.flags = VK_DEBUG_REPORT_INFORMATION_BIT_EXT | VK_DEBUG_REPORT_WARNING_BIT_EXT | VK_DEBUG_REPORT_PERFORMANCE_WARNING_BIT_EXT
 				| VK_DEBUG_REPORT_ERROR_BIT_EXT | VK_DEBUG_REPORT_DEBUG_BIT_EXT;
 	debugcallbackext.pfnCallback = report_callback;
 	debugcallbackext.pUserData = nullptr;
-
-	VkDebugUtilsMessengerCreateInfoEXT messext = {};
-	messext.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
-	messext.pNext = &debugcallbackext;
-	messext.flags = 0;
-	messext.pfnUserCallback = messenger_callback;
-	messext.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
-	messext.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
-	pCreateInfo.pNext = &messext;
-
+	pCreateInfo.pNext = &debugcallbackext;
 	result = trace_vkCreateInstance(&pCreateInfo, NULL, &instance);
 	check(result);
 

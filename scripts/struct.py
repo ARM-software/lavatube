@@ -142,8 +142,6 @@ def struct_impl_write(w, selected = None):
 				if api and api == 'vulkansc': continue
 				param = util.parameter(p, read=False, funcname=name, transitiveConst=True)
 				param.print_save(param.name, 'sptr->')
-			if name in util.feature_detection_structs:
-				z.do('writer.parent->usage_detection.check_%s(sptr);' % name)
 			util.save_add_tracking(name)
 			struct_add_tracking_write(name)
 			z.struct_end()

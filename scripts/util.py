@@ -11,18 +11,6 @@ import spec
 
 spec.init()
 
-feature_detection_structs = []
-feature_detection_funcs = []
-detect_words = []
-with open('external/tracetooltests/include/vulkan_feature_detect.h', 'r') as f:
-	for line in f:
-		m = re.search(r'check_(\w+)', line)
-		if m:
-			detect_words.append(m.group(1))
-for name in spec.structures:
-	if name in detect_words:
-		feature_detection_structs.append(name)
-
 def validate_funcs(lst):
 	assert len(lst) == len(set(lst))
 	for x in lst: assert x in spec.valid_functions, '%s is not a valid function' % x
@@ -1818,8 +1806,12 @@ def savefunc(name, node, target, header):
 			z.do('trace_post_%s(writer, retval, %s);' % (name, ', '.join(call_list)))
 		else:
 			z.do('trace_post_%s(writer, %s);' % (name, ', '.join(call_list)))
-	if name in feature_detection_funcs:
+
+	if name in spec.feature_detection_funcs:
 		z.do('writer.parent->usage_detection.check_%s(%s);' % (name, ', '.join(call_list)))
+	elif name == 'vkBeginCommandBuffer': # special case for above, need to add the level param
+		z.do('writer.parent->usage_detection.special_vkBeginCommandBuffer(commandBuffer, pBeginInfo, commandbuffer_data->level);')
+
 	if retval != 'void':
 		z.do('// -- Return --')
 		z.do('return retval;')
