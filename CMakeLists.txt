@@ -257,7 +257,7 @@ function(internal_test test_name)
 	target_include_directories(${ARGV0} ${COMMON_INCLUDE})
 	target_link_libraries(${ARGV0} ${COMMON_LIBRARIES} lavatube)
 	target_compile_options(${ARGV0} PRIVATE ${COMMON_FLAGS})
-	add_dependencies(${ARGV0} sync_stuff lava-replay lava-validate)
+	add_dependencies(${ARGV0} sync_stuff lava-replay lava-tool)
 	add_test(NAME trace_test_${ARGV0} COMMAND ${CMAKE_CURRENT_BINARY_DIR}/${ARGV0})
 	set_tests_properties(trace_test_${ARGV0} PROPERTIES FIXTURES_SETUP ${ARGV0})
 endfunction()
@@ -325,8 +325,8 @@ add_test(NAME trace_test_7_replay COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-repla
 
 internal_test(tracing_remap)
 add_test(NAME trace_test_remap_replay COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -V tracing_remap.vk)
-add_test(NAME trace_test_remap_validate COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-validate tracing_remap.vk)
-add_test(NAME trace_test_remap_validate_remap COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-validate -r tracing_remap.vk)
+add_test(NAME trace_test_remap_validate COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-tool -V tracing_remap.vk)
+add_test(NAME trace_test_remap_validate_remap COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-tool -V -r tracing_remap.vk)
 
 add_executable(write1 tests/write1.cpp)
 target_include_directories(write1 ${COMMON_INCLUDE})
@@ -402,19 +402,19 @@ add_test(NAME replayer_samples COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -
 add_test(NAME replayer_vkcube COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -B -w none -v -f 5 9 ${PROJECT_SOURCE_DIR}/traces/lunarg_vkcube.vk)
 install(TARGETS lava-replay RUNTIME)
 
-# --- lava-validate ---
+# --- lava-tool ---
 
-add_executable(lava-validate src/validate.cpp)
-target_include_directories(lava-validate ${COMMON_INCLUDE})
-target_link_libraries(lava-validate ${COMMON_LIBRARIES} lavatube)
-target_compile_options(lava-validate PRIVATE ${COMMON_FLAGS})
-add_dependencies(lava-validate sync_stuff)
-add_test(NAME validate_vulkan_demo COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-validate ${PROJECT_SOURCE_DIR}/traces/demo_computeraytracing.vk)
-add_test(NAME validate_vulkan_demo2 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-validate -f 10 20 ${PROJECT_SOURCE_DIR}/traces/demo_computeraytracing.vk)
-add_test(NAME validate_vkmark COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-validate -f 5 9 ${PROJECT_SOURCE_DIR}/traces/vkmark_cube.vk)
-add_test(NAME validate_samples COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-validate -f 5 9 ${PROJECT_SOURCE_DIR}/traces/sample_hello_triangle.vk)
-add_test(NAME validate_vkcube COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-validate -f 5 9 ${PROJECT_SOURCE_DIR}/traces/lunarg_vkcube.vk)
-install(TARGETS lava-validate RUNTIME)
+add_executable(lava-tool src/tool.cpp)
+target_include_directories(lava-tool ${COMMON_INCLUDE})
+target_link_libraries(lava-tool ${COMMON_LIBRARIES} lavatube)
+target_compile_options(lava-tool PRIVATE ${COMMON_FLAGS})
+add_dependencies(lava-tool sync_stuff)
+add_test(NAME validate_vulkan_demo COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-tool -V ${PROJECT_SOURCE_DIR}/traces/demo_computeraytracing.vk)
+add_test(NAME validate_vulkan_demo2 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-tool -V -f 10 20 ${PROJECT_SOURCE_DIR}/traces/demo_computeraytracing.vk)
+add_test(NAME validate_vkmark COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-tool -V -f 5 9 ${PROJECT_SOURCE_DIR}/traces/vkmark_cube.vk)
+add_test(NAME validate_samples COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-tool -V -f 5 9 ${PROJECT_SOURCE_DIR}/traces/sample_hello_triangle.vk)
+add_test(NAME validate_vkcube COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-tool -V -f 5 9 ${PROJECT_SOURCE_DIR}/traces/lunarg_vkcube.vk)
+install(TARGETS lava-tool RUNTIME)
 
 # --- packtool ---
 
@@ -459,7 +459,7 @@ function(layer_test test_name test_exe)
 		ENVIRONMENT "LAVATUBE_VIRTUAL_QUEUES=1;LAVATUBE_DESTINATION=vulkan_${ARGV0};VK_LAYER_PATH=${CMAKE_CURRENT_BINARY_DIR}/implicit_layer.d;VK_INSTANCE_LAYERS=VK_LAYER_ARM_lavatube;LD_LIBRARY_PATH=${CMAKE_CURRENT_BINARY_DIR}/implicit_layer.d"
 		SKIP_RETURN_CODE 77
 	)
-	add_test(NAME layer_test_${ARGV0}_validate COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-validate vulkan_${ARGV0}.vk)
+	add_test(NAME layer_test_${ARGV0}_validate COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-tool -V vulkan_${ARGV0}.vk)
 	set_tests_properties(layer_test_${ARGV0}_validate PROPERTIES FIXTURES_REQUIRED ${ARGV0})
 	add_test(NAME layer_test_${ARGV0}_replay COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -V vulkan_${ARGV0}.vk)
 	set_tests_properties(layer_test_${ARGV0}_replay PROPERTIES FIXTURES_REQUIRED ${ARGV0})

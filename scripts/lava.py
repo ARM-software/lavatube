@@ -196,6 +196,19 @@ for s in spec.feature_structs:
 out([u], '}')
 out([uh, u])
 
+# Generate list of all feature detection structs that we can use
+out([uh], 'extern std::vector<const char*> feature_detection_callbacks;')
+out([uh], 'extern std::vector<const char*> feature_detection_special_funcs;') # these need hardcoded handling
+out([u], 'std::vector<const char*> feature_detection_callbacks = {')
+for s in spec.feature_detection_funcs:
+	out([u], '\t"%s",' % s)
+out([u], '};')
+out([u], 'std::vector<const char*> feature_detection_special_funcs = {')
+for s in spec.feature_detection_special:
+	out([u], '\t"%s",' % s)
+out([u], '};')
+out([u])
+
 out([wrh, wr] + targets_read)
 out(targets_read, 'static void reset_all()')
 out(targets_write, 'static void reset_all(trace_records* r) REQUIRES(frame_mutex)')

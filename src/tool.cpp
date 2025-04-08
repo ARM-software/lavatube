@@ -15,15 +15,23 @@
 #include "util_auto.h"
 
 static lava_reader replayer;
+static bool validate = false;
+static bool verbose = false;
+static bool report_unused = false;
 
 static void usage()
 {
-	printf("lava-validate %d.%d.%d-" RELTYPE " command line options\n", LAVATUBE_VERSION_MAJOR, LAVATUBE_VERSION_MINOR, LAVATUBE_VERSION_PATCH);
+	printf("lava-tool %d.%d.%d-" RELTYPE " command line options\n", LAVATUBE_VERSION_MAJOR, LAVATUBE_VERSION_MINOR, LAVATUBE_VERSION_PATCH);
+	printf("lava-tool [options] <input filename> [<output filename>]\n");
 	printf("-h/--help              This help\n");
+	printf("-v/--verbose           Verbose output\n");
+	printf("-V/--validate          Validate the input trace, abort with an error if anything amiss found instead of just reporting on it\n");
 	printf("-d/--debug level       Set debug level [0,1,2,3]\n");
 	printf("-o/--debugfile FILE    Output debug output to the given file\n");
 	printf("-f/--frames start end  Select a frame range\n");
 	printf("-r/--remap-validate    Validate existing device address remappings - abort if we find less or more addresses than already marked\n");
+	//printf("-u/--report-unused     Report on any found unused features and extensions in the trace file\n");
+	//printf("-R/--remap-addresses   Adding remapping of device addresses. Replaces existing address remappings. Requires an output file.\n");
 	exit(-1);
 }
 
@@ -62,13 +70,16 @@ static void replay_thread(int thread_id)
 	lava_file_reader& t = replayer.file_reader(thread_id);
 	uint8_t instrtype;
 	assert(t.run == false);
-	for (const auto pair : replayer.device_address_remapping.iter())
+	if (verbose)
 	{
-		ILOG("Device address range %lu -> %lu", (unsigned long)pair.first, (unsigned long)(pair.first + pair.second->size));
-	}
-	for (const auto pair : replayer.acceleration_structure_address_remapping.iter())
-	{
-		ILOG("Acceleration structure address range %lu -> %lu", (unsigned long)pair.first, (unsigned long)(pair.first + pair.second->size));
+		for (const auto pair : replayer.device_address_remapping.iter())
+		{
+			ILOG("Device address range %lu -> %lu", (unsigned long)pair.first, (unsigned long)(pair.first + pair.second->size));
+		}
+		for (const auto pair : replayer.acceleration_structure_address_remapping.iter())
+		{
+			ILOG("Acceleration structure address range %lu -> %lu", (unsigned long)pair.first, (unsigned long)(pair.first + pair.second->size));
+		}
 	}
 	while ((instrtype = t.step()))
 	{
@@ -116,7 +127,8 @@ int main(int argc, char **argv)
 	int end = -1;
 	int heap_size = -1;
 	int remaining = argc - 1; // zeroth is name of program
-	std::string filename;
+	std::string filename_input;
+	std::string filename_output;
 	bool validate_remap = false;
 	for (int i = 1; i < argc; i++)
 	{
@@ -127,6 +139,20 @@ int main(int argc, char **argv)
 		else if (match(argv[i], "-d", "--debug", remaining))
 		{
 			p__debug_level = get_int(argv[++i], remaining);
+		}
+		else if (match(argv[i], "-V", "--validate", remaining))
+		{
+			validate = true;
+			(void)validate; // does not do anything yet...
+		}
+		else if (match(argv[i], "-v", "--verbose", remaining))
+		{
+			verbose = true;
+		}
+		else if (match(argv[i], "-u", "--report-unused", remaining))
+		{
+			report_unused = true;
+			(void)report_unused; // TBD
 		}
 		else if (match(argv[i], "-o", "--debugfile", remaining))
 		{
@@ -148,13 +174,15 @@ int main(int argc, char **argv)
 		else if (strcmp(argv[i], "--") == 0) // eg in case you have a file named -f ...
 		{
 			remaining--;
-			filename = get_str(argv[++i], remaining);
+			filename_input = get_str(argv[++i], remaining);
+			if (remaining) filename_output = get_str(argv[++i], remaining);
 			if (remaining > 0) usage();
 			break; // stop parsing cmd line options
 		}
 		else
 		{
-			filename = get_str(argv[i], remaining);
+			filename_input = get_str(argv[i], remaining);
+			if (remaining) filename_output = get_str(argv[++i], remaining);
 			if (remaining > 0)
 			{
 				printf("Options after filename is not valid!\n\n");
@@ -163,20 +191,22 @@ int main(int argc, char **argv)
 		}
 	}
 
-	if (filename.empty())
+	if (filename_input.empty())
 	{
 		printf("No file argument given\n\n");
 		usage();
 	}
 
+	if (!filename_output.empty()) DIE("Output file support still to be done!");
+
 	replayer.run = false; // do not actually run anything
-	replayer.init(filename, heap_size);
+	replayer.init(filename_input, heap_size);
 	replayer.parameters(start, end, false);
 	replayer.remap = validate_remap;
 
 	// Read all thread files
-	std::vector<std::string> threadfiles = packed_files(filename, "thread_");
-	if (threadfiles.size() == 0) DIE("Failed to find any threads in %s!", filename.c_str());
+	std::vector<std::string> threadfiles = packed_files(filename_input, "thread_");
+	if (threadfiles.size() == 0) DIE("Failed to find any threads in %s!", filename_input.c_str());
 	run_multithreaded(threadfiles.size());
 	if (p__debug_destination) fclose(p__debug_destination);
 	return 0;
