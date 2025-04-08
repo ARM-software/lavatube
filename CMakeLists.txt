@@ -61,6 +61,7 @@ endif()
 if(NOT ${NO_TRACETOOLTESTS})
     message(STATUS "Building tracetooltests")
     set(NO_GLES 1)
+    set(TOOLSTEST_SANITY 1)
     add_subdirectory(external/tracetooltests ${CMAKE_BINARY_DIR}/tracetooltests)
 else()
     message(STATUS "Asked to skip tracetooltests")
@@ -415,9 +416,9 @@ add_test(NAME validate_samples COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-validate
 add_test(NAME validate_vkcube COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-validate -f 5 9 ${PROJECT_SOURCE_DIR}/traces/lunarg_vkcube.vk)
 install(TARGETS lava-validate RUNTIME)
 
-# --- lava-tool ---
+# --- packtool ---
 
-add_executable(lava-tool src/lavatool.cpp
+add_executable(packtool src/packtool.cpp
 	${PROJECT_SOURCE_DIR}/external/jsoncpp/src/lib_json/json_writer.cpp
 	${PROJECT_SOURCE_DIR}/external/jsoncpp/src/lib_json/json_reader.cpp
 	${PROJECT_SOURCE_DIR}/external/jsoncpp/src/lib_json/json_value.cpp
@@ -426,28 +427,28 @@ add_executable(lava-tool src/lavatool.cpp
 	${PROJECT_SOURCE_DIR}/src/util.cpp
 	${PROJECT_SOURCE_DIR}/src/util.h
 )
-target_include_directories(lava-tool ${COMMON_INCLUDE})
-target_link_libraries(lava-tool ${MOST_COMMON_LIBRARIES})
-target_compile_options(lava-tool PRIVATE ${COMMON_FLAGS} -fPIC)
-add_test(NAME pack_test_1 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-tool) # usage
+target_include_directories(packtool ${COMMON_INCLUDE})
+target_link_libraries(packtool ${MOST_COMMON_LIBRARIES})
+target_compile_options(packtool PRIVATE ${COMMON_FLAGS} -fPIC)
+add_test(NAME pack_test_1 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/packtool) # usage
 set_tests_properties(pack_test_1 PROPERTIES FIXTURES_REQUIRED tracing_2)
-add_test(NAME pack_test_2 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-tool extract debug.json tracing_2.vk)
+add_test(NAME pack_test_2 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/packtool extract debug.json tracing_2.vk)
 set_tests_properties(pack_test_2 PROPERTIES FIXTURES_REQUIRED tracing_2)
-add_test(NAME pack_test_3_1 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-tool print tracking.json tracing_2.vk)
+add_test(NAME pack_test_3_1 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/packtool print tracking.json tracing_2.vk)
 set_tests_properties(pack_test_3_1 PROPERTIES FIXTURES_REQUIRED tracing_2)
-add_test(NAME pack_test_3_2 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-tool extract thread_0.bin tracing_2.vk)
+add_test(NAME pack_test_3_2 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/packtool extract thread_0.bin tracing_2.vk)
 set_tests_properties(pack_test_3_2 PROPERTIES FIXTURES_REQUIRED tracing_2)
-add_test(NAME pack_test_4 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-tool unpack tmp_2 tracing_2.vk)
+add_test(NAME pack_test_4 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/packtool unpack tmp_2 tracing_2.vk)
 set_tests_properties(pack_test_4 PROPERTIES FIXTURES_REQUIRED tracing_2)
 add_test(NAME pack_test_4_1 COMMAND cmp ${CMAKE_CURRENT_BINARY_DIR}/tmp_2/debug.json ${CMAKE_CURRENT_BINARY_DIR}/debug.json)
 set_tests_properties(pack_test_4_1 PROPERTIES FIXTURES_REQUIRED tracing_2)
 add_test(NAME pack_test_4_2 COMMAND cmp ${CMAKE_CURRENT_BINARY_DIR}/tmp_2/thread_0.bin ${CMAKE_CURRENT_BINARY_DIR}/thread_0.bin)
 set_tests_properties(pack_test_4_2 PROPERTIES FIXTURES_REQUIRED tracing_2)
-add_test(NAME pack_test_5 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-tool list tracing_2.vk)
+add_test(NAME pack_test_5 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/packtool list tracing_2.vk)
 set_tests_properties(pack_test_5 PROPERTIES FIXTURES_REQUIRED tracing_2)
-add_test(NAME pack_test_6 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-tool check tracing_2.vk)
+add_test(NAME pack_test_6 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/packtool check tracing_2.vk)
 set_tests_properties(pack_test_6 PROPERTIES FIXTURES_REQUIRED tracing_2)
-install(TARGETS lava-tool RUNTIME)
+install(TARGETS packtool RUNTIME)
 
 # --- layer tests ---
 
@@ -531,7 +532,7 @@ add_test(NAME layer_test_compute_1_2 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/traceto
 set_tests_properties(layer_test_compute_1_1 PROPERTIES ENVIRONMENT "VK_LAYER_PATH=${CMAKE_CURRENT_BINARY_DIR}/implicit_layer.d;VK_INSTANCE_LAYERS=VK_LAYER_ARM_lavatube;LD_LIBRARY_PATH=${CMAKE_CURRENT_BINARY_DIR}/implicit_layer.d;")
 add_test(NAME layer_test_compute_1_3 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/tracetooltests/vulkan_compute_1 -pc -pcf test.bin)
 set_tests_properties(layer_test_compute_1_1 PROPERTIES ENVIRONMENT "VK_LAYER_PATH=${CMAKE_CURRENT_BINARY_DIR}/implicit_layer.d;VK_INSTANCE_LAYERS=VK_LAYER_ARM_lavatube;LD_LIBRARY_PATH=${CMAKE_CURRENT_BINARY_DIR}/implicit_layer.d;")
-add_custom_command(TARGET lava-tool PRE_BUILD COMMAND rm -f test.bin)
+add_custom_command(TARGET packtool PRE_BUILD COMMAND rm -f test.bin)
 layer_test(compute_2 compute_2)
 layer_test(compute_2_2 compute_2 -j 1 -s 2)
 layer_test(compute_3 compute_3)

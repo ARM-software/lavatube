@@ -1155,6 +1155,8 @@ def save_add_tracking(name):
 		z.do('for (unsigned ii = 0; ii < %sregionCount; ii++) commandbuffer_data->touch(buffer_data, %spRegions[ii].bufferOffset, std::min(image_data->size, buffer_data->size - %spRegions[ii].bufferOffset), __LINE__);' % (prefix, prefix, prefix))
 	elif name in spec.functions_create and spec.functions_create[name][1] == '1':
 		(param, count, type) = get_create_params(name)
+		z.do('if (retval == VK_SUCCESS)')
+		z.brace_begin()
 		z.do('auto* add = writer.parent->records.%s_index.add(*%s, writer.current);' % (type, param))
 		if type == 'VkBuffer':
 			z.do('add->size = pCreateInfo->size;')
@@ -1249,6 +1251,11 @@ def save_add_tracking(name):
 		z.do('DLOG2("insert %s into %s index %%u", (unsigned)add->index);' % (type, name))
 		z.do('add->enter_created();')
 		z.do('writer.write_handle(add);')
+		z.brace_end()
+		z.do('else')
+		z.brace_begin()
+		z.do('writer.write_handle(nullptr);')
+		z.brace_end()
 	elif name in spec.functions_create: # multiple
 		(param, count, type) = get_create_params(name)
 		z.do('for (unsigned i = 0; i < %s; i++)' % count)
@@ -1283,12 +1290,12 @@ def save_add_tracking(name):
 		count = spec.functions_destroy[name][1]
 		type = spec.functions_destroy[name][2]
 		if count == '1':
-			z.do('if (%s != VK_NULL_HANDLE)' % param)
+			z.do('if (writer.run && %s != VK_NULL_HANDLE)' % param)
 			z.brace_begin()
 		else:
 			z.do('for (unsigned i = 0; i < %s; i++)' % count)
 			z.brace_begin()
-			z.do('if (%s[i] == VK_NULL_HANDLE) continue;' % param)
+			z.do('if (!writer.run || %s[i] == VK_NULL_HANDLE) continue;' % param)
 		z.do('auto* meta = writer.parent->records.%s_index.unset(%s%s, writer.current);' % (type, param, '' if count == '1' else '[i]'))
 		z.do('DLOG2("removing %s from %s index %%u", (unsigned)meta->index);' % (type, name))
 		z.do('meta->destroyed = writer.current;')
