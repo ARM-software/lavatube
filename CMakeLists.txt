@@ -118,6 +118,7 @@ set(COMMON_INCLUDE
     PUBLIC ${SRC_ROOT}/external
     PUBLIC ${SRC_ROOT}/external/tracetooltests/include
     PUBLIC ${SRC_ROOT}/external/tracetooltests/external/Vulkan-Headers/include
+    PUBLIC ${SRC_ROOT}/external/tracetooltests/external/SPIRV-Headers/include
     PRIVATE ${SRC_ROOT}/external/jsoncpp
 )
 
