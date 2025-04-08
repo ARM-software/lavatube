@@ -11,7 +11,7 @@ import struct
 # New functions that we implement
 fake_functions = [ 'vkAssertBufferTRACETOOLTEST', 'vkSyncBufferTRACETOOLTEST', 'vkGetDeviceTracingObjectPropertyTRACETOOLTEST',
 	'vkCmdUpdateBuffer2TRACETOOLTEST', 'vkThreadBarrierTRACETOOLTEST',
-	'vkUpdateBufferTRACETOOLTEST',  'vkUpdateImageTRACETOOLTEST', 'vkPatchBufferTRACETOOLTEST', 'vkPatchImageTRACETOOLTEST' ]
+	'vkUpdateBufferTRACETOOLTEST',  'vkUpdateImageTRACETOOLTEST' ]
 fake_extension_structs = {
 	'VkAddressRemapTRACETOOLTEST': 'VK_STRUCTURE_TYPE_ADDRESS_REMAP_TRACETOOLTEST',
 	'VkUpdateMemoryInfoTRACETOOLTEST': 'VK_STRUCTURE_TYPE_UPDATE_MEMORY_INFO_TRACETOOLTEST',
@@ -332,7 +332,7 @@ for f in fake_extension_structs:
 for f in fake_functions:
 	out(targets_read_headers, 'void retrace_%s(lava_file_reader& reader);' % f)
 	if f == 'vkAssertBufferTRACETOOLTEST':
-		out([wh], 'VKAPI_ATTR uint32_t VKAPI_CALL trace_vkAssertBufferTRACETOOLTEST(VkDevice device, VkBuffer buffer);')
+		out([wh], 'VKAPI_ATTR uint32_t VKAPI_CALL trace_vkAssertBufferTRACETOOLTEST(VkDevice device, VkBuffer buffer, VkDeviceSize offset, VkDeviceSize size);')
 	elif f == 'vkSyncBufferTRACETOOLTEST':
 		out([wh], 'VKAPI_ATTR void VKAPI_CALL trace_vkSyncBufferTRACETOOLTEST(VkDevice device, VkBuffer buffer);')
 	elif f == 'vkGetDeviceTracingObjectPropertyTRACETOOLTEST':
@@ -345,10 +345,6 @@ for f in fake_functions:
 		out([wh], 'VKAPI_ATTR void trace_vkUpdateBufferTRACETOOLTEST(VkDevice device, VkBuffer buffer, VkUpdateMemoryInfoTRACETOOLTEST* pInfo);')
 	elif f == 'vkUpdateImageTRACETOOLTEST':
 		out([wh], 'VKAPI_ATTR void trace_vkUpdateImageTRACETOOLTEST(VkDevice device, VkImage buffer, VkUpdateMemoryInfoTRACETOOLTEST* pInfo);')
-	elif f == 'vkPatchBufferTRACETOOLTEST':
-		out([wh], 'VKAPI_ATTR void trace_vkPatchBufferTRACETOOLTEST(VkDevice device, VkBuffer buffer, VkPatchChunkListTRACETOOLTEST* pList);')
-	elif f == 'vkPatchImageTRACETOOLTEST':
-		out([wh], 'VKAPI_ATTR void trace_vkPatchImageTRACETOOLTEST(VkDevice device, VkImage buffer, VkPatchChunkListTRACETOOLTEST* pList);')
 	elif f == 'vkThreadBarrierTRACETOOLTEST':
 		out([wh], 'VKAPI_ATTR void trace_vkThreadBarrierTRACETOOLTEST(uint32_t count, uint32_t* pValues);')
 	else:

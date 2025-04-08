@@ -204,3 +204,18 @@ template<typename T>
 inline T fake_handle(uint32_t index) { return (T)((intptr_t)index + 1); }
 
 const char* pretty_print_VkObjectType(VkObjectType val);
+
+// Hackish Vulkan extension-like function for testing lavatube internals (no longer hosted in tracetooltests)
+#define VK_TRACETOOLTEST_OBJECT_PROPERTY_EXTENSION_NAME "VK_TRACETOOLTEST_object_property"
+typedef enum VkTracingObjectPropertyTRACETOOLTEST {
+	VK_TRACING_OBJECT_PROPERTY_UPDATES_COUNT_TRACETOOLTEST,
+	VK_TRACING_OBJECT_PROPERTY_UPDATES_BYTES_TRACETOOLTEST,
+	VK_TRACING_OBJECT_PROPERTY_BACKING_STORE_TRACETOOLTEST,
+	VK_TRACING_OBJECT_PROPERTY_ADDRESS_TRACETOOLTEST,
+	VK_TRACING_OBJECT_PROPERTY_MARKED_RANGES_TRACETOOLTEST,
+	VK_TRACING_OBJECT_PROPERTY_MARKED_BYTES_TRACETOOLTEST,
+	VK_TRACING_OBJECT_PROPERTY_MARKED_OBJECTS_TRACETOOLTEST,
+	VK_TRACING_OBJECT_PROPERTY_SIZE_TRACETOOLTEST,
+	VK_TRACING_OBJECT_PROPERTY_INDEX_TRACETOOLTEST,
+} VkTracingObjectPropertyTRACETOOLTEST;
+typedef uint64_t (VKAPI_PTR *PFN_vkGetDeviceTracingObjectPropertyTRACETOOLTEST)(VkDevice device, VkObjectType objectType, uint64_t objectHandle, VkTracingObjectPropertyTRACETOOLTEST valueType);

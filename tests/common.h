@@ -51,6 +51,6 @@ static inline void test_destroy_buffer(vulkan_setup_t& vulkan, unsigned value, V
 	if (result != VK_SUCCESS) ABORT("Failed to map memory in test_assert_buffer");
 	assert(ptr[0] == value);
 	trace_vkUnmapMemory(vulkan.device, memory);
-	trace_vkAssertBufferTRACETOOLTEST(vulkan.device, buffer);
+	trace_vkAssertBufferTRACETOOLTEST(vulkan.device, buffer, 0, VK_WHOLE_SIZE);
 	trace_vkDestroyBuffer(vulkan.device, buffer, nullptr);
 }

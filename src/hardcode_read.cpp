@@ -682,9 +682,9 @@ const char* const* device_extensions(VkDeviceCreateInfo* sptr, lava_file_reader&
 	const std::vector<const char*> do_not_copy = {
 		VK_KHR_SWAPCHAIN_EXTENSION_NAME, VK_KHR_GET_MEMORY_REQUIREMENTS_2_EXTENSION_NAME,
 		VK_KHR_DEDICATED_ALLOCATION_EXTENSION_NAME, VK_EXT_PIPELINE_CREATION_FEEDBACK_EXTENSION_NAME,
-		VK_EXT_PIPELINE_CREATION_CACHE_CONTROL_EXTENSION_NAME, VK_TRACETOOLTEST_CHECKSUM_VALIDATION_EXTENSION_NAME,
+		VK_EXT_PIPELINE_CREATION_CACHE_CONTROL_EXTENSION_NAME,
 		VK_TRACETOOLTEST_OBJECT_PROPERTY_EXTENSION_NAME, VK_EXT_TOOLING_INFO_EXTENSION_NAME,
-		VK_TRACETOOLTEST_TRACE_HELPERS_EXTENSION_NAME
+		VK_TRACETOOLTEST_TRACE_HELPERS_EXTENSION_NAME, VK_TRACETOOLTEST_TRACE_HELPERS2_EXTENSION_NAME
 	};
 
 	dst.clear();
@@ -1014,16 +1014,22 @@ void retrace_vkAssertBufferTRACETOOLTEST(lava_file_reader& reader)
 {
 	const uint32_t device_index = reader.read_handle();
 	const uint32_t buffer_index = reader.read_handle();
+	const VkDeviceSize offset = reader.read_uint64_t();
+	VkDeviceSize size = reader.read_uint64_t();
 	const uint32_t checksum = reader.read_uint32_t();
 	trackedobject& tbuf = VkBuffer_index.at(buffer_index);
 	VkDevice device = index_to_VkDevice.at(device_index);
 	suballoc_location loc = suballoc_find_buffer_memory(buffer_index);
+	if (size == VK_WHOLE_SIZE)
+	{
+		size = tbuf.size - offset; // set to remaining size
+	}
 	uint8_t* ptr = nullptr;
 	if (!reader.run) return;
 	VkResult result = wrap_vkMapMemory(device, loc.memory, loc.offset, tbuf.size, 0, (void**)&ptr);
 	assert(result == VK_SUCCESS);
-	uint32_t checksum_new = adler32((unsigned char*)ptr, tbuf.size);
-	NEVER("buffer %u validation size=%u off=%u origchecksum=%u newchecksum=%u [first byte is %u, last byte is %u]", buffer_index, (unsigned)tbuf.size, (unsigned)loc.offset, checksum, checksum_new, ptr[0], ptr[tbuf.size-1]);
+	uint32_t checksum_new = adler32((unsigned char*)ptr + offset, size);
+	NEVER("buffer %u validation size=%u off=%u memoff=%u origchecksum=%u newchecksum=%u [first byte is %u, last byte is %u]", buffer_index, (unsigned)size, (unsigned)offset, (unsigned)loc.offset, checksum, checksum_new, ptr[0], ptr[tbuf.size-1]);
 	wrap_vkUnmapMemory(device, loc.memory);
 	assert(checksum == checksum_new || is_blackhole_mode());
 }
@@ -1033,7 +1039,6 @@ void read_VkAddressRemapTRACETOOLTEST(lava_file_reader& reader, VkAddressRemapTR
 	sptr->sType = (VkStructureType)reader.read_uint32_t();
 	assert(sptr->sType == VK_STRUCTURE_TYPE_ADDRESS_REMAP_TRACETOOLTEST);
 	read_extension(reader, (VkBaseOutStructure**)&sptr->pNext);
-	sptr->target = (VkAddressRemapTargetTRACETOOLTEST)reader.read_uint32_t();
 	sptr->count = reader.read_uint32_t();
 	const bool pOffsets_opt = reader.read_uint8_t();
 	sptr->pOffsets = nullptr;
@@ -1044,7 +1049,7 @@ void read_VkAddressRemapTRACETOOLTEST(lava_file_reader& reader, VkAddressRemapTR
 		reader.read_array(backing, sptr->count);
 		sptr->pOffsets = backing;
 	}
-	DLOG("Got a memory markup struct with target=%u count=%u", (unsigned)sptr->target, (unsigned)sptr->count);
+	DLOG("Got a memory markup struct with count=%u", (unsigned)sptr->count);
 }
 
 static void translate_addresses(lava_file_reader& reader, uint32_t count, VkDeviceSize* pOffsets, void* ptr)
@@ -1245,7 +1250,6 @@ void replay_pre_vkCmdPushConstants2KHR(lava_file_reader& reader, VkCommandBuffer
 	assert(pPushConstantsInfo);
 	const VkAddressRemapTRACETOOLTEST* remap = (const VkAddressRemapTRACETOOLTEST*)find_extension(pPushConstantsInfo, VK_STRUCTURE_TYPE_ADDRESS_REMAP_TRACETOOLTEST);
 	if (!remap) return; // nothing to do here
-	assert(remap->target == VK_ADDRESS_REMAP_TARGET_PUSH_CONSTANTS_TRACETOOLTEST);
 	assert(pPushConstantsInfo->pValues);
 	assert(pPushConstantsInfo->size >= remap->count);
 	translate_addresses(reader, remap->count, remap->pOffsets, const_cast<void*>(pPushConstantsInfo->pValues));
@@ -1266,7 +1270,6 @@ void replay_pre_vkCreateComputePipelines(lava_file_reader& reader, VkDevice devi
 		const VkAddressRemapTRACETOOLTEST* remap = (const VkAddressRemapTRACETOOLTEST*)find_extension(&pCreateInfos[i].stage, VK_STRUCTURE_TYPE_ADDRESS_REMAP_TRACETOOLTEST);
 		if (!remap) continue; // nothing to do here
 
-		assert(remap->target == VK_ADDRESS_REMAP_TARGET_SPECIALIZATION_CONSTANTS_TRACETOOLTEST);
 		assert(pCreateInfos[i].stage.pSpecializationInfo != nullptr);
 		assert(pCreateInfos[i].stage.pSpecializationInfo->pData != nullptr);
 		assert(pCreateInfos[i].stage.pSpecializationInfo->dataSize >= remap->count);
@@ -1400,56 +1403,6 @@ VKAPI_ATTR void retrace_vkUpdateBufferTRACETOOLTEST(lava_file_reader& reader)
 }
 
 VKAPI_ATTR void retrace_vkUpdateImageTRACETOOLTEST(lava_file_reader& reader)
-{
-	const uint32_t device_index = reader.read_handle();
-	const uint32_t image_index = reader.read_handle();
-	VkUpdateMemoryInfoTRACETOOLTEST info = {};
-	read_VkUpdateMemoryInfoTRACETOOLTEST(reader, &info);
-
-	// Lookup
-	VkDevice device = index_to_VkDevice.at(device_index);
-	trackedimage& timg = VkImage_index.at(image_index);
-	suballoc_location loc = suballoc_find_image_memory(image_index);
-	VkAddressRemapTRACETOOLTEST* ar = (VkAddressRemapTRACETOOLTEST*)find_extension(&info, VK_STRUCTURE_TYPE_ADDRESS_REMAP_TRACETOOLTEST);
-
-	// Verify
-	assert(info.pData);
-	assert(loc.memory);
-	assert(timg.size);
-
-	// Act
-	char* ptr = mem_map(reader, device, loc);
-	memcpy(ptr, info.pData, info.dataSize);
-	mem_unmap(reader, device, loc, ar, ptr);
-	timg.last_modified = reader.current;
-}
-
-VKAPI_ATTR void retrace_vkPatchBufferTRACETOOLTEST(lava_file_reader& reader)
-{
-	const uint32_t device_index = reader.read_handle();
-	const uint32_t buffer_index = reader.read_handle();
-	VkUpdateMemoryInfoTRACETOOLTEST info = {};
-	read_VkUpdateMemoryInfoTRACETOOLTEST(reader, &info);
-
-	// Lookup
-	VkDevice device = index_to_VkDevice.at(device_index);
-	trackedobject& tbuf = VkBuffer_index.at(buffer_index);
-	suballoc_location loc = suballoc_find_buffer_memory(buffer_index);
-	VkAddressRemapTRACETOOLTEST* ar = (VkAddressRemapTRACETOOLTEST*)find_extension(&info, VK_STRUCTURE_TYPE_ADDRESS_REMAP_TRACETOOLTEST);
-
-	// Verify
-	assert(info.pData);
-	assert(loc.memory);
-	assert(tbuf.size);
-
-	// Act
-	char* ptr = mem_map(reader, device, loc);
-	int32_t changed = reader.read_patch(ptr, loc.size);
-	mem_unmap(reader, device, loc, ar, ptr);
-	tbuf.last_modified = reader.current;
-}
-
-VKAPI_ATTR void retrace_vkPatchImageTRACETOOLTEST(lava_file_reader& reader)
 {
 	const uint32_t device_index = reader.read_handle();
 	const uint32_t image_index = reader.read_handle();

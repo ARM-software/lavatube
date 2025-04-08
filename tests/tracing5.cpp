@@ -1,6 +1,7 @@
 #include "tests/common.h"
 #include <inttypes.h>
 #include "util_auto.h"
+#include "external/tracetooltests/include/vulkan_ext.h"
 
 #define TEST_NAME_1 "tracing_5"
 #define NUM_BUFFERS 3
@@ -8,7 +9,6 @@
 #pragma GCC diagnostic ignored "-Wunused-variable"
 #pragma GCC diagnostic ignored "-Wunused-but-set-variable"
 
-typedef uint32_t (VKAPI_PTR *PFN_vkAssertBufferTRACETOOLTEST)(VkDevice device, VkBuffer buffer);
 typedef void (VKAPI_PTR *PFN_vkSyncBufferTRACETOOLTEST)(VkDevice device, VkBuffer buffer);
 
 static void trace_3()
@@ -74,7 +74,7 @@ static void trace_3()
 	for (unsigned i = 0; i < NUM_BUFFERS; i++)
 	{
 		trace_vkSyncBufferTRACETOOLTEST(vulkan.device, buffer[i]);
-		uint32_t checksum = trace_vkAssertBufferTRACETOOLTEST(vulkan.device, buffer[i]);
+		uint32_t checksum = trace_vkAssertBufferTRACETOOLTEST(vulkan.device, buffer[i], 0, VK_WHOLE_SIZE);
 		assert(checksum == checksums[i]);
 
 		const uint64_t updates = trace_vkGetDeviceTracingObjectPropertyTRACETOOLTEST(vulkan.device, VK_OBJECT_TYPE_BUFFER, (uint64_t)buffer[i], VK_TRACING_OBJECT_PROPERTY_UPDATES_COUNT_TRACETOOLTEST);

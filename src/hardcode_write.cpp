@@ -868,30 +868,11 @@ static void modify_device_extensions(VkPhysicalDevice physicalDevice) REQUIRES(f
 	assert(result == VK_SUCCESS);
 
 	// Present extensions we provide
-	VkExtensionProperties checksumvalidation = {};
-	strcpy(checksumvalidation.extensionName, VK_TRACETOOLTEST_CHECKSUM_VALIDATION_EXTENSION_NAME);
-	checksumvalidation.specVersion = 1;
-	device_extension_properties.push_back(checksumvalidation);
-
-	VkExtensionProperties objectproperty = {};
-	strcpy(objectproperty.extensionName, VK_TRACETOOLTEST_OBJECT_PROPERTY_EXTENSION_NAME);
-	objectproperty.specVersion = 1;
-	device_extension_properties.push_back(objectproperty);
-
-	VkExtensionProperties toolinfo = {};
-	strcpy(toolinfo.extensionName, VK_EXT_TOOLING_INFO_EXTENSION_NAME);
-	toolinfo.specVersion = 1;
-	device_extension_properties.push_back(toolinfo);
-
-	VkExtensionProperties frame_boundary_info = {};
-	strcpy(frame_boundary_info.extensionName, VK_EXT_FRAME_BOUNDARY_EXTENSION_NAME);
-	frame_boundary_info.specVersion = 1;
-	device_extension_properties.push_back(frame_boundary_info);
-
-	VkExtensionProperties memory_markup_info = {};
-	strcpy(memory_markup_info.extensionName, VK_TRACETOOLTEST_TRACE_HELPERS_EXTENSION_NAME);
-	memory_markup_info.specVersion = 1;
-	device_extension_properties.push_back(memory_markup_info);
+	device_extension_properties.push_back({VK_TRACETOOLTEST_OBJECT_PROPERTY_EXTENSION_NAME, 1});
+	device_extension_properties.push_back({VK_EXT_TOOLING_INFO_EXTENSION_NAME, 1});
+	device_extension_properties.push_back({VK_EXT_FRAME_BOUNDARY_EXTENSION_NAME, 1});
+	device_extension_properties.push_back({VK_TRACETOOLTEST_TRACE_HELPERS_EXTENSION_NAME, 1});
+	device_extension_properties.push_back({VK_TRACETOOLTEST_TRACE_HELPERS2_EXTENSION_NAME, 1});
 
 	for (const auto &ext : tmp_device_extension_properties)
 	{
@@ -1012,9 +993,9 @@ static void trace_pre_vkCreateDevice(VkPhysicalDevice physicalDevice, VkDeviceCr
 			if (!has_VK_EXT_tooling_info) continue; // do not pass to host
 			enabled_VK_EXT_tooling_info = true;
 		}
-		if (strcmp(name, VK_TRACETOOLTEST_CHECKSUM_VALIDATION_EXTENSION_NAME) == 0) continue; // do not pass to host
 		if (strcmp(name, VK_TRACETOOLTEST_OBJECT_PROPERTY_EXTENSION_NAME) == 0) continue; // do not pass to host
 		if (strcmp(name, VK_TRACETOOLTEST_TRACE_HELPERS_EXTENSION_NAME) == 0) continue; // do not pass to host
+		if (strcmp(name, VK_TRACETOOLTEST_TRACE_HELPERS2_EXTENSION_NAME) == 0) continue; // do not pass to host
 		if (!has_VK_EXT_frame_boundary && strcmp(name, VK_EXT_FRAME_BOUNDARY_EXTENSION_NAME) == 0) // do not pass to host
 		{
 			purge_extension_parent(pCreateInfo, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FRAME_BOUNDARY_FEATURES_EXT);
@@ -1478,7 +1459,6 @@ static void write_VkAddressRemapTRACETOOLTEST(lava_file_writer& writer, const Vk
 	writer.write_uint32_t(sptr->sType);
 	assert(sptr->sType == VK_STRUCTURE_TYPE_ADDRESS_REMAP_TRACETOOLTEST);
 	write_extension(writer, (VkBaseOutStructure*)sptr->pNext);
-	writer.write_uint32_t(sptr->target);
 	writer.write_uint32_t(sptr->count);
 	bool pOffsets_opt = (sptr->pOffsets != 0 && sptr->count > 0); // whether we should save pData
 	writer.write_uint8_t(pOffsets_opt);
@@ -1500,20 +1480,6 @@ static void write_VkUpdateMemoryInfoTRACETOOLTEST(lava_file_writer& writer, cons
 	if (pData_opt)
 	{
 		writer.write_array(reinterpret_cast<const char*>(sptr->pData), sptr->dataSize);
-	}
-}
-
-static void write_VkPatchChunkListTRACETOOLTEST(lava_file_writer& writer, const VkPatchChunkListTRACETOOLTEST* sptr)
-{
-	writer.write_uint32_t(sptr->sType);
-	assert(sptr->sType == VK_STRUCTURE_TYPE_PATCH_CHUNK_LIST_TRACETOOLTEST);
-	write_extension(writer, (VkBaseOutStructure*)sptr->pNext);
-	VkPatchChunkTRACETOOLTEST* ptr = (VkPatchChunkTRACETOOLTEST*)sptr->pChunks;
-	while (ptr->offset != 0 || ptr->size != 0)
-	{
-		writer.write_uint32_t(ptr->offset);
-		writer.write_uint32_t(ptr->size);
-		writer.write_array((char*)ptr->data, ptr->size);
 	}
 }
 
@@ -1565,40 +1531,6 @@ VKAPI_ATTR void trace_vkUpdateImageTRACETOOLTEST(VkDevice device, VkImage dstIma
 	wrap_vkUnmapMemory(device, memory_data->backing);
 }
 
-VKAPI_ATTR void trace_vkPatchBufferTRACETOOLTEST(VkDevice device, VkBuffer dstBuffer, VkPatchChunkListTRACETOOLTEST* pList)
-{
-	lava_file_writer& writer = write_header("vkUpdateBufferTRACETOOLTEST", VKUPDATEBUFFERTRACETOOLTEST);
-	const auto* device_data = writer.parent->records.VkDevice_index.at(device);
-	auto* buffer_data = writer.parent->records.VkBuffer_index.at(dstBuffer);
-	writer.write_handle(device_data);
-	writer.write_handle(buffer_data);
-	if (buffer_data)
-	{
-		buffer_data->last_modified = writer.current;
-		buffer_data->self_test();
-	}
-	write_VkPatchChunkListTRACETOOLTEST(writer, pList);
-
-	// TBD
-}
-
-VKAPI_ATTR void trace_vkPatchImageTRACETOOLTEST(VkDevice device, VkImage dstImage, VkPatchChunkListTRACETOOLTEST* pList)
-{
-	lava_file_writer& writer = write_header("vkUpdateImageTRACETOOLTEST", VKUPDATEIMAGETRACETOOLTEST);
-	const auto* device_data = writer.parent->records.VkDevice_index.at(device);
-	auto* image_data = writer.parent->records.VkImage_index.at(dstImage);
-	writer.write_handle(device_data);
-	writer.write_handle(image_data);
-	if (image_data)
-	{
-		image_data->last_modified = writer.current;
-		image_data->self_test();
-	}
-	write_VkPatchChunkListTRACETOOLTEST(writer, pList);
-
-	// TBD
-}
-
 VKAPI_ATTR void trace_vkCmdUpdateBuffer2TRACETOOLTEST(VkCommandBuffer commandBuffer, VkBuffer dstBuffer, VkUpdateMemoryInfoTRACETOOLTEST* pInfo)
 {
 	lava_file_writer& writer = write_header("vkCmdUpdateBuffer2TRACETOOLTEST", VKCMDUPDATEBUFFER2TRACETOOLTEST);
@@ -1633,7 +1565,7 @@ VKAPI_ATTR void trace_vkThreadBarrierTRACETOOLTEST(uint32_t count, uint32_t* pVa
 	}
 }
 
-VKAPI_ATTR uint32_t VKAPI_CALL trace_vkAssertBufferTRACETOOLTEST(VkDevice device, VkBuffer buffer)
+VKAPI_ATTR uint32_t VKAPI_CALL trace_vkAssertBufferTRACETOOLTEST(VkDevice device, VkBuffer buffer, VkDeviceSize offset, VkDeviceSize size)
 {
 	lava_file_writer& writer = write_header("vkAssertBufferTRACETOOLTEST", VKASSERTBUFFERTRACETOOLTEST);
 	auto* buffer_data = writer.parent->records.VkBuffer_index.at(buffer);
@@ -1646,20 +1578,26 @@ VKAPI_ATTR uint32_t VKAPI_CALL trace_vkAssertBufferTRACETOOLTEST(VkDevice device
 	writer.parent->memory_mutex.unlock();
 	writer.write_handle(writer.parent->records.VkDevice_index.at(device));
 	writer.write_handle(buffer_data);
+	writer.write_uint64_t(offset);
+	writer.write_uint64_t(size);
+	if (size == VK_WHOLE_SIZE)
+	{
+		size = buffer_data->size - offset; // set to remaining size
+	}
 	uint32_t checksum = 0;
 	if (memory_data->ptr && (memory_data->offset <= buffer_data->offset) && (memory_data->offset + memory_data->size > buffer_data->offset + buffer_data->size)) // we already have it mapped
 	{
-		checksum = adler32((unsigned char*)(memory_data->ptr + buffer_data->offset), buffer_data->size);
-		DLOG2("branch1 buffer=%u offset=%u size=%u checksum=%u first byte=%u", buffer_data->index, (unsigned)buffer_data->offset, (unsigned)buffer_data->size, checksum, (unsigned)*(memory_data->ptr + buffer_data->offset));
+		checksum = adler32((unsigned char*)(memory_data->ptr + buffer_data->offset + offset), size);
+		DLOG2("branch1 buffer=%u offset=%u memoffset=%u size=%u checksum=%u first byte=%u", buffer_data->index, (unsigned)offset, (unsigned)buffer_data->offset, (unsigned)size, checksum, (unsigned)*(memory_data->ptr + buffer_data->offset));
 	}
 	else if (memory_data->ptr) // mapped but not including our object
 	{
 		uint8_t* ptr = nullptr;
 		wrap_vkUnmapMemory(device, memory_data->backing);
-		VkResult result = wrap_vkMapMemory(device, buffer_data->backing, buffer_data->offset, buffer_data->size, 0, (void**)&ptr);
+		VkResult result = wrap_vkMapMemory(device, buffer_data->backing, buffer_data->offset + offset, size, 0, (void**)&ptr);
 		if (result != VK_SUCCESS) ABORT("Failed to map memory in vkAssertBuffer");
 		checksum = adler32((unsigned char*)ptr, buffer_data->size);
-		DLOG2("branch2 buffer=%u offset=%u size=%u checksum=%u first byte=%u", buffer_data->index, (unsigned)buffer_data->offset, (unsigned)buffer_data->size, checksum, (unsigned)ptr[0]);
+		DLOG2("branch1 buffer=%u offset=%u memoffset=%u size=%u checksum=%u first byte=%u", buffer_data->index, (unsigned)offset, (unsigned)buffer_data->offset, (unsigned)size, checksum, (unsigned)ptr[0]);
 		wrap_vkUnmapMemory(device, buffer_data->backing);
 		result = wrap_vkMapMemory(device, memory_data->backing, memory_data->offset, memory_data->size, 0, (void**)&ptr); // restore back
 		assert(result == VK_SUCCESS);
@@ -1667,10 +1605,10 @@ VKAPI_ATTR uint32_t VKAPI_CALL trace_vkAssertBufferTRACETOOLTEST(VkDevice device
 	else // not mapped at all
 	{
 		uint8_t* ptr = nullptr;
-		VkResult result = wrap_vkMapMemory(device, buffer_data->backing, buffer_data->offset, buffer_data->size, 0, (void**)&ptr);
+		VkResult result = wrap_vkMapMemory(device, buffer_data->backing, buffer_data->offset + offset, size, 0, (void**)&ptr);
 		if (result != VK_SUCCESS) ABORT("Failed to map memory in vkAssertBuffer");
 		checksum = adler32((unsigned char*)ptr, buffer_data->size);
-		DLOG2("branch3 buffer=%u offset=%u size=%u checksum=%u first byte=%u", buffer_data->index, (unsigned)buffer_data->offset, (unsigned)buffer_data->size, checksum, (unsigned)ptr[0]);
+		DLOG2("branch1 buffer=%u offset=%u memoffset=%u size=%u checksum=%u first byte=%u", buffer_data->index, (unsigned)offset, (unsigned)buffer_data->offset, (unsigned)size, checksum, (unsigned)ptr[0]);
 		wrap_vkUnmapMemory(device, buffer_data->backing);
 	}
 	writer.write_uint32_t(checksum);

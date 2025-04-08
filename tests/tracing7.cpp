@@ -80,12 +80,12 @@ static void trace_3()
 	free(ptr);
 	ptr = nullptr;
 
-	vkThreadBarrier(0, nullptr);
+	vkThreadBarrier(nullptr);
 
 	for (unsigned i = 0; i < NUM_BUFFERS; i++)
 	{
 		trace_vkSyncBufferTRACETOOLTEST(vulkan.device, buffer[i]);
-		uint32_t checksum2 = trace_vkAssertBufferTRACETOOLTEST(vulkan.device, buffer[i]);
+		uint32_t checksum2 = trace_vkAssertBufferTRACETOOLTEST(vulkan.device, buffer[i], 0, VK_WHOLE_SIZE);
 		assert(checksum == checksum2);
 	}
 
