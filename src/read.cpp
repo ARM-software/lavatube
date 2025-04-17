@@ -10,6 +10,7 @@
 
 /// Mutex to enforce additional external synchronization
 lava::mutex sync_mutex;
+thread_local lava_file_reader* local_reader_ptr;
 
 // --- misc
 
@@ -32,6 +33,8 @@ lava_file_reader::lava_file_reader(lava_reader* _parent, const std::string& path
 	current.call = 0;
 	current.frame = 0;
 	current.thread = mytid;
+
+	local_reader_ptr = this;
 
 	if (frameinfo.isMember("thread_name"))
 	{

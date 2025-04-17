@@ -29,7 +29,7 @@ static void usage()
 	printf("-o/--debugfile FILE    Output debug output to the given file\n");
 	printf("-f/--frames start end  Select a frame range\n");
 	printf("-r/--remap-validate    Validate existing device address remappings - abort if we find less or more addresses than already marked\n");
-	//printf("-u/--report-unused     Report on any found unused features and extensions in the trace file\n");
+	printf("-u/--unused            Find any found unused features and extensions in the trace file; remove them from the output file\n");
 	//printf("-R/--remap-addresses   Adding remapping of device addresses. Replaces existing address remappings. Requires an output file.\n");
 	exit(-1);
 }
@@ -62,6 +62,11 @@ static std::string get_str(const char* in, int& remaining)
 	}
 	remaining--;
 	return in;
+}
+
+static Json::Value readJson(const std::string& filename, const std::string packedfile)
+{
+	return packed_json(filename, packedfile);
 }
 
 static void replay_thread(lava_reader* replayer, int thread_id)
@@ -105,18 +110,6 @@ static void replay_thread(lava_reader* replayer, int thread_id)
 		t.device = VK_NULL_HANDLE;
 		t.physicalDevice = VK_NULL_HANDLE;
 		t.self_test();
-	}
-}
-
-static void run_multithreaded(lava_reader* replayer, int n)
-{
-	for (int i = 0; i < n; i++)
-	{
-		replayer->threads.emplace_back(&replay_thread, replayer, i);
-	}
-	for (unsigned i = 0; i < replayer->threads.size(); i++)
-	{
-		replayer->threads[i].join();
 	}
 }
 
@@ -211,7 +204,22 @@ int main(int argc, char **argv)
 		// Read all thread files
 		std::vector<std::string> threadfiles = packed_files(filename_input, "thread_");
 		if (threadfiles.size() == 0) DIE("Failed to find any threads in %s!", filename_input.c_str());
-		run_multithreaded(&replayer, threadfiles.size());
+
+		for (int i = 0; i < (int)threadfiles.size(); i++)
+		{
+			if (verbose)
+			{
+				printf("Threads:\n");
+				Json::Value frameinfo = readJson("frames_" + _to_string(i) + ".json", filename_input);
+				printf("\t%d : [%s] with %u local frames, %d highest global frame, %u uncompressed size\n", i, frameinfo.get("thread_name", "unknown").asString().c_str(),
+					(unsigned)frameinfo["frames"].size(), frameinfo["highest_global_frame"].asInt(), frameinfo["uncompressed_size"].asUInt());
+			}
+			replayer.threads.emplace_back(&replay_thread, &replayer, i);
+		}
+		for (unsigned i = 0; i < replayer.threads.size(); i++)
+		{
+			replayer.threads[i].join();
+		}
 
 		// Copy out the rewrite queue
 		if (validate_remap) rewrite_queue_copy = replayer.rewrite_queue;
@@ -234,7 +242,15 @@ int main(int argc, char **argv)
 		// Read all thread files
 		std::vector<std::string> threadfiles = packed_files(filename_input, "thread_");
 		if (threadfiles.size() == 0) DIE("Failed to find any threads in %s!", filename_input.c_str());
-		run_multithreaded(&replayer, threadfiles.size());
+
+		for (int i = 0; i < (int)threadfiles.size(); i++)
+		{
+			replayer.threads.emplace_back(&replay_thread, &replayer, i);
+		}
+		for (unsigned i = 0; i < replayer.threads.size(); i++)
+		{
+			replayer.threads[i].join();
+		}
 
 		reset_for_tools();
 		replayer.finalize(false);

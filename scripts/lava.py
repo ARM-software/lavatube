@@ -60,6 +60,7 @@ out(targets_main, '#include <vector>')
 out(targets_main, '#include "tostring.h"')
 out(targets_read, '#include <list>')
 out(targets_main + [u,wrh], '#include "lavatube.h"')
+out([u], '#include "util_auto.h"')
 out(targets_main + [wrh], '#include "containers.h"')
 out(targets_write, '#include "util_auto.h"')
 out(targets_write, '#include "vk_wrapper_auto.h"')
@@ -68,7 +69,8 @@ out(targets_read, '#include <algorithm>')
 out(targets_read, '#include "vulkan/vulkan.h"')
 out(targets_read, '#include "window.h"')
 out(targets_read, '#include "suballocator.h"')
-out([u,wrh], '#include <unordered_map>')
+out([uh,wrh], '#include <unordered_map>')
+out([uh,wrh], '#include "vulkan_feature_detect.h"')
 out([r], '#include "read_auto.h"')
 out(targets_main)
 out(targets_main, '#pragma GCC diagnostic ignored "-Wunused-variable"')
@@ -197,15 +199,10 @@ out([u], '}')
 out([uh, u])
 
 # Generate list of all feature detection structs that we can use
-out([uh], 'extern std::vector<const char*> feature_detection_callbacks;')
-out([uh], 'extern std::vector<const char*> feature_detection_special_funcs;') # these need hardcoded handling
-out([u], 'std::vector<const char*> feature_detection_callbacks = {')
+out([uh], 'extern std::unordered_map<std::string, void*> vulkan_feature_detection_funcs;')
+out([u], 'std::unordered_map<std::string, void*> vulkan_feature_detection_funcs = {')
 for s in spec.feature_detection_funcs:
-	out([u], '\t"%s",' % s)
-out([u], '};')
-out([u], 'std::vector<const char*> feature_detection_special_funcs = {')
-for s in spec.feature_detection_special:
-	out([u], '\t"%s",' % s)
+	out([u], '\t//{ "%s", (void*)check_%s },' % (s, s))
 out([u], '};')
 out([u])
 
@@ -519,6 +516,26 @@ for f in spec.functions:
 	out(targets_read_headers, 'extern std::vector<replay_%s_callback> %s_callbacks;' % (f, f))
 	if f in spec.protected_funcs:
 		out(targets_read + targets_read_headers, '#endif')
+
+out(targets_read_headers, 'extern std::unordered_map<std::string, std::vector<void*>*> read_callback_table;')
+out(targets_read, 'std::unordered_map<std::string, std::vector<void*>*> read_callback_table = {')
+for f in spec.functions:
+	if f in spec.protected_funcs:
+		out(targets_read, '#ifdef %s' % (spec.protected_funcs[f]))
+	out(targets_read, '\t{ "%s", (std::vector<void*>*)&%s_callbacks },' % (f, f))
+	if f in spec.protected_funcs:
+		out(targets_read, '#endif')
+out(targets_read, '};')
+
+out(targets_write_headers, 'extern std::unordered_map<std::string, void*> write_callback_table;')
+out(targets_write, 'std::unordered_map<std::string, void*> write_callback_table = {')
+for f in spec.functions:
+	if f in spec.protected_funcs:
+		out(targets_write, '#ifdef %s' % (spec.protected_funcs[f]))
+	out(targets_write, '\t{ "%s", (void*)trace_%s },' % (f, f))
+	if f in spec.protected_funcs:
+		out(targets_write, '#endif')
+out(targets_write, '};')
 
 # Clean up
 for n in targets_all:

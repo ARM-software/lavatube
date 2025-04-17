@@ -202,9 +202,9 @@ static bool getnext(lava_file_reader& t)
 }
 
 static std::atomic_bool triggered_VkCreateInstance_callback { false };
-static void my_VkCreateInstance_callback(lava_file_reader& reader, VkResult result, const VkInstanceCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkInstance* pInstance)
+static void my_VkCreateInstance_callback(const VkInstanceCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkInstance* pInstance)
 {
-	assert(result == VK_SUCCESS);
+	assert(get_file_reader() != nullptr);
 	assert(triggered_VkCreateInstance_callback.load() == false);
 	triggered_VkCreateInstance_callback.store(true);
 }
