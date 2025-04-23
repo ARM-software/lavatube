@@ -172,6 +172,8 @@ lava_writer::lava_writer() : global_frame(0)
 {
 	frame_mutex.lock();
 
+	(void)vulkan_feature_detection_get();
+
 	// assign a fake UUID, so that we get SPIR-V instead of cached pipeline data.
 	// the start is "rdoc", and the end is the time that this call was first made
 	// 0123456789ABCDEF
@@ -219,12 +221,13 @@ void lava_writer::serialize()
 	writeJson(dict_path, jd);
 
 	// over-write these in case something was not used
-	if (meta.app.stored_VkPhysicalDeviceFeatures2) usage_detection.adjust_VkPhysicalDeviceFeatures(meta.app.stored_VkPhysicalDeviceFeatures2->features);
-	if (meta.app.stored_VkPhysicalDeviceVulkan11Features) usage_detection.adjust_VkPhysicalDeviceVulkan11Features(*meta.app.stored_VkPhysicalDeviceVulkan11Features);
-	if (meta.app.stored_VkPhysicalDeviceVulkan12Features) usage_detection.adjust_VkPhysicalDeviceVulkan12Features(*meta.app.stored_VkPhysicalDeviceVulkan12Features);
-	if (meta.app.stored_VkPhysicalDeviceVulkan13Features) usage_detection.adjust_VkPhysicalDeviceVulkan13Features(*meta.app.stored_VkPhysicalDeviceVulkan13Features);
-	auto removed_device_exts = usage_detection.adjust_device_extensions(meta.app.device_extensions);
-	auto removed_instance_exts = usage_detection.adjust_instance_extensions(meta.app.instance_extensions);
+	feature_detection* f = vulkan_feature_detection_get();
+	if (meta.app.stored_VkPhysicalDeviceFeatures2) f->adjust_VkPhysicalDeviceFeatures(meta.app.stored_VkPhysicalDeviceFeatures2->features);
+	if (meta.app.stored_VkPhysicalDeviceVulkan11Features) f->adjust_VkPhysicalDeviceVulkan11Features(*meta.app.stored_VkPhysicalDeviceVulkan11Features);
+	if (meta.app.stored_VkPhysicalDeviceVulkan12Features) f->adjust_VkPhysicalDeviceVulkan12Features(*meta.app.stored_VkPhysicalDeviceVulkan12Features);
+	if (meta.app.stored_VkPhysicalDeviceVulkan13Features) f->adjust_VkPhysicalDeviceVulkan13Features(*meta.app.stored_VkPhysicalDeviceVulkan13Features);
+	auto removed_device_exts = f->adjust_device_extensions(meta.app.device_extensions);
+	auto removed_instance_exts = f->adjust_instance_extensions(meta.app.instance_extensions);
 	Json::Value& r = mJson;
 	r["instanceRequested"]["removedExtensions"] = Json::arrayValue;
 	for (const std::string& name : removed_instance_exts) r["instanceRequested"]["removedExtensions"].append(name);
@@ -296,6 +299,7 @@ void lava_writer::finish()
 	mJson = Json::Value();
 	global_frame.exchange(0);
 	tid = -1;
+	vulkan_feature_detection_reset();
 	frame_mutex.unlock();
 }
 

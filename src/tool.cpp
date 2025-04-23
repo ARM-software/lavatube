@@ -193,6 +193,20 @@ int main(int argc, char **argv)
 
 	std::list<address_rewrite> rewrite_queue_copy;
 
+	Json::Value meta = readJson("metadata.json", filename_input);
+	Json::Value instance_removed_json = meta["instanceRequested"]["removedExtensions"];
+	Json::Value device_removed_json = meta["deviceRequested"]["removedExtensions"];
+	if ((verbose || report_unused) && instance_removed_json.size())
+	{
+		printf("Already removed instance extensions:\n");
+		for (auto v : instance_removed_json) printf("\t%s\n", v.asString().c_str());
+	}
+	if ((verbose || report_unused) && device_removed_json.size())
+	{
+		printf("Already removed device extensions:\n");
+		for (auto v : device_removed_json) printf("\t%s\n", v.asString().c_str());
+	}
+
 	// run first round
 	{
 		lava_reader replayer;

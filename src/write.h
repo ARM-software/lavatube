@@ -236,9 +236,6 @@ public:
 	uint64_t mem_allocated = 0;
 	uint64_t mem_wasted = 0;
 
-	/// Actually used features. We use this to modify the meta_app.
-	feature_detection usage_detection; // reentrant safe
-
 	char fakeUUID[VK_UUID_SIZE + 1];
 
 	trace_data<lava_file_writer*> thread_streams;

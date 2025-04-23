@@ -169,7 +169,6 @@ static void trace_post_vkCreateShaderModule(lava_file_writer& writer, VkResult r
 		shader->enables_device_address = true;
 		ILOG("Shader %u enables buffer references!", shader->index); // remove this later
 	}
-	writer.parent->usage_detection.parse_SPIRV(pCreateInfo->pCode, pCreateInfo->codeSize);
 }
 
 static void trace_post_vkAcquireNextImageKHR(lava_file_writer& writer, VkResult result, VkDevice device, VkSwapchainKHR swapchain, uint64_t timeout, VkSemaphore semaphore, VkFence fence, uint32_t* pImageIndex)

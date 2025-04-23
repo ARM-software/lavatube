@@ -1823,9 +1823,9 @@ def savefunc(name, node, target, header):
 			z.do('if (writer.run) trace_post_%s(writer, %s);' % (name, ', '.join(call_list)))
 
 	if name in spec.feature_detection_funcs:
-		z.do('writer.parent->usage_detection.check_%s(%s);' % (name, ', '.join(call_list)))
+		z.do('check_%s(%s);' % (name, ', '.join(call_list)))
 	elif name == 'vkBeginCommandBuffer': # special case for above, need to add the level param
-		z.do('writer.parent->usage_detection.special_vkBeginCommandBuffer(commandBuffer, pBeginInfo, commandbuffer_data->level);')
+		z.do('special_vkBeginCommandBuffer(commandBuffer, pBeginInfo, commandbuffer_data->level);')
 
 	if retval != 'void':
 		z.do('// -- Return --')

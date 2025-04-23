@@ -132,6 +132,7 @@ set(COMMON_SRC
     ${PROJECT_SOURCE_DIR}/external/jsoncpp/src/lib_json/json_writer.cpp
     ${PROJECT_SOURCE_DIR}/external/jsoncpp/src/lib_json/json_reader.cpp
     ${PROJECT_SOURCE_DIR}/external/jsoncpp/src/lib_json/json_value.cpp
+    ${PROJECT_SOURCE_DIR}/external/tracetooltests/include/vulkan_feature_detect.cpp
     ${PROJECT_SOURCE_DIR}/external/tracetooltests/include/vulkan_feature_detect.h
     ${PROJECT_SOURCE_DIR}/src/vk_wrapper.cpp
     ${PROJECT_SOURCE_DIR}/src/util.cpp
