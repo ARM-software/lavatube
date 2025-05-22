@@ -2516,6 +2516,14 @@ static trackedpipelinelayout trackedpipelinelayout_json(const Json::Value& v)
 	return t;
 }
 
+static trackeddescriptorsetlayout trackeddescriptorsetlayout_json(const Json::Value& v)
+{
+	trackeddescriptorsetlayout t;
+	trackable_helper(t, v);
+	t.enter_initialized();
+	return t;
+}
+
 
 // --- read helpers : legacy code ---
 

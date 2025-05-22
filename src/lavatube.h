@@ -438,6 +438,8 @@ struct trackedpipelinelayout : trackable
 {
 	using trackable::trackable; // inherit constructor
 	uint32_t push_constant_space_used = 0;
+	VkPipelineLayoutCreateFlags flags = 0;
+	std::vector<VkDescriptorSetLayout> layouts;
 
 	void self_test() const
 	{
@@ -571,6 +573,13 @@ struct buffer_access
 	trackedbuffer* buffer_data;
 	VkDeviceSize offset;
 	VkDeviceSize size; // not sure if we need this
+};
+
+struct trackeddescriptorsetlayout : trackable
+{
+	using trackable::trackable; // inherit constructor
+	VkDeviceSize size = 0;
+	std::unordered_map<int, VkDeviceSize> offsets;
 };
 
 struct trackeddescriptorset : trackable

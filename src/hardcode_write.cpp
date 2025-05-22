@@ -2632,3 +2632,9 @@ static Json::Value trackedpipelinelayout_json(const trackedpipelinelayout* t)
 	v["push_constant_space_used"] = t->push_constant_space_used;
 	return v;
 }
+
+static Json::Value trackeddescriptorsetlayout_json(const trackeddescriptorsetlayout* t)
+{
+	Json::Value v = trackable_json(t);
+	return v;
+}

@@ -188,7 +188,8 @@ deconst_struct = [
 trackable_type_map_general = { 'VkBuffer': 'trackedbuffer', 'VkImage': 'trackedimage', 'VkCommandBuffer': 'trackedcmdbuffer', 'VkDescriptorSet': 'trackeddescriptorset',
 	'VkDeviceMemory': 'trackedmemory', 'VkFence': 'trackedfence', 'VkPipeline': 'trackedpipeline', 'VkImageView': 'trackedimageview', 'VkBufferView': 'trackedbufferview',
 	'VkDevice': 'trackeddevice', 'VkFramebuffer': 'trackedframebuffer', 'VkRenderPass': 'trackedrenderpass', 'VkQueue': 'trackedqueue', 'VkPhysicalDevice': 'trackedphysicaldevice',
-	'VkShaderModule': 'trackedshadermodule', 'VkAccelerationStructureKHR': 'trackedaccelerationstructure', 'VkPipelineLayout': 'trackedpipelinelayout' }
+	'VkShaderModule': 'trackedshadermodule', 'VkAccelerationStructureKHR': 'trackedaccelerationstructure', 'VkPipelineLayout': 'trackedpipelinelayout',
+	'VkDescriptorSetLayout': 'trackeddescriptorsetlayout' }
 trackable_type_map_trace = trackable_type_map_general.copy()
 trackable_type_map_trace.update({ 'VkCommandBuffer': 'trackedcmdbuffer_trace', 'VkSwapchainKHR': 'trackedswapchain', 'VkDescriptorSet': 'trackeddescriptorset_trace',
 	'VkEvent': 'trackedevent_trace', 'VkDescriptorPool': 'trackeddescriptorpool_trace', 'VkCommandPool': 'trackedcommandpool_trace' })
@@ -1168,6 +1169,9 @@ def save_add_tracking(name):
 			z.do('add->object_type = VK_OBJECT_TYPE_BUFFER;')
 		elif type == 'VkPipelineLayout':
 			z.do('for (uint32_t i = 0; i < pCreateInfo->pushConstantRangeCount; i++) { const auto& v = pCreateInfo->pPushConstantRanges[i]; if (add->push_constant_space_used < v.offset + v.size) add->push_constant_space_used = v.offset + v.size; }')
+			z.do('add->flags = pCreateInfo->flags;')
+			z.do('add->layouts.reserve(pCreateInfo->setLayoutCount);')
+			z.do('for (uint32_t i = 0; i < pCreateInfo->setLayoutCount; i++) add->layouts.push_back(pCreateInfo->pSetLayouts[i]);')
 		elif type == 'VkImage':
 			z.do('add->tiling = pCreateInfo->tiling;')
 			z.do('add->usage = pCreateInfo->usage;')
@@ -1305,6 +1309,13 @@ def save_add_tracking(name):
 		if type == 'VkCommandBuffer':
 			z.do('commandpool_data->commandbuffers.erase(meta);')
 		z.brace_end()
+	elif name == 'vkGetDescriptorSetLayoutSizeEXT':
+		type = 'VkDescriptorSetLayout'
+		z.do('if (writer.run) descriptorsetlayout_data->size = *pLayoutSizeInBytes;')
+	elif name == 'vkGetDescriptorSetLayoutBindingOffsetEXT':
+		type = 'VkDescriptorSetLayout'
+		z.do('if (writer.run) descriptorsetlayout_data->offsets[binding] = *pOffset;')
+
 
 # Run before execute
 def load_add_pre(name):
@@ -1433,6 +1444,14 @@ def load_add_tracking(name):
 		z.do('buffer_data.backing = memory;')
 		z.do('buffer_data.offset = memoryOffset;')
 		z.do('buffer_data.enter_bound();')
+	elif name == 'vkGetDescriptorSetLayoutSizeEXT':
+		type = 'VkDescriptorSetLayout'
+		z.do('auto& data = %s_index.at(%s);' % (type, toindex(type)))
+		z.do('if (reader.run) data.size = *pLayoutSizeInBytes;')
+	elif name == 'vkGetDescriptorSetLayoutBindingOffsetEXT':
+		type = 'VkDescriptorSetLayout'
+		z.do('auto& data = %s_index.at(%s);' % (type, toindex(type)))
+		z.do('if (reader.run) data.offsets[binding] = *pOffset;')
 
 def func_common(name, node, read, target, header, guard_header=True):
 	proto = node.find('proto')
