@@ -249,6 +249,20 @@ private:
 	std::unordered_map<T, uint32_t> reverse;
 };
 
+/// Defining the minimum interface to a concurrent map that we need.
+template<typename T, typename U>
+struct concurrent_unordered_map
+{
+public:
+	U at(T key) const { return map.at(key); } // must be fast
+	void clear() { map.clear(); } // can be unsafe
+	void insert(T key, U value) { map[key] = value; }
+	int count(T key) const { return map.count(key); }
+
+private:
+	tbb::concurrent_unordered_map<T, U> map;
+};
+
 template<typename T, typename U>
 class trace_remap
 {
@@ -256,7 +270,7 @@ public:
 	trace_remap()
 	{
 		_size.store(0);
-		lookup[0] = nullptr; // special case VK_NULL_HANDLE
+		lookup.insert(0, nullptr); // special case VK_NULL_HANDLE
 	}
 	~trace_remap() { clear(); }
 
@@ -269,7 +283,7 @@ public:
 		p->index = _size++;
 		p->creation = current;
 		p->last_modified = current;
-		lookup[key] = p;
+		lookup.insert(key, p);
 		storage.push_back(p);
 		mutex.unlock();
 		return p;
@@ -280,7 +294,7 @@ public:
 		if (key == 0) return nullptr;
 		U* p = lookup.at(key);
 		p->destroyed = current;
-		lookup[key] = nullptr;
+		lookup.insert(key, nullptr);
 		return p;
 	}
 
@@ -305,7 +319,7 @@ public:
 		for (auto* p : storage) delete p;
 		storage.clear();
 		_size.store(0);
-		lookup[0] = nullptr; // special case VK_NULL_HANDLE
+		lookup.insert(0, nullptr); // special case VK_NULL_HANDLE
 		mutex.unlock();
 	}
 
@@ -317,6 +331,6 @@ public:
 private:
 	std::mutex mutex;
 	std::atomic_uint_least32_t _size;
-	tbb::concurrent_unordered_map<T, U*> lookup;
+	concurrent_unordered_map<T, U*> lookup;
 	std::vector<U*> storage;
 };
