@@ -56,6 +56,11 @@ if(SANITIZE)
     set(SANITIZER -fsanitize=${SANITIZE} -fsanitize-undefined-trap-on-error -fuse-ld=gold)
 endif()
 
+# --- spirv-simulator ---
+
+message(STATUS "Building spirv-simulator")
+add_subdirectory(external/spirv-simulator ${CMAKE_BINARY_DIR}/spirv-simulator)
+
 # --- tracetooltests ---
 
 if(NOT ${NO_TRACETOOLTESTS})
@@ -93,7 +98,7 @@ target_link_libraries(density ${SANITIZER})
 find_package(TBB REQUIRED HINTS /usr/lib/x86_64-linux-gnu/cmake/TBB /usr/aarch64-linux-gnu/lib/cmake/TBB /usr/arm-linux-gnueabihf/lib/cmake/TBB)
 
 # Debug Release RelWithDebInfo MinSizeRel
-set(COMMON_FLAGS ${SANITIZER} -std=c++17 -Werror -Wall -fvisibility=hidden ${XCB_ENABLE} -Wshadow)
+set(COMMON_FLAGS ${SANITIZER} -std=c++20 -Werror -Wall -fvisibility=hidden ${XCB_ENABLE} -Wshadow)
 if(CMAKE_BUILD_TYPE STREQUAL "Debug" OR NOT CMAKE_BUILD_TYPE)
 	set(COMMON_FLAGS ${COMMON_FLAGS} -ggdb -O0 -fno-omit-frame-pointer -DDEBUG -DRELTYPE="debug")
 	message(STATUS "Debug build")
@@ -163,6 +168,9 @@ set(COMMON_SRC
 )
 
 set(LAVATUBE_SRC
+    ${PROJECT_SOURCE_DIR}/external/spirv-simulator/spirv_simulator.hpp
+    ${PROJECT_SOURCE_DIR}/external/spirv-simulator/spirv_simulator.cpp
+
     ${PROJECT_SOURCE_DIR}/src/window.cpp
     ${PROJECT_SOURCE_DIR}/src/window.h
     ${PROJECT_SOURCE_DIR}/src/filereader.cpp

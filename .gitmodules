@@ -1,9 +1,9 @@
 [submodule "external/density"]
 	path = external/density
 	url = http://github.com/centaurean/density
-[submodule "tracetooltests"]
-	path = tracetooltests
-	url = https://github.com/ARM-software/tracetooltests.git
 [submodule "external/tracetooltests"]
 	path = external/tracetooltests
 	url = https://github.com/ARM-software/tracetooltests.git
+[submodule "external/spirv-simulator"]
+	path = external/spirv-simulator
+	url = https://github.com/ARM-software/spirv-simulator
