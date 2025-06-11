@@ -1,9 +1,16 @@
-static bool run_spirv(lava_file_reader& reader, const shader_stage& stage, const std::vector<uint8_t>& push_constants)
+static bool run_spirv(lava_file_reader& reader, const shader_stage& stage, const std::vector<std::byte>& push_constants)
 {
 	const uint32_t shader_index = index_to_VkShaderModule.index(stage.module);
 	trackedshadermodule& shader_data = VkShaderModule_index.at(shader_index);
-
 	SPIRVSimulator::InputData inputs;
+	inputs.push_constants = push_constants;
+	//inputs.entry_point = stage.name;
+	for (auto& v : stage.specialization_constants)
+	{
+		std::vector<std::byte> data(v.size);
+		memcpy(data.data(), stage.specialization_data.data() + v.offset, v.size);
+		inputs.specialization_constants[v.constantID] = data;
+	}
 	SPIRVSimulator::SPIRVSimulator sim(shader_data.code, inputs, true);
 	sim.Run();
 
@@ -38,7 +45,7 @@ static bool run_spirv(lava_file_reader& reader, const shader_stage& stage, const
 
 static bool execute_commands(lava_file_reader& reader, VkCommandBuffer commandBuffer)
 {
-	std::vector<uint8_t> push_constants; // current state of the push constants
+	std::vector<std::byte> push_constants; // current state of the push constants
 	uint32_t compute_pipeline_bound = CONTAINER_INVALID_INDEX; // currently bound pipeline
 	uint32_t graphics_pipeline_bound = CONTAINER_INVALID_INDEX; // currently bound pipeline
 	uint32_t raytracing_pipeline_bound = CONTAINER_INVALID_INDEX; // currently bound pipeline
