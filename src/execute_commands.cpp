@@ -1,36 +1,3 @@
-#if 0
-static bool run_spirv(lava_file_reader& reader, const shader_stage& stage, const std::vector<uint8_t>& push_constants)
-{
-	const uint32_t shader_index = index_to_VkShaderModule.index(stage.module);
-	trackedshadermodule& shader_data = VkShaderModule_index.at(shader_index);
-	std::unordered_map<std::string, uint32_t> functions; // function name -> index in spirv
-	std::unordered_map<std::string, uint64_t> globals; // store everything as an uint64
-	std::vector<std::unordered_map<std::string, uint64_t>> locals; // stack
-
-	assert(shader_data.code[0] == SpvMagicNumber);
-	uint32_t id = shader_data.code[3];
-	const uint32_t* insn = shader_data.code.data() + 5;
-	int count = 0;
-	const unsigned code_size = shader_data.code.size() / 4;
-	while (insn != shader_data.code.data() + code_size)
-	{
-		const uint16_t opcode = uint16_t(insn[0]);
-		const uint16_t word_count = uint16_t(insn[0] >> 16);
-
-		count++;
-		switch (opcode)
-		{
-		default:
-			break;
-		}
-
-		assert(insn + word_count <= shader_data.code.data() + code_size);
-		insn += word_count;
-	}
-	return true;
-}
-#endif
-
 static bool run_spirv(lava_file_reader& reader, const shader_stage& stage, const std::vector<uint8_t>& push_constants)
 {
 	const uint32_t shader_index = index_to_VkShaderModule.index(stage.module);
