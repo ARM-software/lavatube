@@ -96,7 +96,7 @@ static void trace()
 	trace_vkSyncBufferTRACETOOLTEST(vulkan.device, buf);
 
 	// now do it again but with vkUpdateBuffer
-	VkUpdateMemoryInfoTRACETOOLTEST umi = { VK_STRUCTURE_TYPE_UPDATE_MEMORY_INFO_TRACETOOLTEST, nullptr };
+	VkUpdateMemoryInfoARM umi = { VK_STRUCTURE_TYPE_UPDATE_MEMORY_INFO_ARM, nullptr };
 	//umi.flags = 0;
 	umi.dstOffset = 0;
 	umi.dataSize = BUFFER_SIZE;
@@ -106,7 +106,7 @@ static void trace()
 
 	u64ptr = (uint64_t*)umi.pData;
 	u64ptr[16] = address; // first address, on 8 byte aligned boundary
-	VkAddressRemapTRACETOOLTEST ar = { VK_STRUCTURE_TYPE_ADDRESS_REMAP_TRACETOOLTEST, nullptr };
+	VkAddressRemapARM ar = { VK_STRUCTURE_TYPE_ADDRESS_REMAP_ARM, nullptr };
 	ar.count = 1;
 	std::vector<uint64_t> offsets(2);
 	ar.pOffsets = offsets.data();

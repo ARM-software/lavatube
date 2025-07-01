@@ -9,12 +9,13 @@ import argparse
 import struct
 
 # New functions that we implement
-fake_functions = [ 'vkAssertBufferTRACETOOLTEST', 'vkSyncBufferTRACETOOLTEST', 'vkGetDeviceTracingObjectPropertyTRACETOOLTEST',
-	'vkCmdUpdateBuffer2TRACETOOLTEST', 'vkThreadBarrierTRACETOOLTEST',
-	'vkUpdateBufferTRACETOOLTEST',  'vkUpdateImageTRACETOOLTEST' ]
+fake_functions = [ 'vkAssertBufferARM', 'vkSyncBufferTRACETOOLTEST', 'vkGetDeviceTracingObjectPropertyTRACETOOLTEST',
+	'vkCmdUpdateBuffer2ARM', 'vkThreadBarrierTRACETOOLTEST', 'vkUpdateBufferTRACETOOLTEST',  'vkUpdateImageTRACETOOLTEST' ]
 fake_extension_structs = {
-	'VkAddressRemapTRACETOOLTEST': 'VK_STRUCTURE_TYPE_ADDRESS_REMAP_TRACETOOLTEST',
-	'VkUpdateMemoryInfoTRACETOOLTEST': 'VK_STRUCTURE_TYPE_UPDATE_MEMORY_INFO_TRACETOOLTEST',
+	'VkAddressRemapARM': 'VK_STRUCTURE_TYPE_ADDRESS_REMAP_ARM',
+	'VkUpdateMemoryInfoARM': 'VK_STRUCTURE_TYPE_UPDATE_MEMORY_INFO_ARM',
+	'VkPhysicalDeviceExplicitHostUpdatesFeaturesARM': 'VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXPLICIT_HOST_UPDATES_FEATURES_ARM',
+	'VkFlushRangesFlagsARM' : 'VK_STRUCTURE_TYPE_FLUSH_RANGES_FLAGS_ARM',
 }
 
 # Structs we want to save in our trace metadata as well
@@ -328,24 +329,22 @@ for f in fake_extension_structs:
 	out(targets_read_headers, 'void read_%s(lava_file_reader& reader, %s* sptr);' % (f, f))
 for f in fake_functions:
 	out(targets_read_headers, 'void retrace_%s(lava_file_reader& reader);' % f)
-	if f == 'vkAssertBufferTRACETOOLTEST':
-		out([wh], 'VKAPI_ATTR uint32_t VKAPI_CALL trace_vkAssertBufferTRACETOOLTEST(VkDevice device, VkBuffer buffer, VkDeviceSize offset, VkDeviceSize size);')
+	if f == 'vkAssertBufferARM':
+		out([wh], 'VKAPI_ATTR uint32_t VKAPI_CALL trace_vkAssertBufferARM(VkDevice device, VkBuffer buffer, VkDeviceSize offset, VkDeviceSize size, const char* comment);')
 	elif f == 'vkSyncBufferTRACETOOLTEST':
 		out([wh], 'VKAPI_ATTR void VKAPI_CALL trace_vkSyncBufferTRACETOOLTEST(VkDevice device, VkBuffer buffer);')
 	elif f == 'vkGetDeviceTracingObjectPropertyTRACETOOLTEST':
 		out([wh], 'VKAPI_ATTR uint64_t VKAPI_CALL trace_vkGetDeviceTracingObjectPropertyTRACETOOLTEST(VkDevice device, VkObjectType objectType, uint64_t objectHandle, VkTracingObjectPropertyTRACETOOLTEST valueType);')
-	elif f == 'vkFrameEndTRACETOOLTEST':
-		out([wh], 'VKAPI_ATTR void VKAPI_CALL trace_vkFrameEndTRACETOOLTEST(VkDevice device);')
-	elif f == 'vkCmdUpdateBuffer2TRACETOOLTEST':
-		out([wh], 'VKAPI_ATTR void trace_vkCmdUpdateBuffer2TRACETOOLTEST(VkCommandBuffer commandBuffer, VkBuffer dstBuffer, VkUpdateMemoryInfoTRACETOOLTEST* pInfo);')
+	elif f == 'vkCmdUpdateBuffer2ARM':
+		out([wh], 'VKAPI_ATTR void trace_vkCmdUpdateBuffer2ARM(VkCommandBuffer commandBuffer, VkBuffer dstBuffer, VkUpdateMemoryInfoARM* pInfo);')
 	elif f == 'vkUpdateBufferTRACETOOLTEST':
-		out([wh], 'VKAPI_ATTR void trace_vkUpdateBufferTRACETOOLTEST(VkDevice device, VkBuffer buffer, VkUpdateMemoryInfoTRACETOOLTEST* pInfo);')
+		out([wh], 'VKAPI_ATTR void trace_vkUpdateBufferTRACETOOLTEST(VkDevice device, VkBuffer buffer, VkUpdateMemoryInfoARM* pInfo);')
 	elif f == 'vkUpdateImageTRACETOOLTEST':
-		out([wh], 'VKAPI_ATTR void trace_vkUpdateImageTRACETOOLTEST(VkDevice device, VkImage buffer, VkUpdateMemoryInfoTRACETOOLTEST* pInfo);')
+		out([wh], 'VKAPI_ATTR void trace_vkUpdateImageTRACETOOLTEST(VkDevice device, VkImage buffer, VkUpdateMemoryInfoARM* pInfo);')
 	elif f == 'vkThreadBarrierTRACETOOLTEST':
 		out([wh], 'VKAPI_ATTR void trace_vkThreadBarrierTRACETOOLTEST(uint32_t count, uint32_t* pValues);')
 	else:
-		assert False, 'Missing fake function header implementation'
+		assert False, 'Missing fake function header implementation: %s' % f
 
 out(targets_all)
 

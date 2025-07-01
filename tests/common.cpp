@@ -176,7 +176,7 @@ vulkan_setup_t test_init(const std::string& testname, vulkan_req_t& reqs, size_t
 		{
 			enabledExtensions.push_back(s.extensionName);
 		}
-		if (strcmp(s.extensionName, VK_TRACETOOLTEST_TRACE_HELPERS_EXTENSION_NAME) == 0) enabledExtensions.push_back(s.extensionName);
+		if (strcmp(s.extensionName, VK_ARM_TRACE_HELPERS_EXTENSION_NAME) == 0) enabledExtensions.push_back(s.extensionName);
 		if (strcmp(s.extensionName, VK_TRACETOOLTEST_OBJECT_PROPERTY_EXTENSION_NAME) == 0) enabledExtensions.push_back(s.extensionName);
 	}
 	if (enabledExtensions.size() > 0)

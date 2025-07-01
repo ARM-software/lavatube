@@ -372,11 +372,13 @@ const char* pretty_print_VkObjectType(VkObjectType val)
 	case VK_OBJECT_TYPE_VIDEO_SESSION_KHR: return "VideoSession";
 	case VK_OBJECT_TYPE_VIDEO_SESSION_PARAMETERS_KHR: return "VideoSessionParameters";
 	case VK_OBJECT_TYPE_SHADER_EXT: return "Shader";
-	case VK_OBJECT_TYPE_CUDA_MODULE_NV: return "CudaModule";
-	case VK_OBJECT_TYPE_CUDA_FUNCTION_NV: return "CudaFunction";
 	case VK_OBJECT_TYPE_PIPELINE_BINARY_KHR: return "PipelineBinary";
 	case VK_OBJECT_TYPE_INDIRECT_COMMANDS_LAYOUT_EXT: return "IndirectCommandsLayout";
 	case VK_OBJECT_TYPE_INDIRECT_EXECUTION_SET_EXT: return "IndirectExecutionSet";
+	case VK_OBJECT_TYPE_TENSOR_ARM: return "Tensor";
+	case VK_OBJECT_TYPE_TENSOR_VIEW_ARM: return "Tensor view";
+	case VK_OBJECT_TYPE_DATA_GRAPH_PIPELINE_SESSION_ARM: return "Data graph pipeline session";
+	case VK_OBJECT_TYPE_EXTERNAL_COMPUTE_QUEUE_NV: return "External compute queue";
 	}
 	return "Error";
 }

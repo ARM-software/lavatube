@@ -15,9 +15,6 @@ static VkPhysicalDeviceMemoryProperties real_memory_properties GUARDED_BY(frame_
 static std::vector<VkExtensionProperties> instance_extension_properties GUARDED_BY(frame_mutex);
 static std::vector<VkExtensionProperties> device_extension_properties GUARDED_BY(frame_mutex);
 
-// variables to tell if the host supports something and it is enabled; TBD: generalize this
-static bool enabled_VK_EXT_tooling_info GUARDED_BY(frame_mutex) = false;
-
 // Vulkan has a fundamental problem that it does not require the user to
 // tell the API what its memory requirements are for any given memory allocation.
 // So the reason for a choice of a particular "memory type index" cannot be
@@ -123,9 +120,11 @@ static trackable* object_trackable(const trace_records& r, VkObjectType type, ui
 	case VK_OBJECT_TYPE_VIDEO_SESSION_PARAMETERS_KHR: return r.VkVideoSessionParametersKHR_index.at((const VkVideoSessionParametersKHR)object);
 	case VK_OBJECT_TYPE_DEBUG_REPORT_CALLBACK_EXT: return r.VkDebugReportCallbackEXT_index.at((const VkDebugReportCallbackEXT)object);
 	case VK_OBJECT_TYPE_DEBUG_UTILS_MESSENGER_EXT: return r.VkDebugUtilsMessengerEXT_index.at((const VkDebugUtilsMessengerEXT)object);
+	case VK_OBJECT_TYPE_TENSOR_VIEW_ARM: return r.VkTensorViewARM_index.at((const VkTensorViewARM)object);
+	case VK_OBJECT_TYPE_TENSOR_ARM: return r.VkTensorARM_index.at((const VkTensorARM)object);
+	case VK_OBJECT_TYPE_DATA_GRAPH_PIPELINE_SESSION_ARM: return r.VkDataGraphPipelineSessionARM_index.at((const VkDataGraphPipelineSessionARM)object);
 	// not supported:
-	case VK_OBJECT_TYPE_CUDA_MODULE_NV:
-	case VK_OBJECT_TYPE_CUDA_FUNCTION_NV:
+	case VK_OBJECT_TYPE_EXTERNAL_COMPUTE_QUEUE_NV:
 	case VK_OBJECT_TYPE_CU_MODULE_NVX:
 	case VK_OBJECT_TYPE_CU_FUNCTION_NVX:
 	case VK_OBJECT_TYPE_ACCELERATION_STRUCTURE_NV:
@@ -558,6 +557,9 @@ static void handle_VkWriteDescriptorSets(lava_file_writer& writer, uint32_t desc
 				assert(ptr->accelerationStructureCount == pDescriptorWrites[i].descriptorCount);
 			}
 			break;
+		case VK_DESCRIPTOR_TYPE_TENSOR_ARM:
+			assert(false); // TODO
+			break;
 		case VK_DESCRIPTOR_TYPE_PARTITIONED_ACCELERATION_STRUCTURE_NV:
 			ABORT("VK_NV_partitioned_acceleration_structure not supported");
 			break;
@@ -774,7 +776,6 @@ void trace_post_vkDestroyInstance(lava_file_writer& writer, VkInstance instance,
 	frame_mutex.lock();
 
 	// reset protected internal states
-	enabled_VK_EXT_tooling_info = false;
 	real_memory_properties = {};
 	virtual_memory_properties = {};
 	memset(remap_memory_types_to_real, 0, sizeof(remap_memory_types_to_real));
@@ -891,7 +892,9 @@ static void modify_device_extensions(VkPhysicalDevice physicalDevice) REQUIRES(f
 	device_extension_properties.push_back({VK_TRACETOOLTEST_OBJECT_PROPERTY_EXTENSION_NAME, 1});
 	device_extension_properties.push_back({VK_EXT_TOOLING_INFO_EXTENSION_NAME, 1});
 	device_extension_properties.push_back({VK_EXT_FRAME_BOUNDARY_EXTENSION_NAME, 1});
-	device_extension_properties.push_back({VK_TRACETOOLTEST_TRACE_HELPERS_EXTENSION_NAME, 1});
+	device_extension_properties.push_back({VK_ARM_TRACE_HELPERS_EXTENSION_NAME, 1});
+	device_extension_properties.push_back({VK_ARM_TRACE_DESCRIPTOR_BUFFER_EXTENSION_NAME, 1});
+	device_extension_properties.push_back({VK_ARM_EXPLICIT_HOST_UPDATES_EXTENSION_NAME, 1});
 	device_extension_properties.push_back({VK_TRACETOOLTEST_TRACE_HELPERS2_EXTENSION_NAME, 1});
 
 	for (const auto &ext : tmp_device_extension_properties)
@@ -1008,13 +1011,11 @@ static void trace_pre_vkCreateDevice(VkPhysicalDevice physicalDevice, VkDeviceCr
 		instance.meta.app.device_extensions.insert(pCreateInfo->ppEnabledExtensionNames[i]);
 		memset(name, 0, size);
 		strcpy(name, pCreateInfo->ppEnabledExtensionNames[i]);
-		if (strcmp(name, VK_EXT_TOOLING_INFO_EXTENSION_NAME) == 0)
-		{
-			if (!has_VK_EXT_tooling_info) continue; // do not pass to host
-			enabled_VK_EXT_tooling_info = true;
-		}
+		if (strcmp(name, VK_EXT_TOOLING_INFO_EXTENSION_NAME) == 0 && !has_VK_EXT_tooling_info) continue; // do not pass to host
 		if (strcmp(name, VK_TRACETOOLTEST_OBJECT_PROPERTY_EXTENSION_NAME) == 0) continue; // do not pass to host
-		if (strcmp(name, VK_TRACETOOLTEST_TRACE_HELPERS_EXTENSION_NAME) == 0) continue; // do not pass to host
+		if (strcmp(name, VK_ARM_TRACE_HELPERS_EXTENSION_NAME) == 0) continue; // do not pass to host
+		if (strcmp(name, VK_ARM_TRACE_DESCRIPTOR_BUFFER_EXTENSION_NAME) == 0) continue; // do not pass to host
+		if (strcmp(name, VK_ARM_EXPLICIT_HOST_UPDATES_EXTENSION_NAME) == 0) continue; // do not pass to host
 		if (strcmp(name, VK_TRACETOOLTEST_TRACE_HELPERS2_EXTENSION_NAME) == 0) continue; // do not pass to host
 		if (!has_VK_EXT_frame_boundary && strcmp(name, VK_EXT_FRAME_BOUNDARY_EXTENSION_NAME) == 0) // do not pass to host
 		{
@@ -1046,6 +1047,27 @@ static void trace_post_vkCreateDevice(lava_file_writer& writer, VkResult result,
 
 	frame_mutex.lock();
 	Json::Value& r = instance.json();
+
+	for (const auto& name : instance.meta.app.device_extensions) // go through app requested extensions
+	{
+		if (name == VK_ARM_EXPLICIT_HOST_UPDATES_EXTENSION_NAME)
+		{
+			VkPhysicalDeviceExplicitHostUpdatesFeaturesARM* pdehuf = (VkPhysicalDeviceExplicitHostUpdatesFeaturesARM*)find_extension(pCreateInfo, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXPLICIT_HOST_UPDATES_FEATURES_ARM);
+			if (pdehuf && pdehuf->explicitHostUpdates == VK_TRUE)
+			{
+				auto* device_data = instance.records.VkDevice_index.at(*pDevice);
+				device_data->explicit_host_updates = true;
+			}
+		}
+	}
+	for (const auto& name : instance.meta.device.device_extensions) // go through extensions requested to the driver
+	{
+		if (name == VK_EXT_TOOLING_INFO_EXTENSION_NAME)
+		{
+			auto* physicaldevice_data = instance.records.VkPhysicalDevice_index.at(physicalDevice);
+			physicaldevice_data->has_tooling_info = true;
+		}
+	}
 
 	// -- Save information on tracing device --
 #ifdef __aarch64__
@@ -1277,7 +1299,7 @@ static VkResult common_vkGetPhysicalDeviceToolProperties(lava_file_writer& write
 	}
 	VkResult retval = VK_SUCCESS;
 	frame_mutex.lock();
-	if (enabled_VK_EXT_tooling_info && wrap_vkGetPhysicalDeviceToolPropertiesEXT) // if supported by host (or other layer)
+	if (physicaldevice_data->has_tooling_info && wrap_vkGetPhysicalDeviceToolPropertiesEXT) // if supported by host (or other layer)
 	{
 		retval = wrap_vkGetPhysicalDeviceToolPropertiesEXT(physicalDevice, pToolCount, pToolProperties);
 	}
@@ -1474,10 +1496,30 @@ VKAPI_ATTR void VKAPI_CALL trace_vkSyncBufferTRACETOOLTEST(VkDevice device, VkBu
 	writer.write_handle(buffer_data);
 }
 
-static void write_VkAddressRemapTRACETOOLTEST(lava_file_writer& writer, const VkAddressRemapTRACETOOLTEST* sptr)
+static void write_VkDataGraphPipelineConstantARM(lava_file_writer& writer, const VkDataGraphPipelineConstantARM* sptr)
+{
+}
+
+static void write_VkPhysicalDeviceExplicitHostUpdatesFeaturesARM(lava_file_writer& writer, const VkPhysicalDeviceExplicitHostUpdatesFeaturesARM* sptr)
 {
 	writer.write_uint32_t(sptr->sType);
-	assert(sptr->sType == VK_STRUCTURE_TYPE_ADDRESS_REMAP_TRACETOOLTEST);
+	assert(sptr->sType == VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXPLICIT_HOST_UPDATES_FEATURES_ARM);
+	write_extension(writer, (VkBaseOutStructure*)sptr->pNext);
+	writer.write_uint32_t(sptr->explicitHostUpdates);
+}
+
+static void write_VkFlushRangesFlagsARM(lava_file_writer& writer, const VkFlushRangesFlagsARM* sptr)
+{
+	writer.write_uint32_t(sptr->sType);
+	assert(sptr->sType == VK_STRUCTURE_TYPE_FLUSH_RANGES_FLAGS_ARM);
+	write_extension(writer, (VkBaseOutStructure*)sptr->pNext);
+	writer.write_uint32_t(sptr->flags);
+}
+
+static void write_VkAddressRemapARM(lava_file_writer& writer, const VkAddressRemapARM* sptr)
+{
+	writer.write_uint32_t(sptr->sType);
+	assert(sptr->sType == VK_STRUCTURE_TYPE_ADDRESS_REMAP_ARM);
 	write_extension(writer, (VkBaseOutStructure*)sptr->pNext);
 	writer.write_uint32_t(sptr->count);
 	bool pOffsets_opt = (sptr->pOffsets != 0 && sptr->count > 0); // whether we should save pData
@@ -1488,10 +1530,10 @@ static void write_VkAddressRemapTRACETOOLTEST(lava_file_writer& writer, const Vk
 	}
 }
 
-static void write_VkUpdateMemoryInfoTRACETOOLTEST(lava_file_writer& writer, const VkUpdateMemoryInfoTRACETOOLTEST* sptr)
+static void write_VkUpdateMemoryInfoARM(lava_file_writer& writer, const VkUpdateMemoryInfoARM* sptr)
 {
 	writer.write_uint32_t(sptr->sType);
-	assert(sptr->sType == VK_STRUCTURE_TYPE_UPDATE_MEMORY_INFO_TRACETOOLTEST);
+	assert(sptr->sType == VK_STRUCTURE_TYPE_UPDATE_MEMORY_INFO_ARM);
 	write_extension(writer, (VkBaseOutStructure*)sptr->pNext);
 	writer.write_uint64_t(sptr->dstOffset);
 	writer.write_uint64_t(sptr->dataSize);
@@ -1503,7 +1545,7 @@ static void write_VkUpdateMemoryInfoTRACETOOLTEST(lava_file_writer& writer, cons
 	}
 }
 
-VKAPI_ATTR void trace_vkUpdateBufferTRACETOOLTEST(VkDevice device, VkBuffer dstBuffer, VkUpdateMemoryInfoTRACETOOLTEST* pInfo)
+VKAPI_ATTR void trace_vkUpdateBufferTRACETOOLTEST(VkDevice device, VkBuffer dstBuffer, VkUpdateMemoryInfoARM* pInfo)
 {
 	lava_file_writer& writer = write_header("vkUpdateBufferTRACETOOLTEST", VKUPDATEBUFFERTRACETOOLTEST);
 	const auto* device_data = writer.parent->records.VkDevice_index.at(device);
@@ -1515,7 +1557,7 @@ VKAPI_ATTR void trace_vkUpdateBufferTRACETOOLTEST(VkDevice device, VkBuffer dstB
 		buffer_data->last_modified = writer.current;
 		buffer_data->self_test();
 	}
-	write_VkUpdateMemoryInfoTRACETOOLTEST(writer, pInfo);
+	write_VkUpdateMemoryInfoARM(writer, pInfo);
 
 	// Act
 	auto* memory_data = writer.parent->records.VkDeviceMemory_index.at(buffer_data->backing);
@@ -1527,7 +1569,7 @@ VKAPI_ATTR void trace_vkUpdateBufferTRACETOOLTEST(VkDevice device, VkBuffer dstB
 	wrap_vkUnmapMemory(device, memory_data->backing);
 }
 
-VKAPI_ATTR void trace_vkUpdateImageTRACETOOLTEST(VkDevice device, VkImage dstImage, VkUpdateMemoryInfoTRACETOOLTEST* pInfo)
+VKAPI_ATTR void trace_vkUpdateImageTRACETOOLTEST(VkDevice device, VkImage dstImage, VkUpdateMemoryInfoARM* pInfo)
 {
 	lava_file_writer& writer = write_header("vkUpdateImageTRACETOOLTEST", VKUPDATEIMAGETRACETOOLTEST);
 	const auto* device_data = writer.parent->records.VkDevice_index.at(device);
@@ -1539,7 +1581,7 @@ VKAPI_ATTR void trace_vkUpdateImageTRACETOOLTEST(VkDevice device, VkImage dstIma
 		image_data->last_modified = writer.current;
 		image_data->self_test();
 	}
-	write_VkUpdateMemoryInfoTRACETOOLTEST(writer, pInfo);
+	write_VkUpdateMemoryInfoARM(writer, pInfo);
 
 	// Act
 	auto* memory_data = writer.parent->records.VkDeviceMemory_index.at(image_data->backing);
@@ -1551,9 +1593,9 @@ VKAPI_ATTR void trace_vkUpdateImageTRACETOOLTEST(VkDevice device, VkImage dstIma
 	wrap_vkUnmapMemory(device, memory_data->backing);
 }
 
-VKAPI_ATTR void trace_vkCmdUpdateBuffer2TRACETOOLTEST(VkCommandBuffer commandBuffer, VkBuffer dstBuffer, VkUpdateMemoryInfoTRACETOOLTEST* pInfo)
+VKAPI_ATTR void trace_vkCmdUpdateBuffer2ARM(VkCommandBuffer commandBuffer, VkBuffer dstBuffer, VkUpdateMemoryInfoARM* pInfo)
 {
-	lava_file_writer& writer = write_header("vkCmdUpdateBuffer2TRACETOOLTEST", VKCMDUPDATEBUFFER2TRACETOOLTEST);
+	lava_file_writer& writer = write_header("vkCmdUpdateBuffer2ARM", VKCMDUPDATEBUFFER2ARM);
 	auto* commandbuffer_data = writer.parent->records.VkCommandBuffer_index.at(commandBuffer);
 	auto* buffer_data = writer.parent->records.VkBuffer_index.at(dstBuffer);
 	if (commandbuffer_data) commandbuffer_data->self_test();
@@ -1572,7 +1614,7 @@ VKAPI_ATTR void trace_vkCmdUpdateBuffer2TRACETOOLTEST(VkCommandBuffer commandBuf
 	writer.commandBuffer = commandBuffer;
 	writer.device = commandbuffer_data->device;
 	writer.physicalDevice = commandbuffer_data->physicalDevice;
-	write_VkUpdateMemoryInfoTRACETOOLTEST(writer, pInfo);
+	write_VkUpdateMemoryInfoARM(writer, pInfo);
 }
 
 VKAPI_ATTR void trace_vkThreadBarrierTRACETOOLTEST(uint32_t count, uint32_t* pValues)
@@ -1585,9 +1627,9 @@ VKAPI_ATTR void trace_vkThreadBarrierTRACETOOLTEST(uint32_t count, uint32_t* pVa
 	}
 }
 
-VKAPI_ATTR uint32_t VKAPI_CALL trace_vkAssertBufferTRACETOOLTEST(VkDevice device, VkBuffer buffer, VkDeviceSize offset, VkDeviceSize size)
+VKAPI_ATTR uint32_t VKAPI_CALL trace_vkAssertBufferARM(VkDevice device, VkBuffer buffer, VkDeviceSize offset, VkDeviceSize size, const char* comment)
 {
-	lava_file_writer& writer = write_header("vkAssertBufferTRACETOOLTEST", VKASSERTBUFFERTRACETOOLTEST);
+	lava_file_writer& writer = write_header("vkAssertBufferARM", VKASSERTBUFFERARM);
 	auto* buffer_data = writer.parent->records.VkBuffer_index.at(buffer);
 	auto* memory_data = writer.parent->records.VkDeviceMemory_index.at(buffer_data->backing);
 	writer.parent->memory_mutex.lock();
@@ -1600,6 +1642,7 @@ VKAPI_ATTR uint32_t VKAPI_CALL trace_vkAssertBufferTRACETOOLTEST(VkDevice device
 	writer.write_handle(buffer_data);
 	writer.write_uint64_t(offset);
 	writer.write_uint64_t(size);
+	writer.write_string(comment);
 	if (size == VK_WHOLE_SIZE)
 	{
 		size = buffer_data->size - offset; // set to remaining size

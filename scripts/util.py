@@ -77,14 +77,14 @@ thread_barrier_funcs = [ 'vkQueueSubmit', 'vkResetDescriptorPool', 'vkResetComma
 validate_funcs(thread_barrier_funcs)
 # for these, thread barrier goes after the function call to sync other threads up to us:
 push_thread_barrier_funcs = [ 'vkQueueWaitIdle', 'vkDeviceWaitIdle', 'vkResetDescriptorPool', 'vkResetQueryPool', 'vkResetQueryPoolEXT', 'vkResetCommandPool',
-	'vkQueuePresentKHR', 'vkWaitForFences', 'vkGetFenceStatus' ]
+	'vkQueuePresentKHR', 'vkWaitForFences', 'vkGetFenceStatus', 'vkWaitForPresent2KHR' ]
 validate_funcs(push_thread_barrier_funcs)
 
 # TODO : Add support for these functions and structures
 functions_noop = [
 	"vkUpdateDescriptorSetWithTemplateKHR", "vkUpdateDescriptorSetWithTemplate", 'vkGetImageViewOpaqueCaptureDescriptorDataEXT',
 	'vkCmdPushDescriptorSetWithTemplateKHR', 'vkCmdPushDescriptorSetWithTemplate2KHR', 'vkCmdPushDescriptorSetWithTemplate2', 'vkCmdPushDescriptorSetWithTemplate',
-	'vkGetPipelinePropertiesEXT', 'vkGetBufferOpaqueCaptureDescriptorDataEXT',
+	'vkGetPipelinePropertiesEXT', 'vkGetBufferOpaqueCaptureDescriptorDataEXT', 'vkGetTensorOpaqueCaptureDescriptorDataARM', 'vkGetTensorViewOpaqueCaptureDescriptorDataARM',
 	'vkCmdBuildMicromapsEXT', 'vkBuildMicromapsEXT', 'vkGetMicromapBuildSizesEXT', 'vkGetImageOpaqueCaptureDescriptorDataEXT', 'vkGetSamplerOpaqueCaptureDescriptorDataEXT',
 	'vkGetDeviceFaultInfoEXT', # we never want to trace this, but rather inject it during tracing if device loss happens, print the info, then abort
 	'vkGetAccelerationStructureOpaqueCaptureDescriptorDataEXT', 'vkCmdSetRenderingInputAttachmentIndicesKHR',
@@ -101,7 +101,7 @@ noscreen_calls = [ 'vkDestroySurfaceKHR', 'vkAcquireNextImageKHR', 'vkCreateSwap
 	'vkGetSwapchainStatusKHR', 'vkGetSwapchainCounterEXT', 'vkGetRefreshCycleDurationGOOGLE', 'vkGetPastPresentationTimingGOOGLE', 'vkSetHdrMetadataEXT',
 	'vkSetLocalDimmingAMD', 'vkGetPhysicalDeviceSurfaceCapabilities2EXT', 'vkGetPhysicalDeviceSurfaceFormats2KHR',
 	'vkGetPhysicalDeviceSurfaceCapabilities2KHR', 'vkCreateDisplayPlaneSurfaceKHR', 'vkGetPhysicalDeviceSurfaceSupportKHR', 'vkGetPhysicalDeviceSurfaceFormatsKHR',
-	'VkSwapchainCreateInfoKHR', 'vkAcquireFullScreenExclusiveModeEXT', 'vkReleaseFullScreenExclusiveModeEXT', 'vkWaitForPresentKHR' ]
+	'VkSwapchainCreateInfoKHR', 'vkAcquireFullScreenExclusiveModeEXT', 'vkReleaseFullScreenExclusiveModeEXT', 'vkWaitForPresentKHR', 'vkWaitForPresent2KHR' ]
 
 # make sure we've thought about all the ways virtual swapchains interact with everything else
 virtualswap_calls = [ 'vkCreateSwapchainKHR', 'vkDestroySwapchainKHR', 'vkCreateSharedSwapchainsKHR', 'vkGetSwapchainStatusKHR', 'vkGetSwapchainCounterEXT' ]
@@ -1787,6 +1787,10 @@ def savefunc(name, node, target, header):
 		z.do('if (writer.run) retval = vkuSetupDevice(%s);' % (', '.join(call_list)))
 		z.do('#endif')
 		z.do('else retval = writer.use_result.result;')
+	elif name == 'vkFlushMappedMemoryRanges':
+		z.do('VkResult retval = VK_SUCCESS;')
+		z.do('VkFlushRangesFlagsARM* frf = (VkFlushRangesFlagsARM*)find_extension(pMemoryRanges, VK_STRUCTURE_TYPE_FLUSH_RANGES_FLAGS_ARM);')
+		z.do('if (writer.run && (!frf || !(frf->flags & VK_FLUSH_OPERATION_INFORMATIVE_BIT_ARM))) retval = wrap_%s(%s);' % (name, ', '.join(call_list)))
 	elif name in ignore_on_trace:
 		z.do('// native call skipped')
 		if retval == 'VkResult':
