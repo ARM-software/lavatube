@@ -19,7 +19,7 @@ static void trace_3()
 	vulkan_setup_t vulkan = test_init(TEST_NAME, reqs);
 	VkResult result;
 
-	PFN_vkAssertBufferTRACETOOLTEST vkAssertBuffer = (PFN_vkAssertBufferTRACETOOLTEST)trace_vkGetDeviceProcAddr(vulkan.device, "vkAssertBufferTRACETOOLTEST");
+	PFN_vkAssertBufferARM vkAssertBuffer = (PFN_vkAssertBufferARM)trace_vkGetDeviceProcAddr(vulkan.device, "vkAssertBufferARM");
 	assert(vkAssertBuffer != nullptr);
 	PFN_vkSyncBufferTRACETOOLTEST vkSyncBuffer = (PFN_vkSyncBufferTRACETOOLTEST)trace_vkGetDeviceProcAddr(vulkan.device, "vkSyncBufferTRACETOOLTEST");
 	assert(vkSyncBuffer != nullptr);
@@ -69,7 +69,7 @@ static void trace_3()
 	{
 		trace_vkBindBufferMemory(vulkan.device, buffer[i], memory, offset);
 
-		VkUpdateMemoryInfoTRACETOOLTEST updateInfo = { VK_STRUCTURE_TYPE_UPDATE_MEMORY_INFO_TRACETOOLTEST, nullptr };
+		VkUpdateMemoryInfoARM updateInfo = { VK_STRUCTURE_TYPE_UPDATE_MEMORY_INFO_ARM, nullptr };
 		updateInfo.dstOffset = 0; // relative to start of buffer
 		updateInfo.dataSize = bufferCreateInfo.size;
 		updateInfo.pData = ptr;
@@ -85,7 +85,7 @@ static void trace_3()
 	for (unsigned i = 0; i < NUM_BUFFERS; i++)
 	{
 		trace_vkSyncBufferTRACETOOLTEST(vulkan.device, buffer[i]);
-		uint32_t checksum2 = trace_vkAssertBufferTRACETOOLTEST(vulkan.device, buffer[i], 0, VK_WHOLE_SIZE);
+		uint32_t checksum2 = trace_vkAssertBufferARM(vulkan.device, buffer[i], 0, VK_WHOLE_SIZE, "test");
 		assert(checksum == checksum2);
 	}
 

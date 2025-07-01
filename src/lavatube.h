@@ -145,12 +145,18 @@ struct trackedphysicaldevice : trackable
 {
 	using trackable::trackable; // inherit constructor
 	std::vector<VkQueueFamilyProperties> queueFamilyProperties;
+
+	/// Does this physical device support VK_EXT_tooling_info?
+	bool has_tooling_info = false;
 };
 
 struct trackeddevice : trackable
 {
 	using trackable::trackable; // inherit constructor
 	VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
+
+	/// Trust host to notify us about memory updates?
+	bool explicit_host_updates = false;
 };
 
 struct trackedobject : trackable

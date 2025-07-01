@@ -62,7 +62,7 @@ static void thread_runner(int tid)
 			offset += req.size;
 		}
 		trace_vkSyncBufferTRACETOOLTEST(vulkan.device, buffer[i]);
-		trace_vkAssertBufferTRACETOOLTEST(vulkan.device, buffer[i], 0, VK_WHOLE_SIZE);
+		trace_vkAssertBufferARM(vulkan.device, buffer[i], 0, VK_WHOLE_SIZE, nullptr);
 		for (unsigned j = 0; j < NUM_BUFFERS; j++)
 		{
 			trace_vkDestroyBuffer(vulkan.device, buffer[j], nullptr);
@@ -77,7 +77,7 @@ static void trace_me()
 	vulkan = test_init(TEST_NAME, reqs, PACKET_SIZE); // override the default chunk size
 
 	// Check that you can access them from vkGetDeviceProcAddr, although we won't
-	auto ptr = trace_vkGetDeviceProcAddr(vulkan.device, "vkAssertBufferTRACETOOLTEST");
+	auto ptr = trace_vkGetDeviceProcAddr(vulkan.device, "vkAssertBufferARM");
 	assert(ptr != nullptr);
 	ptr = trace_vkGetDeviceProcAddr(vulkan.device, "vkSyncBufferTRACETOOLTEST");
 	assert(ptr != nullptr);
