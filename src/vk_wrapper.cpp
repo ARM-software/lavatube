@@ -67,6 +67,7 @@ void print_extension_mismatch(VkPhysicalDevice physicalDevice, const VkDeviceCre
 	assert(result == VK_SUCCESS);
 	std::vector<VkExtensionProperties> tmp_device_extension_properties(propertyCount);
 	result = wrap_vkEnumerateDeviceExtensionProperties(physicalDevice, nullptr, &propertyCount, tmp_device_extension_properties.data());
+	assert(result == VK_SUCCESS);
 	ILOG("Mismatch between supported and requested device extension sets! Not supported device extension requested:");
 	for (unsigned i = 0; i < pCreateInfo->enabledExtensionCount; i++)
 	{
