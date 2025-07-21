@@ -1,15 +1,18 @@
+#include <iostream>
+
 static bool run_spirv(lava_file_reader& reader, const shader_stage& stage, const std::vector<std::byte>& push_constants)
 {
 	const uint32_t shader_index = index_to_VkShaderModule.index(stage.module);
 	trackedshadermodule& shader_data = VkShaderModule_index.at(shader_index);
 	SPIRVSimulator::InputData inputs;
-	inputs.push_constants = push_constants;
-	//inputs.entry_point = stage.name;
+	inputs.push_constants = push_constants.data();
+	inputs.entry_point_op_name = stage.name;
+	inputs.specialization_constants = stage.specialization_data.data();
+	uint32_t i = 0;
 	for (auto& v : stage.specialization_constants)
 	{
-		std::vector<std::byte> data(v.size);
-		memcpy(data.data(), stage.specialization_data.data() + v.offset, v.size);
-		inputs.specialization_constants[v.constantID] = data;
+		inputs.specialization_constant_offsets[i] = v.offset;
+		i++;
 	}
 	SPIRVSimulator::SPIRVSimulator sim(shader_data.code, inputs, true);
 	sim.Run();

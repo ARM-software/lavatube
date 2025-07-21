@@ -168,8 +168,10 @@ set(COMMON_SRC
 )
 
 set(LAVATUBE_SRC
-    ${PROJECT_SOURCE_DIR}/external/spirv-simulator/spirv_simulator.hpp
-    ${PROJECT_SOURCE_DIR}/external/spirv-simulator/spirv_simulator.cpp
+    ${PROJECT_SOURCE_DIR}/external/spirv-simulator/framework/spirv_simulator.hpp
+    ${PROJECT_SOURCE_DIR}/external/spirv-simulator/framework/spirv_simulator.cpp
+    ${PROJECT_SOURCE_DIR}/external/spirv-simulator/framework/util.cpp
+    ${PROJECT_SOURCE_DIR}/external/spirv-simulator/framework/util.hpp
 
     ${PROJECT_SOURCE_DIR}/src/window.cpp
     ${PROJECT_SOURCE_DIR}/src/window.h
