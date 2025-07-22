@@ -224,7 +224,10 @@ public:
 
 	void self_test() const
 	{
-		if (done_decompressing.load()) assert(done_reading.load());
+		if (done_reading.load())
+		{
+			assert(done_decompressing.load());
+		}
 	}
 
 private:
