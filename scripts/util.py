@@ -1375,8 +1375,8 @@ def load_add_tracking(name):
 			elif type == 'VkDescriptorSet':
 				z.do('data.pool = pAllocateInfo->descriptorPool;')
 			elif type == 'VkShaderModule':
-				z.do('data.code.resize(pCreateInfo->codeSize);')
-				z.do('memcpy(data.code.data(), pCreateInfo->pCode, pCreateInfo->codeSize * sizeof(uint32_t));')
+				z.do('data.code.resize(pCreateInfo->codeSize / sizeof(uint32_t));')
+				z.do('memcpy(data.code.data(), pCreateInfo->pCode, pCreateInfo->codeSize);')
 			z.do('data.enter_created();')
 		else: # multiple
 			z.do('for (unsigned i = 0; i < %s && retval == VK_SUCCESS; i++)' % count)
