@@ -12,7 +12,7 @@ static bool run_spirv(lava_file_reader& reader, const shader_stage& stage, const
 	uint32_t id = shader_data.code[3];
 	const uint32_t* insn = shader_data.code.data() + 5;
 	int count = 0;
-	const unsigned code_size = shader_data.code.size() / 4;
+	const unsigned code_size = shader_data.code.size();
 	while (insn != shader_data.code.data() + code_size)
 	{
 		const uint16_t opcode = uint16_t(insn[0]);
