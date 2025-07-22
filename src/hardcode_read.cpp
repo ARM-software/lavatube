@@ -2078,14 +2078,15 @@ void retrace_vkGetDeviceQueue2(lava_file_reader& reader)
 	VkQueue queue = fake_handle<VkQueue>((info_real.queueFamilyIndex << 16) + info_real.queueIndex);
 	if (info_real.queueFamilyIndex == LAVATUBE_VIRTUAL_QUEUE && reader.run)
 	{
-		virtual_family = true;
 		info_real.queueFamilyIndex = selected_queue_family_index;
+		virtual_family = true;
 		const VkQueueFamilyProperties& props = device_VkQueueFamilyProperties.at(info_real.queueFamilyIndex);
 		if (info_real.queueIndex >= props.queueCount) // we don't have enough queues
 		{
 			info_real.queueIndex = 0; // map to first queue
 		}
 	}
+	else info_real.queueFamilyIndex = selected_queue_family_index;
 	if (reader.run)
 	{
 		wrap_vkGetDeviceQueue2(device, &info_real, &queue);
@@ -2123,14 +2124,15 @@ void retrace_vkGetDeviceQueue(lava_file_reader& reader)
 	uint32_t realFamily = queueFamilyIndex;
 	if (queueFamilyIndex == LAVATUBE_VIRTUAL_QUEUE && reader.run)
 	{
-		virtual_family = true;
 		queueFamilyIndex = selected_queue_family_index;
+		virtual_family = true;
 		const VkQueueFamilyProperties& props = device_VkQueueFamilyProperties.at(queueFamilyIndex);
 		if (queueIndex >= props.queueCount) // we don't have enough queues
 		{
 			queueIndex = 0; // map to first queue
 		}
 	}
+	else queueFamilyIndex = selected_queue_family_index;
 	if (reader.run)
 	{
 		wrap_vkGetDeviceQueue(device, queueFamilyIndex, queueIndex, &queue);
