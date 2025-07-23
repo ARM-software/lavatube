@@ -1,39 +1,54 @@
-#include <spirv/unified1/spirv.h>
+#include <iostream>
 
-static bool run_spirv(lava_file_reader& reader, const shader_stage& stage, const std::vector<uint8_t>& push_constants)
+static bool run_spirv(lava_file_reader& reader, const shader_stage& stage, const std::vector<std::byte>& push_constants)
 {
 	const uint32_t shader_index = index_to_VkShaderModule.index(stage.module);
 	trackedshadermodule& shader_data = VkShaderModule_index.at(shader_index);
-	std::unordered_map<std::string, uint32_t> functions; // function name -> index in spirv
-	std::unordered_map<std::string, uint64_t> globals; // store everything as an uint64
-	std::vector<std::unordered_map<std::string, uint64_t>> locals; // stack
-
-	assert(shader_data.code[0] == SpvMagicNumber);
-	uint32_t id = shader_data.code[3];
-	const uint32_t* insn = shader_data.code.data() + 5;
-	int count = 0;
-	const unsigned code_size = shader_data.code.size();
-	while (insn != shader_data.code.data() + code_size)
+	SPIRVSimulator::InputData inputs;
+	inputs.push_constants = push_constants.data();
+	inputs.entry_point_op_name = stage.name;
+	inputs.specialization_constants = stage.specialization_data.data();
+	uint32_t i = 0;
+	for (auto& v : stage.specialization_constants)
 	{
-		const uint16_t opcode = uint16_t(insn[0]);
-		const uint16_t word_count = uint16_t(insn[0] >> 16);
+		inputs.specialization_constant_offsets[i] = v.offset;
+		i++;
+	}
+	SPIRVSimulator::SPIRVSimulator sim(shader_data.code, inputs, true);
+	sim.Run();
 
-		count++;
-		switch (opcode)
+	auto physical_address_data = sim.GetPhysicalAddressData();
+
+	std::cout << "Pointers to pbuffers:" << std::endl;
+	for (const auto& pointer_t : physical_address_data)
+	{
+		std::cout << "  Found pointer with address: 0x" << std::hex << pointer_t.raw_pointer_value << std::dec << " made from input bit components:" << std::endl;
+		for (auto bit_component : pointer_t.bit_components)
 		{
-		default:
-			break;
+			if (bit_component.location == SPIRVSimulator::BitLocation::Constant)
+			{
+				std::cout << "    " << "From Constant in SPIRV input words, at Byte Offset: " << bit_component.byte_offset << std::endl;
+			} else {
+				if (bit_component.location == SPIRVSimulator::BitLocation::SpecConstant)
+				{
+					std::cout << "    " << "From SpecId: " << bit_component.binding_id;
+				} else {
+					std::cout << "    " << "From DescriptorSetID: " << bit_component.set_id << ", Binding: " << bit_component.binding_id;
+				}
+				if (bit_component.location == SPIRVSimulator::BitLocation::StorageClass)
+				{
+					std::cout << ", in StorageClass: " << spv::StorageClassToString(bit_component.storage_class);
+				}
+				std::cout << ", Byte Offset: " << bit_component.byte_offset << ", Bitsize: " << bit_component.bitcount << ", to val Bit Offset: " << bit_component.val_bit_offset << std::endl;
+			}
 		}
-
-		assert(insn + word_count <= shader_data.code.data() + code_size);
-		insn += word_count;
 	}
 	return true;
 }
 
 static bool execute_commands(lava_file_reader& reader, VkCommandBuffer commandBuffer)
 {
-	std::vector<uint8_t> push_constants; // current state of the push constants
+	std::vector<std::byte> push_constants; // current state of the push constants
 	uint32_t compute_pipeline_bound = CONTAINER_INVALID_INDEX; // currently bound pipeline
 	uint32_t graphics_pipeline_bound = CONTAINER_INVALID_INDEX; // currently bound pipeline
 	uint32_t raytracing_pipeline_bound = CONTAINER_INVALID_INDEX; // currently bound pipeline

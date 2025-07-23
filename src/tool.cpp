@@ -17,6 +17,7 @@
 static bool validate = false;
 static bool verbose = false;
 static bool report_unused = false;
+static bool dump_shaders = false;
 
 static void usage()
 {
@@ -30,6 +31,7 @@ static void usage()
 	printf("-f/--frames start end  Select a frame range\n");
 	printf("-r/--remap-validate    Validate existing device address remappings - abort if we find less or more addresses than already marked\n");
 	printf("-u/--unused            Find any found unused features and extensions in the trace file; remove them from the output file\n");
+	printf("-DS/--dump-shaders     Dump any shaders found to disk\n");
 	//printf("-R/--remap-addresses   Adding remapping of device addresses. Replaces existing address remappings. Requires an output file.\n");
 	exit(-1);
 }
@@ -113,6 +115,25 @@ static void replay_thread(lava_reader* replayer, int thread_id)
 	}
 }
 
+static void callback_vkCreateShaderModule(VkDevice device, const VkShaderModuleCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkShaderModule* pShaderModule)
+{
+	static int count = 0;
+
+	assert(pCreateInfo->sType == VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO);
+
+	if (dump_shaders)
+	{
+		std::string filename = "shader_" + std::to_string(count) + ".spv";
+		FILE* fp = fopen(filename.c_str(), "w");
+		assert(fp);
+		int r = fwrite(pCreateInfo->pCode, pCreateInfo->codeSize, 1, fp);
+		assert(r == 1);
+		fclose(fp);
+	}
+
+	count++;
+}
+
 int main(int argc, char **argv)
 {
 	int start = 0;
@@ -145,6 +166,11 @@ int main(int argc, char **argv)
 		{
 			report_unused = true;
 			(void)report_unused; // TBD
+		}
+		else if (match(argv[i], "-DS", "--dump-shaders", remaining))
+		{
+			dump_shaders = true;
+			(void)dump_shaders; // TBD
 		}
 		else if (match(argv[i], "-o", "--debugfile", remaining))
 		{
@@ -218,6 +244,9 @@ int main(int argc, char **argv)
 		// Read all thread files
 		std::vector<std::string> threadfiles = packed_files(filename_input, "thread_");
 		if (threadfiles.size() == 0) DIE("Failed to find any threads in %s!", filename_input.c_str());
+
+		// Add callbacks
+		vkCreateShaderModule_callbacks.push_back(callback_vkCreateShaderModule);
 
 		for (int i = 0; i < (int)threadfiles.size(); i++)
 		{
