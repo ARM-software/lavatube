@@ -880,6 +880,7 @@ static void modify_device_extensions(VkPhysicalDevice physicalDevice) REQUIRES(f
 	Json::Value& r = instance.json();
 	r["devicePresented"] = Json::objectValue;
 	r["devicePresented"]["extensions"] = Json::arrayValue;
+	auto* physicaldevice_data = instance.records.VkPhysicalDevice_index.at(physicalDevice);
 
 	uint32_t propertyCount = 0;
 	VkResult result = wrap_vkEnumerateDeviceExtensionProperties(physicalDevice, nullptr, &propertyCount, nullptr); // call first to get correct count on host
@@ -899,8 +900,11 @@ static void modify_device_extensions(VkPhysicalDevice physicalDevice) REQUIRES(f
 
 	for (const auto &ext : tmp_device_extension_properties)
 	{
-		// Filter out extensions we don't want presented
 		std::string name = ext.extensionName;
+
+		physicaldevice_data->supported_device_extensions.insert(name);
+
+		// Filter out extensions we don't want presented
 		instance.meta.device.device_extensions.insert(name);
 		r["devicePresented"]["extensions"].append(name);
 		if (name.find("_NV") == std::string::npos && name.find("_AMD") == std::string::npos && name.find("_INTEL") == std::string::npos
@@ -910,12 +914,15 @@ static void modify_device_extensions(VkPhysicalDevice physicalDevice) REQUIRES(f
 			device_extension_properties.push_back(ext); // add to list of extensions presented to app
 		}
 	}
+	for (const auto& ext : device_extension_properties) physicaldevice_data->presented_device_extensions.insert(ext.extensionName);
+	physicaldevice_data->device_extension_properties = device_extension_properties;
 }
 
 static void trace_pre_vkCreateDevice(VkPhysicalDevice physicalDevice, VkDeviceCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkDevice* pDevice)
 {
 	lava_writer& instance = lava_writer::instance();
 	lava_file_writer& writer = instance.file_writer();
+	auto* physicaldevice_data = instance.records.VkPhysicalDevice_index.at(physicalDevice);
 
 	frame_mutex.lock();
 	Json::Value& r = instance.json();
@@ -1011,13 +1018,13 @@ static void trace_pre_vkCreateDevice(VkPhysicalDevice physicalDevice, VkDeviceCr
 		instance.meta.app.device_extensions.insert(pCreateInfo->ppEnabledExtensionNames[i]);
 		memset(name, 0, size);
 		strcpy(name, pCreateInfo->ppEnabledExtensionNames[i]);
-		if (strcmp(name, VK_EXT_TOOLING_INFO_EXTENSION_NAME) == 0 && !has_VK_EXT_tooling_info) continue; // do not pass to host
+		if (strcmp(name, VK_EXT_TOOLING_INFO_EXTENSION_NAME) == 0 && !physicaldevice_data->supported_device_extensions.count(VK_EXT_TOOLING_INFO_EXTENSION_NAME)) continue; // do not pass to host
 		if (strcmp(name, VK_TRACETOOLTEST_OBJECT_PROPERTY_EXTENSION_NAME) == 0) continue; // do not pass to host
 		if (strcmp(name, VK_ARM_TRACE_HELPERS_EXTENSION_NAME) == 0) continue; // do not pass to host
 		if (strcmp(name, VK_ARM_TRACE_DESCRIPTOR_BUFFER_EXTENSION_NAME) == 0) continue; // do not pass to host
 		if (strcmp(name, VK_ARM_EXPLICIT_HOST_UPDATES_EXTENSION_NAME) == 0) continue; // do not pass to host
 		if (strcmp(name, VK_TRACETOOLTEST_TRACE_HELPERS2_EXTENSION_NAME) == 0) continue; // do not pass to host
-		if (!has_VK_EXT_frame_boundary && strcmp(name, VK_EXT_FRAME_BOUNDARY_EXTENSION_NAME) == 0) // do not pass to host
+		if (!physicaldevice_data->supported_device_extensions.count(VK_EXT_FRAME_BOUNDARY_EXTENSION_NAME) && strcmp(name, VK_EXT_FRAME_BOUNDARY_EXTENSION_NAME) == 0) // do not pass to host
 		{
 			purge_extension_parent(pCreateInfo, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FRAME_BOUNDARY_FEATURES_EXT);
 			continue;
@@ -1044,9 +1051,16 @@ static void trace_pre_vkCreateDevice(VkPhysicalDevice physicalDevice, VkDeviceCr
 static void trace_post_vkCreateDevice(lava_file_writer& writer, VkResult result, VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkDevice* pDevice)
 {
 	lava_writer& instance = lava_writer::instance();
+	auto* device_data = instance.records.VkDevice_index.at(*pDevice);
+	auto* physicaldevice_data = instance.records.VkPhysicalDevice_index.at(physicalDevice);
 
 	frame_mutex.lock();
 	Json::Value& r = instance.json();
+
+	for (unsigned i = 0; i < pCreateInfo->enabledExtensionCount; i++)
+	{
+		device_data->enabled_device_extensions.insert(pCreateInfo->ppEnabledExtensionNames[i]);
+	}
 
 	for (const auto& name : instance.meta.app.device_extensions) // go through app requested extensions
 	{
@@ -1055,17 +1069,8 @@ static void trace_post_vkCreateDevice(lava_file_writer& writer, VkResult result,
 			VkPhysicalDeviceExplicitHostUpdatesFeaturesARM* pdehuf = (VkPhysicalDeviceExplicitHostUpdatesFeaturesARM*)find_extension(pCreateInfo, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXPLICIT_HOST_UPDATES_FEATURES_ARM);
 			if (pdehuf && pdehuf->explicitHostUpdates == VK_TRUE)
 			{
-				auto* device_data = instance.records.VkDevice_index.at(*pDevice);
 				device_data->explicit_host_updates = true;
 			}
-		}
-	}
-	for (const auto& name : instance.meta.device.device_extensions) // go through extensions requested to the driver
-	{
-		if (name == VK_EXT_TOOLING_INFO_EXTENSION_NAME)
-		{
-			auto* physicaldevice_data = instance.records.VkPhysicalDevice_index.at(physicalDevice);
-			physicaldevice_data->has_tooling_info = true;
 		}
 	}
 
@@ -1299,7 +1304,7 @@ static VkResult common_vkGetPhysicalDeviceToolProperties(lava_file_writer& write
 	}
 	VkResult retval = VK_SUCCESS;
 	frame_mutex.lock();
-	if (physicaldevice_data->has_tooling_info && wrap_vkGetPhysicalDeviceToolPropertiesEXT) // if supported by host (or other layer)
+	if (physicaldevice_data->supported_device_extensions.count(VK_EXT_TOOLING_INFO_EXTENSION_NAME) && wrap_vkGetPhysicalDeviceToolPropertiesEXT) // if supported by host (or other layer)
 	{
 		retval = wrap_vkGetPhysicalDeviceToolPropertiesEXT(physicalDevice, pToolCount, pToolProperties);
 	}

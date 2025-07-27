@@ -146,8 +146,9 @@ struct trackedphysicaldevice : trackable
 	using trackable::trackable; // inherit constructor
 	std::vector<VkQueueFamilyProperties> queueFamilyProperties;
 
-	/// Does this physical device support VK_EXT_tooling_info?
-	bool has_tooling_info = false;
+	std::unordered_set<std::string> presented_device_extensions; // from tool to app
+	std::unordered_set<std::string> supported_device_extensions; // supported in driver
+	std::vector<VkExtensionProperties> device_extension_properties; // equal to presented set, but as vector and with version info
 };
 
 struct trackeddevice : trackable
@@ -157,6 +158,8 @@ struct trackeddevice : trackable
 
 	/// Trust host to notify us about memory updates?
 	bool explicit_host_updates = false;
+
+	std::unordered_set<std::string> enabled_device_extensions; // from replay tool to driver
 };
 
 struct trackedobject : trackable
