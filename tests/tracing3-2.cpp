@@ -17,7 +17,7 @@ static std::mutex order;
 static void hack_vkFreeCommandBuffers(VkDevice device, VkCommandPool commandPool, uint32_t commandBufferCount, const VkCommandBuffer* pCommandBuffers)
 {
 	order.lock();
-	wrap_vkFreeCommandBuffers(device, commandPool, commandBufferCount, pCommandBuffers);
+	trace_vkFreeCommandBuffers(device, commandPool, commandBufferCount, pCommandBuffers);
 	for (unsigned i = 0; i < commandBufferCount; i++)
 	{
 		used.erase(pCommandBuffers[i]);
@@ -28,7 +28,7 @@ static void hack_vkFreeCommandBuffers(VkDevice device, VkCommandPool commandPool
 static VkResult hack_vkAllocateCommandBuffers(VkDevice device, const VkCommandBufferAllocateInfo* pAllocateInfo, VkCommandBuffer* pCommandBuffers)
 {
 	order.lock();
-	wrap_vkAllocateCommandBuffers(device, pAllocateInfo, pCommandBuffers);
+	trace_vkAllocateCommandBuffers(device, pAllocateInfo, pCommandBuffers);
 	for (unsigned i = 0; i < pAllocateInfo->commandBufferCount; i++)
 	{
 		assert(used.count(pCommandBuffers[i]) == 0);
@@ -62,7 +62,7 @@ int main()
 		cmdcreateinfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
 		cmdcreateinfo.flags = 0;
 		cmdcreateinfo.queueFamilyIndex = 0;
-		VkResult result = wrap_vkCreateCommandPool(vulkan.device, &cmdcreateinfo, nullptr, &pools[k]);
+		VkResult result = trace_vkCreateCommandPool(vulkan.device, &cmdcreateinfo, nullptr, &pools[k]);
 		check(result);
 	}
 	int k = 0;
@@ -77,7 +77,7 @@ int main()
 	{
 		t->join();
 		delete t;
-		wrap_vkDestroyCommandPool(vulkan.device, pools[k], nullptr);
+		trace_vkDestroyCommandPool(vulkan.device, pools[k], nullptr);
 		k++;
 	}
 	threads.clear();

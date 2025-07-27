@@ -105,7 +105,7 @@ static void trace_2(int variant)
 	VkResult result = trace_vkEnumerateInstanceExtensionProperties(nullptr, &propertyCount, nullptr);
 	assert(result == VK_SUCCESS);
 	std::vector<VkExtensionProperties> supported_extensions(propertyCount);
-	result = wrap_vkEnumerateInstanceExtensionProperties(nullptr, &propertyCount, supported_extensions.data());
+	result = trace_vkEnumerateInstanceExtensionProperties(nullptr, &propertyCount, supported_extensions.data());
 	assert(result == VK_SUCCESS);
 	for (const VkExtensionProperties& s : supported_extensions)
 	{
@@ -351,6 +351,7 @@ static void retrace_2(int variant)
 	lava_file_reader& t = r.file_reader(0);
 
 	getnext(t, nullptr); // initial thread barrier for thread start
+	getnext(t, "vkEnumerateInstanceExtensionProperties");
 	getnext(t, "vkEnumerateInstanceExtensionProperties");
 	getnext(t, "vkCreateInstance");
 	getnext(t, "vkEnumeratePhysicalDevices");
