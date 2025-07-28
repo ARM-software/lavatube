@@ -1189,6 +1189,7 @@ def save_add_tracking(name):
 			z.do('if (pCreateInfo->flags & VK_IMAGE_CREATE_ALIAS_BIT) ELOG("Image aliasing detected! We need to implement support for this!");')
 		elif type == 'VkShaderModule':
 			z.do('add->size = pCreateInfo->codeSize;')
+			z.do('add->device_index = device_data->index;');
 		elif type == 'VkRenderPass' and name == 'vkCreateRenderPass':
 			z.do('add->attachments.resize(pCreateInfo->attachmentCount);')
 			z.do('for (unsigned ii = 0; ii < pCreateInfo->attachmentCount; ii++) add->attachments[ii] = pCreateInfo->pAttachments[ii]; // struct copy')
@@ -1375,6 +1376,8 @@ def load_add_tracking(name):
 			elif type == 'VkDescriptorSet':
 				z.do('data.pool = pAllocateInfo->descriptorPool;')
 			elif type == 'VkShaderModule':
+				z.do('data.device_index = device_index;');
+				z.do('data.size = pCreateInfo->codeSize;')
 				z.do('data.code.resize(pCreateInfo->codeSize / sizeof(uint32_t));')
 				z.do('memcpy(data.code.data(), pCreateInfo->pCode, pCreateInfo->codeSize);')
 			z.do('data.enter_created();')

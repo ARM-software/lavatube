@@ -206,9 +206,11 @@ struct trackedobject : trackable
 struct trackedshadermodule : trackable
 {
 	using trackable::trackable; // inherit constructor
+	uint32_t device_index = UINT32_MAX;
 	bool enables_device_address = false;
 	size_t size = 0;
 	std::vector<uint32_t> code; // only for replayer
+	uint32_t calls = 0; // numbere of times this shader was called
 };
 
 struct trackedmemoryobject : trackedobject

@@ -18,6 +18,7 @@ static bool validate = false;
 static bool verbose = false;
 static bool report_unused = false;
 static bool dump_shaders = false;
+static int invokation_count = 0;
 
 static void usage()
 {
@@ -128,10 +129,23 @@ static void callback_vkCreateShaderModule(VkDevice device, const VkShaderModuleC
 		assert(fp);
 		int r = fwrite(pCreateInfo->pCode, pCreateInfo->codeSize, 1, fp);
 		assert(r == 1);
+		(void)r;
 		fclose(fp);
 	}
 
 	count++;
+}
+
+static void callback_vkDestroyDevice(VkDevice device, const VkAllocationCallbacks* pAllocator)
+{
+	uint32_t device_index = index_to_VkDevice.index(device);
+	const auto& device_data = VkDevice_index.at(device_index);
+	uint32_t num_modules = index_to_VkShaderModule.size();
+	for (uint32_t i = 0; i < num_modules; i++)
+	{
+		const auto& shadermodule_data = VkShaderModule_index.at(i);
+		if (shadermodule_data.device_index == device_data.index) invokation_count += shadermodule_data.calls;
+	}
 }
 
 int main(int argc, char **argv)
@@ -247,6 +261,7 @@ int main(int argc, char **argv)
 
 		// Add callbacks
 		vkCreateShaderModule_callbacks.push_back(callback_vkCreateShaderModule);
+		vkDestroyDevice_callbacks.push_back(callback_vkDestroyDevice);
 
 		for (int i = 0; i < (int)threadfiles.size(); i++)
 		{
@@ -298,6 +313,8 @@ int main(int argc, char **argv)
 		reset_for_tools();
 		replayer.finalize(false);
 	}
+
+	printf("%d shader invokations executed\n", invokation_count);
 
 	if (p__debug_destination) fclose(p__debug_destination);
 	return 0;

@@ -14,7 +14,8 @@ static bool run_spirv(lava_file_reader& reader, const shader_stage& stage, const
 		inputs.specialization_constant_offsets[i] = v.offset;
 		i++;
 	}
-	SPIRVSimulator::SPIRVSimulator sim(shader_data.code, inputs, true);
+	shader_data.calls++;
+	SPIRVSimulator::SPIRVSimulator sim(shader_data.code, inputs, false);
 	sim.Run();
 
 	auto physical_address_data = sim.GetPhysicalAddressData();
@@ -43,6 +44,7 @@ static bool run_spirv(lava_file_reader& reader, const shader_stage& stage, const
 			}
 		}
 	}
+
 	return true;
 }
 
