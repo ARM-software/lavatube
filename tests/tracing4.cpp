@@ -419,7 +419,7 @@ static bool getnext(lava_file_reader& t)
 	if (instrtype == PACKET_VULKAN_API_CALL)
 	{
 		const uint16_t apicall = t.read_apicall();
-		suballoc_internal_test();
+		t.parent->allocator.self_test();
 		if (apicall == 12) // vkDestroyDevice
 		{
 			assert(index_to_VkCommandBuffer.size() == num_buffers + 1);
@@ -444,7 +444,7 @@ static bool getnext(lava_file_reader& t)
 		const uint32_t buffer_index = t.read_handle();
 		VkDevice device = index_to_VkDevice.at(device_index);
 		assert(buffer_index % 2 == 0); // every second buffer is target, which is off-limits
-		suballoc_location loc = suballoc_find_buffer_memory(buffer_index);
+		suballoc_location loc = t.parent->allocator.find_buffer_memory(buffer_index);
 		assert(loc.size >= buffer_size);
 		char* ptr = nullptr;
 		VkResult result = wrap_vkMapMemory(device, loc.memory, loc.offset, loc.size, 0, (void**)&ptr);
@@ -465,7 +465,7 @@ static void retrace_4()
 	lava_reader r(name, heap_size);
 	lava_file_reader& t = r.file_reader(0);
 	while (getnext(t)) {}
-	int remaining = suballoc_internal_test();
+	int remaining = r.allocator.self_test();
 	assert(remaining == 0); // everything should be destroyed now
 }
 

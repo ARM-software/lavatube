@@ -19,6 +19,7 @@
 #include "containers.h"
 #include "lavatube.h"
 #include "filereader.h"
+#include "suballocator.h"
 #include "jsoncpp/json/value.h"
 
 using lava_replay_func = std::function<void(lava_file_reader&)>;
@@ -91,6 +92,9 @@ public:
 	/// Whether we should actually call into Vulkan or if we are just processing the data.
 	/// Duplicated into the file reader.
 	bool run = true;
+
+	// TBD - should be in a replay-only copy of trackeddevice
+	suballocator allocator;
 
 private:
 	/// Start time of frame range

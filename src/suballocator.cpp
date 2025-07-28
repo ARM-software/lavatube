@@ -12,13 +12,10 @@
 // Calling the delete functions is safe because the callee is responsible for making sure
 // that other acccesses to the same entry do not happen when we delete it.
 
-static void suballoc_print(FILE* fp);
+// TBD Turn this into a class and instanciate one suballocator for each device. This way we can safely
+// handle multi-device cases. Right now they would share device memory pools, which is not legal.
 
-#define SUBALLOC_ABORT(_format, ...) do { suballoc_print(p__debug_destination); fprintf(p__debug_destination, "%s:%d " _format "\n", __FILE__, __LINE__, ## __VA_ARGS__); fflush(p__debug_destination); abort(); } while(0)
-
-static uint64_t min_heap_size = 1024 * 1024 * 32; // default 32mb size heaps
-static std::vector<VkDeviceMemory> virtualswapmemory;
-static bool run = true; // whether we actually run things or just fake it
+#define SUBALLOC_ABORT(_priv, _format, ...) do { _priv->suballoc_print(p__debug_destination); fprintf(p__debug_destination, "%s:%d " _format "\n", __FILE__, __LINE__, ## __VA_ARGS__); fflush(p__debug_destination); abort(); } while(0)
 
 struct suballocation
 {
@@ -30,6 +27,7 @@ struct suballocation
 	} handle;
 	VkDeviceSize size = 0;
 	VkDeviceSize offset = 0;
+	VkDeviceSize alignment = 0;
 	uint32_t index = 0;
 };
 
@@ -64,21 +62,33 @@ struct lookup
 	lookup() {}
 };
 
-static tbb::concurrent_vector<heap> heaps;
-static VkPhysicalDeviceMemoryProperties memory_properties;
-static std::vector<lookup> image_lookup;
-static std::vector<lookup> buffer_lookup;
+struct suballocator_private
+{
+	uint64_t min_heap_size = 1024 * 1024 * 32; // default 32mb size heaps
+	std::vector<VkDeviceMemory> virtualswapmemory;
+	bool run = true; // whether we actually run things or just fake it
+	tbb::concurrent_vector<heap> heaps;
+	VkPhysicalDeviceMemoryProperties memory_properties;
+	std::vector<lookup> image_lookup;
+	std::vector<lookup> buffer_lookup;
 
-using bind_object_memory = std::function<void(heap& h, VkDeviceSize offset, VkDeviceSize size)>;
+	void print_memory_usage();
+	uint32_t get_device_memory_type(uint32_t type_filter, VkMemoryPropertyFlags& properties);
+	suballoc_location add_object_new(VkDevice device, uint16_t tid, uint32_t memoryTypeIndex, suballocation &s, VkMemoryPropertyFlags flags,
+		VkImageTiling tiling, bool dedicated, VkMemoryAllocateFlags allocflags);
+	bool fill_image_memreq(VkDevice device, VkImage image, VkMemoryRequirements2& req, VkDeviceSize size);
+	void suballoc_print(FILE* fp);
+	suballoc_location add_object(VkDevice device, uint16_t tid, uint32_t memoryTypeIndex, suballocation &s, VkMemoryPropertyFlags flags,
+		VkImageTiling tiling, bool dedicated, VkMemoryAllocateFlags allocflags);
+	void self_test();
+	void bind(heap& h, const suballocation& s);
+
+	inline bool needs_flush(unsigned memoryTypeIndex) { return !(memory_properties.memoryTypes[memoryTypeIndex].propertyFlags & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT); }
+};
 
 // helpers
 
-static inline bool needs_flush(unsigned memoryTypeIndex)
-{
-	return !(memory_properties.memoryTypes[memoryTypeIndex].propertyFlags & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-}
-
-static void print_memory_usage()
+void suballocator_private::print_memory_usage()
 {
 	printf("Suballocator memory usage:\n");
 	int i = 0;
@@ -97,7 +107,7 @@ static void print_memory_usage()
 	printf("Total memory wasted: %10lu\n", (unsigned long)waste);
 }
 
-static uint32_t get_device_memory_type(uint32_t type_filter, VkMemoryPropertyFlags& properties)
+uint32_t suballocator_private::get_device_memory_type(uint32_t type_filter, VkMemoryPropertyFlags& properties)
 {
 	for (uint32_t i = 0; i < memory_properties.memoryTypeCount; ++i)
 	{
@@ -122,44 +132,52 @@ static uint32_t get_device_memory_type(uint32_t type_filter, VkMemoryPropertyFla
 	if (properties & VK_MEMORY_PROPERTY_HOST_CACHED_BIT) ILOG("\tHOST_CACHED");
 	if (properties & VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT) ILOG("\tLAZILY_ALLOCATED");
 	if (properties & VK_MEMORY_PROPERTY_PROTECTED_BIT) ILOG("\tPROTECTED");
-	SUBALLOC_ABORT("Failed to find required memory type (filter=%u, props=%u)", type_filter, (unsigned)properties);
+	SUBALLOC_ABORT(this, "Failed to find required memory type (filter=%u, props=%u)", type_filter, (unsigned)properties);
 	return 0xffff; // satisfy compiler
 }
 
 // API
 
-void suballoc_init(int num_images, int num_buffers, int heap_size, bool fake)
+suballocator::suballocator()
 {
-	run = !fake;
-	assert(image_lookup.size() == 0);
-	assert(buffer_lookup.size() == 0);
-	image_lookup.resize(num_images);
-	buffer_lookup.resize(num_buffers);
-	memset(&memory_properties, 0, sizeof(memory_properties));
-	if (heap_size != -1) min_heap_size = heap_size;
+	priv = new suballocator_private;
 }
 
-void suballoc_setup(VkPhysicalDevice physicaldevice)
+void suballocator::init(int num_images, int num_buffers, int heap_size, bool fake)
 {
-	assert(memory_properties.memoryTypeCount == 0);
-	if (run)
+	priv->run = !fake;
+	priv->image_lookup.resize(num_images);
+	priv->buffer_lookup.resize(num_buffers);
+	memset(&priv->memory_properties, 0, sizeof(priv->memory_properties));
+	if (heap_size != -1) priv->min_heap_size = heap_size;
+}
+
+suballocator::~suballocator()
+{
+	delete priv;
+}
+
+void suballocator::setup(VkPhysicalDevice physicaldevice)
+{
+	assert(priv->memory_properties.memoryTypeCount == 0);
+	if (priv->run)
 	{
-		wrap_vkGetPhysicalDeviceMemoryProperties(physicaldevice, &memory_properties);
+		wrap_vkGetPhysicalDeviceMemoryProperties(physicaldevice, &priv->memory_properties);
 	}
 	else
 	{
-		memory_properties.memoryTypeCount = 1;
-		memory_properties.memoryTypes[0].heapIndex = 0;
-		memory_properties.memoryTypes[0].propertyFlags = VK_MEMORY_PROPERTY_FLAG_BITS_MAX_ENUM;
-		memory_properties.memoryHeapCount = 1;
-		memory_properties.memoryHeaps[0].size = UINT64_MAX;
-		memory_properties.memoryHeaps[0].flags = VK_MEMORY_HEAP_DEVICE_LOCAL_BIT;
+		priv->memory_properties.memoryTypeCount = 1;
+		priv->memory_properties.memoryTypes[0].heapIndex = 0;
+		priv->memory_properties.memoryTypes[0].propertyFlags = VK_MEMORY_PROPERTY_FLAG_BITS_MAX_ENUM;
+		priv->memory_properties.memoryHeapCount = 1;
+		priv->memory_properties.memoryHeaps[0].size = UINT64_MAX;
+		priv->memory_properties.memoryHeaps[0].flags = VK_MEMORY_HEAP_DEVICE_LOCAL_BIT;
 	}
-	assert(memory_properties.memoryTypeCount > 0);
+	assert(priv->memory_properties.memoryTypeCount > 0);
 }
 
-static suballoc_location add_object_new(VkDevice device, uint16_t tid, uint32_t memoryTypeIndex, suballocation &s, VkMemoryPropertyFlags flags,
-        VkDeviceSize alignment, VkImageTiling tiling, bool dedicated, VkMemoryAllocateFlags allocflags, bind_object_memory bind_callback)
+suballoc_location suballocator_private::add_object_new(VkDevice device, uint16_t tid, uint32_t memoryTypeIndex, suballocation &s, VkMemoryPropertyFlags flags,
+        VkImageTiling tiling, bool dedicated, VkMemoryAllocateFlags allocflags)
 {
 	heap h;
 	h.tid = tid;
@@ -191,7 +209,7 @@ static suballoc_location add_object_new(VkDevice device, uint16_t tid, uint32_t 
 		if (result != VK_SUCCESS)
 		{
 			print_memory_usage();
-			SUBALLOC_ABORT("Failed to allocate %lu bytes of memory for memory type %u and tiling %u", (unsigned long)info.allocationSize, (unsigned)memoryTypeIndex, (unsigned)tiling);
+			SUBALLOC_ABORT(this, "Failed to allocate %lu bytes of memory for memory type %u and tiling %u", (unsigned long)info.allocationSize, (unsigned)memoryTypeIndex, (unsigned)tiling);
 		}
 	}
 	else
@@ -206,16 +224,17 @@ static suballoc_location add_object_new(VkDevice device, uint16_t tid, uint32_t 
 	DLOG2("allocating new memory pool with size = %lu, free = %lu (memoryTypeIndex=%u, tiling=%u)", (unsigned long)info.allocationSize,
 	      (unsigned long)h.free, (unsigned)memoryTypeIndex, (unsigned)tiling);
 	heaps.push_back(h);
-	bind_callback(heaps.back(), 0, s.size); // call to vkBind{Buffer|Image}Memory
+	s.offset = 0;
+	bind(heaps.back(), s);
 	return { h.mem, 0, s.size, true, needs_flush(memoryTypeIndex) };
 }
 
-static suballoc_location add_object(VkDevice device, uint16_t tid, uint32_t memoryTypeIndex, suballocation &s, VkMemoryPropertyFlags flags,
-	VkDeviceSize alignment, VkImageTiling tiling, bool dedicated, VkMemoryAllocateFlags allocflags, bind_object_memory bind_callback)
+suballoc_location suballocator_private::add_object(VkDevice device, uint16_t tid, uint32_t memoryTypeIndex, suballocation &s, VkMemoryPropertyFlags flags,
+	VkImageTiling tiling, bool dedicated, VkMemoryAllocateFlags allocflags)
 {
 	if (dedicated)
 	{
-		return add_object_new(device, tid, memoryTypeIndex, s, flags, alignment, tiling, dedicated, allocflags, bind_callback);
+		return add_object_new(device, tid, memoryTypeIndex, s, flags, tiling, dedicated, allocflags);
 	}
 	for (heap& h : heaps)
 	{
@@ -248,10 +267,11 @@ static suballoc_location add_object(VkDevice device, uint16_t tid, uint32_t memo
 			// to care about alignment in this case.
 			if (h.subs.empty() || (h.subs.front().offset >= s.size))
 			{
-				bind_callback(h, 0, s.size); // call to vkBind{Buffer|Image}Memory
+				s.offset = 0;
+				bind(h, s); // call to vkBind{Buffer|Image}Memory
 				h.subs.push_front(s);
 				h.free -= s.size;
-				DLOG3("inserting object into memory at the front size=%lu, alignment=%u, free is %lu", (unsigned long)s.size, (unsigned)alignment, (unsigned long)h.free);
+				DLOG3("inserting object into memory at the front size=%lu, alignment=%u, free is %lu", (unsigned long)s.size, (unsigned)s.alignment, (unsigned long)h.free);
 				return { h.mem, 0, s.size, true, needs_flush(h.memoryTypeIndex) };
 			}
 			// Third case: scan for unused memory segment of the correct size. We need to make sure it is aligned correctly.
@@ -262,36 +282,36 @@ static suballoc_location add_object(VkDevice device, uint16_t tid, uint32_t memo
 				if (next == h.subs.end()) // we are at the end
 				{
 					std::size_t left = h.total - (it->offset + it->size);
-					if (std::align(alignment, s.size, start, left))
+					if (std::align(s.alignment, s.size, start, left))
 					{
 						h.free -= s.size;
-						DLOG3("inserting object into memory at the end size=%lu, alignment=%u, free is %lu", (unsigned long)s.size, (unsigned)alignment, (unsigned long)h.free);
+						DLOG3("inserting object into memory at the end size=%lu, alignment=%u, free is %lu", (unsigned long)s.size, (unsigned)s.alignment, (unsigned long)h.free);
 						s.offset = (VkDeviceSize)start;
-						bind_callback(h, s.offset, s.size); // call to vkBind{Buffer|Image}Memory
+						bind(h, s); // call to vkBind{Buffer|Image}Memory
 						h.subs.push_back(s);
 						return { h.mem, s.offset, s.size, true, needs_flush(h.memoryTypeIndex) };
 					}
 					break; // no space found
 				}
 				std::size_t hole_size = next->offset - (it->offset + it->size);
-				if (std::align(alignment, s.size, start, hole_size))
+				if (std::align(s.alignment, s.size, start, hole_size))
 				{
 					s.offset = (VkDeviceSize)start;
-					bind_callback(h, s.offset, s.size); // call to vkBind{Buffer|Image}Memory
+					bind(h, s); // call to vkBind{Buffer|Image}Memory
 					h.subs.insert(next, s);
 					h.free -= s.size;
 					DLOG3("inserting object into memory in existing hole offset=%lu size=%lu, alignment=%u, free is %lu", (unsigned long)s.offset,
-					      (unsigned long)s.size, (unsigned)alignment, (unsigned long)h.free);
+					      (unsigned long)s.size, (unsigned)s.alignment, (unsigned long)h.free);
 					return { h.mem, s.offset, s.size, true, needs_flush(h.memoryTypeIndex) };
 				}
 			}
 		}
 	}
 	// if we get here, we need to create another heap
-	return add_object_new(device, tid, memoryTypeIndex, s, flags, alignment, tiling, dedicated, allocflags, bind_callback);
+	return add_object_new(device, tid, memoryTypeIndex, s, flags, tiling, dedicated, allocflags);
 }
 
-static bool fill_image_memreq(VkDevice device, VkImage image, VkMemoryRequirements2& req, VkDeviceSize size)
+bool suballocator_private::fill_image_memreq(VkDevice device, VkImage image, VkMemoryRequirements2& req, VkDeviceSize size)
 {
 	if (!run) { req.memoryRequirements.size = size; req.memoryRequirements.alignment = 1; req.memoryRequirements.memoryTypeBits = 1; return false; }
 	assert(run);
@@ -312,40 +332,52 @@ static bool fill_image_memreq(VkDevice device, VkImage image, VkMemoryRequiremen
 	return dedicated.prefersDedicatedAllocation;
 }
 
-suballoc_location suballoc_add_image(uint16_t tid, VkDevice device, VkImage image, uint32_t image_index, VkMemoryPropertyFlags flags, VkImageTiling tiling, VkDeviceSize min_size)
+void suballocator_private::bind(heap& h, const suballocation& s)
+{
+	assert(h.mem != VK_NULL_HANDLE);
+	assert(s.alignment != 0);
+	if (s.type == VK_OBJECT_TYPE_IMAGE)
+	{
+		image_lookup.at(s.index) = lookup(&h, s.offset, s.size);
+		DLOG3("adding image=%p|%u heap=%p size=%lu off=%lu mem=%p alignment=%lu", (void*)s.handle.image, s.index, &h, (unsigned long)s.size,
+		      (unsigned long)s.offset, (void*)h.mem, (unsigned long)s.alignment);
+	}
+	else
+	{
+		buffer_lookup[s.index] = lookup(&h, s.offset, s.size);
+		DLOG3("adding buffer=%p|%u heap=%p size=%lu off=%lu mem=%p alignment=%lu", (void*)s.handle.buffer, s.index, &h, (unsigned long)s.size,
+		      (unsigned long)s.offset, (void*)h.mem, (unsigned long)s.alignment);
+	}
+	assert(s.offset + s.size <= h.total);
+}
+
+suballoc_location suballocator::add_image(uint16_t tid, VkDevice device, VkImage image, uint32_t image_index, VkMemoryPropertyFlags flags, VkImageTiling tiling, VkDeviceSize min_size)
 {
 	if ((flags & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT) || (flags & VK_MEMORY_PROPERTY_HOST_CACHED_BIT))
 	{
 		flags &= ~VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT; // do not require this bit in these cases
 	}
 	VkMemoryRequirements2 req = {};
-	const bool dedicated = fill_image_memreq(device, image, req, min_size);
-	const uint32_t memoryTypeIndex = get_device_memory_type(req.memoryRequirements.memoryTypeBits, flags);
+	const bool dedicated = priv->fill_image_memreq(device, image, req, min_size);
+	const uint32_t memoryTypeIndex = priv->get_device_memory_type(req.memoryRequirements.memoryTypeBits, flags);
 	suballocation s;
 	s.type = VK_OBJECT_TYPE_IMAGE;
 	s.handle.image = image;
 	s.size = std::max(req.memoryRequirements.size, min_size);
 	s.offset = 0;
 	s.index = image_index;
-	auto r = add_object(device, tid, memoryTypeIndex, s, flags, req.memoryRequirements.alignment, tiling, dedicated, 0,
-		[=](heap& h, VkDeviceSize offset, VkDeviceSize size)
-		{
-			assert(h.mem != VK_NULL_HANDLE);
-			image_lookup.at(image_index) = lookup(&h, offset, size);
-			DLOG3("adding image=%p|%u heap=%p size=%lu off=%lu mem=%p alignment=%lu", (void*)image, image_index, &h, (unsigned long)size,
-			      (unsigned long)offset, (void*)h.mem, (unsigned long)req.memoryRequirements.alignment);
-			assert(offset + size <= h.total);
-		});
+	s.alignment = req.memoryRequirements.alignment;
+	auto r = priv->add_object(device, tid, memoryTypeIndex, s, flags, tiling, dedicated, 0);
 	assert(r.offset == s.offset);
 	return r;
 }
 
-void suballoc_virtualswap_images(VkDevice device, const std::vector<VkImage>& images, VkMemoryPropertyFlags flags)
+void suballocator::virtualswap_images(VkDevice device, const std::vector<VkImage>& images, VkMemoryPropertyFlags flags)
 {
-	assert(run);
+	assert(priv->run);
 	VkMemoryRequirements2 req = {};
-	const bool dedicated = fill_image_memreq(device, images.at(0), req, 0);
-	const uint32_t memoryTypeIndex = get_device_memory_type(req.memoryRequirements.memoryTypeBits, flags);
+	const bool dedicated = priv->fill_image_memreq(device, images.at(0), req, 0);
+	const uint32_t memoryTypeIndex = priv->get_device_memory_type(req.memoryRequirements.memoryTypeBits, flags);
 	VkMemoryAllocateInfo info = { VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO, nullptr };
 	VkDeviceSize image_size = aligned_size(req.memoryRequirements.size, req.memoryRequirements.alignment);
 	info.memoryTypeIndex = memoryTypeIndex;
@@ -356,8 +388,8 @@ void suballoc_virtualswap_images(VkDevice device, const std::vector<VkImage>& im
 		{
 			info.allocationSize = VkDeviceSize(image_size);
 			VkResult result = wrap_vkAllocateMemory(device, &info, nullptr, &mem);
-			if (result != VK_SUCCESS) SUBALLOC_ABORT("Failed to allocate dedicated memory for virtual swapchain!");
-			virtualswapmemory.push_back(mem);
+			if (result != VK_SUCCESS) SUBALLOC_ABORT(priv, "Failed to allocate dedicated memory for virtual swapchain!");
+			priv->virtualswapmemory.push_back(mem);
 			wrap_vkBindImageMemory(device, images.at(i), mem, 0);
 		}
 	}
@@ -365,14 +397,14 @@ void suballoc_virtualswap_images(VkDevice device, const std::vector<VkImage>& im
 	{
 		info.allocationSize = VkDeviceSize(image_size * images.size());
 		VkResult result = wrap_vkAllocateMemory(device, &info, nullptr, &mem);
-		if (result != VK_SUCCESS) SUBALLOC_ABORT("Failed to allocate memory for virtual swapchain!");
-		virtualswapmemory.push_back(mem);
+		if (result != VK_SUCCESS) SUBALLOC_ABORT(priv, "Failed to allocate memory for virtual swapchain!");
+		priv->virtualswapmemory.push_back(mem);
 		uint32_t offset = 0;
 		for (unsigned i = 0; i < images.size(); i++) { wrap_vkBindImageMemory(device, images.at(i), mem, offset); offset += image_size; }
 	}
 }
 
-suballoc_location suballoc_add_buffer(uint16_t tid, VkDevice device, VkBuffer buffer, uint32_t buffer_index, VkMemoryPropertyFlags mempropflags, const trackedbuffer& buffer_data)
+suballoc_location suballocator::add_buffer(uint16_t tid, VkDevice device, VkBuffer buffer, uint32_t buffer_index, VkMemoryPropertyFlags mempropflags, const trackedbuffer& buffer_data)
 {
 	const VkBufferUsageFlags buffer_flags = buffer_data.usage;
 	if ((mempropflags & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT) || (mempropflags & VK_MEMORY_PROPERTY_HOST_CACHED_BIT))
@@ -383,7 +415,7 @@ suballoc_location suballoc_add_buffer(uint16_t tid, VkDevice device, VkBuffer bu
 	req.sType = VK_STRUCTURE_TYPE_MEMORY_REQUIREMENTS_2;
 	VkMemoryDedicatedRequirements dedicated = {};
 	dedicated.sType = VK_STRUCTURE_TYPE_MEMORY_DEDICATED_REQUIREMENTS;
-	if (use_dedicated_allocation() && run)
+	if (use_dedicated_allocation() && priv->run)
 	{
 		VkBufferMemoryRequirementsInfo2 info = {};
 		info.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_REQUIREMENTS_INFO_2;
@@ -391,7 +423,7 @@ suballoc_location suballoc_add_buffer(uint16_t tid, VkDevice device, VkBuffer bu
 		req.pNext = &dedicated;
 		wrap_vkGetBufferMemoryRequirements2(device, &info, &req);
 	}
-	else if (run)
+	else if (priv->run)
 	{
 		wrap_vkGetBufferMemoryRequirements(device, buffer, &req.memoryRequirements);
 	}
@@ -401,33 +433,26 @@ suballoc_location suballoc_add_buffer(uint16_t tid, VkDevice device, VkBuffer bu
 		req.memoryRequirements.alignment = 1;
 		req.memoryRequirements.memoryTypeBits = 1;
 	}
-	uint32_t memoryTypeIndex = get_device_memory_type(req.memoryRequirements.memoryTypeBits, mempropflags);
+	uint32_t memoryTypeIndex = priv->get_device_memory_type(req.memoryRequirements.memoryTypeBits, mempropflags);
 	suballocation s;
 	s.type = VK_OBJECT_TYPE_BUFFER;
 	s.handle.buffer = buffer;
 	s.size = req.memoryRequirements.size;
 	s.offset = 0;
 	s.index = buffer_index;
+	s.alignment = req.memoryRequirements.alignment;
 	VkMemoryAllocateFlags allocflags = 0;
 	if (buffer_flags & VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT) { dedicated.prefersDedicatedAllocation = VK_TRUE; allocflags |= VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT_KHR; }
-	auto r = add_object(device, tid, memoryTypeIndex, s, mempropflags, req.memoryRequirements.alignment, VK_IMAGE_TILING_LINEAR, dedicated.prefersDedicatedAllocation, allocflags,
-		[=](heap& h, VkDeviceSize offset, VkDeviceSize size)
-		{
-			assert(h.mem != VK_NULL_HANDLE);
-			buffer_lookup[buffer_index] = lookup(&h, offset, size);
-			DLOG3("adding buffer=%p|%u heap=%p size=%lu off=%lu mem=%p alignment=%lu", (void*)buffer, buffer_index, &h, (unsigned long)s.size,
-			      (unsigned long)s.offset, (void*)h.mem, (unsigned long)req.memoryRequirements.alignment);
-			assert(offset + size <= h.total);
-		});
+	auto r = priv->add_object(device, tid, memoryTypeIndex, s, mempropflags, VK_IMAGE_TILING_LINEAR, dedicated.prefersDedicatedAllocation, allocflags);
 	assert(r.offset == s.offset);
 	return r;
 }
 
-void suballoc_del_image(uint32_t image_index)
+void suballocator::free_image(uint32_t image_index)
 {
 	if (image_index == CONTAINER_NULL_VALUE) return;
 	DLOG3("deleting image=%u", image_index);
-	lookup& l = image_lookup.at(image_index);
+	lookup& l = priv->image_lookup.at(image_index);
 	if (l.home) // it is possible to delete something that has not been bound yet
 	{
 		l.home->deletes.push_back(l.offset);
@@ -435,11 +460,11 @@ void suballoc_del_image(uint32_t image_index)
 	}
 }
 
-void suballoc_del_buffer(uint32_t buffer_index)
+void suballocator::free_buffer(uint32_t buffer_index)
 {
 	if (buffer_index == CONTAINER_NULL_VALUE) return;
 	DLOG3("deleting buffer=%u", buffer_index);
-	lookup& l = buffer_lookup.at(buffer_index);
+	lookup& l = priv->buffer_lookup.at(buffer_index);
 	if (l.home) // it is possible to delete something that has not been bound yet
 	{
 		l.home->deletes.push_back(l.offset);
@@ -447,44 +472,44 @@ void suballoc_del_buffer(uint32_t buffer_index)
 	}
 }
 
-suballoc_location suballoc_find_image_memory(uint32_t image_index)
+suballoc_location suballocator::find_image_memory(uint32_t image_index)
 {
-	lookup& l = image_lookup.at(image_index);
-	if (!l.home) SUBALLOC_ABORT("Image %u is missing its memory!", image_index);
+	lookup& l = priv->image_lookup.at(image_index);
+	if (!l.home) SUBALLOC_ABORT(priv, "Image %u is missing its memory!", image_index);
 	const bool needs_init = !l.initialized;
 	l.initialized = true;
-	return { l.home->mem, l.offset, l.size, needs_init, needs_flush(l.home->memoryTypeIndex) };
+	return { l.home->mem, l.offset, l.size, needs_init, priv->needs_flush(l.home->memoryTypeIndex) };
 }
 
-suballoc_location suballoc_find_buffer_memory(uint32_t buffer_index)
+suballoc_location suballocator::find_buffer_memory(uint32_t buffer_index)
 {
-	lookup& l = buffer_lookup.at(buffer_index);
-	if (!l.home) SUBALLOC_ABORT("Buffer %u is missing its memory!", buffer_index);
+	lookup& l = priv->buffer_lookup.at(buffer_index);
+	if (!l.home) SUBALLOC_ABORT(priv, "Buffer %u is missing its memory!", buffer_index);
 	const bool needs_init = !l.initialized;
 	l.initialized = true;
-	return { l.home->mem, l.offset, l.size, needs_init, needs_flush(l.home->memoryTypeIndex) };
+	return { l.home->mem, l.offset, l.size, needs_init, priv->needs_flush(l.home->memoryTypeIndex) };
 }
 
-void suballoc_destroy(VkDevice device)
+void suballocator::destroy(VkDevice device)
 {
-	for (heap& h : heaps)
+	for (heap& h : priv->heaps)
 	{
-		if (run) wrap_vkFreeMemory(device, h.mem, nullptr);
+		if (priv->run) wrap_vkFreeMemory(device, h.mem, nullptr);
 		else free(h.mem);
 		h.deletes.clear();
 	}
-	heaps.clear();
-	image_lookup.clear();
-	buffer_lookup.clear();
-	for (auto v : virtualswapmemory)
+	priv->heaps.clear();
+	priv->image_lookup.clear();
+	priv->buffer_lookup.clear();
+	for (auto v : priv->virtualswapmemory)
 	{
 		wrap_vkFreeMemory(device, v, nullptr);
 	}
-	virtualswapmemory.clear();
+	priv->virtualswapmemory.clear();
 }
 
 // for debugging, print the contents of the suballocator
-static void suballoc_print(FILE* fp)
+void suballocator_private::suballoc_print(FILE* fp)
 {
 	fprintf(fp, "SUBALLOCATOR CONTENTS\n");
 	fprintf(fp, "Images:\n");
@@ -499,35 +524,14 @@ static void suballoc_print(FILE* fp)
 	}
 }
 
-int suballoc_internal_test()
+int suballocator::self_test()
 {
 	int retval = 0;
-#ifndef NDEBUG
-	// check that there isn't anything in the lookup tables that isn't also in the heaps
-	for (const lookup& l : image_lookup)
-	{
-		if (!l.home) continue;
-		assert(l.size != 0);
-		bool found = false;
-		for (auto it = l.home->subs.cbegin(); it != l.home->subs.cend(); ++it)
-		{
-			if (it->offset == l.offset && it->size == l.size) found = true;
-		}
-		assert(found);
-	}
-	for (const lookup& l : buffer_lookup)
-	{
-		if (!l.home) continue;
-		assert(l.size != 0);
-		bool found = false;
-		for (auto it = l.home->subs.cbegin(); it != l.home->subs.cend(); ++it)
-		{
-			if (it->offset == l.offset && it->size == l.size) found = true;
-		}
-		assert(found);
-	}
+
+	priv->self_test();
+
 	// walk the heaps to check consistency
-	for (const heap& h : heaps)
+	for (const heap& h : priv->heaps)
 	{
 		h.self_test();
 		uint64_t freed = 0;
@@ -551,14 +555,14 @@ int suballoc_internal_test()
 			// check that there isn't anything in the heaps that isn't also in the lookup tables
 			if (it->type == VK_OBJECT_TYPE_IMAGE)
 			{
-				suballoc_location loc = suballoc_find_image_memory(it->index);
+				suballoc_location loc = find_image_memory(it->index);
 				assert(loc.memory == h.mem);
 				assert(loc.offset == it->offset);
 				assert(loc.size == it->size);
 			}
 			else
 			{
-				suballoc_location loc = suballoc_find_buffer_memory(it->index);
+				suballoc_location loc = find_buffer_memory(it->index);
 				assert(loc.memory == h.mem);
 				assert(loc.offset == it->offset);
 				assert(loc.size == it->size);
@@ -570,6 +574,33 @@ int suballoc_internal_test()
 		assert(h.free == freed);
 		assert(freed + used == h.total);
 	}
-#endif
+
 	return retval;
+}
+
+void suballocator_private::self_test()
+{
+	// check that there isn't anything in the lookup tables that isn't also in the heaps
+	for (const lookup& l : image_lookup)
+	{
+		if (!l.home) continue;
+		assert(l.size != 0);
+		bool found = false;
+		for (auto it = l.home->subs.cbegin(); it != l.home->subs.cend(); ++it)
+		{
+			if (it->offset == l.offset && it->size == l.size) found = true;
+		}
+		assert(found);
+	}
+	for (const lookup& l : buffer_lookup)
+	{
+		if (!l.home) continue;
+		assert(l.size != 0);
+		bool found = false;
+		for (auto it = l.home->subs.cbegin(); it != l.home->subs.cend(); ++it)
+		{
+			if (it->offset == l.offset && it->size == l.size) found = true;
+		}
+		assert(found);
+	}
 }

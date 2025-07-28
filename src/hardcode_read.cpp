@@ -1042,7 +1042,7 @@ void retrace_vkAssertBufferARM(lava_file_reader& reader)
 	const uint32_t checksum = reader.read_uint32_t();
 	trackedobject& tbuf = VkBuffer_index.at(buffer_index);
 	VkDevice device = index_to_VkDevice.at(device_index);
-	suballoc_location loc = suballoc_find_buffer_memory(buffer_index);
+	suballoc_location loc = reader.parent->allocator.find_buffer_memory(buffer_index);
 	if (size == VK_WHOLE_SIZE)
 	{
 		size = tbuf.size - offset; // set to remaining size
@@ -1578,7 +1578,7 @@ VKAPI_ATTR void retrace_vkUpdateBufferTRACETOOLTEST(lava_file_reader& reader)
 	// Lookup
 	VkDevice device = index_to_VkDevice.at(device_index);
 	trackedbuffer& tbuf = VkBuffer_index.at(buffer_index);
-	suballoc_location loc = suballoc_find_buffer_memory(buffer_index);
+	suballoc_location loc = reader.parent->allocator.find_buffer_memory(buffer_index);
 	VkAddressRemapARM* ar = (VkAddressRemapARM*)find_extension(&info, (VkStructureType)VK_STRUCTURE_TYPE_ADDRESS_REMAP_ARM);
 
 	// Verify
@@ -1608,7 +1608,7 @@ VKAPI_ATTR void retrace_vkUpdateImageTRACETOOLTEST(lava_file_reader& reader)
 	// Lookup
 	VkDevice device = index_to_VkDevice.at(device_index);
 	trackedimage& timg = VkImage_index.at(image_index);
-	suballoc_location loc = suballoc_find_image_memory(image_index);
+	suballoc_location loc = reader.parent->allocator.find_image_memory(image_index);
 	VkAddressRemapARM* ar = (VkAddressRemapARM*)find_extension(&info, VK_STRUCTURE_TYPE_ADDRESS_REMAP_ARM);
 
 	// Verify
@@ -1833,7 +1833,7 @@ void retrace_vkGetSwapchainImagesKHR(lava_file_reader& reader)
 			result = wrap_vkCreateImage(device, &pinfo, nullptr, &data.virtual_images[i]);
 			assert(result == VK_SUCCESS);
 		}
-		suballoc_virtualswap_images(device, data.virtual_images);
+		reader.parent->allocator.virtualswap_images(device, data.virtual_images);
 
 		if (is_noscreen())
 		{
@@ -2552,7 +2552,7 @@ static trackeddescriptorsetlayout trackeddescriptorsetlayout_json(const Json::Va
 
 void image_update(lava_file_reader& reader, uint32_t device_index, uint32_t image_index)
 {
-	suballoc_location loc = suballoc_find_image_memory(image_index);
+	suballoc_location loc = reader.parent->allocator.find_image_memory(image_index);
 	DLOG2("image update idx=%u flush=%s init=%s size=%lu", image_index, loc.needs_flush ? "yes" : "no", loc.needs_init ? "yes" : "no", (unsigned long)loc.size);
 	VkDevice device = index_to_VkDevice.at(device_index);
 	char* ptr = mem_map(reader, device, loc);
@@ -2562,7 +2562,7 @@ void image_update(lava_file_reader& reader, uint32_t device_index, uint32_t imag
 
 void buffer_update(lava_file_reader& reader, uint32_t device_index, uint32_t buffer_index)
 {
-	suballoc_location loc = suballoc_find_buffer_memory(buffer_index);
+	suballoc_location loc = reader.parent->allocator.find_buffer_memory(buffer_index);
 	DLOG2("buffer update idx=%u flush=%s init=%s size=%lu", buffer_index, loc.needs_flush ? "yes" : "no", loc.needs_init ? "yes" : "no", (unsigned long)loc.size);
 	VkDevice device = index_to_VkDevice.at(device_index);
 	char* ptr = mem_map(reader, device, loc);

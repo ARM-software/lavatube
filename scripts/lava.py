@@ -357,7 +357,7 @@ out(targets_read_headers, 'void terminate_all(lava_file_reader& reader, VkDevice
 out(targets_read_headers, 'void reset_for_tools();')
 out(targets_read_headers)
 
-out(targets_read, 'void retrace_init(const Json::Value& v, int heap_size, bool run)')
+out(targets_read, 'void retrace_init(lava_reader& replayer, const Json::Value& v, int heap_size, bool run)')
 out(targets_read, '{')
 out(targets_read, '\tint images = 0;')
 out(targets_read, '\tint buffers = 0;')
@@ -382,9 +382,9 @@ for v in spec.root.findall('types/type'):
 			out(targets_read, '\t\t\tbuffers = v[p].asInt();')
 		out(targets_read, '\t\t}')
 out(targets_read, '\t}')
-out(targets_read, '\tsuballoc_init(images, buffers, heap_size, !run);')
+out(targets_read, '\treplayer.allocator.init(images, buffers, heap_size, !run);')
 out(targets_read, '}')
-out(targets_read_headers, 'void retrace_init(const Json::Value& v, int heap_size = -1, bool run = true);')
+out(targets_read_headers, 'void retrace_init(lava_reader& replayer, const Json::Value& v, int heap_size = -1, bool run = true);')
 
 out(targets_write)
 out(targets_write, 'Json::Value trace_limits(const lava_writer* instance)')

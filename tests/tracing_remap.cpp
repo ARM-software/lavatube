@@ -214,7 +214,7 @@ static bool getnext(lava_file_reader& t)
 		t.read_barrier();
 	}
 	else assert(false);
-	suballoc_internal_test();
+	t.parent->allocator.self_test();
 	return !done;
 }
 
@@ -223,11 +223,11 @@ static void retrace()
 	lava_reader r(TEST_NAME_1 ".vk");
 	r.remap = true;
 	lava_file_reader& t = r.file_reader(0);
-	int remaining = suballoc_internal_test();
+	int remaining = r.allocator.self_test();
 	assert(remaining == 0); // there should be nothing now
 	while (getnext(t)) {}
 	assert(buffer_count == 10);
-	remaining = suballoc_internal_test();
+	remaining = r.allocator.self_test();
 	assert(remaining == 0); // everything should be destroyed now
 }
 

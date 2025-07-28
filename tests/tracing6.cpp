@@ -98,7 +98,7 @@ static bool getnext(lava_file_reader& t)
 	if (instrtype == PACKET_VULKAN_API_CALL)
 	{
 		const uint16_t apicall = t.read_apicall();
-		suballoc_internal_test();
+		t.parent->allocator.self_test();
 	}
 	else if (instrtype == PACKET_THREAD_BARRIER)
 	{
@@ -111,16 +111,16 @@ static bool getnext(lava_file_reader& t)
 		buffer_update(t, device_index, buffer_index);
 	}
 	else if (instrtype != 0) ABORT("Unexpected packet type %d in thread %d", (int)instrtype, (int)t.thread_index());
-	suballoc_internal_test();
+	t.parent->allocator.self_test();
 	return (instrtype != 0);
 }
 
 static void retrace_me(lava_reader* r, int tid)
 {
 	lava_file_reader& t = r->file_reader(tid);
-	suballoc_internal_test();
+	r->allocator.self_test();
 	while (getnext(t)) {}
-	suballoc_internal_test();
+	r->allocator.self_test();
 }
 
 static void read_test(int start, int end, bool preload)
@@ -139,7 +139,7 @@ static void read_test(int start, int end, bool preload)
 		delete t;
 	}
 	threads.clear();
-	int remaining = suballoc_internal_test();
+	int remaining = reader.allocator.self_test();
 	assert(remaining == 0); // everything should be destroyed now
 }
 

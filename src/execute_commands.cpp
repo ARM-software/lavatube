@@ -20,7 +20,7 @@ static bool run_spirv(lava_file_reader& reader, const shader_stage& stage, const
 
 	auto physical_address_data = sim.GetPhysicalAddressData();
 
-	std::cout << "Pointers to pbuffers:" << std::endl;
+	if (physical_address_data.size() > 0) std::cout << "Pointers to pbuffers:" << std::endl;
 	for (const auto& pointer_t : physical_address_data)
 	{
 		std::cout << "  Found pointer with address: 0x" << std::hex << pointer_t.raw_pointer_value << std::dec << " made from input bit components:" << std::endl;
@@ -92,8 +92,8 @@ static bool execute_commands(lava_file_reader& reader, VkCommandBuffer commandBu
 			break;
 		case VKCMDCOPYBUFFER:
 			{
-				suballoc_location src = suballoc_find_buffer_memory(c.data.copy_buffer.src_buffer_index);
-				suballoc_location dst = suballoc_find_buffer_memory(c.data.copy_buffer.dst_buffer_index);
+				suballoc_location src = reader.parent->allocator.find_buffer_memory(c.data.copy_buffer.src_buffer_index);
+				suballoc_location dst = reader.parent->allocator.find_buffer_memory(c.data.copy_buffer.dst_buffer_index);
 				for (uint32_t i = 0; i < c.data.copy_buffer.regionCount; i++)
 				{
 					VkBufferCopy& r = c.data.copy_buffer.pRegions[i];
@@ -104,7 +104,7 @@ static bool execute_commands(lava_file_reader& reader, VkCommandBuffer commandBu
 			break;
 		case VKCMDUPDATEBUFFER:
 			{
-				suballoc_location sub = suballoc_find_buffer_memory(c.data.update_buffer.buffer_index);
+				suballoc_location sub = reader.parent->allocator.find_buffer_memory(c.data.update_buffer.buffer_index);
 				memcpy((char*)sub.memory + c.data.update_buffer.offset, c.data.update_buffer.values, c.data.update_buffer.size);
 			}
 			free(c.data.update_buffer.values);

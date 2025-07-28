@@ -157,7 +157,7 @@ void lava_reader::init(const std::string& path, int heap_size)
 	}
 
 	// read limits and allocate the global remapping structures
-	retrace_init(readJson("limits.json", mPackedFile), heap_size, run);
+	retrace_init(*this, readJson("limits.json", mPackedFile), heap_size, run);
 	Json::Value trackable = readJson("tracking.json", mPackedFile);
 	trackable_read(trackable);
 

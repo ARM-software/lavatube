@@ -91,7 +91,7 @@ static bool getnext(lava_file_reader& t)
 		t.read_barrier();
 	}
 	else if (instrtype != 0) ABORT("Unexpected packet type %d in thread %d", (int)instrtype, (int)t.thread_index());
-	suballoc_internal_test();
+	t.parent->allocator.self_test();
 	return (instrtype != 0);
 }
 
@@ -118,10 +118,10 @@ void read_test()
 		delete t;
 	}
 	threads.clear();
+	int remaining = reader->allocator.self_test();
+	assert(remaining == 0); // everything should be destroyed now
 	delete reader;
 	reader = nullptr;
-	int remaining = suballoc_internal_test();
-	assert(remaining == 0); // everything should be destroyed now
 }
 
 int main()
