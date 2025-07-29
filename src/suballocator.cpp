@@ -559,6 +559,7 @@ int suballocator::self_test()
 				assert(loc.memory == h.mem);
 				assert(loc.offset == it->offset);
 				assert(loc.size == it->size);
+				(void)loc;
 			}
 			else
 			{
@@ -566,6 +567,7 @@ int suballocator::self_test()
 				assert(loc.memory == h.mem);
 				assert(loc.offset == it->offset);
 				assert(loc.size == it->size);
+				(void)loc;
 			}
 			if (!deleted) retval++;
 		}
@@ -591,6 +593,7 @@ void suballocator_private::self_test()
 			if (it->offset == l.offset && it->size == l.size) found = true;
 		}
 		assert(found);
+		(void)found;
 	}
 	for (const lookup& l : buffer_lookup)
 	{
@@ -602,5 +605,6 @@ void suballocator_private::self_test()
 			if (it->offset == l.offset && it->size == l.size) found = true;
 		}
 		assert(found);
+		(void)found;
 	}
 }

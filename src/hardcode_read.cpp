@@ -2086,7 +2086,11 @@ void retrace_vkGetDeviceQueue2(lava_file_reader& reader)
 			info_real.queueIndex = 0; // map to first queue
 		}
 	}
-	else info_real.queueFamilyIndex = selected_queue_family_index;
+	else if (info_real.queueFamilyIndex >= device_VkQueueFamilyProperties.size())
+	{
+		ILOG("Changing queue family %u to %u", info_real.queueFamilyIndex, selected_queue_family_index);
+		info_real.queueFamilyIndex = selected_queue_family_index;
+	}
 	if (reader.run)
 	{
 		wrap_vkGetDeviceQueue2(device, &info_real, &queue);
@@ -2132,7 +2136,11 @@ void retrace_vkGetDeviceQueue(lava_file_reader& reader)
 			queueIndex = 0; // map to first queue
 		}
 	}
-	else queueFamilyIndex = selected_queue_family_index;
+	else if (queueFamilyIndex >= device_VkQueueFamilyProperties.size())
+	{
+		ILOG("Changing queue family %u to %u", queueFamilyIndex, selected_queue_family_index);
+		queueFamilyIndex = selected_queue_family_index;
+	}
 	if (reader.run)
 	{
 		wrap_vkGetDeviceQueue(device, queueFamilyIndex, queueIndex, &queue);
