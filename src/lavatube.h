@@ -159,6 +159,7 @@ struct trackeddevice : trackable
 	/// Trust host to notify us about memory updates?
 	bool explicit_host_updates = false;
 
+	std::unordered_set<std::string> requested_device_extensions; // from app to tool
 	std::unordered_set<std::string> enabled_device_extensions; // from replay tool to driver
 };
 

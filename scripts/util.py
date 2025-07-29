@@ -1122,6 +1122,12 @@ def save_add_pre(name): # need to include the resource-creating or resource-dest
 
 	if name == 'vkCreateSwapchainKHR': # TBD: also do vkCreateSharedSwapchainsKHR
 		z.init('pCreateInfo->minImageCount = num_swapchains();')
+	elif name == 'vkCreateDevice':
+		z.declarations.insert(0, 'std::unordered_set<std::string> requested_device_extensions;')
+		z.declarations.insert(1, 'for (unsigned i = 0; i < pCreateInfo->enabledExtensionCount; i++) requested_device_extensions.insert(pCreateInfo->ppEnabledExtensionNames[i]);')
+		z.declarations.insert(2, 'bool explicit_host_updates = false;')
+		z.declarations.insert(3, 'VkPhysicalDeviceExplicitHostUpdatesFeaturesARM* pdehuf = (VkPhysicalDeviceExplicitHostUpdatesFeaturesARM*)find_extension(pCreateInfo, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXPLICIT_HOST_UPDATES_FEATURES_ARM);')
+		z.declarations.insert(4, 'if (requested_device_extensions.count(VK_ARM_EXPLICIT_HOST_UPDATES_EXTENSION_NAME) && pdehuf && pdehuf->explicitHostUpdates == VK_TRUE) explicit_host_updates = true;')
 
 def save_add_tracking(name):
 	z = getspool()
@@ -1248,6 +1254,8 @@ def save_add_tracking(name):
 			z.do('add->info = *pCreateInfo;')
 		elif type == 'VkDevice':
 			z.do('add->physicalDevice = physicalDevice;')
+			z.do('add->explicit_host_updates = explicit_host_updates;')
+			z.do('add->requested_device_extensions = requested_device_extensions;')
 		elif type == 'VkAccelerationStructureKHR':
 			z.do('add->type = pCreateInfo->type;')
 			z.do('add->offset = pCreateInfo->offset;')

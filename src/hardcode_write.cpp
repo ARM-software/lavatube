@@ -983,10 +983,8 @@ static void trace_pre_vkCreateDevice(VkPhysicalDevice physicalDevice, VkDeviceCr
 
 	// -- Modify app request --
 
-	bool has_VK_EXT_tooling_info = false;
 	bool add_VK_KHR_external_memory = false;
 	bool add_VK_EXT_external_memory_host = false;
-	bool has_VK_EXT_frame_boundary = false;
 	uint32_t propertyCount = 0;
 	[[maybe_unused]] VkResult result = wrap_vkEnumerateDeviceExtensionProperties(physicalDevice, nullptr, &propertyCount, nullptr); // call first to get correct count on host
 	assert(result == VK_SUCCESS);
@@ -996,10 +994,8 @@ static void trace_pre_vkCreateDevice(VkPhysicalDevice physicalDevice, VkDeviceCr
 	for (const auto &ext : tmp_device_extension_properties)
 	{
 		std::string name = ext.extensionName;
-		if (name == VK_EXT_TOOLING_INFO_EXTENSION_NAME) has_VK_EXT_tooling_info = true;
 		if (name == VK_KHR_EXTERNAL_MEMORY_EXTENSION_NAME) add_VK_KHR_external_memory = true;
 		if (name == VK_EXT_EXTERNAL_MEMORY_HOST_EXTENSION_NAME) add_VK_EXT_external_memory_host = true;
-		if (name == VK_EXT_FRAME_BOUNDARY_EXTENSION_NAME) has_VK_EXT_frame_boundary = true;
 	}
 
 	// Extra extensions to add
@@ -1022,7 +1018,11 @@ static void trace_pre_vkCreateDevice(VkPhysicalDevice physicalDevice, VkDeviceCr
 		if (strcmp(name, VK_TRACETOOLTEST_OBJECT_PROPERTY_EXTENSION_NAME) == 0) continue; // do not pass to host
 		if (strcmp(name, VK_ARM_TRACE_HELPERS_EXTENSION_NAME) == 0) continue; // do not pass to host
 		if (strcmp(name, VK_ARM_TRACE_DESCRIPTOR_BUFFER_EXTENSION_NAME) == 0) continue; // do not pass to host
-		if (strcmp(name, VK_ARM_EXPLICIT_HOST_UPDATES_EXTENSION_NAME) == 0) continue; // do not pass to host
+		if (strcmp(name, VK_ARM_EXPLICIT_HOST_UPDATES_EXTENSION_NAME) == 0) // do not pass to host
+		{
+			purge_extension_parent(pCreateInfo, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXPLICIT_HOST_UPDATES_FEATURES_ARM); // we need to consume it, driver will not understand
+			continue;
+		}
 		if (strcmp(name, VK_TRACETOOLTEST_TRACE_HELPERS2_EXTENSION_NAME) == 0) continue; // do not pass to host
 		if (!physicaldevice_data->supported_device_extensions.count(VK_EXT_FRAME_BOUNDARY_EXTENSION_NAME) && strcmp(name, VK_EXT_FRAME_BOUNDARY_EXTENSION_NAME) == 0) // do not pass to host
 		{
@@ -1060,18 +1060,6 @@ static void trace_post_vkCreateDevice(lava_file_writer& writer, VkResult result,
 	for (unsigned i = 0; i < pCreateInfo->enabledExtensionCount; i++)
 	{
 		device_data->enabled_device_extensions.insert(pCreateInfo->ppEnabledExtensionNames[i]);
-	}
-
-	for (const auto& name : instance.meta.app.device_extensions) // go through app requested extensions
-	{
-		if (name == VK_ARM_EXPLICIT_HOST_UPDATES_EXTENSION_NAME)
-		{
-			VkPhysicalDeviceExplicitHostUpdatesFeaturesARM* pdehuf = (VkPhysicalDeviceExplicitHostUpdatesFeaturesARM*)find_extension(pCreateInfo, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXPLICIT_HOST_UPDATES_FEATURES_ARM);
-			if (pdehuf && pdehuf->explicitHostUpdates == VK_TRUE)
-			{
-				device_data->explicit_host_updates = true;
-			}
-		}
 	}
 
 	// -- Save information on tracing device --
