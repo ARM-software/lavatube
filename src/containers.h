@@ -13,7 +13,6 @@
 #include <stdint.h>
 #include <memory>
 #include <mutex>
-#include <unordered_map>
 #include <map>
 
 #include "tbb/concurrent_unordered_map.h"
@@ -32,6 +31,21 @@ struct change_source
 		assert(call_id != UINT16_MAX);
 		assert(frame != UINT32_MAX);
 	}
+};
+
+/// Defining the minimum interface to a concurrent map that we need.
+template<typename T, typename U>
+struct concurrent_unordered_map
+{
+public:
+	U at(T key) const { return map.at(key); } // must be fast
+	void clear() { map.clear(); } // can be unsafe
+	void insert(T key, U value) { map[key] = value; }
+	int count(T key) const { return map.count(key); }
+	unsigned size() const { return map.size(); }
+
+private:
+	tbb::concurrent_unordered_map<T, U> map;
 };
 
 /// Limited thread safe remapping allocator for memory addresses used for replay. The payload needs to
@@ -194,7 +208,7 @@ public:
 		assert(remapping.at(index) == 0);
 		assert(handle != 0);
 		remapping[index] = handle;
-		reverse[handle] = index;
+		reverse.insert(handle, index);
 	}
 
 	/// Needed in some rare cases. Caller must make sure nobody else calls this on the
@@ -202,7 +216,7 @@ public:
 	inline void replace(uint32_t index, T handle)
 	{
 		remapping[index] = handle;
-		reverse[handle] = index;
+		reverse.insert(handle, index);
 	}
 
 	inline T at(uint32_t index) const
@@ -229,7 +243,7 @@ public:
 	{
 		if (index == CONTAINER_NULL_VALUE) return;
 		assert(remapping.at(index) != 0);
-		reverse[remapping.at(index)] = 0;
+		reverse.insert(remapping.at(index), 0);
 		remapping[index] = 0;
 	}
 
@@ -246,21 +260,7 @@ public:
 
 private:
 	std::vector<T> remapping;
-	std::unordered_map<T, uint32_t> reverse;
-};
-
-/// Defining the minimum interface to a concurrent map that we need.
-template<typename T, typename U>
-struct concurrent_unordered_map
-{
-public:
-	U at(T key) const { return map.at(key); } // must be fast
-	void clear() { map.clear(); } // can be unsafe
-	void insert(T key, U value) { map[key] = value; }
-	int count(T key) const { return map.count(key); }
-
-private:
-	tbb::concurrent_unordered_map<T, U> map;
+	concurrent_unordered_map<T, uint32_t> reverse;
 };
 
 template<typename T, typename U>
