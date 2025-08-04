@@ -22,7 +22,7 @@ struct range
 {
 	uint64_t first;
 	uint64_t last;
-	inline bool operator==(const range& rhs) { return first == rhs.first && last == rhs.last; }
+	inline bool operator==(const range& rhs) const { return first == rhs.first && last == rhs.last; }
 };
 
 struct exposure

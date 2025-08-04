@@ -27,8 +27,10 @@ static void usage()
 	printf("-h/--help              This help\n");
 	printf("-v/--verbose           Verbose output\n");
 	printf("-V/--validate          Validate the input trace, abort with an error if anything amiss found instead of just reporting on it\n");
+#ifndef NDEBUG
 	printf("-d/--debug level       Set debug level [0,1,2,3]\n");
 	printf("-o/--debugfile FILE    Output debug output to the given file\n");
+#endif
 	printf("-f/--frames start end  Select a frame range\n");
 	printf("-r/--remap-validate    Validate existing device address remappings - abort if we find less or more addresses than already marked\n");
 	printf("-u/--unused            Find any found unused features and extensions in the trace file; remove them from the output file\n");

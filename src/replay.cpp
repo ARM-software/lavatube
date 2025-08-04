@@ -24,9 +24,11 @@ static void usage()
 {
 	printf("lava-replay %d.%d.%d-" RELTYPE " command line options\n", LAVATUBE_VERSION_MAJOR, LAVATUBE_VERSION_MINOR, LAVATUBE_VERSION_PATCH);
 	printf("-h/--help              This help\n");
+#ifndef NDEBUG
 	printf("-d/--debug level       Set debug level [0,1,2,3]\n");
-	printf("-g/--gpu gpu           Select physical device to use (by index value)\n");
 	printf("-o/--debugfile FILE    Output debug output to the given file\n");
+#endif
+	printf("-g/--gpu gpu           Select physical device to use (by index value)\n");
 	printf("-V/--validate          Enable validation layers\n");
 	printf("-f/--frames start end  Select a frame range\n");
 	//printf("-p/--preload           Load entire selected frame range into memory before running it\n");
@@ -94,12 +96,14 @@ static void replay_thread(int thread_id)
 		}
 		else if (instrtype == PACKET_IMAGE_UPDATE)
 		{
+			DLOG2("Update image packet on thread %d", thread_id);
 			const uint32_t device_index = t.read_handle();
 			const uint32_t image_index = t.read_handle();
 			image_update(t, device_index, image_index);
 		}
 		else if (instrtype == PACKET_BUFFER_UPDATE)
 		{
+			DLOG2("Update buffer packet on thread %d", thread_id);
 			const uint32_t device_index = t.read_handle();
 			const uint32_t buffer_index = t.read_handle();
 			buffer_update(t, device_index, buffer_index);

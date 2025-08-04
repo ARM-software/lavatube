@@ -231,7 +231,7 @@ inline void lava_file_reader::read_barrier()
 		DLOG3("Thread barrier on thread %d, waiting for call %u on thread %d / %u", current.thread, call, i, size - 1);
 		while (i != current.thread && call > parent->thread_call_numbers->at(i).load(std::memory_order_relaxed)) usleep(1);
 	}
-	DLOG2("Passed thread barrier on thread %d, waited for %u threads", current.thread, size);
+	DLOG2("[t%02d] Passed thread barrier, waited for %u threads", (int)current.thread, size);
 }
 
 inline uint32_t lava_file_reader::read_handle()
@@ -239,7 +239,7 @@ inline uint32_t lava_file_reader::read_handle()
 	const uint32_t index = read_uint32_t();
 	const int req_thread = read_int8_t();
 	const uint16_t req_call = read_uint16_t();
-	DLOG3("%u : read handle idx=%u tid=%d call=%u", current.thread, (unsigned)index, (int)req_thread, (unsigned)req_call);
+	DLOG3("[t%02d] read handle idx=%u tid=%d call=%u", (int)current.thread, (unsigned)index, (int)req_thread, (unsigned)req_call);
 	if (req_thread < 0 || req_thread == (int)current.thread) return index;
 	// check for thread dependency, if we need a resource not provided yet, spin until it is
 	int currentcall = parent->thread_call_numbers->at(req_thread).load(std::memory_order_relaxed);

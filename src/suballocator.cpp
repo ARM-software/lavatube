@@ -513,9 +513,17 @@ void suballocator_private::suballoc_print(FILE* fp)
 {
 	fprintf(fp, "SUBALLOCATOR CONTENTS\n");
 	fprintf(fp, "Images:\n");
-	int i = 0; for (const lookup& l : image_lookup) fprintf(fp, "\t%d: home=%p offset=%lu size=%lu\n", i++, l.home, (unsigned long)l.offset, (unsigned long)l.size);
+	int i = 0; for (const lookup& l : image_lookup)
+	{
+		if (l.home == nullptr && l.size == 0) continue;
+		fprintf(fp, "\t%d: home=%p offset=%lu size=%lu\n", i++, l.home, (unsigned long)l.offset, (unsigned long)l.size);
+	}
 	fprintf(fp, "Buffers:\n");
-	i = 0; for (const lookup& l : buffer_lookup) fprintf(fp, "\t%d: home=%p offset=%lu size=%lu\n", i++, l.home, (unsigned long)l.offset, (unsigned long)l.size);
+	i = 0; for (const lookup& l : buffer_lookup)
+	{
+		if (l.home == nullptr && l.size == 0) continue;
+		fprintf(fp, "\t%d: home=%p offset=%lu size=%lu\n", i++, l.home, (unsigned long)l.offset, (unsigned long)l.size);
+	}
 	fprintf(fp, "Heaps:\n");
 	for (const heap& h : heaps)
 	{
