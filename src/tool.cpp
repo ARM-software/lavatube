@@ -13,6 +13,7 @@
 #include "read.h"
 #include "packfile.h"
 #include "util_auto.h"
+#include "sandbox.h"
 
 static bool validate = false;
 static bool verbose = false;
@@ -76,6 +77,8 @@ static Json::Value readJson(const std::string& filename, const std::string packe
 
 static void replay_thread(lava_reader* replayer, int thread_id)
 {
+	const char* err = sandbox_replay_start();
+	if (err) WLOG("Warning: Failed to change sandbox to replay mode: %s", err);
 	lava_file_reader& t = replayer->file_reader(thread_id);
 	uint8_t instrtype;
 	assert(t.run == false);
@@ -232,6 +235,9 @@ int main(int argc, char **argv)
 	}
 
 	if (!filename_output.empty()) DIE("Output file support still to be done!");
+
+	const char* err = sandbox_tool_init();
+	if (err) WLOG("Warning: Failed to initialize sandbox: %s", err);
 
 	std::list<address_rewrite> rewrite_queue_copy;
 

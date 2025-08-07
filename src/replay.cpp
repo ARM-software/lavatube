@@ -18,7 +18,6 @@
 #include "sandbox.h"
 
 static lava_reader replayer;
-static bool no_sandbox = false;
 
 static void usage()
 {
@@ -46,7 +45,6 @@ static void usage()
 	printf("-N/--no-anisotropy     Disable any use of sampler anisotropy\n");
 	printf("-B/--blackhole         Do not actually submit any work to the GPU. May be useful for CPU measurements.\n");
 	printf("-nm/--no-multithread   Do not do decompression and file read in a separate thread. May save some CPU load and memory.\n");
-	printf("-ns/--no-sandbox       Do not run inside a compartmentalized sandbox mode for security.\n");
 	exit(-1);
 }
 
@@ -115,11 +113,8 @@ static void replay_thread(int thread_id)
 
 static void run_multithreaded(int n)
 {
-	if (!no_sandbox)
-	{
-		const char* err = sandbox_replay_start();
-		if (err) WLOG("Warning: Failed to change sandbox to replay mode: %s", err);
-	}
+	const char* err = sandbox_replay_start();
+	if (err) WLOG("Warning: Failed to change sandbox to replay mode: %s", err);
 
 	for (int i = 0; i < n; i++)
 	{
@@ -244,10 +239,6 @@ int main(int argc, char **argv)
 		{
 			p__disable_multithread_read = 1;
 		}
-		else if (match(argv[i], "-ns", "--no-sandbox", remaining))
-		{
-			no_sandbox = true;
-		}
 		else if (match(argv[i], "-w", "--wsi", remaining))
 		{
 			std::string wsi = get_str(argv[++i], remaining);
@@ -283,11 +274,8 @@ int main(int argc, char **argv)
 	if (p__realimages > 0 && !p__virtualswap) DIE("Setting the number of virtual images can only be done with a virtual swapchain!");
 	if (p__realpresentmode != VK_PRESENT_MODE_MAX_ENUM_KHR && !p__virtualswap) DIE("Changing present mode can only be used with a virtual swapchain!");
 
-	if (!no_sandbox)
-	{
-		const char* err = sandbox_tool_init();
-		if (err) WLOG("Warning: Failed to initialize sandbox: %s", err);
-	}
+	const char* err = sandbox_tool_init();
+	if (err) WLOG("Warning: Failed to initialize sandbox: %s", err);
 
 	if (filename.empty())
 	{

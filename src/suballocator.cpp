@@ -223,9 +223,9 @@ suballoc_location suballocator_private::add_object_new(VkDevice device, uint16_t
 	h.subs.push_back(s);
 	DLOG2("allocating new memory pool with size = %lu, free = %lu (memoryTypeIndex=%u, tiling=%u)", (unsigned long)info.allocationSize,
 	      (unsigned long)h.free, (unsigned)memoryTypeIndex, (unsigned)tiling);
-	heaps.push_back(h);
+	auto it = heaps.push_back(h);
 	s.offset = 0;
-	bind(heaps.back(), s);
+	bind(*it, s);
 	return { h.mem, 0, s.size, true, needs_flush(memoryTypeIndex) };
 }
 
@@ -316,13 +316,13 @@ bool suballocator_private::fill_image_memreq(VkDevice device, VkImage image, VkM
 	if (!run) { req.memoryRequirements.size = size; req.memoryRequirements.alignment = 1; req.memoryRequirements.memoryTypeBits = 1; return false; }
 	assert(run);
 	req.sType = VK_STRUCTURE_TYPE_MEMORY_REQUIREMENTS_2;
-	VkMemoryDedicatedRequirements dedicated = { VK_STRUCTURE_TYPE_MEMORY_DEDICATED_REQUIREMENTS, nullptr, VK_TRUE, VK_FALSE };
+	VkMemoryDedicatedRequirements dedicated = { VK_STRUCTURE_TYPE_MEMORY_DEDICATED_REQUIREMENTS, nullptr, VK_FALSE, VK_FALSE };
 	if (use_dedicated_allocation())
 	{
 		VkImageMemoryRequirementsInfo2 info = {};
 		info.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_REQUIREMENTS_INFO_2;
 		info.image = image;
-		req.pNext = &dedicated;
+		if (use_dedicated_allocation()) req.pNext = &dedicated;
 		wrap_vkGetImageMemoryRequirements2(device, &info, &req);
 	}
 	else
