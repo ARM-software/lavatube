@@ -31,13 +31,6 @@ using lava_trace_func = PFN_vkVoidFunction;
 
 #define LAVATUBE_VIRTUAL_QUEUE 0xbeefbeef
 
-/// pending memory checking, wait on fence
-enum QueueState
-{
-	QUEUE_STATE_NONE = 0,
-	QUEUE_STATE_PENDING_EVENTS = 2,
-};
-
 enum
 {
 	PACKET_VULKAN_API_CALL = 2,

@@ -98,6 +98,7 @@ void file_writer::finalize()
 	}
 	// whatever is left in our current buffer, move to work list
 	chunk_mutex.lock();
+	assert(held_chunks.size() == 0);
 	printf("Filewriter finalizing thread %u: %lu total bytes, %lu in last chunk, %d uncompressed chunks, and %d compressed chunks to be written out\n",
 	       mTid, (unsigned long)uncompressed_bytes, (unsigned long)uidx, (int)uncompressed_chunks.size(), (int)compressed_chunks.size());
 	chunk.shrink(uidx);

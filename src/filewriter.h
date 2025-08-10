@@ -22,7 +22,11 @@ class file_writer
 		chunk.shrink(uidx);
 
 		// move chunk into list of chunks to compress
-		if (multithreaded_compress)
+		if (holding)
+		{
+			held_chunks.push_front(chunk);
+		}
+		else if (multithreaded_compress)
 		{
 			chunk_mutex.lock();
 			uncompressed_chunks.push_front(chunk);
@@ -137,6 +141,27 @@ public:
 	inline void write_float(float value) { uint32_t t; memcpy(&t, &value, sizeof(uint32_t)); write_uint32_t(t); }
 	inline void write_double(double value) { uint64_t t; memcpy(&t, &value, sizeof(uint64_t)); write_uint64_t(t); }
 
+	template <typename T> inline T* write_value_later(T value) // delayed write, for single value only
+	{
+		check_space(sizeof(T));
+		freeze(); // just in case it is not already
+		char* uptr = chunk.data() + uidx; // pointer into current uncompressed chunk
+		DLOG3("%d : write value of size %u (value %lu) and returning pointer %p to it", mTid, (unsigned)sizeof(T), (unsigned long)value, uptr);
+		memcpy(uptr, &value, sizeof(T)); // avoids aliasing issues
+		uidx += sizeof(T);
+		assert(uidx <= chunk.size());
+		uncompressed_bytes += sizeof(T);
+		return (T*)uptr;
+	}
+	inline uint8_t* write_later_uint8_t(uint8_t value = 0) { return write_value_later(value); }
+	inline uint16_t* write_later_uint16_t(uint16_t value = 0) { return write_value_later(value); }
+	inline uint32_t* write_later_uint32_t(uint32_t value = 0) { return write_value_later(value); }
+	inline uint64_t* write_later_uint64_t(uint64_t value = 0) { return write_value_later(value); }
+	inline int8_t* write_later_int8_t(int8_t value = 0) { return write_value_later(value); }
+	inline int16_t* write_later_int16_t(int16_t value = 0) { return write_value_later(value); }
+	inline int32_t* write_later_int32_t(int32_t value = 0) { return write_value_later(value); }
+	inline int64_t* write_later_int64_t(int64_t value = 0) { return write_value_later(value); }
+
 	/// Write out diff of memory area. Returns number of bytes written out.
 	uint64_t write_patch(char* __restrict__ orig, const char* __restrict__ chng, uint32_t offset, uint64_t size); // returns bytes changed
 	void write_memory(const char* const ptr, uint64_t offset, uint64_t size);
@@ -163,18 +188,35 @@ public:
 		chunk_mutex.unlock();
 	}
 
-	void self_test() const
+	void self_test()
 	{
+		chunk_mutex.lock();
 		if (done_compressing.load()) assert(done_feeding.load());
+		if (!holding) assert(held_chunks.size() == 0);
+		chunk_mutex.unlock();
 	}
 
 protected:
 	uint64_t uncompressed_bytes = 0; // total amount of uncompressed bytes written so far
-	uint64_t checkpoint_bytes = 0; // bytes at freeze checkpoint
 
 public:
-	inline void freeze() { checkpoint_bytes = uncompressed_bytes; }
-	inline uint64_t thaw() const { return uncompressed_bytes - checkpoint_bytes; }
+	/// Stop sending packets to compression, useful if you want to keep pointers to written memory to keep working
+	inline void freeze() { if (!holding) holding = true; }
+
+	/// Start compressing packets again, any pointers to written data must now be assumed invalid
+	inline void thaw()
+	{
+		if (!holding) return;
+		chunk_mutex.lock();
+		uncompressed_chunks.splice(uncompressed_chunks.begin(), held_chunks);
+		chunk_mutex.unlock();
+		holding = false;
+	}
+
+	// These are for test writing
+	int count_held_chunks() { int r; chunk_mutex.lock(); r = held_chunks.size(); chunk_mutex.unlock(); return r; }
+	int count_uncompressed_chunks() { int r; chunk_mutex.lock(); r = uncompressed_chunks.size(); chunk_mutex.unlock(); return r; }
+	int count_compressed_chunks() { int r; chunk_mutex.lock(); r = compressed_chunks.size(); chunk_mutex.unlock(); return r; }
 
 private:
 	void compressor(); // runs in separate thread, moves chunks from uncompressed to compressed
@@ -185,12 +227,14 @@ private:
 	int mTid = -1; // only used for logging
 	bool multithreaded_compress = true;
 	bool multithreaded_write = true;
+	bool holding = false;
 	lava::mutex chunk_mutex;
 	FILE* fp = nullptr;
 	size_t uncompressed_chunk_size = 1024 * 1024 * 64; // use 64mb chunks by default
 	unsigned uidx = 0; // index into current uncompressed chunk
 	buffer chunk; // current uncompressed chunk
 	/// the first chunk in this list is current, the rest are waiting for compression
+	std::list<buffer> held_chunks;
 	std::list<buffer> uncompressed_chunks GUARDED_BY(chunk_mutex);
 	std::list<buffer> compressed_chunks GUARDED_BY(chunk_mutex);
 	std::atomic_bool done_feeding;

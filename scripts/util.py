@@ -1845,11 +1845,6 @@ def savefunc(name, node, target, header):
 			z.do('if (retval == VK_SUCCESS || retval == VK_SUBOPTIMAL_KHR) writer.push_thread_barriers();')
 		else:
 			z.do('writer.push_thread_barriers();')
-	if debugstats:
-		z.do('__atomic_add_fetch(&bytes_%s, writer.thaw(), __ATOMIC_RELAXED);' % name)
-		z.do('__atomic_add_fetch(&calls_%s, 1, __ATOMIC_RELAXED);' % name)
-		z.do('__atomic_add_fetch(&setup_time_%s, gettime() - startTime - apiTime, __ATOMIC_RELAXED);' % name)
-		z.do('__atomic_add_fetch(&vulkan_time_%s, apiTime, __ATOMIC_RELAXED);' % name)
 	if name in trace_post_calls: # hard-coded post handling, must be last
 		if retval != 'void':
 			z.do('if (writer.run) trace_post_%s(writer, retval, %s);' % (name, ', '.join(call_list)))
@@ -1860,6 +1855,13 @@ def savefunc(name, node, target, header):
 		z.do('check_%s(%s);' % (name, ', '.join(call_list)))
 	elif name == 'vkBeginCommandBuffer': # special case for above, need to add the level param
 		z.do('special_vkBeginCommandBuffer(commandBuffer, pBeginInfo, commandbuffer_data->level);')
+
+	if debugstats:
+		z.do('__atomic_add_fetch(&calls_%s, 1, __ATOMIC_RELAXED);' % name)
+		z.do('__atomic_add_fetch(&setup_time_%s, gettime() - startTime - apiTime, __ATOMIC_RELAXED);' % name)
+		z.do('__atomic_add_fetch(&vulkan_time_%s, apiTime, __ATOMIC_RELAXED);' % name)
+	else:
+		z.do('writer.thaw();')
 
 	if retval != 'void':
 		z.do('// -- Return --')

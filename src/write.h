@@ -194,7 +194,7 @@ public:
 
 	std::atomic_bool pending_barrier { false };
 
-	void self_test() const
+	void self_test()
 	{
 		assert(parent != nullptr);
 		file_writer::self_test();
@@ -243,6 +243,10 @@ public:
 	/// We cannot allow the app to map or unmap memory while we are scanning it
 	lava::mutex memory_mutex;
 
+	void self_test() const
+	{
+	}
+
 private:
 	int mAsVersion = -1;
 	std::string mPath;
@@ -255,7 +259,6 @@ private:
 
 inline void lava_file_writer::write_api_command(uint16_t id)
 {
-	freeze();
 	device = VK_NULL_HANDLE;
 	physicalDevice = VK_NULL_HANDLE;
 	commandBuffer = VK_NULL_HANDLE;

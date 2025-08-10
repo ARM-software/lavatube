@@ -19,6 +19,7 @@ static std::atomic_int read_tid;
 static void write_test_stress()
 {
 	lava_file_writer& file = writer.file_writer();
+	file.self_test();
 	for (int i = 0; i < 200; i++)
 	{
 		file.write_uint64_t(0xffe0ffe0);
@@ -27,6 +28,7 @@ static void write_test_stress()
 		file.write_array(data.data(), data.size());
 		file.write_string("supercalifragilisticexpialidocious");
 	}
+	file.self_test();
 }
 
 static void write_test(const char* name, int num_threads)
@@ -46,6 +48,7 @@ static void write_test(const char* name, int num_threads)
 	threads.clear();
 	writer.serialize();
 	writer.finish();
+	writer.self_test();
 }
 
 static void read_test_stress()

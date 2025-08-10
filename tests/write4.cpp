@@ -9,7 +9,7 @@
 
 #include "tests/tests.h"
 
-void write_test_1()
+static void write_test_1()
 {
 	std::vector<uint64_t> val64s = { 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19 };
 	std::vector<uint16_t> big(65535, 99);
@@ -63,7 +63,7 @@ void write_test_1()
 	assert(big.at(80) == 78);
 }
 
-void write_test_2()
+static void write_test_2()
 {
 	file_writer file(0);
 	file.write_uint8_t(8);
@@ -75,7 +75,7 @@ void write_test_2()
 	file.write_int8_t(8);
 }
 
-void write_test_3()
+static void write_test_3()
 {
 	file_writer file(0);
 	file.write_uint8_t(8);
@@ -84,10 +84,50 @@ void write_test_3()
 	file.write_uint64_t(64);
 }
 
+static void write_test_4()
+{
+	std::vector<uint16_t> big(5000, 99);
+	file_writer file(0);
+
+	assert(file.count_held_chunks() == 0);
+	assert(file.count_compressed_chunks() == 0);
+	assert(file.count_uncompressed_chunks() == 0);
+	file.change_default_chunk_size(500);
+	file.set("write_4_4.bin");
+	uint8_t* p8 = file.write_later_uint8_t(8);
+	uint16_t* p16 = file.write_later_uint16_t(16);
+	uint32_t* p32 = file.write_later_uint32_t(32);
+	uint64_t* p64 = file.write_later_uint64_t(64);
+	assert(*p8 == 8);
+	assert(*p16 == 16);
+	assert(*p32 == 32);
+	assert(*p64 == 64);
+	file.write_array(big.data(), big.size()); // blow out current chunk
+	uint64_t* p64_2 = file.write_later_uint64_t();
+	assert(*p64_2 == 0);
+	*p64_2 = 65;
+	file.write_array(big.data(), big.size());
+	file.write_uint64_t(64);
+	assert(*p8 == 8);
+	assert(*p16 == 16);
+	assert(*p32 == 32);
+	assert(*p64 == 64);
+	assert(*p64_2 == 65);
+	*p8 = 1;
+	*p16 = 2;
+	*p32 = 3;
+	*p64 = 4;
+	assert(file.count_compressed_chunks() == 0);
+	assert(file.count_uncompressed_chunks() == 0);
+	file.thaw();
+	assert(file.count_held_chunks() == 0);
+}
+
 int main()
 {
 	write_test_1();
 	write_test_2();
 	write_test_3();
+	write_test_4();
 	return 0;
 }

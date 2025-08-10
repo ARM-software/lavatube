@@ -434,9 +434,6 @@ static bool getnext(lava_file_reader& t)
 	else if (instrtype == PACKET_IMAGE_UPDATE)
 	{
 		assert(false); // should not happen here!
-		const uint32_t device_index = t.read_handle();
-		const uint32_t image_index = t.read_handle();
-		image_update(t, device_index, image_index);
 	}
 	else if (instrtype == PACKET_BUFFER_UPDATE)
 	{
