@@ -84,11 +84,11 @@ static void replay_thread(lava_reader* replayer, int thread_id)
 	assert(t.run == false);
 	if (verbose)
 	{
-		for (const auto pair : replayer->device_address_remapping.iter())
+		for (const auto& pair : replayer->device_address_remapping.iter())
 		{
 			ILOG("Device address range %lu -> %lu", (unsigned long)pair.first, (unsigned long)(pair.first + pair.second->size));
 		}
-		for (const auto pair : replayer->acceleration_structure_address_remapping.iter())
+		for (const auto& pair : replayer->acceleration_structure_address_remapping.iter())
 		{
 			ILOG("Acceleration structure address range %lu -> %lu", (unsigned long)pair.first, (unsigned long)(pair.first + pair.second->size));
 		}

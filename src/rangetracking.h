@@ -2,21 +2,13 @@
 
 // Dirty range tracking
 
+#include <algorithm>
 #include <assert.h>
 #include <stdint.h>
 #include <stdlib.h>
 
 #include <list>
 #include <utility>
-
-// Once we have c++17 support, we can include the below header and remove our home-made clamp() in favour of std::clamp()
-//#include <algorithm>
-template<typename T>
-static inline T clamp(T d, T min, T max)
-{
-	const T t = d < min ? min : d;
-	return t > max ? max : t;
-}
 
 struct range
 {
@@ -101,8 +93,8 @@ struct exposure
 			if (s.first > end) break;
 			else if ((s.last >= start && s.last <= end) || (s.first <= end && s.first >= start) || (s.first < start && s.last > end))
 			{
-				a = clamp(s.first, start, a);
-				b = clamp(s.last, b, end);
+				a = std::clamp(s.first, start, a);
+				b = std::clamp(s.last, b, end);
 				assert(s.last > 0);
 				if (is_mapped)
 				{

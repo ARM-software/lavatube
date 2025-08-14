@@ -24,7 +24,7 @@ IF(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
 ENDIF(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
 
 if (NOT DEFINED CMAKE_CXX_STANDARD)
-    set(CMAKE_CXX_STANDARD 17)
+    set(CMAKE_CXX_STANDARD 20)
 endif()
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_CXX_VISIBILITY_PRESET hidden)
@@ -99,7 +99,7 @@ target_link_libraries(density ${SANITIZER})
 find_package(TBB REQUIRED HINTS /usr/lib/x86_64-linux-gnu/cmake/TBB /usr/aarch64-linux-gnu/lib/cmake/TBB /usr/arm-linux-gnueabihf/lib/cmake/TBB)
 
 # Debug Release RelWithDebInfo MinSizeRel
-set(COMMON_FLAGS ${SANITIZER} -std=c++20 -Werror -Wall -fvisibility=hidden ${XCB_ENABLE} -Wshadow)
+set(COMMON_FLAGS ${SANITIZER} -Werror -Wall -fvisibility=hidden ${XCB_ENABLE} -Wshadow)
 if(CMAKE_BUILD_TYPE STREQUAL "Debug" OR NOT CMAKE_BUILD_TYPE)
 	set(COMMON_FLAGS ${COMMON_FLAGS} -ggdb -O0 -fno-omit-frame-pointer -DDEBUG -DRELTYPE="debug")
 	message(STATUS "Debug build")
