@@ -27,6 +27,13 @@
 	#error No way to mark functions for export
 #endif
 
+// A way to add function parameters only to debug builds
+#ifdef DEBUG
+#define DEBUGPARAM(x) x
+#else
+DEBUGPARAM(x)
+#endif
+
 #define likely(x)   __builtin_expect((x),1)
 #define unlikely(x) __builtin_expect((x),0)
 

@@ -547,7 +547,7 @@ class parameter(object):
 			pass
 		elif self.funcname in ['VkDebugUtilsObjectNameInfoEXT', 'VkDebugUtilsObjectTagInfoEXT', 'vkSetPrivateData', 'vkSetPrivateDataEXT', 'vkGetPrivateData', 'vkGetPrivateDataEXT'] and self.name == 'objectHandle':
 			z.decl('uint64_t', 'objectHandle')
-			z.do('%s = reader.read_handle();' % varname)
+			z.do('%s = reader.read_handle(DEBUGPARAM("%s"));' % (varname, self.type))
 		elif self.type == 'VkAccelerationStructureBuildRangeInfoKHR':
 			assert(self.funcname == 'vkBuildAccelerationStructuresKHR' or self.funcname == 'vkCmdBuildAccelerationStructuresKHR')
 			z.decl(self.type + '**', self.name)
@@ -628,14 +628,14 @@ class parameter(object):
 				tmpname = toindex(self.type)
 				z.decl('uint32_t', tmpname)
 				z.decl(self.type + '*', self.name)
-				z.do('%s = reader.read_handle();' % tmpname)
+				z.do('%s = reader.read_handle(DEBUGPARAM("%s"));' % (tmpname, self.type))
 				z.do('*%s = index_to_%s.at(%s);' % (varname, self.type, tmpname))
 			else:
 				if not isptr(varname):
 					z.decl(self.type, self.name)
 				tmpname = toindex(self.type)
 				z.decl('uint32_t', tmpname)
-				z.do('%s = reader.read_handle();' % tmpname)
+				z.do('%s = reader.read_handle(DEBUGPARAM("%s"));' % (tmpname, self.type))
 				if self.type == 'VkPhysicalDevice':
 					z.do('%s = selected_physical_device;' % varname)
 				elif self.type != 'VkDeviceMemory' and not self.funcname in ignore_on_read:
@@ -1333,14 +1333,14 @@ def load_add_pre(name):
 		(param, count, type) = get_create_params(name)
 		z.decl(type, param)
 		z.decl('uint32_t', toindex(type))
-		z.do('%s = reader.read_handle();' % toindex(type))
+		z.do('%s = reader.read_handle(DEBUGPARAM("%s"));' % (toindex(type), type))
 	elif name in spec.functions_create: # multiple
 		(param, count, type) = get_create_params(name)
 		z.do('%s* %s = reader.pool.allocate<%s>(%s);' % (type, param, type, count))
 		z.do('uint32_t* indices = reader.pool.allocate<uint32_t>(%s);' % count)
 		z.do('for (unsigned i = 0; i < %s; i++)' % count)
 		z.brace_begin()
-		z.do('indices[i] = reader.read_handle();')
+		z.do('indices[i] = reader.read_handle(DEBUGPARAM("%s"));' % type)
 		z.brace_end()
 	elif name in spec.functions_destroy:
 		param = spec.functions_destroy[name][0]

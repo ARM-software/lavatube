@@ -131,7 +131,7 @@ public:
 	inline VkDescriptorDataEXT read_VkDescriptorDataEXT() { return VkDescriptorDataEXT{}; } // TBD
 	inline VkAccelerationStructureNV read_VkAccelerationStructureNV() { return VK_NULL_HANDLE; }
 
-	inline uint32_t read_handle();
+	inline uint32_t read_handle(DEBUGPARAM(const char* name = nullptr));
 	inline void read_handle_array(uint32_t* dest, uint32_t length) { for (uint32_t i = 0; i < length; i++) dest[i] = read_handle(); }
 	inline void read_barrier();
 	uint16_t read_apicall();
@@ -234,15 +234,22 @@ inline void lava_file_reader::read_barrier()
 	DLOG2("[t%02d] Passed thread barrier, waited for %u threads", (int)current.thread, size);
 }
 
-inline uint32_t lava_file_reader::read_handle()
+inline uint32_t lava_file_reader::read_handle(DEBUGPARAM(const char* name))
 {
 	const uint32_t index = read_uint32_t();
 	const int req_thread = read_int8_t();
-	const uint16_t req_call = read_uint16_t();
-	DLOG3("[t%02d] read handle idx=%u tid=%d call=%u", (int)current.thread, (unsigned)index, (int)req_thread, (unsigned)req_call);
-	if (req_thread < 0 || req_thread == (int)current.thread) return index;
+	const int req_call = read_uint16_t();
+	if (req_thread < 0 || req_thread == (int)current.thread)
+	{
+		DLOG2("[t%02d %06d] read handle %s index=%u from same thread", (int)current.thread, (int)current.call + 1, name, (unsigned)index);
+		return index;
+	}
 	// check for thread dependency, if we need a resource not provided yet, spin until it is
 	int currentcall = parent->thread_call_numbers->at(req_thread).load(std::memory_order_relaxed);
+#ifdef DEBUG
+	if (req_call <= currentcall) DLOG2("[t%02d %06d] read handle %s index=%u, was for tid=%d call=%d, it is already at call=%d", (int)current.thread, (int)current.call + 1, name, (unsigned)index, (int)req_thread, req_call, currentcall);
+	else DLOG2("[t%02d %06d] read handle %s index=%u, MUST WAIT for tid=%d call=%d, it is now at call=%d", (int)current.thread, (int)current.call + 1, name, (unsigned)index, (int)req_thread, req_call, currentcall);
+#endif
 	while (req_call > currentcall)
 	{
 		usleep(1);
