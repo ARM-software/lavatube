@@ -106,8 +106,8 @@ static bool getnext(lava_file_reader& t)
 	}
 	else if (instrtype == PACKET_BUFFER_UPDATE)
 	{
-		const uint32_t device_index = t.read_handle();
-		const uint32_t buffer_index = t.read_handle();
+		const uint32_t device_index = t.read_handle(DEBUGPARAM("VkDevice"));
+		const uint32_t buffer_index = t.read_handle(DEBUGPARAM("VkBuffer"));
 		buffer_update(t, device_index, buffer_index);
 	}
 	else if (instrtype != 0) ABORT("Unexpected packet type %d in thread %d", (int)instrtype, (int)t.thread_index());

@@ -131,8 +131,12 @@ public:
 	inline VkDescriptorDataEXT read_VkDescriptorDataEXT() { return VkDescriptorDataEXT{}; } // TBD
 	inline VkAccelerationStructureNV read_VkAccelerationStructureNV() { return VK_NULL_HANDLE; }
 
-	inline uint32_t read_handle(DEBUGPARAM(const char* name = nullptr));
+	inline uint32_t read_handle(DEBUGPARAM(const char* name));
+#ifdef DEBUG
+	inline void read_handle_array(const char* name, uint32_t* dest, uint32_t length) { for (uint32_t i = 0; i < length; i++) dest[i] = read_handle(name); }
+#else
 	inline void read_handle_array(uint32_t* dest, uint32_t length) { for (uint32_t i = 0; i < length; i++) dest[i] = read_handle(); }
+#endif
 	inline void read_barrier();
 	uint16_t read_apicall();
 

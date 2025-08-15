@@ -100,14 +100,14 @@ static void replay_thread(lava_reader* replayer, int thread_id)
 		}
 		else if (instrtype == PACKET_IMAGE_UPDATE)
 		{
-			const uint32_t device_index = t.read_handle();
-			const uint32_t image_index = t.read_handle();
+			const uint32_t device_index = t.read_handle(DEBUGPARAM("VkDevice"));
+			const uint32_t image_index = t.read_handle(DEBUGPARAM("VkImage"));
 			image_update(t, device_index, image_index);
 		}
 		else if (instrtype == PACKET_BUFFER_UPDATE)
 		{
-			const uint32_t device_index = t.read_handle();
-			const uint32_t buffer_index = t.read_handle();
+			const uint32_t device_index = t.read_handle(DEBUGPARAM("VkDevice"));
+			const uint32_t buffer_index = t.read_handle(DEBUGPARAM("VkBuffer"));
 			buffer_update(t, device_index, buffer_index);
 		}
 		t.device = VK_NULL_HANDLE;

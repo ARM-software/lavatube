@@ -611,7 +611,11 @@ class parameter(object):
 				storedname = 'indices'
 				z.decl('uint32_t*', storedname)
 				z.do('%s = reader.pool.allocate<uint32_t>(%s);' % (storedname, self.length))
+				z.do('#ifdef DEBUG')
+				z.do('reader.read_handle_array("%s", %s, %s); // read unique indices to objects' % (self.type, storedname, self.length))
+				z.do('#else')
 				z.do('reader.read_handle_array(%s, %s); // read unique indices to objects' % (storedname, self.length))
+				z.do('#endif')
 				usename = varname
 				if not isptr(varname) or self.ptr:
 					nativename = z.backing(self.type, self.name, size=self.length)
@@ -1263,7 +1267,7 @@ def save_add_tracking(name):
 			z.do('add->buffer_index = writer.parent->records.VkBuffer_index.at(pCreateInfo->buffer)->index;')
 			z.do('add->size = pCreateInfo->size;')
 			z.do('add->object_type = VK_OBJECT_TYPE_ACCELERATION_STRUCTURE_KHR;')
-		z.do('DLOG2("insert %s into %s index %%u", (unsigned)add->index);' % (type, name))
+		z.do('DLOG2("insert %s into %s index %%u at call=%%d", (unsigned)add->index, (int)writer.current.call);' % (type, name))
 		z.do('add->enter_created();')
 		z.do('writer.write_handle(add);')
 		z.brace_end()
@@ -1296,7 +1300,7 @@ def save_add_tracking(name):
 			elif name == 'PFN_vkCreateRayTracingPipelinesKHR': z.do('add->type = VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR;')
 		elif type == 'VkSwapchainKHR':
 			z.do('add->info = pCreateInfos[i];')
-		z.do('DLOG2("insert %s into %s index %%u", (unsigned)add->index);' % (type, name))
+		z.do('DLOG2("insert %s into %s index %%u call=%%d", (unsigned)add->index, (int)writer.current.call);' % (type, name))
 		z.do('add->enter_created();')
 		z.do('writer.write_handle(add);')
 		z.brace_end()
@@ -1360,7 +1364,7 @@ def load_add_tracking(name):
 	if name in spec.functions_create:
 		(param, count, type) = get_create_params(name)
 		if count == '1':
-			z.do('DLOG2("insert %s by %s index %%u", (unsigned)%s);' % (type, name, toindex(type)))
+			z.do('DLOG2("insert %s by %s index %%u call=%%d", (unsigned)%s, (int)reader.current.call);' % (type, name, toindex(type)))
 			if type == 'VkSwapchainKHR':
 				z.do('if (is_noscreen() || !reader.run) pSwapchain = fake_handle<VkSwapchainKHR>(swapchainkhr_index);')
 			else:
@@ -1392,7 +1396,7 @@ def load_add_tracking(name):
 		else: # multiple
 			z.do('for (unsigned i = 0; i < %s && retval == VK_SUCCESS; i++)' % count)
 			z.brace_begin()
-			z.do('DLOG2("insert %s into %s index %%u at pos=%%u", indices[i], i);' % (type, name))
+			z.do('DLOG2("insert %s into %s index %%u at pos=%%u call=%%d", indices[i], i, (int)reader.current.call);' % (type, name))
 			z.do('auto& data = %s_index.at(indices[i]);' % type)
 			z.do('assert(data.creation.frame == reader.current.frame);')
 			z.do('data.creation = reader.current;')

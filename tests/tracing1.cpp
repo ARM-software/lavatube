@@ -59,7 +59,7 @@ static uint32_t get_device_memory_type(uint32_t type_filter, VkMemoryPropertyFla
 static void trace_1()
 {
 	// Create instance
-	PFN_vkVoidFunction nothing = trace_vkGetInstanceProcAddr(nullptr, "nothing");
+	PFN_vkVoidFunction nothing = trace_vkGetInstanceProcAddr(nullptr, "nothing"); // not traced
 	assert(nothing == nullptr);
 	VkInstanceCreateInfo pCreateInfo = {};
 	VkInstance instance;

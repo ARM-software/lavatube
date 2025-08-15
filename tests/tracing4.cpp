@@ -437,8 +437,8 @@ static bool getnext(lava_file_reader& t)
 	}
 	else if (instrtype == PACKET_BUFFER_UPDATE)
 	{
-		const uint32_t device_index = t.read_handle();
-		const uint32_t buffer_index = t.read_handle();
+		const uint32_t device_index = t.read_handle(DEBUGPARAM("VkDevice"));
+		const uint32_t buffer_index = t.read_handle(DEBUGPARAM("VkBuffer"));
 		VkDevice device = index_to_VkDevice.at(device_index);
 		assert(buffer_index % 2 == 0); // every second buffer is target, which is off-limits
 		suballoc_location loc = t.parent->allocator.find_buffer_memory(buffer_index);

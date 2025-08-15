@@ -299,13 +299,13 @@ void retrace_vkDestroySurfaceKHR(lava_file_reader& reader)
 	// Declarations
 	VkSurfaceKHR surface;
 	// Load
-	const uint32_t instance_index = reader.read_handle();
+	const uint32_t instance_index = reader.read_handle(DEBUGPARAM("VkInstance"));
 	VkInstance instance = index_to_VkInstance.at(instance_index);
 	const uint8_t surface_opt = reader.read_uint8_t(); // whether we should load this optional value
 	uint32_t surface_index = 0;
 	if (surface_opt)
 	{
-		surface_index = reader.read_handle();
+		surface_index = reader.read_handle(DEBUGPARAM("VkSurfaceKHR"));
 		surface = index_to_VkSurfaceKHR.at(surface_index);
 		if (!is_noscreen() && reader.run)
 		{
@@ -1005,7 +1005,7 @@ void replay_pre_vkDestroyInstance(lava_file_reader& reader, VkInstance instance,
 
 void retrace_vkGetDeviceProcAddr(lava_file_reader& reader)
 {
-	const uint32_t device_index = reader.read_handle();
+	const uint32_t device_index = reader.read_handle(DEBUGPARAM("VkDevice"));
 	VkDevice device = index_to_VkDevice.at(device_index);
 	const char* pName = reader.read_string();
 	PFN_vkVoidFunction ptr = nullptr;
@@ -1014,7 +1014,7 @@ void retrace_vkGetDeviceProcAddr(lava_file_reader& reader)
 
 void retrace_vkGetInstanceProcAddr(lava_file_reader& reader)
 {
-	const uint32_t instance_index = reader.read_handle();
+	const uint32_t instance_index = reader.read_handle(DEBUGPARAM("VkInstance"));
 	VkInstance instance = index_to_VkInstance.at(instance_index);
 	const char* pName = reader.read_string();
 	PFN_vkVoidFunction ptr = nullptr;
@@ -1028,14 +1028,14 @@ void retrace_vkGetDeviceTracingObjectPropertyTRACETOOLTEST(lava_file_reader& rea
 
 void retrace_vkSyncBufferTRACETOOLTEST(lava_file_reader& reader)
 {
-	const uint32_t device_index = reader.read_handle();
-	const uint32_t buffer_index = reader.read_handle();
+	const uint32_t device_index = reader.read_handle(DEBUGPARAM("VkDevice"));
+	const uint32_t buffer_index = reader.read_handle(DEBUGPARAM("VkBuffer"));
 }
 
 void retrace_vkAssertBufferARM(lava_file_reader& reader)
 {
-	const uint32_t device_index = reader.read_handle();
-	const uint32_t buffer_index = reader.read_handle();
+	const uint32_t device_index = reader.read_handle(DEBUGPARAM("VkDevice"));
+	const uint32_t buffer_index = reader.read_handle(DEBUGPARAM("VkBuffer"));
 	const VkDeviceSize offset = reader.read_uint64_t();
 	VkDeviceSize size = reader.read_uint64_t();
 	const char* comment = reader.read_string();
@@ -1570,8 +1570,8 @@ VKAPI_ATTR void retrace_vkThreadBarrierTRACETOOLTEST(lava_file_reader& reader)
 VKAPI_ATTR void retrace_vkUpdateBufferTRACETOOLTEST(lava_file_reader& reader)
 {
 	// Read
-	const uint32_t device_index = reader.read_handle();
-	const uint32_t buffer_index = reader.read_handle();
+	const uint32_t device_index = reader.read_handle(DEBUGPARAM("VkDevice"));
+	const uint32_t buffer_index = reader.read_handle(DEBUGPARAM("VkBuffer"));
 	VkUpdateMemoryInfoARM info = {};
 	read_VkUpdateMemoryInfoARM(reader, &info);
 
@@ -1600,8 +1600,8 @@ VKAPI_ATTR void retrace_vkUpdateBufferTRACETOOLTEST(lava_file_reader& reader)
 
 VKAPI_ATTR void retrace_vkUpdateImageTRACETOOLTEST(lava_file_reader& reader)
 {
-	const uint32_t device_index = reader.read_handle();
-	const uint32_t image_index = reader.read_handle();
+	const uint32_t device_index = reader.read_handle(DEBUGPARAM("VkDevice"));
+	const uint32_t image_index = reader.read_handle(DEBUGPARAM("VkImage"));
 	VkUpdateMemoryInfoARM info = {};
 	read_VkUpdateMemoryInfoARM(reader, &info);
 
@@ -1643,8 +1643,8 @@ void read_VkUpdateMemoryInfoARM(lava_file_reader& reader, VkUpdateMemoryInfoARM*
 VKAPI_ATTR void retrace_vkCmdUpdateBuffer2ARM(lava_file_reader& reader)
 {
 	VkUpdateMemoryInfoARM info = {};
-	const uint32_t commandbuffer_index = reader.read_handle();
-	const uint32_t buffer_index = reader.read_handle();
+	const uint32_t commandbuffer_index = reader.read_handle(DEBUGPARAM("VkCommandBuffer"));
+	const uint32_t buffer_index = reader.read_handle(DEBUGPARAM("VkBuffer"));
 	VkBuffer dstBuffer = index_to_VkBuffer.at(buffer_index);
 	trackedobject& tbuf = VkBuffer_index.at(buffer_index);
 	VkCommandBuffer commandBuffer = index_to_VkCommandBuffer.at(commandbuffer_index);
@@ -1674,7 +1674,7 @@ void retrace_vkCmdBuildAccelerationStructuresIndirectKHR(lava_file_reader& reade
 	uint32_t** ppMaxPrimitiveCounts = nullptr;
 	// -- Instructions --
 	// -- Load --
-	commandbuffer_index = reader.read_handle();
+	commandbuffer_index = reader.read_handle(DEBUGPARAM("VkCommandBuffer"));
 	commandBuffer = index_to_VkCommandBuffer.at(commandbuffer_index);
 	infoCount = reader.read_uint32_t();
 	tmp_uuint8t = reader.read_uint8_t(); // whether we should load pInfos
@@ -1747,9 +1747,9 @@ static void read_VkAccelerationStructureBuildGeometryInfoKHR(lava_file_reader& r
 	sptr->type = static_cast<VkAccelerationStructureTypeKHR>(reader.read_uint32_t());
 	sptr->flags = static_cast<VkBuildAccelerationStructureFlagsKHR>(reader.read_uint32_t());
 	sptr->mode = static_cast<VkBuildAccelerationStructureModeKHR>(reader.read_uint32_t());
-	accelerationstructurekhr_index = reader.read_handle();
+	accelerationstructurekhr_index = reader.read_handle(DEBUGPARAM("VkAccelerationStructureKHR"));
 	sptr->srcAccelerationStructure = index_to_VkAccelerationStructureKHR.at(accelerationstructurekhr_index);
-	accelerationstructurekhr_index = reader.read_handle();
+	accelerationstructurekhr_index = reader.read_handle(DEBUGPARAM("VkAccelerationStructureKHR"));
 	sptr->dstAccelerationStructure = index_to_VkAccelerationStructureKHR.at(accelerationstructurekhr_index);
 	geometryCount = reader.read_uint32_t(); // indirect read because it is a count
 	sptr->geometryCount = geometryCount;
@@ -1785,8 +1785,8 @@ static void read_VkAccelerationStructureBuildGeometryInfoKHR(lava_file_reader& r
 void retrace_vkGetSwapchainImagesKHR(lava_file_reader& reader)
 {
 	VkResult result;
-	const uint32_t device_index = reader.read_handle();
-	const uint32_t swapchain_index = reader.read_handle();
+	const uint32_t device_index = reader.read_handle(DEBUGPARAM("VkDevice"));
+	const uint32_t swapchain_index = reader.read_handle(DEBUGPARAM("VkSwapchainKHR"));
 	VkDevice device = index_to_VkDevice.at(device_index);
 	const uint8_t do_call = reader.read_uint8_t();
 	const VkResult stored_retval = (VkResult)reader.read_uint32_t();
@@ -1881,7 +1881,7 @@ void retrace_vkGetSwapchainImagesKHR(lava_file_reader& reader)
 
 	for (uint32_t i = 0; i < stored_image_count; i++)
 	{
-		const uint32_t remap_index = reader.read_handle();
+		const uint32_t remap_index = reader.read_handle(DEBUGPARAM("VkImage"));
 		if (!reader.run) index_to_VkImage.set(remap_index, fake_handle<VkImage>(remap_index));
 		else if (!is_virtualswapchain()) index_to_VkImage.set(remap_index, data.pSwapchainImages[i]);
 		else index_to_VkImage.set(remap_index, data.virtual_images[i]);
@@ -1892,7 +1892,7 @@ void retrace_vkGetSwapchainImagesKHR(lava_file_reader& reader)
 
 void retrace_vkCreateAndroidSurfaceKHR(lava_file_reader& reader)
 {
-	VkInstance instance = index_to_VkInstance.at(reader.read_handle());
+	VkInstance instance = index_to_VkInstance.at(reader.read_handle(DEBUGPARAM("VkInstance")));
 	const uint32_t sType = static_cast<VkStructureType>(reader.read_uint32_t());
 	assert(sType == VK_STRUCTURE_TYPE_ANDROID_SURFACE_CREATE_INFO_KHR);
 
@@ -1913,7 +1913,7 @@ void retrace_vkCreateAndroidSurfaceKHR(lava_file_reader& reader)
 	// Execute
 	const uint32_t retval = reader.read_uint32_t();
 	(void)retval;
-	const uint32_t surface_index = reader.read_handle();
+	const uint32_t surface_index = reader.read_handle(DEBUGPARAM("VkSurfaceKHR"));
 	VkSurfaceKHR pSurface = VK_NULL_HANDLE;
 	if (!is_noscreen() && reader.run) window_create(instance, surface_index, x, y, width, height);
 	else pSurface = fake_handle<VkSurfaceKHR>(surface_index);
@@ -1923,7 +1923,7 @@ void retrace_vkCreateAndroidSurfaceKHR(lava_file_reader& reader)
 
 void retrace_vkCreateXcbSurfaceKHR(lava_file_reader& reader)
 {
-	VkInstance instance = index_to_VkInstance.at(reader.read_handle());
+	VkInstance instance = index_to_VkInstance.at(reader.read_handle(DEBUGPARAM("VkInstance")));
 	const uint32_t sType = static_cast<VkStructureType>(reader.read_uint32_t());
 	assert(sType == VK_STRUCTURE_TYPE_XCB_SURFACE_CREATE_INFO_KHR);
 
@@ -1944,7 +1944,7 @@ void retrace_vkCreateXcbSurfaceKHR(lava_file_reader& reader)
 	// Execute
 	const uint32_t retval = reader.read_uint32_t();
 	(void)retval;
-	const uint32_t surface_index = reader.read_handle();
+	const uint32_t surface_index = reader.read_handle(DEBUGPARAM("VkSurfaceKHR"));
 	VkSurfaceKHR pSurface = VK_NULL_HANDLE;
 	if (!is_noscreen() && reader.run)
 	{
@@ -1957,7 +1957,7 @@ void retrace_vkCreateXcbSurfaceKHR(lava_file_reader& reader)
 
 void retrace_vkCreateXlibSurfaceKHR(lava_file_reader& reader)
 {
-	VkInstance instance = index_to_VkInstance.at(reader.read_handle());
+	VkInstance instance = index_to_VkInstance.at(reader.read_handle(DEBUGPARAM("VkInstance")));
 	const uint32_t sType = static_cast<VkStructureType>(reader.read_uint32_t());
 	assert(sType == VK_STRUCTURE_TYPE_XLIB_SURFACE_CREATE_INFO_KHR);
 
@@ -1978,7 +1978,7 @@ void retrace_vkCreateXlibSurfaceKHR(lava_file_reader& reader)
 	// Execute
 	const uint32_t retval = reader.read_uint32_t();
 	(void)retval;
-	const uint32_t surface_index = reader.read_handle();
+	const uint32_t surface_index = reader.read_handle(DEBUGPARAM("VkSurfaceKHR"));
 	VkSurfaceKHR pSurface = VK_NULL_HANDLE;
 	if (!is_noscreen() && reader.run) pSurface = window_create(instance, surface_index, x, y, width, height);
 	else pSurface = fake_handle<VkSurfaceKHR>(surface_index);
@@ -1988,7 +1988,7 @@ void retrace_vkCreateXlibSurfaceKHR(lava_file_reader& reader)
 
 void retrace_vkCreateWaylandSurfaceKHR(lava_file_reader& reader)
 {
-	VkInstance instance = index_to_VkInstance.at(reader.read_handle());
+	VkInstance instance = index_to_VkInstance.at(reader.read_handle(DEBUGPARAM("VkInstance")));
 	const uint32_t sType = reader.read_uint32_t();
 	assert(sType == VK_STRUCTURE_TYPE_WAYLAND_SURFACE_CREATE_INFO_KHR);
 
@@ -2006,7 +2006,7 @@ void retrace_vkCreateWaylandSurfaceKHR(lava_file_reader& reader)
 	(void)reader.read_int32_t(); // reserved
 	const uint32_t retval = reader.read_uint32_t();
 	(void)retval;
-	const uint32_t surface_index = reader.read_handle();
+	const uint32_t surface_index = reader.read_handle(DEBUGPARAM("VkSurfaceKHR"));
 	VkSurfaceKHR pSurface = VK_NULL_HANDLE;
 	if (!is_noscreen() && reader.run) pSurface = window_create(instance, surface_index, x, y, width, height);
 	else pSurface = fake_handle<VkSurfaceKHR>(surface_index);
@@ -2016,7 +2016,7 @@ void retrace_vkCreateWaylandSurfaceKHR(lava_file_reader& reader)
 
 void retrace_vkCreateHeadlessSurfaceEXT(lava_file_reader& reader)
 {
-	VkInstance instance = index_to_VkInstance.at(reader.read_handle());
+	VkInstance instance = index_to_VkInstance.at(reader.read_handle(DEBUGPARAM("VkInstance")));
 	const uint32_t sType = reader.read_uint32_t();
 	assert(sType == VK_STRUCTURE_TYPE_HEADLESS_SURFACE_CREATE_INFO_EXT);
 
@@ -2043,7 +2043,7 @@ void retrace_vkCreateHeadlessSurfaceEXT(lava_file_reader& reader)
 	DLOG("window originally from headless width=%d height=%d (values taken from json)", width, height);
 	const uint32_t retval = reader.read_uint32_t();
 	(void)retval;
-	const uint32_t surface_index = reader.read_handle();
+	const uint32_t surface_index = reader.read_handle(DEBUGPARAM("VkSurfaceKHR"));
 	VkSurfaceKHR pSurface = VK_NULL_HANDLE;
 	if (!is_noscreen() && reader.run) pSurface = window_create(instance, surface_index, x, y, width, height);
 	else pSurface = fake_handle<VkSurfaceKHR>(surface_index);
@@ -2068,7 +2068,7 @@ void retrace_vkCreateMetalSurfaceEXT(lava_file_reader& reader)
 
 void retrace_vkGetDeviceQueue2(lava_file_reader& reader)
 {
-	const uint32_t device_index = reader.read_handle();
+	const uint32_t device_index = reader.read_handle(DEBUGPARAM("VkDevice"));
 	VkDevice device = index_to_VkDevice.at(device_index);
 	VkDeviceQueueInfo2 info_real = {};
 	read_VkDeviceQueueInfo2(reader, &info_real);
@@ -2096,7 +2096,7 @@ void retrace_vkGetDeviceQueue2(lava_file_reader& reader)
 		wrap_vkGetDeviceQueue2(device, &info_real, &queue);
 		assert(queue != VK_NULL_HANDLE);
 	}
-	const uint32_t stored_queue_index = reader.read_handle();
+	const uint32_t stored_queue_index = reader.read_handle(DEBUGPARAM("VkQueue"));
 	if (!index_to_VkQueue.contains(stored_queue_index))
 	{
 		index_to_VkQueue.set(stored_queue_index, queue);
@@ -2118,7 +2118,7 @@ void retrace_vkGetDeviceQueue2(lava_file_reader& reader)
 
 void retrace_vkGetDeviceQueue(lava_file_reader& reader)
 {
-	const uint32_t device_index = reader.read_handle();
+	const uint32_t device_index = reader.read_handle(DEBUGPARAM("VkDevice"));
 	VkDevice device = index_to_VkDevice.at(device_index);
 	uint32_t queueFamilyIndex = reader.read_uint32_t();
 	uint32_t queueIndex = reader.read_uint32_t();
@@ -2146,7 +2146,7 @@ void retrace_vkGetDeviceQueue(lava_file_reader& reader)
 		wrap_vkGetDeviceQueue(device, queueFamilyIndex, queueIndex, &queue);
 		assert(queue != VK_NULL_HANDLE);
 	}
-	const uint32_t stored_queue_index = reader.read_handle();
+	const uint32_t stored_queue_index = reader.read_handle(DEBUGPARAM("VkQueue"));
 	if (!index_to_VkQueue.contains(stored_queue_index))
 	{
 		index_to_VkQueue.set(stored_queue_index, queue);
@@ -2182,7 +2182,7 @@ void read_hw_buffer(lava_file_reader& reader)
 void retrace_vkGetAndroidHardwareBufferPropertiesANDROID(lava_file_reader& reader)
 {
 	// Load
-	const uint32_t device_index = reader.read_handle();
+	const uint32_t device_index = reader.read_handle(DEBUGPARAM("VkDevice"));
 
 	// Unused metadata
 	read_hw_buffer(reader);
@@ -2206,14 +2206,14 @@ void retrace_vkGetAndroidHardwareBufferPropertiesANDROID(lava_file_reader& reade
 // TBD - this needs fixing
 void retrace_vkGetMemoryAndroidHardwareBufferANDROID(lava_file_reader& reader)
 {
-	const uint32_t device_index = reader.read_handle();
+	const uint32_t device_index = reader.read_handle(DEBUGPARAM("VkDevice"));
 	VkStructureType sType = static_cast<VkStructureType>(reader.read_uint32_t());
 	assert(sType == VK_STRUCTURE_TYPE_MEMORY_GET_ANDROID_HARDWARE_BUFFER_INFO_ANDROID);
 
 	VkBaseOutStructure* pNext = nullptr;
 	read_extension(reader, (VkBaseOutStructure**)&pNext);
 
-	const uint32_t memory_index = reader.read_handle();
+	const uint32_t memory_index = reader.read_handle(DEBUGPARAM("VkDeviceMemory"));
 	(void)memory_index;
 
 	// Execute
@@ -2279,7 +2279,7 @@ void retrace_vkEnumerateDeviceLayerProperties(lava_file_reader& reader)
 	uint32_t physicalDevice_index;
 	if (initialized)
 	{
-		physicalDevice_index = reader.read_handle();
+		physicalDevice_index = reader.read_handle(DEBUGPARAM("VkPhysicalDevice"));
 	}
 
 	const uint8_t do_call = reader.read_uint8_t();
@@ -2308,7 +2308,7 @@ void retrace_vkEnumerateDeviceExtensionProperties(lava_file_reader& reader)
 	uint32_t physicalDevice_index;
 	if (initialized)
 	{
-		physicalDevice_index = reader.read_handle();
+		physicalDevice_index = reader.read_handle(DEBUGPARAM("VkPhysicalDevice"));
 	}
 	pLayerName = reader.read_string();
 	const uint8_t do_call = reader.read_uint8_t();
@@ -2328,7 +2328,7 @@ void retrace_vkEnumerateDeviceExtensionProperties(lava_file_reader& reader)
 
 void retrace_vkGetPhysicalDeviceXlibPresentationSupportKHR(lava_file_reader& reader)
 {
-	uint32_t physicaldevice_index = reader.read_handle();
+	uint32_t physicaldevice_index = reader.read_handle(DEBUGPARAM("VkPhysicalDevice"));
 	uint32_t queueFamilyIndex = reader.read_uint32_t();
 	// this function is ignored on replay
 	(void)reader.read_uint32_t(); // also ignore result return value
