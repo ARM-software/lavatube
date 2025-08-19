@@ -70,11 +70,6 @@ static std::string get_str(const char* in, int& remaining)
 	return in;
 }
 
-static Json::Value readJson(const std::string& filename, const std::string packedfile)
-{
-	return packed_json(filename, packedfile);
-}
-
 static void replay_thread(lava_reader* replayer, int thread_id)
 {
 	const char* err = sandbox_replay_start();
@@ -204,7 +199,7 @@ int main(int argc, char **argv)
 			start = get_int(argv[++i], remaining);
 			end = get_int(argv[++i], remaining);
 		}
-		else if (match(argv[i], "-r", "-r/--remap-validate", remaining))
+		else if (match(argv[i], "-r", "--remap-validate", remaining))
 		{
 			validate_remap = true;
 		}
@@ -241,7 +236,7 @@ int main(int argc, char **argv)
 
 	std::list<address_rewrite> rewrite_queue_copy;
 
-	Json::Value meta = readJson("metadata.json", filename_input);
+	Json::Value meta = packed_json("metadata.json", filename_input);
 	Json::Value instance_removed_json = meta["instanceRequested"]["removedExtensions"];
 	Json::Value device_removed_json = meta["deviceRequested"]["removedExtensions"];
 	if ((verbose || report_unused) && instance_removed_json.size())
@@ -276,7 +271,7 @@ int main(int argc, char **argv)
 			if (verbose)
 			{
 				printf("Threads:\n");
-				Json::Value frameinfo = readJson("frames_" + _to_string(i) + ".json", filename_input);
+				Json::Value frameinfo = packed_json("frames_" + _to_string(i) + ".json", filename_input);
 				printf("\t%d : [%s] with %u local frames, %d highest global frame, %u uncompressed size\n", i, frameinfo.get("thread_name", "unknown").asString().c_str(),
 					(unsigned)frameinfo["frames"].size(), frameinfo["highest_global_frame"].asInt(), frameinfo["uncompressed_size"].asUInt());
 			}
