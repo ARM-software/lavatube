@@ -31,7 +31,7 @@
 #ifdef DEBUG
 #define DEBUGPARAM(x) x
 #else
-DEBUGPARAM(x)
+#define DEBUGPARAM(x)
 #endif
 
 #define likely(x)   __builtin_expect((x),1)
