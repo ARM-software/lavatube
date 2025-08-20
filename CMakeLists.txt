@@ -53,7 +53,11 @@ if(NOT EXISTS "${PROJECT_SOURCE_DIR}/external/tracetooltests/external/Vulkan-Hea
 endif()
 
 if(SANITIZE)
-    set(SANITIZER -fsanitize=${SANITIZE} -fsanitize-undefined-trap-on-error -fuse-ld=gold)
+    if ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
+        set(SANITIZER -fsanitize=${SANITIZE} -fstack-protector-all -fsanitize-undefined-trap-on-error)
+    else()
+        set(SANITIZER -fsanitize=${SANITIZE} -fstack-protector-all -fsanitize-undefined-trap-on-error -fuse-ld=gold)
+    endif()
 endif()
 
 # --- spirv-simulator ---

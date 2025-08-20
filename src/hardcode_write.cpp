@@ -694,6 +694,7 @@ static void memory_update(lava_file_writer& writer, trackedqueue* queue_data, co
 				}
 				object_data->written += written;
 				NEVER("%s(%u) offset=%u size=%u memory=%u(total size=%u) written=%u scanned=%u cmdbuf=%u source=%d", pretty_print_VkObjectType(object_data->type), (unsigned)object_data->index, (unsigned)object_data->offset, (unsigned)object_data->size, memory_data->index, (unsigned)memory_data->allocationSize, (unsigned)written, (unsigned)scanned, cmdbuf_data->index, (int)object_data->source);
+				writer.thaw();
 			}
 		}
 
