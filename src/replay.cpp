@@ -18,6 +18,7 @@
 #include "sandbox.h"
 
 static lava_reader replayer;
+static bool sandbox = false;
 
 static void usage()
 {
@@ -45,6 +46,7 @@ static void usage()
 	printf("-N/--no-anisotropy     Disable any use of sampler anisotropy\n");
 	printf("-B/--blackhole         Do not actually submit any work to the GPU. May be useful for CPU measurements.\n");
 	printf("-nm/--no-multithread   Do not do decompression and file read in a separate thread. May save some CPU load and memory.\n");
+	printf("-s/--sandbox           Enable security sandbox\n");
 	exit(-1);
 }
 
@@ -113,8 +115,11 @@ static void replay_thread(int thread_id)
 
 static void run_multithreaded(int n)
 {
-	const char* err = sandbox_replay_start();
-	if (err) WLOG("Warning: Failed to change sandbox to replay mode: %s", err);
+	if (sandbox)
+	{
+		const char* err = sandbox_replay_start();
+		if (err) WLOG("Warning: Failed to change sandbox to replay mode: %s", err);
+	}
 
 	for (int i = 0; i < n; i++)
 	{
@@ -226,6 +231,10 @@ int main(int argc, char **argv)
 			p__save_pipelinecache = argv[++i];
 			remaining--;
 		}
+		else if (match(argv[i], "-s", "--sandbox", remaining))
+		{
+			sandbox = false;
+		}
 		else if (match(argv[i], "-L", "--load-cache", remaining))
 		{
 			p__load_pipelinecache = argv[++i];
@@ -274,8 +283,11 @@ int main(int argc, char **argv)
 	if (p__realimages > 0 && !p__virtualswap) DIE("Setting the number of virtual images can only be done with a virtual swapchain!");
 	if (p__realpresentmode != VK_PRESENT_MODE_MAX_ENUM_KHR && !p__virtualswap) DIE("Changing present mode can only be used with a virtual swapchain!");
 
-	const char* err = sandbox_tool_init();
-	if (err) WLOG("Warning: Failed to initialize sandbox: %s", err);
+	if (sandbox)
+	{
+		const char* err = sandbox_tool_init();
+		if (err) WLOG("Warning: Failed to initialize sandbox: %s", err);
+	}
 
 	if (filename.empty())
 	{

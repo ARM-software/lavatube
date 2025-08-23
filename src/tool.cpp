@@ -20,6 +20,7 @@ static bool verbose = false;
 static bool report_unused = false;
 static bool dump_shaders = false;
 static int invokation_count = 0;
+static bool sandbox = false;
 
 static void usage()
 {
@@ -36,6 +37,7 @@ static void usage()
 	printf("-r/--remap-validate    Validate existing device address remappings - abort if we find less or more addresses than already marked\n");
 	printf("-u/--unused            Find any found unused features and extensions in the trace file; remove them from the output file\n");
 	printf("-DS/--dump-shaders     Dump any shaders found to disk\n");
+	printf("-s/--sandbox           Enable security sandbox\n");
 	//printf("-R/--remap-addresses   Adding remapping of device addresses. Replaces existing address remappings. Requires an output file.\n");
 	exit(-1);
 }
@@ -72,8 +74,11 @@ static std::string get_str(const char* in, int& remaining)
 
 static void replay_thread(lava_reader* replayer, int thread_id)
 {
-	const char* err = sandbox_replay_start();
-	if (err) WLOG("Warning: Failed to change sandbox to replay mode: %s", err);
+	if (sandbox)
+	{
+		const char* err = sandbox_replay_start();
+		if (err) WLOG("Warning: Failed to change sandbox to replay mode: %s", err);
+	}
 	lava_file_reader& t = replayer->file_reader(thread_id);
 	uint8_t instrtype;
 	assert(t.run == false);
@@ -126,6 +131,7 @@ static void callback_vkCreateShaderModule(VkDevice device, const VkShaderModuleC
 	{
 		std::string filename = "shader_" + std::to_string(count) + ".spv";
 		FILE* fp = fopen(filename.c_str(), "w");
+		if (!fp) printf("Failed to open %s: %s\n", filename.c_str(), strerror(errno));
 		assert(fp);
 		int r = fwrite(pCreateInfo->pCode, pCreateInfo->codeSize, 1, fp);
 		assert(r == 1);
@@ -199,6 +205,10 @@ int main(int argc, char **argv)
 			start = get_int(argv[++i], remaining);
 			end = get_int(argv[++i], remaining);
 		}
+		else if (match(argv[i], "-s", "--sandbox", remaining))
+		{
+			sandbox = false;
+		}
 		else if (match(argv[i], "-r", "--remap-validate", remaining))
 		{
 			validate_remap = true;
@@ -231,8 +241,11 @@ int main(int argc, char **argv)
 
 	if (!filename_output.empty()) DIE("Output file support still to be done!");
 
-	const char* err = sandbox_tool_init();
-	if (err) WLOG("Warning: Failed to initialize sandbox: %s", err);
+	if (sandbox)
+	{
+		const char* err = sandbox_tool_init();
+		if (err) WLOG("Warning: Failed to initialize sandbox: %s", err);
+	}
 
 	std::list<address_rewrite> rewrite_queue_copy;
 
