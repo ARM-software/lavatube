@@ -1529,10 +1529,10 @@ def loadfunc(name, node, target, header):
 		z.do('retval = vkuSetupDevice(%s);' % (', '.join(call_list)))
 		z.do('check_retval(stored_retval, retval);')
 		z.brace_end()
-	elif name == "vkGetFenceStatus": # loop until success to fix synchronization if originally successful
+	elif name == "vkGetFenceStatus": # wait for success to restore original synchronization when call was originally successful
 		z.do('VkResult stored_retval = static_cast<VkResult>(reader.read_uint32_t());')
 		z.do('retval = VK_SUCCESS;')
-		z.do('if (stored_retval == VK_SUCCESS && reader.run) { while ((retval = wrap_vkGetFenceStatus(device, fence)) != VK_SUCCESS) { usleep(1); }; }')
+		z.do('if (stored_retval == VK_SUCCESS && reader.run) { retval = wrap_vkWaitForFences(device, 1, &fence, VK_TRUE, UINT64_MAX); }')
 		z.do('else if (reader.run) { retval = wrap_vkGetFenceStatus(device, fence); }')
 	elif name == "vkWaitForFences": # as above
 		z.do('VkResult stored_retval = static_cast<VkResult>(reader.read_uint32_t());')

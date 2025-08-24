@@ -65,14 +65,16 @@ return VK_SUCCESS, vkQueueWaitIdle, vkDeviceWaitIdle, queue presents, and pool
 reset commands.
 
 This is needed when a command on another thread may require a certain state to
-be reset before it can safely be run, and the object runtime order does not give
-us enough information to make this guarantee.
+be set or reset before it can safely be run, and the object runtime order does
+not give us enough information to make this guarantee. For example,
+vkWaitForFences waits for GPU operations that are unknown to us and we must
+assume it can have changed anything, so we must do a full barrier.
 
 ## The sync mutex
 
 Lavatube also has a special mutex around a few Vulkan commands:
 vkQueueSubmit, vkQueueSubmit2, vkQueueWaitIdle, vkQueueBindSparse, and
-vkDestroyDevice
+vkDestroyDevice.
 
 This extra synchronization is not needed for multithreading support, but
 rather for increased flexibility of virtualization and portability. Once these
@@ -110,3 +112,46 @@ need to introduce a local thread barrier.
 ### vkResetCommandBuffer, vkBeginCommandBuffer and vkEndCommandBuffer
 
 We need to make sure these are explicitly externally synchronized.
+
+## Thread-safety : Objects
+
+In order to be able to run multi threads in parallel without killing performance
+by constantly mutexing every resource, we use preallocated arrays of objects, both
+for stored object index to replay object handles, and for storing object metadata.
+Once you are done generating a trace, the tracer writes out the number of objects
+created of each type. Upon replay, we pre-generate tables for each type, and these
+tables will never need to be resized - and as such they are inherently thread safe.
+Adding and removing entries, looking up from stored index to replay object are all
+handled safely using the normal flow of synchronization. However, since we
+sometimes need to do reverse lookups from object to index, we also use a lockless
+map container for this.
+
+## Thread-safety : Memory suballocator
+
+A special consideration has to be made for the memory suballocator. Unlike the
+original app authors, we have no control over memory allocation and deallocation
+patterns, and so we have to make very pessimistic assumptions about them. We solve
+this by maintaining separate memory allocations per thread. This is not very
+efficient, but it conveniently ensures that no two thread will ever stomp over
+each other's allocations and all without having to resort to mutexes. Deletions
+are kept in a lockless list per thread, and only actually deleted next time we
+allocate from the same thread as the deleted allocation was created from.
+
+This is neat but whether it actually gains much over just mutexing all allocation
+and destruction has not actually been proven.
+
+## Lessons learned
+
+Vulkan multi-threading is extremely hard to get right and to debug once things
+go wrong. Good tests and good tools are invaluable, as are anything that can help
+tools to do the right thing. Clang's mutex annotations are very good at making
+mutexes work correctly. Sadly, tools tend not to understand spinlocks, and we use
+them a lot.
+
+Specifically, they are used in the follow scenarios:
+
+* Reading object handles and waiting for other threads to reach the required
+  state for them.
+* Implementing thread barriers (see above for explanation)
+* To wait for more work in the filereader and filewriter classes.
+* In the XCB WSI implementation

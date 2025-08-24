@@ -162,7 +162,7 @@ void file_reader::decompressor()
 		{
 			if (!decompress_chunk()) break;
 		}
-		else
+		else // we have enough chunks waiting to be processed
 		{
 			usleep(10000);
 		}
