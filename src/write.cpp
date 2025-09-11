@@ -143,9 +143,8 @@ lava_writer& lava_writer::instance()
 	return _instance;
 }
 
-void lava_writer::set(const std::string& path, int as_version)
+void lava_writer::set(const std::string& path)
 {
-	mAsVersion = as_version;
 	mPath = path + "_tmp";
 	mPack = path + ".vk";
 	ILOG("Base path is set to %s", mPath.c_str());

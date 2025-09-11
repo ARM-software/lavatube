@@ -44,7 +44,7 @@ int main()
 {
 	ILOG("write_3-2");
 	lava_writer& writer = lava_writer::instance();
-	writer.set("write_3-2", 1);
+	writer.set("write_3-2");
 	thread_test();
 	return 0;
 }

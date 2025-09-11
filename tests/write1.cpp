@@ -22,7 +22,7 @@ static void write_test_1_2()
 	char* mod = big2.data();
 
 	lava_writer& writer = lava_writer::instance();
-	writer.set("write_1_2", 1);
+	writer.set("write_1_2");
 	lava_file_writer& file = writer.file_writer();
 
 	file.write_memory(orig, 0, 65535);
@@ -90,7 +90,7 @@ static void write_test_1()
 	std::vector<char> big(65535, 42);
 
 	lava_writer& writer = lava_writer::instance();
-	writer.set("write_1", 1);
+	writer.set("write_1");
 	lava_file_writer& file = writer.file_writer();
 	file.write_uint8_t(8);
 	file.write_uint16_t(16);

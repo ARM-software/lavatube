@@ -301,6 +301,8 @@ add_test(NAME trace_test_2_nompwrite COMMAND ${CMAKE_CURRENT_BINARY_DIR}/tracing
 set_tests_properties(trace_test_2_nompwrite PROPERTIES ENVIRONMENT "LAVATUBE_DISABLE_MULTITHREADED_WRITEOUT=1")
 add_test(NAME trace_test_2_nompcompress COMMAND ${CMAKE_CURRENT_BINARY_DIR}/tracing2)
 set_tests_properties(trace_test_2_nompcompress PROPERTIES ENVIRONMENT "LAVATUBE_DISABLE_MULTITHREADED_COMPRESS=1")
+add_test(NAME trace_test_2_debug_log COMMAND ${CMAKE_CURRENT_BINARY_DIR}/tracing2)
+set_tests_properties(trace_test_2_debug_log PROPERTIES ENVIRONMENT "LAVATUBE_DEBUG=2")
 
 internal_test(tracing3)
 add_test(NAME trace_test_3_replay_mp COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -V tracing_3.vk)

@@ -214,7 +214,7 @@ public:
 	~lava_writer();
 
 	static lava_writer& instance();
-	void set(const std::string& path, int as_version = LAVATUBE_VERSION_MAJOR);
+	void set(const std::string& path);
 	Json::Value& json() REQUIRES(frame_mutex) { return mJson; }
 	lava_file_writer& file_writer();
 	void serialize();
@@ -248,7 +248,6 @@ public:
 	}
 
 private:
-	int mAsVersion = -1;
 	std::string mPath;
 	std::string mPack;
 	VkuVulkanLibrary library = nullptr;

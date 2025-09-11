@@ -34,7 +34,7 @@ static void write_test_stress()
 static void write_test(const char* name, int num_threads)
 {
 	ILOG("%s", name);
-	writer.set(name, 1);
+	writer.set(name);
 	std::vector<std::thread*> threads(num_threads);
 	for (auto& t : threads)
 	{

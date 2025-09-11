@@ -51,7 +51,7 @@ static void thread_test()
 int main()
 {
 	for (int i = 0; i < THREADS; i++) used[i] = 0;
-	writer.set("write_3", 1);
+	writer.set("write_3");
 	thread_test();
 	for (int i = 0; i < THREADS; i++)
 	{

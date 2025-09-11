@@ -163,6 +163,8 @@ for k,v in spec.sType2type.items():
 out([u], '')
 out([u], '\t{ VK_STRUCTURE_TYPE_LOADER_INSTANCE_CREATE_INFO, "VkLayerInstanceCreateInfo" },')
 out([u], '\t{ VK_STRUCTURE_TYPE_LOADER_DEVICE_CREATE_INFO, "VkLayerDeviceCreateInfo" },')
+for k,v in fake_extension_structs.items():
+	out([u], '\t{ %s, "%s" },' % (v, k))
 out([u], '};')
 out([u], 'const char* get_stype_name(VkStructureType idx) { return reverse_stype_table.at(idx); }')
 
