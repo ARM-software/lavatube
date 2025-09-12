@@ -197,9 +197,6 @@ public:
 		return dst;
 	}
 
-	void initiate_preload(uint64_t end);
-	void reset_preload();
-
 	memory_pool pool;
 
 	/// Return true if we are done processing input data (no more data to be read from file, and more data

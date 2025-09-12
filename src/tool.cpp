@@ -268,7 +268,7 @@ int main(int argc, char **argv)
 		lava_reader replayer;
 		replayer.run = false; // do not actually run anything
 		replayer.init(filename_input, heap_size);
-		replayer.parameters(start, end, false);
+		replayer.parameters(start, end);
 		replayer.remap = validate_remap;
 
 		// Read all thread files
@@ -307,7 +307,7 @@ int main(int argc, char **argv)
 		lava_reader replayer;
 		replayer.run = false; // do not actually run anything
 		replayer.init(filename_input, heap_size);
-		replayer.parameters(start, end, false);
+		replayer.parameters(start, end);
 		replayer.remap = false;
 
 		// Add in the rewrite queue from the previous run

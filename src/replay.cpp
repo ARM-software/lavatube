@@ -31,7 +31,6 @@ static void usage()
 	printf("-g/--gpu gpu           Select physical device to use (by index value)\n");
 	printf("-V/--validate          Enable validation layers\n");
 	printf("-f/--frames start end  Select a frame range\n");
-	//printf("-p/--preload           Load entire selected frame range into memory before running it\n");
 	printf("-w/--wsi wsi           Use the given windowing system [xcb, wayland, headless, none]\n");
 	printf("-v/--virtual           Use a virtual swapchain\n");
 	printf("  -vpm mode            Use this presentation mode for our real swapchain [immediate, mailbox, fifo, fifo_relaxed]\n");
@@ -139,7 +138,6 @@ int main(int argc, char **argv)
 	int heap_size = -1;
 	int remaining = argc - 1; // zeroth is name of program
 	std::string filename;
-	bool preload = false;
 	bool infodump = false;
 	for (int i = 1; i < argc; i++)
 	{
@@ -195,10 +193,6 @@ int main(int argc, char **argv)
 			if (remaining < 2) usage();
 			start = get_int(argv[++i], remaining);
 			end = get_int(argv[++i], remaining);
-		}
-		else if (match(argv[i], "-p", "--preload", remaining))
-		{
-			preload = true;
 		}
 		else if (match(argv[i], "-i", "--info", remaining))
 		{
@@ -302,7 +296,7 @@ int main(int argc, char **argv)
 		replayer.dump_info();
 		exit(EXIT_SUCCESS);
 	}
-	replayer.parameters(start, end, preload);
+	replayer.parameters(start, end);
 
 	// Read all thread files
 	std::vector<std::string> threadfiles = packed_files(filename, "thread_");

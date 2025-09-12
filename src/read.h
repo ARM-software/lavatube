@@ -50,12 +50,11 @@ public:
 	lava_file_reader& file_reader(uint16_t thread_id);
 
 	/// end -1 means play until the end
-	void parameters(int start, int end, bool preload = false)
+	void parameters(int start, int end)
 	{
 		mStart = start;
 		mEnd = end;
 		if (mEnd != -1) mGlobalFrames = end - start;
-		mPreload = preload;
 	}
 
 	/// Dump trace information to stdout
@@ -106,7 +105,6 @@ private:
 	int mStart = 0;
 	int mEnd = -1;
 	int mGlobalFrames = 0;
-	bool mPreload = false;
 	FILE* out_fptr = nullptr;
 };
 
@@ -118,7 +116,7 @@ class lava_file_reader : public file_reader
 public:
 	/// Initialize one thread of replay. Frame start and end values are global, not local. Frames are either (end-start)
 	/// or total number of global frames in the trace.
-	lava_file_reader(lava_reader* _parent, const std::string& path, int mytid, int frames, int start = 0, int end = -1, bool preload = false);
+	lava_file_reader(lava_reader* _parent, const std::string& path, int mytid, int frames, int start = 0, int end = -1);
 	~lava_file_reader();
 
 	/// Returns zero if no more instructions in the file, or the instruction type found.
@@ -175,14 +173,12 @@ public:
 		if (mStart == (int)current.frame)
 		{
 			parent->mStartTime.store(gettime());
-			if (mPreload) initiate_preload(mBytesEndPreload);
 			if (mHaveFirstFrame) ILOG("==== starting frame frange ====");
 		}
 		current.frame++;
 		parent->global_frame++; // just use for logging purposes
 		if (mEnd != -1 && (int)current.frame == mEnd)
 		{
-			if (mPreload) reset_preload();
 			if (mHaveFinalFrame)
 			{
 				return true;
@@ -212,10 +208,8 @@ public:
 	}
 
 private:
-	bool mPreload;
 	int mStart = 0;	///< Local start frame
 	int mEnd = -1; ///< Local end frame
-	uint64_t mBytesEndPreload = 0; ///< Local byte boundary to end preloading
 	/// Do we own the final global frame?
 	bool mHaveFinalFrame = false;
 	/// Do we own the first global frame?

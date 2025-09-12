@@ -21,9 +21,8 @@ Json::Value readJson(const std::string& filename, const std::string packedfile)
 
 // --- file reader
 
-lava_file_reader::lava_file_reader(lava_reader* _parent, const std::string& path, int mytid, int frames, int start, int end, bool preload)
+lava_file_reader::lava_file_reader(lava_reader* _parent, const std::string& path, int mytid, int frames, int start, int end)
 	: file_reader(packed_open("thread_" + std::to_string(mytid) + ".bin", path), mytid)
-	, mPreload(preload)
 {
 	parent = _parent;
 	run = parent->run;
@@ -41,7 +40,7 @@ lava_file_reader::lava_file_reader(lava_reader* _parent, const std::string& path
 		set_thread_name(frameinfo["thread_name"].asString().c_str());
 	}
 
-	// Translate global frames to local frames and set our preload window
+	// Translate global frames to local frames and set our measurement window
 	if (end != -1)
 	{
 		for (const auto& i : frameinfo["frames"])
@@ -53,7 +52,6 @@ lava_file_reader::lava_file_reader(lava_reader* _parent, const std::string& path
 			if (i["global_frame"].asInt() <= end)
 			{
 				mEnd = i["local_frame"].asInt();
-				mBytesEndPreload = i["position"].asUInt64();
 			}
 			if (i["global_frame"].asInt() == i["local_frame"].asInt())
 			{
@@ -67,10 +65,6 @@ lava_file_reader::lava_file_reader(lava_reader* _parent, const std::string& path
 		local_frames = frameinfo["frames"].size();
 		if (frames == frameinfo["highest_global_frame"].asInt()) mHaveFinalFrame = true;
 		if (frameinfo["frames"][0]["global_frame"] == 0) mHaveFirstFrame = true;
-	}
-	if (mPreload && start == 0) // initiate preload right away
-	{
-		initiate_preload(mBytesEndPreload);
 	}
 }
 
@@ -194,7 +188,7 @@ void lava_reader::init(const std::string& path, int heap_size)
 	thread_call_numbers = new std::vector<std::atomic_uint_fast32_t>(num_threads);
 	for (int thread_id = 0; thread_id < num_threads; thread_id++)
 	{
-		lava_file_reader* f = new lava_file_reader(this, mPackedFile, thread_id, mGlobalFrames, mStart, mEnd, mPreload);
+		lava_file_reader* f = new lava_file_reader(this, mPackedFile, thread_id, mGlobalFrames, mStart, mEnd);
 		thread_streams.emplace(thread_id, std::move(f));
 	}
 	global_mutex.unlock();

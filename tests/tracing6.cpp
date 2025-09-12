@@ -1,5 +1,3 @@
-// Preload test
-
 #include "tests/common.h"
 #include <inttypes.h>
 #include "util_auto.h"
@@ -123,10 +121,10 @@ static void retrace_me(lava_reader* r, int tid)
 	r->allocator.self_test();
 }
 
-static void read_test(int start, int end, bool preload)
+static void read_test(int start, int end)
 {
 	lava_reader reader(TEST_NAME ".vk");
-	reader.parameters(start, end, preload);
+	reader.parameters(start, end);
 	std::vector<std::thread*> threads; // main thread + helper threads
 	for (int tid = 0; tid < NUM_THREADS + 1; tid++)
 	{
@@ -146,6 +144,6 @@ static void read_test(int start, int end, bool preload)
 int main()
 {
 	trace_me();
-	read_test(0, -1, false);
+	read_test(0, -1);
 	return 0;
 }

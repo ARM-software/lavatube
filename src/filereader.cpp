@@ -55,32 +55,6 @@ file_reader::~file_reader()
 	}
 }
 
-void file_reader::reset_preload()
-{
-	readahead_chunks.exchange(2);
-}
-
-/// Increase readahead_chunks and wait until uncompressed_bytes >= end
-void file_reader::initiate_preload(uint64_t end)
-{
-	printf("Starting to preload of %lu bytes for thread %u...\n", (unsigned long)end, tid);
-	int chunks = 0;
-	uint64_t total_read;
-	while (1)
-	{
-		chunk_mutex.lock();
-		total_read = uncompressed_bytes;
-		chunks = uncompressed_chunks.size();
-		chunk_mutex.unlock();
-
-		// these variables are all local or atomic
-		if (total_read >= end || done_decompressing) break;
-		if (readahead_chunks <= chunks) readahead_chunks++;
-		usleep(10000);
-	}
-	printf("Thread %u running preloaded! Uncompressed %lu bytes in total with %d unused chunks\n", tid, (unsigned long)total_read, chunks);
-}
-
 /// Only call this from the decompressor thread (or main thread if not using multi-threaded file reading).
 bool file_reader::decompress_chunk()
 {

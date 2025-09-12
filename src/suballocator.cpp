@@ -583,6 +583,8 @@ int suballocator::self_test()
 		else freed = h.total;
 		assert(h.free == freed);
 		assert(freed + used == h.total);
+		(void)freed;
+		(void)used;
 	}
 
 	return retval;

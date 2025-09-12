@@ -29,7 +29,6 @@ Missing and desirable extension support:
 * VK_KHR_pipeline_binary
 
 Replayer:
-* Preloading
 * Add back Android build
 * Checkpoint and fastforward traces
 * VK_EXT_pipeline_creation_feedback
