@@ -37,6 +37,12 @@
 #define likely(x)   __builtin_expect((x),1)
 #define unlikely(x) __builtin_expect((x),0)
 
+/// Return the difference between two timespec structs in microseconds
+static inline uint64_t diff_timespec(const struct timespec *t1, const struct timespec *t0)
+{
+	return (t1->tv_sec - t0->tv_sec) * 1000000 + (t1->tv_nsec - t0->tv_nsec) / 1000;
+}
+
 /// Implement support for naming threads, missing from c++11
 void set_thread_name(const char* name);
 /// Get current thread name, if any. Input parameter must be char[16].

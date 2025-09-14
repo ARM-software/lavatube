@@ -119,16 +119,28 @@ void lava_reader::finalize(bool terminate)
 	ILOG("==== %.2f ms, %u frames (%.2f fps) ====", total_time_ms, mGlobalFrames, fps);
 	fprintf(out_fptr, "%.2f", fps);
 	fclose(out_fptr);
+	uint64_t runner = 0;
+	uint64_t worker = 0;
+	global_mutex.lock();
+	for (unsigned i = 0; i < threads.size(); i++)
+	{
+		uint64_t runner_local = 0;
+		uint64_t worker_local = 0;
+		thread_streams[i]->stop_measurement(worker_local, runner_local);
+		DLOG("CPU time thread %u - worker %lu, runner %lu", i, (long unsigned)worker_local, (long unsigned)runner_local);
+		runner += runner_local;
+		worker += worker_local;
+	}
+	ILOG("CPU time spent in ms - worker %lu, runner %lu", (long unsigned)worker, (long unsigned)runner);
 	if (terminate)
 	{
-		global_mutex.lock();
 		for (auto& v : *thread_call_numbers) v = 0; // stop waiting threads from progressing
 		for (unsigned i = 0; i < threads.size(); i++)
 		{
 			if (!thread_streams[i]->terminated.load()) pthread_cancel(threads[i].native_handle());
 		}
-		global_mutex.unlock();
 	}
+	global_mutex.unlock();
 }
 
 lava_file_reader& lava_reader::file_reader(uint16_t thread_id)
@@ -195,6 +207,7 @@ void lava_reader::init(const std::string& path, int heap_size)
 
 	out_fptr = fopen("lavaresults.txt", "w");
 	if (!out_fptr) ABORT("Failed to open results file: %s", strerror(errno));
+	mStartTime.store(gettime());
 }
 
 void lava_reader::dump_info()

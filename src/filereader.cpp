@@ -24,6 +24,7 @@ file_reader::file_reader(const std::string& filename, unsigned mytid) : tid(myti
 	readahead_chunks.exchange(2);
 	decompressor_thread = std::thread(&file_reader::decompressor, this);
 	DLOG("%s opened for reading (size %lu) and decompressor thread %u launched!", filename.c_str(), (unsigned long)total_left, tid);
+	start_measurement();
 }
 
 file_reader::file_reader(packed pf, unsigned mytid) : tid(mytid), mFilename(pf.inside)
@@ -41,6 +42,7 @@ file_reader::file_reader(packed pf, unsigned mytid) : tid(mytid), mFilename(pf.i
 	readahead_chunks.exchange(2);
 	decompressor_thread = std::thread(&file_reader::decompressor, this);
 	DLOG("%u : %s opened for reading from inside %s (size %lu) and decompressor thread launched!", tid, pf.inside.c_str(), pf.pack.c_str(), (unsigned long)pf.filesize);
+	start_measurement();
 }
 
 file_reader::~file_reader()
@@ -141,5 +143,17 @@ void file_reader::decompressor()
 			usleep(10000);
 		}
 	}
+	chunk_mutex.lock();
+	clockid_t id;
+	int r = pthread_getcpuclockid(pthread_self(), &id);
+	if (r != 0)
+	{
+		ELOG("Failed to get worker thread ID: %s", strerror(r));
+	}
+	else if (clock_gettime(id, &stop_cpu_usage) != 0)
+	{
+		ELOG("Failed to get worker thread CPU usage!");
+	}
+	chunk_mutex.unlock();
 #endif
 }

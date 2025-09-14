@@ -173,7 +173,17 @@ public:
 		if (mStart == (int)current.frame)
 		{
 			parent->mStartTime.store(gettime());
-			if (mHaveFirstFrame) ILOG("==== starting frame frange ====");
+			if (mHaveFirstFrame)
+			{
+				ILOG("==== starting frame frange ====");
+				// Set start time in all threads
+				parent->global_mutex.lock();
+				for (unsigned i = 0; i < parent->threads.size(); i++)
+				{
+					parent->thread_streams[i]->start_measurement();
+				}
+				parent->global_mutex.unlock();
+			}
 		}
 		current.frame++;
 		parent->global_frame++; // just use for logging purposes

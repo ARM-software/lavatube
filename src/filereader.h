@@ -227,6 +227,64 @@ public:
 		}
 	}
 
+	/// Start measuring worker thread CPU usage
+	void start_measurement()
+	{
+		if (!multithreaded_read) return;
+		pthread_t t = decompressor_thread.native_handle();
+		clockid_t id;
+		int r = pthread_getcpuclockid(t, &id);
+		if (r != 0)
+		{
+			ELOG("Failed to get worker thread ID: %s", strerror(r));
+		}
+		else if (clock_gettime(id, &worker_cpu_usage) != 0)
+		{
+			ELOG("Failed to get worker thread CPU usage!");
+		}
+		r = pthread_getcpuclockid(pthread_self(), &id);
+		if (r != 0)
+		{
+			ELOG("Failed to get runner thread ID: %s", strerror(r));
+		}
+		else if (clock_gettime(id, &runner_cpu_usage) != 0)
+		{
+			ELOG("Failed to get runner thread CPU usage!");
+		}
+	}
+
+	/// Return spent CPU time in microseconds in worker thread
+	void stop_measurement(uint64_t& worker, uint64_t& runner)
+	{
+		if (!multithreaded_read) return;
+		chunk_mutex.lock();
+		pthread_t t = decompressor_thread.native_handle();
+		clockid_t id;
+		int r = pthread_getcpuclockid(t, &id);
+		if (r != 0)
+		{
+			// this is ok, we got data in stop_cpu_usage already
+		}
+		else if (clock_gettime(id, &stop_cpu_usage) != 0)
+		{
+			ELOG("Failed to get worker thread CPU usage!");
+		}
+		assert(stop_cpu_usage.tv_sec >= worker_cpu_usage.tv_sec);
+		worker = diff_timespec(&stop_cpu_usage, &worker_cpu_usage);
+		r = pthread_getcpuclockid(pthread_self(), &id);
+		if (r != 0)
+		{
+			ELOG("Failed to get runner thread ID: %s", strerror(r));
+		}
+		else if (clock_gettime(id, &stop_cpu_usage) != 0)
+		{
+			ELOG("Failed to get runner thread CPU usage!");
+		}
+		assert(stop_cpu_usage.tv_sec >= runner_cpu_usage.tv_sec);
+		runner = diff_timespec(&stop_cpu_usage, &runner_cpu_usage);
+		chunk_mutex.unlock();
+	}
+
 private:
 	void decompressor(); // runs in separate thread, moves chunks from file to uncompressed chunks
 
@@ -235,6 +293,12 @@ private:
 	lava::mutex chunk_mutex;
 	FILE* fp = nullptr;
 	std::string mFilename;
+	/// Start CPU usage for our worker thread
+	struct timespec worker_cpu_usage;
+	/// Start CPU usage for our runner thread
+	struct timespec runner_cpu_usage;
+	/// Stop CPU usage for our worker thread
+	struct timespec stop_cpu_usage;
 
 protected:
 	unsigned uidx = 0; // index into current uncompressed chunk
