@@ -15,8 +15,6 @@
 #include "containers.h"
 #include "util.h"
 
-#define MULTITHREADED_READ
-
 class file_reader
 {
 	file_reader(const file_reader&) = delete;

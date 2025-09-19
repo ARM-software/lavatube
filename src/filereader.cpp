@@ -109,18 +109,14 @@ bool file_reader::decompress_chunk()
 	}
 	uncompressed.shrink(result.bytesWritten);
 	total_left -= compressed_size + header_size;
-#ifdef MULTITHREADED_READ
 	chunk_mutex.lock();
-#endif
 	uncompressed_bytes += uncompressed.size();
 	uncompressed_chunks.push_back(uncompressed);
 	if (total_left == 0) // all done!
 	{
 		done_decompressing = true;
 	}
-#ifdef MULTITHREADED_READ
 	chunk_mutex.unlock();
-#endif
 	return true;
 }
 
@@ -128,7 +124,6 @@ bool file_reader::decompress_chunk()
 void file_reader::decompressor()
 {
 	set_thread_name("decompressor");
-#ifdef MULTITHREADED_READ
 	while (!done_decompressing)
 	{
 		chunk_mutex.lock();
@@ -155,5 +150,4 @@ void file_reader::decompressor()
 		ELOG("Failed to get worker thread CPU usage!");
 	}
 	chunk_mutex.unlock();
-#endif
 }
