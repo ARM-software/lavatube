@@ -415,9 +415,9 @@ struct trackedfence : trackable
 
 struct shader_stage
 {
-	VkPipelineShaderStageCreateFlags flags;
-	VkShaderStageFlagBits stage;
-	VkShaderModule module;
+	VkPipelineShaderStageCreateFlags flags = VK_PIPELINE_SHADER_STAGE_CREATE_FLAG_BITS_MAX_ENUM;
+	VkShaderStageFlagBits stage = VK_SHADER_STAGE_FLAG_BITS_MAX_ENUM;
+	VkShaderModule module = VK_NULL_HANDLE;
 	std::string name;
 	std::vector<VkSpecializationMapEntry> specialization_constants;
 	std::vector<char> specialization_data;

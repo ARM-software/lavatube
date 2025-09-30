@@ -18,6 +18,7 @@ static bool run_spirv(lava_file_reader& reader, const shader_stage& stage, const
 	SPIRVSimulator::SPIRVSimulator sim(shader_data.code, inputs, false);
 	sim.Run();
 
+#if 0
 	auto physical_address_data = sim.GetPhysicalAddressData();
 
 	if (physical_address_data.size() > 0) std::cout << "Pointers to pbuffers:" << std::endl;
@@ -44,6 +45,7 @@ static bool run_spirv(lava_file_reader& reader, const shader_stage& stage, const
 			}
 		}
 	}
+#endif
 
 	return true;
 }

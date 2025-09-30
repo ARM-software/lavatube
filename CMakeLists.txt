@@ -118,7 +118,7 @@ if ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
 	set(COMMON_FLAGS ${COMMON_FLAGS} -Wthread-safety -Wno-error=thread-safety-analysis -Wno-error=unused-but-set-variable)
 endif()
 set(MOST_COMMON_LIBRARIES ${SANITIZER} stdc++ dl pthread)
-set(COMMON_LIBRARIES ${MOST_COMMON_LIBRARIES} TBB::tbb atomic density ${XCB_LIBRARIES})
+set(COMMON_LIBRARIES ${MOST_COMMON_LIBRARIES} TBB::tbb atomic density ${XCB_LIBRARIES} spirv_simulator_lib)
 
 set(COMMON_INCLUDE
     PUBLIC ${SRC_ROOT}
@@ -175,11 +175,6 @@ set(COMMON_SRC
 )
 
 set(LAVATUBE_SRC
-    ${PROJECT_SOURCE_DIR}/external/spirv-simulator/framework/spirv_simulator.hpp
-    ${PROJECT_SOURCE_DIR}/external/spirv-simulator/framework/spirv_simulator.cpp
-    ${PROJECT_SOURCE_DIR}/external/spirv-simulator/framework/util.cpp
-    ${PROJECT_SOURCE_DIR}/external/spirv-simulator/framework/util.hpp
-
     ${PROJECT_SOURCE_DIR}/src/window.cpp
     ${PROJECT_SOURCE_DIR}/src/window.h
     ${PROJECT_SOURCE_DIR}/src/filereader.cpp
