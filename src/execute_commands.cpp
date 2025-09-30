@@ -2,6 +2,7 @@
 
 static bool run_spirv(lava_file_reader& reader, const shader_stage& stage, const std::vector<std::byte>& push_constants)
 {
+	assert(stage.module != VK_NULL_HANDLE);
 	const uint32_t shader_index = index_to_VkShaderModule.index(stage.module);
 	trackedshadermodule& shader_data = VkShaderModule_index.at(shader_index);
 	SPIRVSimulator::InputData inputs;

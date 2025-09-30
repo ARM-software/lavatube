@@ -1420,7 +1420,7 @@ void replay_postprocess_vkCreateGraphicsPipelines(lava_file_reader& reader, VkRe
 		pipeline_data.shader_stages.resize(pCreateInfos[i].stageCount);
 		for (uint32_t stage = 0; stage < pCreateInfos[i].stageCount; stage++)
 		{
-			copy_shader_stage(pipeline_data.shader_stages[0], pCreateInfos[i].pStages[stage]);
+			copy_shader_stage(pipeline_data.shader_stages[stage], pCreateInfos[i].pStages[stage]);
 		}
 	}
 }
@@ -1436,7 +1436,7 @@ void replay_postprocess_vkCreateRayTracingPipelinesKHR(lava_file_reader& reader,
 		pipeline_data.shader_stages.resize(pCreateInfos[i].stageCount);
 		for (uint32_t stage = 0; stage < pCreateInfos[i].stageCount; stage++)
 		{
-			copy_shader_stage(pipeline_data.shader_stages[0], pCreateInfos[i].pStages[stage]);
+			copy_shader_stage(pipeline_data.shader_stages[stage], pCreateInfos[i].pStages[stage]);
 		}
 	}
 }
