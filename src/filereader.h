@@ -285,11 +285,15 @@ public:
 
 private:
 	void decompressor(); // runs in separate thread, moves chunks from file to uncompressed chunks
+	void init(int fd);
 
 	bool multithreaded_read = true;
 	unsigned tid = -1; // only used for logging
 	lava::mutex chunk_mutex;
-	FILE* fp = nullptr;
+	/// Pointer to mapped memory of compressed file
+	char* fptr = nullptr; // current
+	char* fstart = nullptr; // start position
+	/// Name of compressed input file
 	std::string mFilename;
 	/// Start CPU usage for our worker thread
 	struct timespec worker_cpu_usage;
@@ -301,6 +305,7 @@ private:
 protected:
 	unsigned uidx = 0; // index into current uncompressed chunk
 	uint64_t total_left = 0; // amount of compressed bytes left in input file
+	uint64_t mapped_size = 0; // amount of memory mapped compressed data
 	buffer chunk; // current uncompressed chunk
 
 private:
