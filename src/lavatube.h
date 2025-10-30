@@ -413,8 +413,9 @@ struct trackedfence : trackable
 	int frame_delay = -1; // delay fuse uninitialized
 };
 
-struct shader_stage
+struct shader_stage // post-processor only
 {
+	uint32_t index = CONTAINER_INVALID_INDEX; // our position in our local array of stages
 	VkPipelineShaderStageCreateFlags flags = VK_PIPELINE_SHADER_STAGE_CREATE_FLAG_BITS_MAX_ENUM;
 	VkShaderStageFlagBits stage = VK_SHADER_STAGE_FLAG_BITS_MAX_ENUM;
 	VkShaderModule module = VK_NULL_HANDLE;
@@ -426,6 +427,7 @@ struct shader_stage
 struct trackedpipeline : trackable
 {
 	using trackable::trackable; // inherit constructor
+	uint32_t device_index = UINT32_MAX;
 	VkPipelineBindPoint type = VK_PIPELINE_BIND_POINT_MAX_ENUM;
 	VkPipelineCreateFlags flags = 0;
 	VkPipelineCache cache = VK_NULL_HANDLE;

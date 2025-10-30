@@ -1383,7 +1383,7 @@ void replay_postprocess_vkCmdPushConstants2(lava_file_reader& reader, VkCommandB
 	replay_postprocess_vkCmdPushConstants2KHR(reader, commandBuffer, pPushConstantsInfo);
 }
 
-static void copy_shader_stage(shader_stage& stage, const VkPipelineShaderStageCreateInfo& info)
+static void copy_shader_stage(const trackedpipeline& pipeline_data, shader_stage& stage, const VkPipelineShaderStageCreateInfo& info)
 {
 	stage.flags = info.flags;
 	stage.module = info.module;
@@ -1406,7 +1406,8 @@ void replay_postprocess_vkCreateComputePipelines(lava_file_reader& reader, VkRes
 		const uint32_t pipeline_index = index_to_VkPipeline.index(pPipelines[i]);
 		trackedpipeline& pipeline_data = VkPipeline_index.at(pipeline_index);
 		pipeline_data.shader_stages.resize(1);
-		copy_shader_stage(pipeline_data.shader_stages[0], pCreateInfos[i].stage);
+		pipeline_data.shader_stages[0].index = 0;
+		copy_shader_stage(pipeline_data, pipeline_data.shader_stages[0], pCreateInfos[i].stage);
 	}
 }
 
@@ -1420,7 +1421,8 @@ void replay_postprocess_vkCreateGraphicsPipelines(lava_file_reader& reader, VkRe
 		pipeline_data.shader_stages.resize(pCreateInfos[i].stageCount);
 		for (uint32_t stage = 0; stage < pCreateInfos[i].stageCount; stage++)
 		{
-			copy_shader_stage(pipeline_data.shader_stages[stage], pCreateInfos[i].pStages[stage]);
+			pipeline_data.shader_stages[stage].index = stage;
+			copy_shader_stage(pipeline_data, pipeline_data.shader_stages[stage], pCreateInfos[i].pStages[stage]);
 		}
 	}
 }
@@ -1436,7 +1438,8 @@ void replay_postprocess_vkCreateRayTracingPipelinesKHR(lava_file_reader& reader,
 		pipeline_data.shader_stages.resize(pCreateInfos[i].stageCount);
 		for (uint32_t stage = 0; stage < pCreateInfos[i].stageCount; stage++)
 		{
-			copy_shader_stage(pipeline_data.shader_stages[stage], pCreateInfos[i].pStages[stage]);
+			pipeline_data.shader_stages[stage].index = stage;
+			copy_shader_stage(pipeline_data, pipeline_data.shader_stages[stage], pCreateInfos[i].pStages[stage]);
 		}
 	}
 }

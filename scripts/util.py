@@ -1227,6 +1227,7 @@ def save_add_tracking(name):
 		elif type == 'VkPipeline':
 			z.do('add->flags = pCreateInfos[i].flags;')
 			z.do('add->cache = pipelineCache;')
+			z.do('add->device_index = device_data->index;');
 			if name == 'vkCreateGraphicsPipelines': z.do('add->type = VK_PIPELINE_BIND_POINT_GRAPHICS;')
 			elif name == 'vkCreateComputePipelines': z.do('add->type = VK_PIPELINE_BIND_POINT_COMPUTE;')
 			elif name == 'PFN_vkCreateRayTracingPipelinesKHR': z.do('add->type = VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR;')
@@ -1339,6 +1340,8 @@ def load_add_tracking(name):
 				z.do('data.device = device;')
 				z.do('data.physicalDevice = VkDevice_index.at(device_index).physicalDevice;')
 				z.do('if (!reader.run) %s[i] = fake_handle<%s>(indices[i]);' % (param, type))
+			elif type == 'VkPipeline':
+				z.do('data.device_index = device_index;');
 			else:
 				z.do('if (!reader.run) %s[i] = fake_handle<%s>(indices[i]);' % (param, type))
 			z.do('if (%s[i]) index_to_%s.set(indices[i], %s[i]);' % (param, type, param))

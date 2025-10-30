@@ -1,6 +1,6 @@
 #include <iostream>
 
-static bool run_spirv(lava_file_reader& reader, const shader_stage& stage, const std::vector<std::byte>& push_constants)
+static bool run_spirv(lava_file_reader& reader, const trackedpipeline& pipeline_data, const shader_stage& stage, const std::vector<std::byte>& push_constants)
 {
 	assert(stage.module != VK_NULL_HANDLE);
 	const uint32_t shader_index = index_to_VkShaderModule.index(stage.module);
@@ -128,7 +128,7 @@ static bool execute_commands(lava_file_reader& reader, VkCommandBuffer commandBu
 				const auto& pipeline_data = VkPipeline_index.at(compute_pipeline_bound);
 				assert(pipeline_data.shader_stages.size() == 1);
 				assert(pipeline_data.shader_stages[0].stage == VK_SHADER_STAGE_COMPUTE_BIT);
-				run_spirv(reader, pipeline_data.shader_stages[0], push_constants);
+				run_spirv(reader, pipeline_data, pipeline_data.shader_stages[0], push_constants);
 			}
 			break;
 		case VKCMDDRAW: // proxy for all draw commands
@@ -136,7 +136,7 @@ static bool execute_commands(lava_file_reader& reader, VkCommandBuffer commandBu
 				const auto& pipeline_data = VkPipeline_index.at(graphics_pipeline_bound);
 				for (const auto& stage : pipeline_data.shader_stages)
 				{
-					run_spirv(reader, stage, push_constants);
+					run_spirv(reader, pipeline_data, stage, push_constants);
 				}
 			}
 			break;
