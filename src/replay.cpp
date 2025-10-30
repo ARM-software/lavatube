@@ -26,32 +26,33 @@ static void usage()
 	printf("-h/--help              This help\n");
 #ifndef NDEBUG
 	printf("-d/--debug level       Set debug level [0,1,2,3]\n");
-	printf("-o/--debugfile FILE    Output debug output to the given file\n");
 #endif
+	printf("-o/--logfile FILE      Output log output to the given file\n");
 	printf("-g/--gpu gpu           Select physical device to use (by index value)\n");
 	printf("-V/--validate          Enable validation layers\n");
 	printf("-f/--frames start end  Select a frame range\n");
 	printf("-w/--wsi wsi           Use the given windowing system [xcb, wayland, headless, none]\n");
-	printf("-v/--virtual           Use a virtual swapchain\n");
-	printf("  -vpm mode            Use this presentation mode for our real swapchain [immediate, mailbox, fifo, fifo_relaxed]\n");
-	printf("  -vi images           Use this number of images with our real swapchain\n");
-	printf("  -vp                  Performance measurement mode - do not blit from our virtual swapchain to the real swapchain\n");
 	printf("-i/--info              Output information about the trace file and exit (affected by debug level)\n");
-	printf("-H/--heap size         Set the suballocator minimum heap size\n");
-	printf("-S/--save-cache dir    Save created pipeline objects to the specified directory\n");
-	printf("-L/--load-cache dir    Load the pipeline caches from the specified directory\n");
-	printf("-D/--no-dedicated      Do not use dedicated object allocations\n");
-	printf("-A/--allocator type    Use custom memory allocator callbacks [none, debug]\n");
-	printf("-N/--no-anisotropy     Disable any use of sampler anisotropy\n");
+	printf("-S/--save-cache dir    Save cached objects to the specified directory\n");
+	printf("-L/--load-cache dir    Load cached objects from the specified directory\n");
 	printf("-B/--blackhole         Do not actually submit any work to the GPU. May be useful for CPU measurements.\n");
-	printf("-nm/--no-multithread   Do not do decompression and file read in a separate thread. May save some CPU load and memory.\n");
+	printf("--no-multithreaded-io  Do not do decompression and file read in a separate thread. May save some CPU load and memory.\n");
 	printf("-s/--sandbox           Enable security sandbox\n");
+	printf("Vulkan specific options:\n");
+	printf("--swapchain mode       Swapchain mode [virtual, captured, offscreen]\n"); // swapchain offscreen == wsi none
+	printf("--virtualperfmode      Performance measurement mode - do not blit from our virtual swapchain to the real swapchain\n");
+	printf("--no-dedicated         Do not use dedicated object allocations\n");
+	printf("--allocator type       Use custom memory allocator callbacks [none, debug]\n");
+	printf("--no-anisotropy        Disable any use of sampler anisotropy\n");
+	printf("--presentation mode    Use this Vulkan presentation mode [immediate, mailbox, fifo, fifo_relaxed]\n");
+	printf("--swapchain-images num Use this number of swapchain images\n");
+	printf("--heap size            Set the suballocator minimum heap size\n");
 	exit(-1);
 }
 
 static inline bool match(const char* in, const char* short_form, const char* long_form, int& remaining)
 {
-	if (strcmp(in, short_form) == 0 || strcmp(in, long_form) == 0)
+	if ((short_form && strcmp(in, short_form) == 0) || (long_form && strcmp(in, long_form) == 0))
 	{
 		remaining--;
 		return true;
@@ -149,7 +150,7 @@ int main(int argc, char **argv)
 		{
 			p__debug_level = get_int(argv[++i], remaining);
 		}
-		else if (match(argv[i], "-o", "--debugfile", remaining))
+		else if (match(argv[i], "-o", "--logfile", remaining))
 		{
 			if (remaining < 1) usage();
 			std::string val = get_str(argv[++i], remaining);
@@ -160,15 +161,20 @@ int main(int argc, char **argv)
 		{
 			p__validation = 1;
 		}
-		else if (match(argv[i], "-v", "--virtual", remaining))
-		{
-			p__virtualswap = true;
-		}
-		else if (match(argv[i], "-vp", "--virtualperfmode", remaining))
+		else if (match(argv[i], nullptr, "--virtualperfmode", remaining))
 		{
 			p__virtualperfmode = true;
 		}
-		else if (match(argv[i], "-vpm", "--realpresentationmode", remaining))
+		else if (match(argv[i], nullptr, "--swapchain", remaining))
+		{
+			if (remaining < 1) usage();
+			std::string val = get_str(argv[++i], remaining);
+			if (val == "captured") p__virtualswap = false;
+			else if (val == "virtual") p__virtualswap = true;
+			else if (val == "offscreen") p__noscreen = 1;
+			else ABORT("Bad --swapchain mode");
+		}
+		else if (match(argv[i], nullptr, "--presentationmode", remaining))
 		{
 			if (remaining < 1) usage();
 			std::string val = get_str(argv[++i], remaining);
@@ -178,7 +184,7 @@ int main(int argc, char **argv)
 			else if (val == "fifo_relaxed") p__realpresentmode = VK_PRESENT_MODE_FIFO_RELAXED_KHR;
 			else p__realpresentmode = (VkPresentModeKHR) atoi(val.c_str());
 		}
-		else if (match(argv[i], "-vi", "--realimages", remaining))
+		else if (match(argv[i], nullptr, "--swapchainimages", remaining))
 		{
 			if (remaining < 1) usage();
 			p__realimages = get_int(argv[++i], remaining);
@@ -198,15 +204,15 @@ int main(int argc, char **argv)
 		{
 			infodump = true;
 		}
-		else if (match(argv[i], "-D", "--no-dedicated", remaining))
+		else if (match(argv[i], nullptr, "--no-dedicated", remaining))
 		{
 			p__dedicated_allocation = false;
 		}
-		else if (match(argv[i], "-N", "--no-anisotropy", remaining))
+		else if (match(argv[i], nullptr, "--no-anisotropy", remaining))
 		{
 			p__no_anisotropy = true;
 		}
-		else if (match(argv[i], "-A", "--allocator", remaining))
+		else if (match(argv[i], nullptr, "--allocator", remaining))
 		{
 			std::string allocator = get_str(argv[++i], remaining);
 			if (allocator == "none") p__custom_allocator = 0;
@@ -216,7 +222,7 @@ int main(int argc, char **argv)
 				DIE("Unsupported custom allocator: %s", allocator.c_str());
 			}
 		}
-		else if (match(argv[i], "-H", "--heap", remaining))
+		else if (match(argv[i], nullptr, "--heap", remaining))
 		{
 			heap_size = get_int(argv[++i], remaining);
 		}
@@ -238,7 +244,7 @@ int main(int argc, char **argv)
 		{
 			p__blackhole = 1;
 		}
-		else if (match(argv[i], "-nm", "--no-multithread", remaining))
+		else if (match(argv[i], nullptr, "--no-multithreaded-io", remaining))
 		{
 			p__disable_multithread_read = 1;
 		}

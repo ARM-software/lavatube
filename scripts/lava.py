@@ -81,6 +81,8 @@ out(targets_main, '#pragma GCC diagnostic ignored "-Wunused-variable"')
 out(targets_main, '#pragma GCC diagnostic ignored "-Wunused-function"')
 out(targets_main, '#if (__clang_major__ > 12) || (!defined(__llvm__) && defined(__GNUC__))')
 out(targets_main, '#pragma GCC diagnostic ignored "-Wunused-but-set-variable"')
+out(targets_main, '#pragma GCC diagnostic ignored "-Warray-bounds"') # TBD fixme, lots of bogus errors in release builds
+out(targets_main, '#pragma GCC diagnostic ignored "-Wstringop-overflow"') # TBD fixme, lots of bogus errors in release builds
 out(targets_main, '#endif')
 out(targets_all)
 
