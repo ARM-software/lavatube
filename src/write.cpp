@@ -234,6 +234,7 @@ void lava_writer::serialize()
 	for (const std::string& name : removed_device_exts) r["deviceRequested"]["removedExtensions"].append(name);
 
 	// write metadata to JSON file
+	mJson["vulkan_header_version"] = version_to_string(VK_HEADER_VERSION);
 	mJson["global_frames"] = global_frame + 1; // +1 since zero-indexed
 	mJson["threads"] = (unsigned)thread_streams.size();
 	writeJson(mPath + "/metadata.json", mJson);

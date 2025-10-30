@@ -88,7 +88,7 @@ uint16_t lava_file_reader::read_apicall()
 {
 	const uint16_t apicall = parent->dictionary.at(read_uint16_t());
 	(void)read_uint32_t(); // reserved for future use
-	DLOG("[t%02u %06d] %s", current.thread, (int)parent->thread_call_numbers->at(current.thread).load(std::memory_order_relaxed) + 1, get_function_name(apicall));
+	DLOG("[t%02u f%u %06d] %s", current.thread, current.frame, (int)parent->thread_call_numbers->at(current.thread).load(std::memory_order_relaxed) + 1, get_function_name(apicall));
 	lava_replay_func func = retrace_getcall(apicall);
 	current.call_id = apicall;
 	func(*this);

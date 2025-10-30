@@ -62,13 +62,13 @@ endif()
 
 # --- spirv-simulator ---
 
-message(STATUS "Building spirv-simulator")
+message(STATUS "Configuring spirv-simulator")
 add_subdirectory(external/spirv-simulator ${CMAKE_BINARY_DIR}/spirv-simulator)
 
 # --- tracetooltests ---
 
 if(NOT ${NO_TRACETOOLTESTS})
-    message(STATUS "Building tracetooltests")
+    message(STATUS "Configuring tracetooltests")
     set(NO_GLES 1)
     set(NO_CL 1)
     set(TOOLSTEST_SANITY 1)
@@ -79,6 +79,7 @@ endif()
 
 # --- density ---
 
+message(STATUS "Configuring density")
 set(DENSITY_SOURCES
     ${PROJECT_SOURCE_DIR}/external/density/src/globals.c
     ${PROJECT_SOURCE_DIR}/external/density/src/buffers/buffer.c
