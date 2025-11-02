@@ -30,9 +30,11 @@ static void usage()
 	printf("-o/--logfile FILE      Output log output to the given file\n");
 	printf("-g/--gpu gpu           Select physical device to use (by index value)\n");
 	printf("-V/--validate          Enable validation layers\n");
-	printf("-f/--frames start end  Select a frame range\n");
+	printf("-f/--frames start end  Select a measurement frame range\n");
 	printf("-w/--wsi wsi           Use the given windowing system [xcb, wayland, headless, none]\n");
 	printf("-i/--info              Output information about the trace file and exit (affected by debug level)\n");
+	printf("-p/--preload size      The amount of file data to preload before starting replay (default %d)\n", (int)p__preload);
+	printf("-a/--allow-stalls      Allow stalls if we run out of input data from our readahead thread while in measurement frame range\n");
 	printf("-S/--save-cache dir    Save cached objects to the specified directory\n");
 	printf("-L/--load-cache dir    Load cached objects from the specified directory\n");
 	printf("-B/--blackhole         Do not actually submit any work to the GPU. May be useful for CPU measurements.\n");
@@ -140,6 +142,10 @@ int main(int argc, char **argv)
 	int remaining = argc - 1; // zeroth is name of program
 	std::string filename;
 	bool infodump = false;
+
+	// override defaults
+	//p__allow_stalls = get_env_bool("LAVATUBE_ALLOW_STALLS", false);
+
 	for (int i = 1; i < argc; i++)
 	{
 		if (match(argv[i], "-h", "--help", remaining))
@@ -239,6 +245,14 @@ int main(int argc, char **argv)
 		{
 			p__load_pipelinecache = argv[++i];
 			remaining--;
+		}
+		else if (match(argv[i], "-p", "--preload", remaining))
+		{
+			p__preload = get_int(argv[++i], remaining);
+		}
+		else if (match(argv[i], "-a", "--allow-stalls", remaining))
+		{
+			p__allow_stalls = 1;
 		}
 		else if (match(argv[i], "-B", "--blackhole", remaining))
 		{

@@ -61,6 +61,7 @@ static void write_test_1()
 	assert(big.at(64) == 77);
 	assert(big.at(65) == 99);
 	assert(big.at(80) == 78);
+	ILOG("Uncompressed bytes in write_4: %ld", (long)file.uncompressed_bytes);
 }
 
 static void write_test_2()
@@ -73,6 +74,7 @@ static void write_test_2()
 	file.write_int8_t(8);
 	file.set("write_4-2.bin");
 	file.write_int8_t(8);
+	ILOG("Uncompressed bytes in write_4_2: %ld", (long)file.uncompressed_bytes);
 }
 
 static void write_test_3()
@@ -82,6 +84,7 @@ static void write_test_3()
 	file.write_uint16_t(16);
 	file.write_uint32_t(32);
 	file.write_uint64_t(64);
+	ILOG("Uncompressed bytes in write_4_3: %ld", (long)file.uncompressed_bytes);
 }
 
 static void write_test_4()
@@ -121,6 +124,8 @@ static void write_test_4()
 	assert(file.count_uncompressed_chunks() == 0);
 	file.thaw();
 	assert(file.count_held_chunks() == 0);
+	file.finalize();
+	ILOG("Uncompressed bytes in write_4_4: %ld", (long)file.uncompressed_bytes);
 }
 
 int main()

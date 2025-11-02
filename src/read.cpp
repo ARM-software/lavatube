@@ -12,22 +12,14 @@
 lava::mutex sync_mutex;
 thread_local lava_file_reader* local_reader_ptr;
 
-// --- misc
-
-Json::Value readJson(const std::string& filename, const std::string packedfile)
-{
-	return packed_json(filename, packedfile);
-}
-
 // --- file reader
 
-lava_file_reader::lava_file_reader(lava_reader* _parent, const std::string& path, int mytid, int frames, int start, int end)
-	: file_reader(packed_open("thread_" + std::to_string(mytid) + ".bin", path), mytid)
+lava_file_reader::lava_file_reader(lava_reader* _parent, const std::string& path, int mytid, int frames, const Json::Value& frameinfo, int start, int end)
+	: file_reader(packed_open("thread_" + std::to_string(mytid) + ".bin", path), mytid, frameinfo["uncompressed_size"].asInt())
 {
 	parent = _parent;
 	run = parent->run;
 	global_frames = frames;
-	Json::Value frameinfo = readJson("frames_" + _to_string(mytid) + ".json", path);
 	current.thread = mytid;
 	current.call = 0;
 	current.frame = 0;
@@ -153,7 +145,7 @@ void lava_reader::init(const std::string& path, int heap_size)
 {
 	// read dictionary
 	mPackedFile = path;
-	Json::Value dict = readJson("dictionary.json", mPackedFile);
+	Json::Value dict = packed_json("dictionary.json", mPackedFile);
 	for (const std::string& funcname : dict.getMemberNames())
 	{
 		const uint16_t trace_index = dict[funcname].asInt(); // old index
@@ -163,8 +155,8 @@ void lava_reader::init(const std::string& path, int heap_size)
 	}
 
 	// read limits and allocate the global remapping structures
-	retrace_init(*this, readJson("limits.json", mPackedFile), heap_size, run);
-	Json::Value trackable = readJson("tracking.json", mPackedFile);
+	retrace_init(*this, packed_json("limits.json", mPackedFile), heap_size, run);
+	Json::Value trackable = packed_json("tracking.json", mPackedFile);
 	trackable_read(trackable);
 
 	// Set up buffer device address tracking
@@ -193,14 +185,15 @@ void lava_reader::init(const std::string& path, int heap_size)
 		}
 	}
 
-	Json::Value meta = readJson("metadata.json", mPackedFile);
+	Json::Value meta = packed_json("metadata.json", mPackedFile);
 	mGlobalFrames = meta["global_frames"].asInt();
 	const int num_threads = meta["threads"].asInt();
 	global_mutex.lock();
 	thread_call_numbers = new std::vector<std::atomic_uint_fast32_t>(num_threads);
 	for (int thread_id = 0; thread_id < num_threads; thread_id++)
 	{
-		lava_file_reader* f = new lava_file_reader(this, mPackedFile, thread_id, mGlobalFrames, mStart, mEnd);
+		Json::Value frameinfo = packed_json("frames_" + _to_string(thread_id) + ".json", path);
+		lava_file_reader* f = new lava_file_reader(this, mPackedFile, thread_id, mGlobalFrames, frameinfo, mStart, mEnd);
 		thread_streams.emplace(thread_id, std::move(f));
 	}
 	global_mutex.unlock();
@@ -213,7 +206,7 @@ void lava_reader::init(const std::string& path, int heap_size)
 void lava_reader::dump_info()
 {
 	// App info
-	Json::Value meta = readJson("metadata.json", mPackedFile);
+	Json::Value meta = packed_json("metadata.json", mPackedFile);
 	printf("App name: %s\n", meta["applicationInfo"]["applicationName"].asCString());
 	printf("App version: %s\n", meta["applicationInfo"]["applicationVersion"].asCString());
 	printf("App engine: %s\n", meta["applicationInfo"]["engineName"].asCString());
@@ -221,14 +214,14 @@ void lava_reader::dump_info()
 	printf("Traced device version: %s\n", meta["devicePresented"]["apiVersion"].asCString());
 	printf("Frames: %d\n", meta["global_frames"].asInt());
 	// Trace info
-	Json::Value tracking = readJson("tracking.json", mPackedFile);
+	Json::Value tracking = packed_json("tracking.json", mPackedFile);
 	printf("Swapchains:\n");
 	for (const auto& item : tracking["VkSwapchainKHR"])
 	{
 		printf("\t%d: %dx%d\n", item["index"].asInt(), item["width"].asInt(), item["height"].asInt());
 	}
 	// Limits
-	Json::Value limits = readJson("limits.json", mPackedFile);
+	Json::Value limits = packed_json("limits.json", mPackedFile);
 	printf("Resources:\n");
 	for (const std::string& key : limits.getMemberNames())
 	{
@@ -243,7 +236,7 @@ void lava_reader::dump_info()
 		std::vector<std::string> files = packed_files(mPackedFile, "frames_");
 		for (unsigned thread = 0; thread < files.size(); thread++)
 		{
-			Json::Value t = readJson("frames_" + _to_string(thread) + ".json", mPackedFile);
+			Json::Value t = packed_json("frames_" + _to_string(thread) + ".json", mPackedFile);
 			printf("Thread %u:\n", thread);
 			printf("\tFrames: %d\n", (int)t["frames"].size());
 			printf("\tUncompressed size: %u\n", t["uncompressed_size"].asUInt());

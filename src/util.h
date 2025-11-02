@@ -78,6 +78,8 @@ extern uint_fast8_t p__external_memory;
 extern uint_fast8_t p__disable_multithread_writeout;
 extern uint_fast8_t p__disable_multithread_compress;
 extern uint_fast8_t p__disable_multithread_read;
+extern uint_fast8_t p__allow_stalls;
+extern uint_fast16_t p__preload;
 
 /// Logging to be enable as needed by source recompilation
 #define NEVER(_format, ...)
@@ -232,3 +234,8 @@ typedef enum VkTracingObjectPropertyTRACETOOLTEST {
 	VK_TRACING_OBJECT_PROPERTY_INDEX_TRACETOOLTEST,
 } VkTracingObjectPropertyTRACETOOLTEST;
 typedef uint64_t (VKAPI_PTR *PFN_vkGetDeviceTracingObjectPropertyTRACETOOLTEST)(VkDevice device, VkObjectType objectType, uint64_t objectHandle, VkTracingObjectPropertyTRACETOOLTEST valueType);
+
+// Environment functions
+int get_env_int(const char* name, int v);
+int get_env_bool(const char* name, int v);
+FILE* get_env_file(const char* name, FILE* fallback);

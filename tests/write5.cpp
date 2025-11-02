@@ -43,7 +43,7 @@ static void write_test_pattern_stride(bool actual, int stride, int conseq)
 	unlink(filename.c_str());
 }
 
-static void write_test_1()
+static size_t write_test_1()
 {
 	file_writer file(0);
 	file.set("write_5.bin");
@@ -68,11 +68,12 @@ static void write_test_1()
 	uint64_t end = mygettime();
 	printf("write_test_1: %lu\n", (unsigned long)end - start);
 	assert(memcmp(ptr, clone, bytesize) == 0);
+	return file.uncompressed_bytes;
 }
 
-static void read_test_1()
+static void read_test_1(size_t bytes)
 {
-	file_reader t0("write_5.bin", 0);
+	file_reader t0("write_5.bin", 0, bytes);
 
 	std::vector<uint16_t> vals(1024 * 1024 * 16, 0);
 
@@ -87,9 +88,9 @@ static void read_test_1()
 
 int main()
 {
-	write_test_1();
+	size_t bytes = write_test_1();
 	sync();
-	read_test_1();
+	read_test_1(bytes);
 	unlink("write_5.bin");
 
 	// warmup

@@ -196,9 +196,6 @@ public:
 		chunk_mutex.unlock();
 	}
 
-protected:
-	uint64_t uncompressed_bytes = 0; // total amount of uncompressed bytes written so far
-
 public:
 	/// Stop sending packets to compression, useful if you want to keep pointers to written memory to keep working
 	inline void freeze() { if (!holding) holding = true; }
@@ -217,6 +214,8 @@ public:
 	int count_held_chunks() { int r; chunk_mutex.lock(); r = held_chunks.size(); chunk_mutex.unlock(); return r; }
 	int count_uncompressed_chunks() { int r; chunk_mutex.lock(); r = uncompressed_chunks.size(); chunk_mutex.unlock(); return r; }
 	int count_compressed_chunks() { int r; chunk_mutex.lock(); r = compressed_chunks.size(); chunk_mutex.unlock(); return r; }
+
+	uint64_t uncompressed_bytes = 0; // total amount of uncompressed bytes written so far
 
 private:
 	void compressor(); // runs in separate thread, moves chunks from uncompressed to compressed

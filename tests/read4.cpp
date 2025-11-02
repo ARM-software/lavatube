@@ -12,7 +12,7 @@
 
 void read_test_1()
 {
-	file_reader t0("write_4.bin", 0);
+	file_reader t0("write_4.bin", 0, 131445);
 	const uint8_t v1 = t0.read_uint8_t();
 	assert(v1 == 8);
 	const uint16_t v2 = t0.read_uint16_t();

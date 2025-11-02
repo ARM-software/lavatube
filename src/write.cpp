@@ -186,9 +186,6 @@ lava_writer::lava_writer() : global_frame(0)
 	mJson["lavatube_version_minor"] = LAVATUBE_VERSION_MINOR;
 	mJson["lavatube_version_patch"] = LAVATUBE_VERSION_PATCH;
 	mJson["vulkan_header_version"] = version_to_string(VK_HEADER_VERSION);
-	mJson["density_version_major"] = density_version_major();
-	mJson["density_version_minor"] = density_version_minor();
-	mJson["density_version_patch"] = density_version_revision();
 
 	frame_mutex.unlock();
 }

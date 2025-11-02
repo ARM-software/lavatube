@@ -116,7 +116,7 @@ class lava_file_reader : public file_reader
 public:
 	/// Initialize one thread of replay. Frame start and end values are global, not local. Frames are either (end-start)
 	/// or total number of global frames in the trace.
-	lava_file_reader(lava_reader* _parent, const std::string& path, int mytid, int frames, int start = 0, int end = -1);
+	lava_file_reader(lava_reader* _parent, const std::string& path, int mytid, int frames, const Json::Value& frameinfo, int start = 0, int end = -1);
 	~lava_file_reader();
 
 	/// Returns zero if no more instructions in the file, or the instruction type found.
@@ -151,13 +151,13 @@ public:
 			assert(maxsize == 0 || ptr <= buf + maxsize);
 			size = read_uint32_t();
 			check_space(size);
-			const char* uptr = chunk.data() + uidx; // pointer into current uncompressed chunk
+			const char* uptr = uncompressed_data + read_position;
 			if (buf && size)
 			{
 				memcpy(ptr, uptr, size);
 				parent->find_address_candidates(buffer_data, size, ptr, current);
 			}
-			uidx += size;
+			read_position += size;
 			ptr += size;
 			changed += size;
 			// cppcheck-suppress nullPointerRedundantCheck

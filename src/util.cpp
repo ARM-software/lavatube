@@ -39,7 +39,7 @@ int STOI(const std::string& value)
 }
 #endif
 
-static int get_env_int(const char* name, int v)
+int get_env_int(const char* name, int v)
 {
 	const char* tmpstr = getenv(name);
 	if (tmpstr)
@@ -49,7 +49,7 @@ static int get_env_int(const char* name, int v)
 	return v;
 }
 
-static int get_env_bool(const char* name, int v)
+int get_env_bool(const char* name, int v)
 {
 	const char* tmpstr = getenv(name);
 	if (tmpstr)
@@ -62,7 +62,7 @@ static int get_env_bool(const char* name, int v)
 	return v;
 }
 
-static FILE* get_env_file(const char* name, FILE* fallback)
+FILE* get_env_file(const char* name, FILE* fallback)
 {
 	const char* tmpstr = getenv(name);
 	if (tmpstr)
@@ -98,6 +98,8 @@ uint_fast8_t p__external_memory = get_env_bool("LAVATUBE_EXTERNAL_MEMORY", 0);
 uint_fast8_t p__disable_multithread_writeout = get_env_bool("LAVATUBE_DISABLE_MULTITHREADED_WRITEOUT", 0);
 uint_fast8_t p__disable_multithread_compress = get_env_bool("LAVATUBE_DISABLE_MULTITHREADED_COMPRESS", 0);
 uint_fast8_t p__disable_multithread_read = get_env_bool("LAVATUBE_DISABLE_MULTITHREADED_READ", 0);
+uint_fast8_t p__allow_stalls = get_env_bool("LAVATUBE_ALLOW_STALLS", true);
+uint_fast16_t p__preload = get_env_int("LAVATUBE_PRELOAD_SIZE", 1);
 
 const char* errorString(const VkResult errorCode)
 {
