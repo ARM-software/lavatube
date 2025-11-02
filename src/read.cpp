@@ -67,6 +67,7 @@ uint8_t lava_file_reader::step()
 		terminated.store(true); // prevent us from calling pthread_cancel on this thread later
 		return 0; // done
 	}
+	release_checkpoint();
 	const uint8_t r = read_uint8_t();
 	assert(r != 0); // invalid value for instrtype
 	return r;
@@ -78,6 +79,7 @@ lava_file_reader::~lava_file_reader()
 
 uint16_t lava_file_reader::read_apicall()
 {
+	set_checkpoint();
 	const uint16_t apicall = parent->dictionary.at(read_uint16_t());
 	(void)read_uint32_t(); // reserved for future use
 	DLOG2("[t%02u f%u %06d] %s", current.thread, current.frame, (int)parent->thread_call_numbers->at(current.thread).load(std::memory_order_relaxed) + 1, get_function_name(apicall));
