@@ -177,18 +177,18 @@ Compression
 You can modify the compression algorithm and compression level used during tracing
 with the environment variables LAVATUBE_COMPRESSION_TYPE and LAVATUBE_COMPRESSION_LEVEL.
 
-The types are (value zero is reserved for now)
+The types are (value zero is reserved for now, density is the default)
 1. Density
 2. LZ4
 
-For Density, the possible levels are (zero means use default)
+For Density, the possible levels are (zero means use default, which is Cheetah)
 
 1. Chameleon
 2. Cheetah
 3. Lion
 
 For LZ4, higher levels means more compression and slower execution. Zero means
-use default.
+use the default, which is level one (highest performance, worst compression).
 
 Further reading
 ===============

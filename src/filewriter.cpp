@@ -209,9 +209,9 @@ void file_writer::serializer()
 buffer file_writer::compress_chunk(buffer& uncompressed)
 {
 	const uint64_t header_size = sizeof(uint64_t) * 2;
-	uint64_t compressed_size;
-	uint64_t was_written;
-	uint64_t was_read;
+	uint64_t compressed_size = 0;
+	uint64_t was_written = 0;
+	uint64_t was_read = 0;
 	if (p__compression_type == LAVATUBE_COMPRESSION_DENSITY)
 	{
 		 compressed_size = density_compress_safe_size(uncompressed.size()) + header_size;
