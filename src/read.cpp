@@ -14,8 +14,8 @@ thread_local lava_file_reader* local_reader_ptr;
 
 // --- file reader
 
-lava_file_reader::lava_file_reader(lava_reader* _parent, const std::string& path, int mytid, int frames, const Json::Value& frameinfo, int start, int end)
-	: file_reader(packed_open("thread_" + std::to_string(mytid) + ".bin", path), mytid, frameinfo["uncompressed_size"].asInt())
+lava_file_reader::lava_file_reader(lava_reader* _parent, const std::string& path, int mytid, int frames, const Json::Value& frameinfo, size_t uncompressed_size, size_t uncompressed_target, int start, int end)
+	: file_reader(packed_open("thread_" + std::to_string(mytid) + ".bin", path), mytid, uncompressed_size, uncompressed_target)
 {
 	parent = _parent;
 	run = parent->run;
@@ -121,7 +121,7 @@ void lava_reader::finalize(bool terminate)
 		uint64_t runner_local = 0;
 		uint64_t worker_local = 0;
 		thread_streams[i]->stop_measurement(worker_local, runner_local);
-		DLOG("CPU time thread %u - worker %lu, runner %lu", i, (long unsigned)worker_local, (long unsigned)runner_local);
+		DLOG("CPU time thread %u - readahead worker %lu, API runner %lu", i, (long unsigned)worker_local, (long unsigned)runner_local);
 		runner += runner_local;
 		worker += worker_local;
 	}
@@ -195,7 +195,16 @@ void lava_reader::init(const std::string& path, int heap_size)
 	for (int thread_id = 0; thread_id < num_threads; thread_id++)
 	{
 		Json::Value frameinfo = packed_json("frames_" + _to_string(thread_id) + ".json", path);
-		lava_file_reader* f = new lava_file_reader(this, mPackedFile, thread_id, mGlobalFrames, frameinfo, mStart, mEnd);
+		const size_t uncompressed_size = frameinfo["uncompressed_size"].asUInt();
+		size_t uncompressed_target = uncompressed_size;
+		if (frameinfo.isMember("frames") && mEnd > 0)
+		{
+			for (const auto& v : frameinfo["frames"])
+			{
+				if (v["global_frame"] == mEnd + 1) { uncompressed_target = v["position"].asUInt(); break; }
+			}
+		}
+		lava_file_reader* f = new lava_file_reader(this, mPackedFile, thread_id, mGlobalFrames, frameinfo, uncompressed_size, uncompressed_target, mStart, mEnd);
 		thread_streams.emplace(thread_id, std::move(f));
 	}
 	global_mutex.unlock();

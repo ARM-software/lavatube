@@ -73,7 +73,7 @@ static size_t write_test_1()
 
 static void read_test_1(size_t bytes)
 {
-	file_reader t0("write_5.bin", 0, bytes);
+	file_reader t0("write_5.bin", 0, bytes, bytes);
 
 	std::vector<uint16_t> vals(1024 * 1024 * 16, 0);
 

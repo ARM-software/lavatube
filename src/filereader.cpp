@@ -8,7 +8,7 @@
 #include "filereader.h"
 #include "density/src/density_api.h"
 
-void file_reader::init(int fd, size_t uncompressed_size)
+void file_reader::init(int fd, size_t uncompressed_size, size_t uncompressed_target)
 {
 	if (total_left == 0) ABORT("Input file \"%s\" is empty!", mFilename.c_str());
 
@@ -20,6 +20,7 @@ void file_reader::init(int fd, size_t uncompressed_size)
 	compressed_data = fstart + offset - pa_offset;
 	assert(uncompressed_size > 0);
 	total_uncompressed = uncompressed_size;
+	uncompressed_wanted = uncompressed_target;
 	madvise(fstart, mapped_size, MADV_SEQUENTIAL);
 
 	const uint64_t padded_size = density_decompress_safe_size(uncompressed_size);
@@ -30,24 +31,24 @@ void file_reader::init(int fd, size_t uncompressed_size)
 	start_measurement();
 }
 
-file_reader::file_reader(const std::string& filename, unsigned mytid, size_t uncompressed_size) : tid(mytid), mFilename(filename)
+file_reader::file_reader(const std::string& filename, unsigned mytid, size_t uncompressed_size, size_t uncompressed_target) : tid(mytid), mFilename(filename)
 {
 	int fd = open(filename.c_str(), O_RDONLY);
 	if (fd == -1) ABORT("Cannot open \"%s\": %s", filename.c_str(), strerror(errno));
 	struct stat64 st;
 	if (fstat64(fd, &st) == -1) ABORT("Failed to stat %s: %s", filename.c_str(), strerror(errno));
 	total_left = st.st_size;
-	init(fd, uncompressed_size);
+	init(fd, uncompressed_size, uncompressed_target);
 	close(fd);
 	(void)tid; // silence compiler
 	DLOG("%s opened for reading (size %lu) and decompressor thread %u launched!", filename.c_str(), (unsigned long)total_left, tid);
 }
 
-file_reader::file_reader(packed pf, unsigned mytid, size_t uncompressed_size) : tid(mytid), mFilename(pf.inside)
+file_reader::file_reader(packed pf, unsigned mytid, size_t uncompressed_size, size_t uncompressed_target) : tid(mytid), mFilename(pf.inside)
 {
 	assert(pf.fd != -1);
 	total_left = pf.filesize;
-	init(pf.fd, uncompressed_size);
+	init(pf.fd, uncompressed_size, uncompressed_target);
 	DLOG("%u : %s opened for reading from inside %s (size %lu) and decompressor thread launched!", tid, pf.inside.c_str(), pf.pack.c_str(), (unsigned long)pf.filesize);
 }
 
@@ -94,7 +95,7 @@ void file_reader::decompress_chunk()
 	write_position += uncompressed_size;
 	total_left -= compressed_size + header_size;
 	uncompressed_bytes += uncompressed_size;
-	if (total_left == 0) done_decompressing = true;  // all done!
+	if (total_left == 0 || write_position >= uncompressed_wanted) done_decompressing = true;  // all done!
 }
 
 /// Decompressor thread
@@ -114,11 +115,84 @@ void file_reader::decompressor()
 	int r = pthread_getcpuclockid(pthread_self(), &id);
 	if (r != 0)
 	{
-		ELOG("Failed to get worker thread ID: %s", strerror(r));
+		ELOG("Failed to get worker thread %u ID: %s", tid, strerror(r));
 	}
-	else if (clock_gettime(id, &stop_cpu_usage) != 0)
+	else if (clock_gettime(id, &stop_worker_cpu_usage) != 0)
 	{
-		ELOG("Failed to get worker thread CPU usage!");
+		ELOG("Failed to get worker thread %u CPU usage: %s", tid, strerror(errno));
 	}
+	chunk_mutex.unlock();
+}
+
+void file_reader::start_measurement()
+{
+	clockid_t id;
+	int r = pthread_getcpuclockid(pthread_self(), &id);
+	if (r != 0)
+	{
+		ELOG("Failed to get API runner thread %u ID: %s", tid, strerror(r));
+	}
+	else if (clock_gettime(id, &runner_cpu_usage) != 0)
+	{
+		ELOG("Failed to get API runner thread %u CPU usage: %s", tid, strerror(errno));
+	}
+
+	if (!multithreaded_read)
+	{
+		// No longer valid
+		clear_timespec(&worker_cpu_usage);
+		clear_timespec(&stop_worker_cpu_usage);
+		return;
+	}
+	pthread_t t = decompressor_thread.native_handle();
+	r = pthread_getcpuclockid(t, &id);
+	if (r != 0)
+	{
+		// This usually means our read-ahead worker is already done.
+		clear_timespec(&worker_cpu_usage);
+		clear_timespec(&stop_worker_cpu_usage);
+	}
+	else if (clock_gettime(id, &worker_cpu_usage) != 0)
+	{
+		ELOG("Failed to get worker thread %u CPU usage: %s", tid, strerror(errno));
+	}
+}
+
+void file_reader::stop_measurement(uint64_t& worker, uint64_t& runner)
+{
+	chunk_mutex.lock();
+	struct timespec stop_runner_cpu_usage;
+	clockid_t id;
+	int r = pthread_getcpuclockid(pthread_self(), &id);
+	if (r != 0)
+	{
+		ELOG("Failed to get runner thread %u ID: %s", tid, strerror(r));
+	}
+	else if (clock_gettime(id, &stop_runner_cpu_usage) != 0)
+	{
+		ELOG("Failed to get runner thread %u CPU usage: %s", tid, strerror(errno));
+	}
+	assert(stop_runner_cpu_usage.tv_sec >= runner_cpu_usage.tv_sec);
+	runner = diff_timespec(&stop_runner_cpu_usage, &runner_cpu_usage);
+
+	if (!multithreaded_read)
+	{
+		worker = 0;
+		chunk_mutex.unlock();
+		return;
+	}
+	pthread_t t = decompressor_thread.native_handle();
+	r = pthread_getcpuclockid(t, &id);
+	if (r != 0)
+	{
+		// Read-ahead worker is already done. This is ok, if it stopped during frame range,
+		// we got data in stop_worker_cpu_usage already
+	}
+	else if (clock_gettime(id, &stop_worker_cpu_usage) != 0)
+	{
+		ELOG("Failed to get worker thread %u CPU usage: %s", tid, strerror(errno));
+	}
+	assert(stop_worker_cpu_usage.tv_sec >= worker_cpu_usage.tv_sec);
+	worker = diff_timespec(&stop_worker_cpu_usage, &worker_cpu_usage);
 	chunk_mutex.unlock();
 }

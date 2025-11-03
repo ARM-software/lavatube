@@ -52,8 +52,8 @@ protected:
 
 public:
 	/// Initialize one thread of replay.
-	file_reader(const std::string& filename, unsigned mytid, size_t uncompressed_size);
-	file_reader(packed pf, unsigned mytid, size_t uncompressed_size);
+	file_reader(const std::string& filename, unsigned mytid, size_t uncompressed_size, size_t uncompressed_target);
+	file_reader(packed pf, unsigned mytid, size_t uncompressed_size, size_t uncompressed_target);
 	~file_reader();
 
 	inline uint8_t read_uint8_t() { uint8_t t; read_value(&t); return t; }
@@ -175,66 +175,14 @@ public:
 	}
 
 	/// Start measuring worker thread CPU usage
-	void start_measurement()
-	{
-		if (!multithreaded_read) return;
-		pthread_t t = decompressor_thread.native_handle();
-		clockid_t id;
-		int r = pthread_getcpuclockid(t, &id);
-		if (r != 0)
-		{
-			ELOG("Failed to get worker thread ID: %s", strerror(r));
-		}
-		else if (clock_gettime(id, &worker_cpu_usage) != 0)
-		{
-			ELOG("Failed to get worker thread CPU usage!");
-		}
-		r = pthread_getcpuclockid(pthread_self(), &id);
-		if (r != 0)
-		{
-			ELOG("Failed to get runner thread ID: %s", strerror(r));
-		}
-		else if (clock_gettime(id, &runner_cpu_usage) != 0)
-		{
-			ELOG("Failed to get runner thread CPU usage!");
-		}
-	}
+	void start_measurement();
 
 	/// Return spent CPU time in microseconds in worker thread
-	void stop_measurement(uint64_t& worker, uint64_t& runner)
-	{
-		if (!multithreaded_read) return;
-		chunk_mutex.lock();
-		pthread_t t = decompressor_thread.native_handle();
-		clockid_t id;
-		int r = pthread_getcpuclockid(t, &id);
-		if (r != 0)
-		{
-			// this is ok, we got data in stop_cpu_usage already
-		}
-		else if (clock_gettime(id, &stop_cpu_usage) != 0)
-		{
-			ELOG("Failed to get worker thread CPU usage!");
-		}
-		assert(stop_cpu_usage.tv_sec >= worker_cpu_usage.tv_sec);
-		worker = diff_timespec(&stop_cpu_usage, &worker_cpu_usage);
-		r = pthread_getcpuclockid(pthread_self(), &id);
-		if (r != 0)
-		{
-			ELOG("Failed to get runner thread ID: %s", strerror(r));
-		}
-		else if (clock_gettime(id, &stop_cpu_usage) != 0)
-		{
-			ELOG("Failed to get runner thread CPU usage!");
-		}
-		assert(stop_cpu_usage.tv_sec >= runner_cpu_usage.tv_sec);
-		runner = diff_timespec(&stop_cpu_usage, &runner_cpu_usage);
-		chunk_mutex.unlock();
-	}
+	void stop_measurement(uint64_t& worker, uint64_t& runner);
 
 private:
 	void decompressor(); // runs in separate thread, moves chunks from file to uncompressed chunks
-	void init(int fd, size_t uncompressed_size);
+	void init(int fd, size_t uncompressed_size, size_t uncompressed_target);
 
 	bool multithreaded_read = true;
 	unsigned tid = -1; // only used for logging
@@ -249,7 +197,7 @@ private:
 	/// Start CPU usage for our runner thread
 	struct timespec runner_cpu_usage;
 	/// Stop CPU usage for our worker thread
-	struct timespec stop_cpu_usage;
+	struct timespec stop_worker_cpu_usage;
 	/// Amount of memory mapped compressed data
 	uint64_t mapped_size = 0;
 	/// Checkpoint position - from where we have last started reading, but need to preserve data from. Only updated from main thread.
@@ -264,6 +212,7 @@ protected:
 	uintptr_t page_mask() const { return ~(page_size - 1); } // for doing page-alignment
 	uint64_t total_left = 0; // amount of compressed bytes left in input file, only use from decompressor thread
 	uint64_t total_uncompressed = 0; // amount of uncompressed bytes that will come from the input file
+	uint64_t uncompressed_wanted = 0; // amount of uncompressed bytes that we want to read
 	/// Start of anonymous memory map for uncompressed data
 	char* uncompressed_data = nullptr;
 	/// Current position in the uncompressed buffer. Only modified by the main thread.

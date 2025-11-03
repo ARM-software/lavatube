@@ -310,13 +310,13 @@ int main(int argc, char **argv)
 	}
 
 	VkuVulkanLibrary library = vkuCreateWrapper();
+	replayer.set_frames(start, end);
 	replayer.init(filename, heap_size);
 	if (infodump)
 	{
 		replayer.dump_info();
 		exit(EXIT_SUCCESS);
 	}
-	replayer.parameters(start, end);
 
 	// Read all thread files
 	std::vector<std::string> threadfiles = packed_files(filename, "thread_");

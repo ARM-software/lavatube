@@ -124,7 +124,7 @@ static void retrace_me(lava_reader* r, int tid)
 static void read_test(int start, int end)
 {
 	lava_reader reader(TEST_NAME ".vk");
-	reader.parameters(start, end);
+	reader.set_frames(start, end);
 	std::vector<std::thread*> threads; // main thread + helper threads
 	for (int tid = 0; tid < NUM_THREADS + 1; tid++)
 	{

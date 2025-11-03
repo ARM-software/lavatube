@@ -37,6 +37,8 @@
 #define likely(x)   __builtin_expect((x),1)
 #define unlikely(x) __builtin_expect((x),0)
 
+static inline void clear_timespec(struct timespec *t) { t->tv_sec = 0; t->tv_nsec = 0; }
+
 /// Return the difference between two timespec structs in microseconds
 static inline uint64_t diff_timespec(const struct timespec *t1, const struct timespec *t0)
 {

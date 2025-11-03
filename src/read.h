@@ -50,7 +50,7 @@ public:
 	lava_file_reader& file_reader(uint16_t thread_id);
 
 	/// end -1 means play until the end
-	void parameters(int start, int end)
+	void set_frames(int start, int end)
 	{
 		mStart = start;
 		mEnd = end;
@@ -116,7 +116,7 @@ class lava_file_reader : public file_reader
 public:
 	/// Initialize one thread of replay. Frame start and end values are global, not local. Frames are either (end-start)
 	/// or total number of global frames in the trace.
-	lava_file_reader(lava_reader* _parent, const std::string& path, int mytid, int frames, const Json::Value& frameinfo, int start = 0, int end = -1);
+	lava_file_reader(lava_reader* _parent, const std::string& path, int mytid, int frames, const Json::Value& frameinfo, size_t uncompressed_size, size_t uncompressed_wanted, int start = 0, int end = -1);
 	~lava_file_reader();
 
 	/// Returns zero if no more instructions in the file, or the instruction type found.
