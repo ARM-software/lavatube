@@ -2,6 +2,7 @@
 #include <sys/types.h>
 #include <errno.h>
 #include <unistd.h>
+#include <lz4.h>
 
 #include "filewriter.h"
 #include "density/src/density_api.h"
@@ -83,6 +84,22 @@ void file_writer::set(const std::string& filename)
 	{
 		ELOG("Failed to create \"%s\": %s", filename.c_str(), strerror(errno));
 	}
+
+	// Write file header
+	const char* magic_word = "LAVABIN";
+	buffer header(strlen(magic_word) + 32);
+	memset(header.data(), 0, header.size());
+	memcpy(header.data(), magic_word, strlen(magic_word)); // bytes 0..7
+	uint8_t* headerptr = (uint8_t*)header.data() + strlen(magic_word);
+	headerptr[0] = 1; // file version
+	headerptr[1] = p__compression_type; // compression algorithm
+	write_chunk(header);
+
+	if (p__compression_type == LAVATUBE_COMPRESSION_DENSITY && p__compression_level == 0)
+	{
+		p__compression_level = DENSITY_ALGORITHM_CHEETAH; // this is our default
+	}
+	if (p__compression_type >= LAVATUBE_COMPRESSION_LZ4F) ABORT("Bad compression algorithm selected!");
 
 	// launch serialization threads
 	if (!compressor_thread.joinable()) compressor_thread = std::thread(&file_writer::compressor, this);
@@ -192,20 +209,42 @@ void file_writer::serializer()
 buffer file_writer::compress_chunk(buffer& uncompressed)
 {
 	const uint64_t header_size = sizeof(uint64_t) * 2;
-	uint64_t compressed_size = density_compress_safe_size(uncompressed.size()) + header_size;
-	buffer compressed(compressed_size);
-	density_processing_result result = density_compress((const uint8_t *)uncompressed.data(), uncompressed.size(),
-	                                                    (uint8_t *)compressed.data() + header_size, compressed.size(),
-	                                                    DENSITY_ALGORITHM_CHEETAH);
-	uncompressed.release();
-	if (result.state != DENSITY_STATE_OK)
+	uint64_t compressed_size;
+	uint64_t was_written;
+	uint64_t was_read;
+	if (p__compression_type == LAVATUBE_COMPRESSION_DENSITY)
 	{
-		ABORT("Failed to compress buffer - aborting from compression thread");
+		 compressed_size = density_compress_safe_size(uncompressed.size()) + header_size;
 	}
-	uint64_t header[2] = { result.bytesWritten, result.bytesRead }; // store compressed and uncompressed sizes
+	else if (p__compression_type == LAVATUBE_COMPRESSION_LZ4)
+	{
+		compressed_size = LZ4_COMPRESSBOUND(uncompressed.size()) + header_size;
+	}
+	buffer compressed(compressed_size);
+	if (p__compression_type == LAVATUBE_COMPRESSION_DENSITY)
+	{
+		density_processing_result result = density_compress((const uint8_t *)uncompressed.data(), uncompressed.size(),
+		                                                    (uint8_t *)compressed.data() + header_size, compressed.size(),
+		                                                    (DENSITY_ALGORITHM)p__compression_level);
+		if (result.state != DENSITY_STATE_OK)
+		{
+			ABORT("Failed to compress buffer - aborting from compression thread");
+		}
+		was_written = result.bytesWritten;
+		was_read = result.bytesRead;
+	}
+	else if (p__compression_type == LAVATUBE_COMPRESSION_LZ4)
+	{
+		int result = LZ4_compress_fast(uncompressed.data(), compressed.data() + header_size, uncompressed.size(), compressed_size, p__compression_level);
+		if (result == 0) ABORT("Failed to compress buffer - aborting from compression thread");
+		was_written = result;
+		was_read = uncompressed.size();
+	}
+	uncompressed.release();
+	uint64_t header[2] = { was_written, was_read }; // store compressed and uncompressed sizes
 	memcpy(compressed.data(), header, header_size); // use memcpy to avoid aliasing issues
-	compressed.shrink(result.bytesWritten + header_size);
-	DLOG3("Filewriter thread %d handing over compressed buffer of %lu bytes, was %lu bytes uncompressed", mTid, (unsigned long)(result.bytesWritten + header_size), (unsigned long)result.bytesRead);
+	compressed.shrink(was_written + header_size);
+	DLOG3("Filewriter thread %d handing over compressed buffer of %lu bytes, was %lu bytes uncompressed", mTid, (unsigned long)(was_written + header_size), (unsigned long)was_read);
 	return compressed;
 }
 

@@ -206,6 +206,7 @@ private:
 	std::atomic_uint64_t write_position { 0 };
 	/// Last freed position, page-aligned position before the last checkpoint. Only updated by main thread.
 	uint64_t freed_position { 0 };
+	int compression_algorithm = LAVATUBE_COMPRESSION_DENSITY;
 
 protected:
 	const uintptr_t page_size = sysconf(_SC_PAGE_SIZE); // for doing page-alignment

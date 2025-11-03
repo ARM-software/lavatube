@@ -77,10 +77,12 @@ else()
     message(STATUS "Asked to skip tracetooltests")
 endif()
 
-# --- density ---
+# --- compression ---
 
 message(STATUS "Configuring density")
 add_subdirectory(external/density ${CMAKE_BINARY_DIR}/density)
+message(STATUS "Configuring lz4")
+find_package(LZ4)
 
 # --- common ---
 
@@ -102,7 +104,7 @@ if ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
 	set(COMMON_FLAGS ${COMMON_FLAGS} -Wthread-safety -Wno-error=thread-safety-analysis -Wno-error=unused-but-set-variable)
 endif()
 set(MOST_COMMON_LIBRARIES ${SANITIZER} stdc++ dl pthread)
-set(COMMON_LIBRARIES ${MOST_COMMON_LIBRARIES} TBB::tbb atomic density ${XCB_LIBRARIES} spirv_simulator_lib)
+set(COMMON_LIBRARIES ${MOST_COMMON_LIBRARIES} TBB::tbb atomic density LZ4::LZ4 ${XCB_LIBRARIES} spirv_simulator_lib)
 
 set(COMMON_INCLUDE
     PUBLIC ${SRC_ROOT}
@@ -366,14 +368,14 @@ add_test(NAME write_test_3-2 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/write3-2)
 
 add_executable(write4 tests/write4.cpp src/filewriter.cpp src/util.cpp)
 target_include_directories(write4 ${COMMON_INCLUDE})
-target_link_libraries(write4 ${MOST_COMMON_LIBRARIES} density pthread)
+target_link_libraries(write4 ${MOST_COMMON_LIBRARIES} density LZ4::LZ4 pthread)
 target_compile_options(write4 PRIVATE ${COMMON_FLAGS})
 add_dependencies(write4 sync_generated)
 add_test(NAME write_test_4 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/write4)
 
 add_executable(read4 tests/read4.cpp src/filereader.cpp src/util.cpp)
 target_include_directories(read4 ${COMMON_INCLUDE})
-target_link_libraries(read4 ${MOST_COMMON_LIBRARIES} density pthread)
+target_link_libraries(read4 ${MOST_COMMON_LIBRARIES} density LZ4::LZ4 pthread)
 target_compile_options(read4 PRIVATE ${COMMON_FLAGS})
 add_dependencies(read4 sync_generated)
 add_test(NAME read_test_4 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/read4)
@@ -381,7 +383,7 @@ set_property(TEST read_test_4 APPEND PROPERTY DEPENDS write_test_4)
 
 add_executable(write5 tests/write5.cpp src/filewriter.cpp src/filereader.cpp src/util.cpp)
 target_include_directories(write5 ${COMMON_INCLUDE})
-target_link_libraries(write5 ${MOST_COMMON_LIBRARIES} density pthread)
+target_link_libraries(write5 ${MOST_COMMON_LIBRARIES} density LZ4::LZ4 pthread)
 target_compile_options(write5 PRIVATE ${COMMON_FLAGS})
 add_dependencies(write5 sync_generated)
 add_test(NAME write_test_5 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/write5)

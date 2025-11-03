@@ -3,6 +3,7 @@
 #include <errno.h>
 #include <sys/mman.h>
 #include <fcntl.h>
+#include <lz4.h>
 
 #include "util.h"
 #include "filereader.h"
@@ -21,6 +22,20 @@ void file_reader::init(int fd, size_t uncompressed_size, size_t uncompressed_tar
 	assert(uncompressed_size > 0);
 	total_uncompressed = uncompressed_size;
 	uncompressed_wanted = uncompressed_target;
+
+	// Check if we start with a magic word, if so we're file version 2
+	const char* magic_word = "LAVABIN";
+	if (memcmp(compressed_data, magic_word, strlen(magic_word)) == 0)
+	{
+		compressed_data += strlen(magic_word);
+		const uint8_t version = (uint8_t)compressed_data[0];
+		assert(version == 1);
+		compression_algorithm = compressed_data[1];
+		assert(compression_algorithm == LAVATUBE_COMPRESSION_DENSITY || compression_algorithm == LAVATUBE_COMPRESSION_LZ4);
+		compressed_data += 32; // the rest is reserved space
+		(void)version;
+		(void)compression_algorithm;
+	}
 	madvise(fstart, mapped_size, MADV_SEQUENTIAL);
 
 	const uint64_t padded_size = density_decompress_safe_size(uncompressed_size);
@@ -87,10 +102,19 @@ void file_reader::decompress_chunk()
 	assert(compressed_size <= total_left);
 	uint8_t* destination = (uint8_t*)uncompressed_data + write_position.load(std::memory_order_relaxed);
 	assert(uncompressed_data + total_uncompressed >= (char*)destination + uncompressed_size);
-	const uint64_t estimated_size = density_decompress_safe_size(uncompressed_size);
-	assert(uncompressed_data + density_decompress_safe_size(total_uncompressed) >= (char*)destination + estimated_size);
-	density_processing_result result = density_decompress((const uint8_t*)compressed_data, compressed_size, destination, estimated_size);
-	if (result.state != DENSITY_STATE_OK) ABORT("Failed to decompress infile - aborting");
+	if (compression_algorithm == LAVATUBE_COMPRESSION_DENSITY)
+	{
+		const uint64_t estimated_size = density_decompress_safe_size(uncompressed_size);
+		assert(uncompressed_data + density_decompress_safe_size(total_uncompressed) >= (char*)destination + estimated_size);
+		density_processing_result result = density_decompress((const uint8_t*)compressed_data, compressed_size, destination, estimated_size);
+		if (result.state != DENSITY_STATE_OK) ABORT("Failed to decompress infile - aborting");
+	}
+	else // LZ4
+	{
+		int result = LZ4_decompress_safe(compressed_data, (char*)destination, compressed_size, uncompressed_size);
+		if (result < 0) ABORT("Failed to decompress infile - aborting read thread");
+		if ((uint64_t)result != uncompressed_size) ABORT("Failed to decompress the full chunk in infile - aborting read thread");
+	}
 	compressed_data += compressed_size;
 	write_position += uncompressed_size;
 	total_left -= compressed_size + header_size;

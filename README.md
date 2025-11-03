@@ -171,6 +171,25 @@ own queues, which may cause you to run out of memory. To disable this, you can s
 the environment variables LAVATUBE_DISABLE_MULTITHREADED_WRITEOUT and
 LAVATUBE_DISABLE_MULTITHREADED_COMPRESS.
 
+Compression
+===========
+
+You can modify the compression algorithm and compression level used during tracing
+with the environment variables LAVATUBE_COMPRESSION_TYPE and LAVATUBE_COMPRESSION_LEVEL.
+
+The types are (value zero is reserved for now)
+1. Density
+2. LZ4
+
+For Density, the possible levels are (zero means use default)
+
+1. Chameleon
+2. Cheetah
+3. Lion
+
+For LZ4, higher levels means more compression and slower execution. Zero means
+use default.
+
 Further reading
 ===============
 

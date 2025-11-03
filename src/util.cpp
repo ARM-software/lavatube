@@ -100,6 +100,8 @@ uint_fast8_t p__disable_multithread_compress = get_env_bool("LAVATUBE_DISABLE_MU
 uint_fast8_t p__disable_multithread_read = get_env_bool("LAVATUBE_DISABLE_MULTITHREADED_READ", 0);
 uint_fast8_t p__allow_stalls = get_env_bool("LAVATUBE_ALLOW_STALLS", true);
 uint_fast16_t p__preload = get_env_int("LAVATUBE_PRELOAD_SIZE", 1);
+uint_fast8_t p__compression_type = get_env_int("LAVATUBE_COMPRESSION_TYPE", LAVATUBE_COMPRESSION_DENSITY);
+uint_fast8_t p__compression_level = get_env_int("LAVATUBE_COMPRESSION_LEVEL", 0); // zero means default
 
 const char* errorString(const VkResult errorCode)
 {

@@ -82,6 +82,8 @@ extern uint_fast8_t p__disable_multithread_compress;
 extern uint_fast8_t p__disable_multithread_read;
 extern uint_fast8_t p__allow_stalls;
 extern uint_fast16_t p__preload;
+extern uint_fast8_t p__compression_type;
+extern uint_fast8_t p__compression_level;
 
 /// Logging to be enable as needed by source recompilation
 #define NEVER(_format, ...)
@@ -221,6 +223,14 @@ template<typename T>
 inline T fake_handle(uint32_t index) { return (T)((intptr_t)index + 1); }
 
 const char* pretty_print_VkObjectType(VkObjectType val);
+
+enum lavatube_compression_type
+{
+	LAVATUBE_COMPRESSION_UNCOMPRESSED,
+	LAVATUBE_COMPRESSION_DENSITY,
+	LAVATUBE_COMPRESSION_LZ4,
+	LAVATUBE_COMPRESSION_LZ4F, // lz4 with frame
+};
 
 // Hackish Vulkan extension-like function for testing lavatube internals (no longer hosted in tracetooltests)
 #define VK_TRACETOOLTEST_OBJECT_PROPERTY_EXTENSION_NAME "VK_TRACETOOLTEST_object_property"
