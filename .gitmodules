@@ -1,6 +1,6 @@
 [submodule "external/density"]
 	path = external/density
-	url = http://github.com/centaurean/density
+	url = https://github.com/per-mathisen-arm/density.git
 [submodule "external/tracetooltests"]
 	path = external/tracetooltests
 	url = https://github.com/ARM-software/tracetooltests.git

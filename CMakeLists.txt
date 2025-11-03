@@ -80,24 +80,7 @@ endif()
 # --- density ---
 
 message(STATUS "Configuring density")
-set(DENSITY_SOURCES
-    ${PROJECT_SOURCE_DIR}/external/density/src/globals.c
-    ${PROJECT_SOURCE_DIR}/external/density/src/buffers/buffer.c
-    ${PROJECT_SOURCE_DIR}/external/density/src/structure/header.c
-    ${PROJECT_SOURCE_DIR}/external/density/src/algorithms/dictionaries.c
-    ${PROJECT_SOURCE_DIR}/external/density/src/algorithms/algorithms.c
-    ${PROJECT_SOURCE_DIR}/external/density/src/algorithms/cheetah/core/cheetah_decode.c
-    ${PROJECT_SOURCE_DIR}/external/density/src/algorithms/cheetah/core/cheetah_encode.c
-    ${PROJECT_SOURCE_DIR}/external/density/src/algorithms/chameleon/core/chameleon_decode.c
-    ${PROJECT_SOURCE_DIR}/external/density/src/algorithms/chameleon/core/chameleon_encode.c
-    ${PROJECT_SOURCE_DIR}/external/density/src/algorithms/lion/forms/lion_form_model.c
-    ${PROJECT_SOURCE_DIR}/external/density/src/algorithms/lion/core/lion_decode.c
-    ${PROJECT_SOURCE_DIR}/external/density/src/algorithms/lion/core/lion_encode.c
-    ${PROJECT_SOURCE_DIR}/external/density/benchmark/src/benchmark.c)
-
-add_library(density STATIC ${DENSITY_SOURCES})
-target_compile_options(density PRIVATE -std=c99 -Wall -O2 -ggdb -Wno-unused-variable -Werror -fno-strict-aliasing -fvisibility=hidden -fPIC ${SANITIZER})
-target_link_libraries(density ${SANITIZER})
+add_subdirectory(external/density ${CMAKE_BINARY_DIR}/density)
 
 # --- common ---
 
