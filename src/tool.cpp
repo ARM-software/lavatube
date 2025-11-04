@@ -267,8 +267,8 @@ int main(int argc, char **argv)
 	{
 		lava_reader replayer;
 		replayer.run = false; // do not actually run anything
-		replayer.init(filename_input, heap_size);
 		replayer.set_frames(start, end);
+		replayer.init(filename_input, heap_size);
 		replayer.remap = validate_remap;
 
 		// Read all thread files

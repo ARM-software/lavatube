@@ -187,8 +187,9 @@ For Density, the possible levels are (zero means use default, which is Cheetah)
 2. Cheetah
 3. Lion
 
-For LZ4, higher levels means more compression and slower execution. Zero means
-use the default, which is level one (highest performance, worst compression).
+For LZ4, higher levels means less compression and faster execution. Zero means
+use the default, which is level one (best compression, worst performance). See LZ4
+documentation for the exact meaning of this value.
 
 Further reading
 ===============

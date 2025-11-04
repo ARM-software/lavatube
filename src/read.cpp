@@ -195,7 +195,7 @@ void lava_reader::init(const std::string& path, int heap_size)
 	for (int thread_id = 0; thread_id < num_threads; thread_id++)
 	{
 		Json::Value frameinfo = packed_json("frames_" + _to_string(thread_id) + ".json", path);
-		const size_t uncompressed_size = frameinfo["uncompressed_size"].asUInt();
+		const size_t uncompressed_size = frameinfo["uncompressed_size"].asUInt64();
 		size_t uncompressed_target = uncompressed_size;
 		if (frameinfo.isMember("frames") && mEnd > 0)
 		{
