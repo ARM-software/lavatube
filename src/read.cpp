@@ -125,7 +125,14 @@ void lava_reader::finalize(bool terminate)
 		runner += runner_local;
 		worker += worker_local;
 	}
-	ILOG("CPU time spent in ms - worker %lu, runner %lu", (long unsigned)worker, (long unsigned)runner);
+	struct timespec stop_process_cpu_usage;
+	if (clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &stop_process_cpu_usage) != 0)
+	{
+		ELOG("Failed to get process CPU usage at stop time: %s", strerror(errno));
+	}
+	assert(stop_process_cpu_usage.tv_sec >= process_cpu_usage.tv_sec);
+	const uint64_t process_time = diff_timespec(&stop_process_cpu_usage, &process_cpu_usage);
+	ILOG("CPU time spent in ms - readhead workers %lu, API runners %lu, full process %lu", (long unsigned)worker, (long unsigned)runner, (long unsigned)process_time);
 	if (terminate)
 	{
 		for (auto& v : *thread_call_numbers) v = 0; // stop waiting threads from progressing
@@ -160,6 +167,12 @@ void lava_reader::init(const std::string& path, int heap_size)
 	retrace_init(*this, packed_json("limits.json", mPackedFile), heap_size, run);
 	Json::Value trackable = packed_json("tracking.json", mPackedFile);
 	trackable_read(trackable);
+
+	// Set initial value, in case no start frame reached
+	if (clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &process_cpu_usage) != 0)
+	{
+		ELOG("Failed to initialize process CPU usage: %s", strerror(errno));
+	}
 
 	// Set up buffer device address tracking
 	if (trackable.isMember("VkBuffer"))

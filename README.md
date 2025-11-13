@@ -1,21 +1,25 @@
 Introduction
 ============
 
-Vulkan tracer designed for multi-threaded replay with a minimum overhead and maximum portability
-across different platforms. It is an experimental project that aims to explore Vulkan tracing
-options.
+API tracer designed for multi-threaded replay with a minimum overhead and maximum portability
+across different platforms. It is an experimental project that aims to explore options in API
+tracing.
 
 Features
 --------
 
 * Fully multi-threaded design. See [Multithread design](doc/Multithreading.md) for more information.
-* Focus on performance and generating stable, portable traces, sacrificing precise reproduction.
+* Focus on performance and generating stable, portable traces, sacrificing exact reproduction.
 * Autogenerates nearly all its code with support for tracing nearly all functions and extensions.
   Replay support may however vary.
 * Detects many unused features and removes erroneous enablement of them from the trace.
 * Blackhole replay where no work is actually submitted to the GPU.
 * Noscreen replay where we run any content without creating a window surface or displaying anything.
 * Implements the experimental [Common Benchmark Standard](external/tracetooltests/doc/BenchmarkingStandard.md)
+* Uses API usage analysis rather than a page guard to detect host-side changes (this was a mistake that
+  needs to be undone).
+
+Generally faster, uses less CPU resources and produces smaller trace files than gfxreconstruct.
 
 Performance
 -----------

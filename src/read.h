@@ -98,7 +98,8 @@ public:
 private:
 	/// Start time of frame range
 	std::atomic_uint64_t mStartTime{ 0 };
-
+	/// Start CPU usage for whole process
+	struct timespec process_cpu_usage;
 	lava::mutex global_mutex;
 	std::string mPackedFile;
 	std::unordered_map<int, lava_file_reader*> thread_streams GUARDED_BY(global_mutex);
@@ -176,6 +177,10 @@ public:
 			if (mHaveFirstFrame)
 			{
 				ILOG("==== starting frame frange ====");
+				if (clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &parent->process_cpu_usage) != 0)
+				{
+					ELOG("Failed to get process CPU usage: %s", strerror(errno));
+				}
 				// Set start time in all threads
 				parent->global_mutex.lock();
 				for (unsigned i = 0; i < parent->threads.size(); i++)
