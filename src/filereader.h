@@ -9,7 +9,6 @@
 #include <stdio.h>
 #include <stdarg.h>
 
-#include "lavamutex.h"
 #include "packfile.h"
 #include "containers.h"
 #include "util.h"
@@ -163,11 +162,9 @@ public:
 
 	void disable_multithreaded_read() // we can only disable on the fly, enable makes less sense
 	{
-		chunk_mutex.lock();
 		done_decompressing = true;
 		decompressor_thread.join();
 		multithreaded_read = false;
-		chunk_mutex.unlock();
 	}
 
 	void self_test() const
@@ -186,7 +183,6 @@ private:
 
 	bool multithreaded_read = true;
 	unsigned tid = -1; // only used for logging
-	lava::mutex chunk_mutex;
 	/// Pointer to mapped memory of compressed file
 	char* compressed_data = nullptr; // current position in compressed buffer
 	char* fstart = nullptr; // start position

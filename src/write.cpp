@@ -3,7 +3,6 @@
 #include <unistd.h>
 
 #include "write.h"
-#include "jsoncpp/json/writer.h"
 #include "write_auto.h"
 #include "packfile.h"
 #include "density/src/density_api.h"
@@ -21,29 +20,6 @@ static inline void sntimef(char *str, size_t bufSize, const char *format)
 	time_t utcTime = time(nullptr);
 	tm *tmv = localtime(&utcTime);
 	strftime(str, bufSize, format, tmv);
-}
-
-static void writeJson(const std::string& path, const Json::Value& v)
-{
-	FILE* fp = fopen(path.c_str(), "w");
-	if (!fp)
-	{
-		ELOG("Failed to open \"%s\": %s", path.c_str(), strerror(errno));
-		return;
-	}
-	Json::StyledWriter writer;
-	std::string data = writer.write(v);
-	size_t written;
-	int err = 0;
-	do {
-		written = fwrite(data.c_str(), data.size(), 1, fp);
-		err = ferror(fp);
-	} while (!err && !written);
-	if (err)
-	{
-		ELOG("Failed to write dictionary: %s", strerror(err));
-	}
-	fclose(fp);
 }
 
 // --- trace file writer
@@ -116,7 +92,7 @@ lava_file_writer::~lava_file_writer()
 	DLOG("Wrapping up thread %u with %d frames", current.thread, highest);
 	v["highest_global_frame"] = highest;
 	const std::string path = mPath + "/frames_" + _to_string(current.thread) + ".json";
-	writeJson(path, v);
+	write_json(path, v);
 }
 
 debug_info lava_file_writer::new_frame(int global_frame)
@@ -214,7 +190,7 @@ void lava_writer::serialize()
 	{
 		jd[pair.first] = (unsigned)pair.second;
 	}
-	writeJson(dict_path, jd);
+	write_json(dict_path, jd);
 
 	// over-write these in case something was not used
 	feature_detection* f = vulkan_feature_detection_get();
@@ -234,13 +210,13 @@ void lava_writer::serialize()
 	mJson["vulkan_header_version"] = version_to_string(VK_HEADER_VERSION);
 	mJson["global_frames"] = global_frame + 1; // +1 since zero-indexed
 	mJson["threads"] = (unsigned)thread_streams.size();
-	writeJson(mPath + "/metadata.json", mJson);
+	write_json(mPath + "/metadata.json", mJson);
 
 	// write limits
-	writeJson(mPath + "/limits.json", trace_limits(this));
+	write_json(mPath + "/limits.json", trace_limits(this));
 
 	// write out tracking info for each object
-	writeJson(mPath + "/tracking.json", trackable_json(this));
+	write_json(mPath + "/tracking.json", trackable_json(this));
 
 	// write out debug info
 	Json::Value dbg;
@@ -263,7 +239,7 @@ void lava_writer::serialize()
 	}
 	dbg["frames"] = arr;
 	dbg["global_frames"] = global_frame + 1;
-	writeJson(mPath + "/debug.json", dbg);
+	write_json(mPath + "/debug.json", dbg);
 	frame_mutex.unlock();
 }
 

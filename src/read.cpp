@@ -96,14 +96,12 @@ uint16_t lava_file_reader::read_apicall()
 
 lava_reader::~lava_reader()
 {
-	global_mutex.lock();
 	delete thread_call_numbers;
 	for (auto& t : thread_streams)
 	{
-		delete t.second;
+		delete t;
 	}
 	thread_streams.clear();
-	global_mutex.unlock();
 }
 
 void lava_reader::finalize(bool terminate)
@@ -111,11 +109,12 @@ void lava_reader::finalize(bool terminate)
 	const double total_time_ms = ((gettime() - mStartTime.load()) / 1000000UL);
 	const double fps = (double)mGlobalFrames / (total_time_ms / 1000.0);
 	ILOG("==== %.2f ms, %u frames (%.2f fps) ====", total_time_ms, mGlobalFrames, fps);
-	fprintf(out_fptr, "%.2f", fps);
-	fclose(out_fptr);
+	Json::Value out;
+	out["fps"] = fps;
+	out["frames"] = mGlobalFrames;
+	out["time"] = total_time_ms;
 	uint64_t runner = 0;
 	uint64_t worker = 0;
-	global_mutex.lock();
 	for (unsigned i = 0; i < threads.size(); i++)
 	{
 		uint64_t runner_local = 0;
@@ -133,6 +132,9 @@ void lava_reader::finalize(bool terminate)
 	assert(stop_process_cpu_usage.tv_sec >= process_cpu_usage.tv_sec);
 	const uint64_t process_time = diff_timespec(&stop_process_cpu_usage, &process_cpu_usage);
 	ILOG("CPU time spent in ms - readhead workers %lu, API runners %lu, full process %lu", (long unsigned)worker, (long unsigned)runner, (long unsigned)process_time);
+	out["readahead_workers_time"] = (Json::Value::UInt64)worker;
+	out["api_runners_time"] = (Json::Value::UInt64)runner;
+	out["process_time"] = (Json::Value::UInt64)process_time;
 	if (terminate)
 	{
 		for (auto& v : *thread_call_numbers) v = 0; // stop waiting threads from progressing
@@ -141,12 +143,12 @@ void lava_reader::finalize(bool terminate)
 			if (!thread_streams[i]->terminated.load()) pthread_cancel(threads[i].native_handle());
 		}
 	}
-	global_mutex.unlock();
+	write_json(out_fptr, out);
+	fclose(out_fptr);
 }
 
 lava_file_reader& lava_reader::file_reader(uint16_t thread_id)
 {
-	lava::lock_guard keep(global_mutex);
 	return *thread_streams.at(thread_id);
 }
 
@@ -201,10 +203,14 @@ void lava_reader::init(const std::string& path, int heap_size)
 	}
 
 	Json::Value meta = packed_json("metadata.json", mPackedFile);
-	mGlobalFrames = meta["global_frames"].asInt();
 	const int num_threads = meta["threads"].asInt();
-	global_mutex.lock();
+	mGlobalFrames = meta["global_frames"].asInt();
+
+	// initialize threads -- note that this happens before threading begins, so thread safe
+	threads.resize(num_threads);
+	thread_streams.resize(num_threads);
 	thread_call_numbers = new std::vector<std::atomic_uint_fast32_t>(num_threads);
+
 	for (int thread_id = 0; thread_id < num_threads; thread_id++)
 	{
 		Json::Value frameinfo = packed_json("frames_" + _to_string(thread_id) + ".json", path);
@@ -217,12 +223,10 @@ void lava_reader::init(const std::string& path, int heap_size)
 				if (v["global_frame"] == mEnd + 1) { uncompressed_target = v["position"].asUInt(); break; }
 			}
 		}
-		lava_file_reader* f = new lava_file_reader(this, mPackedFile, thread_id, mGlobalFrames, frameinfo, uncompressed_size, uncompressed_target, mStart, mEnd);
-		thread_streams.emplace(thread_id, std::move(f));
+		thread_streams[thread_id] = new lava_file_reader(this, mPackedFile, thread_id, mGlobalFrames, frameinfo, uncompressed_size, uncompressed_target, mStart, mEnd);
 	}
-	global_mutex.unlock();
 
-	out_fptr = fopen("lavaresults.txt", "w");
+	out_fptr = fopen("lavaresults.json", "w");
 	if (!out_fptr) ABORT("Failed to open results file: %s", strerror(errno));
 	mStartTime.store(gettime());
 }

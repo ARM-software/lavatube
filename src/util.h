@@ -15,6 +15,9 @@
 #include <assert.h>
 #include <vector>
 #include <string>
+#ifndef NO_JSON
+#include "jsoncpp/json/value.h"
+#endif
 
 #define VK_NO_PROTOTYPES
 #include "vulkan_utility.h"
@@ -251,3 +254,8 @@ typedef uint64_t (VKAPI_PTR *PFN_vkGetDeviceTracingObjectPropertyTRACETOOLTEST)(
 int get_env_int(const char* name, int v);
 int get_env_bool(const char* name, int v);
 FILE* get_env_file(const char* name, FILE* fallback);
+
+#ifndef NO_JSON
+void write_json(const std::string& path, const Json::Value& v);
+void write_json(FILE* fp, const Json::Value& v);
+#endif

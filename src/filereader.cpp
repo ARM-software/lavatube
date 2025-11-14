@@ -134,7 +134,6 @@ void file_reader::decompressor()
 		decompress_chunk();
 	}
 
-	chunk_mutex.lock();
 	clockid_t id;
 	int r = pthread_getcpuclockid(pthread_self(), &id);
 	if (r != 0)
@@ -145,7 +144,6 @@ void file_reader::decompressor()
 	{
 		ELOG("Failed to get worker thread %u CPU usage: %s", tid, strerror(errno));
 	}
-	chunk_mutex.unlock();
 }
 
 void file_reader::start_measurement()
@@ -184,7 +182,6 @@ void file_reader::start_measurement()
 
 void file_reader::stop_measurement(uint64_t& worker, uint64_t& runner)
 {
-	chunk_mutex.lock();
 	struct timespec stop_runner_cpu_usage;
 	clockid_t id;
 	int r = pthread_getcpuclockid(pthread_self(), &id);
@@ -202,7 +199,6 @@ void file_reader::stop_measurement(uint64_t& worker, uint64_t& runner)
 	if (!multithreaded_read)
 	{
 		worker = 0;
-		chunk_mutex.unlock();
 		return;
 	}
 	pthread_t t = decompressor_thread.native_handle();
@@ -218,5 +214,4 @@ void file_reader::stop_measurement(uint64_t& worker, uint64_t& runner)
 	}
 	assert(stop_worker_cpu_usage.tv_sec >= worker_cpu_usage.tv_sec);
 	worker = diff_timespec(&stop_worker_cpu_usage, &worker_cpu_usage);
-	chunk_mutex.unlock();
 }

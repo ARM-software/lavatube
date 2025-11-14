@@ -115,7 +115,7 @@ static void replay_thread(int thread_id)
 	}
 }
 
-static void run_multithreaded(int n)
+static void run_multithreaded()
 {
 	if (sandbox)
 	{
@@ -123,9 +123,9 @@ static void run_multithreaded(int n)
 		if (err) WLOG("Warning: Failed to change sandbox to replay mode: %s", err);
 	}
 
-	for (int i = 0; i < n; i++)
+	for (unsigned i = 0; i < replayer.threads.size(); i++)
 	{
-		replayer.threads.emplace_back(replay_thread, i);
+		replayer.threads[i] = std::thread(replay_thread, i);
 	}
 
 	for (unsigned i = 0; i < replayer.threads.size(); i++)
@@ -318,10 +318,7 @@ int main(int argc, char **argv)
 		exit(EXIT_SUCCESS);
 	}
 
-	// Read all thread files
-	std::vector<std::string> threadfiles = packed_files(filename, "thread_");
-	if (threadfiles.size() == 0) DIE("Failed to find any threads in %s!", filename.c_str());
-	run_multithreaded(threadfiles.size());
+	run_multithreaded();
 	if (p__custom_allocator) allocators_print(stdout);
 	vkuDestroyWrapper(library);
 	if (p__debug_destination) fclose(p__debug_destination);

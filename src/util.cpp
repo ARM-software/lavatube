@@ -1,4 +1,5 @@
 #include "util.h"
+#include "jsoncpp/json/writer.h"
 
 #include <string.h>
 #include <spirv/unified1/spirv.h>
@@ -386,3 +387,33 @@ const char* pretty_print_VkObjectType(VkObjectType val)
 	}
 	return "Error";
 }
+
+#ifndef NO_JSON
+void write_json(FILE* fp, const Json::Value& v)
+{
+	Json::StyledWriter writer;
+	std::string data = writer.write(v);
+	size_t written;
+	int err = 0;
+	do {
+		written = fwrite(data.c_str(), data.size(), 1, fp);
+		err = ferror(fp);
+	} while (!err && !written);
+	if (err)
+	{
+		ELOG("Failed to write dictionary: %s", strerror(err));
+	}
+}
+
+void write_json(const std::string& path, const Json::Value& v)
+{
+	FILE* fp = fopen(path.c_str(), "w");
+	if (!fp)
+	{
+		ELOG("Failed to open \"%s\": %s", path.c_str(), strerror(errno));
+		return;
+	}
+	write_json(fp, v);
+	fclose(fp);
+}
+#endif

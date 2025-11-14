@@ -100,9 +100,8 @@ private:
 	std::atomic_uint64_t mStartTime{ 0 };
 	/// Start CPU usage for whole process
 	struct timespec process_cpu_usage;
-	lava::mutex global_mutex;
 	std::string mPackedFile;
-	std::unordered_map<int, lava_file_reader*> thread_streams GUARDED_BY(global_mutex);
+	std::vector<lava_file_reader*> thread_streams;
 	int mStart = 0;
 	int mEnd = -1;
 	int mGlobalFrames = 0;
@@ -182,12 +181,10 @@ public:
 					ELOG("Failed to get process CPU usage: %s", strerror(errno));
 				}
 				// Set start time in all threads
-				parent->global_mutex.lock();
 				for (unsigned i = 0; i < parent->threads.size(); i++)
 				{
 					parent->thread_streams[i]->start_measurement();
 				}
-				parent->global_mutex.unlock();
 			}
 		}
 		current.frame++;

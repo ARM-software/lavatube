@@ -271,24 +271,20 @@ int main(int argc, char **argv)
 		replayer.init(filename_input, heap_size);
 		replayer.remap = validate_remap;
 
-		// Read all thread files
-		std::vector<std::string> threadfiles = packed_files(filename_input, "thread_");
-		if (threadfiles.size() == 0) DIE("Failed to find any threads in %s!", filename_input.c_str());
-
 		// Add callbacks
 		vkCreateShaderModule_callbacks.push_back(callback_vkCreateShaderModule);
 		vkDestroyDevice_callbacks.push_back(callback_vkDestroyDevice);
 
-		for (int i = 0; i < (int)threadfiles.size(); i++)
+		for (unsigned i = 0; i < replayer.threads.size(); i++)
 		{
 			if (verbose)
 			{
 				printf("Threads:\n");
 				Json::Value frameinfo = packed_json("frames_" + _to_string(i) + ".json", filename_input);
-				printf("\t%d : [%s] with %u local frames, %d highest global frame, %u uncompressed size\n", i, frameinfo.get("thread_name", "unknown").asString().c_str(),
+				printf("\t%u : [%s] with %u local frames, %d highest global frame, %u uncompressed size\n", i, frameinfo.get("thread_name", "unknown").asString().c_str(),
 					(unsigned)frameinfo["frames"].size(), frameinfo["highest_global_frame"].asInt(), frameinfo["uncompressed_size"].asUInt());
 			}
-			replayer.threads.emplace_back(&replay_thread, &replayer, i);
+			replayer.threads[i] = std::thread(&replay_thread, &replayer, i);
 		}
 		for (unsigned i = 0; i < replayer.threads.size(); i++)
 		{
@@ -313,13 +309,9 @@ int main(int argc, char **argv)
 		// Add in the rewrite queue from the previous run
 		replayer.rewrite_queue = rewrite_queue_copy;
 
-		// Read all thread files
-		std::vector<std::string> threadfiles = packed_files(filename_input, "thread_");
-		if (threadfiles.size() == 0) DIE("Failed to find any threads in %s!", filename_input.c_str());
-
-		for (int i = 0; i < (int)threadfiles.size(); i++)
+		for (unsigned i = 0; i < replayer.threads.size(); i++)
 		{
-			replayer.threads.emplace_back(&replay_thread, &replayer, i);
+			replayer.threads[i] = std::thread(&replay_thread, &replayer, i);
 		}
 		for (unsigned i = 0; i < replayer.threads.size(); i++)
 		{
