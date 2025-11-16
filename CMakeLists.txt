@@ -141,6 +141,8 @@ set(COMMON_SRC
     ${PROJECT_SOURCE_DIR}/src/containers.h
     ${PROJECT_SOURCE_DIR}/src/sandbox.cpp
     ${PROJECT_SOURCE_DIR}/src/sandbox.h
+    ${PROJECT_SOURCE_DIR}/src/json_helpers.cpp
+    ${PROJECT_SOURCE_DIR}/src/json_helpers.h
 
     ${PROJECT_SOURCE_DIR}/src/filewriter.cpp
     ${PROJECT_SOURCE_DIR}/src/filewriter.h
