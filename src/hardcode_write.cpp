@@ -1309,13 +1309,17 @@ VKAPI_ATTR VkResult VKAPI_CALL trace_vkGetPhysicalDeviceToolPropertiesEXT(VkPhys
 {
 	uint32_t physicaldevice_index = 0;
 	lava_file_writer& writer = write_header("vkGetPhysicalDeviceToolPropertiesEXT", VKGETPHYSICALDEVICETOOLPROPERTIESEXT);
-	return common_vkGetPhysicalDeviceToolProperties(writer, physicalDevice, pToolCount, pToolProperties);
+	VkResult retval = common_vkGetPhysicalDeviceToolProperties(writer, physicalDevice, pToolCount, pToolProperties);
+	writer.thaw();
+	return retval;
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL trace_vkGetPhysicalDeviceToolProperties(VkPhysicalDevice physicalDevice, uint32_t* pToolCount, VkPhysicalDeviceToolPropertiesEXT* pToolProperties)
 {
 	lava_file_writer& writer = write_header("vkGetPhysicalDeviceToolProperties", VKGETPHYSICALDEVICETOOLPROPERTIES);
-	return common_vkGetPhysicalDeviceToolProperties(writer, physicalDevice, pToolCount, pToolProperties);
+	VkResult retval = common_vkGetPhysicalDeviceToolProperties(writer, physicalDevice, pToolCount, pToolProperties);
+	writer.thaw();
+	return retval;
 }
 
 VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL trace_vkGetDeviceProcAddr(VkDevice device, const char* pName)
@@ -1979,7 +1983,8 @@ VKAPI_ATTR VkResult VKAPI_CALL trace_vkCreateWaylandSurfaceKHR(VkInstance instan
 	writer.write_int32_t(0); // y, TBD
 	writer.write_int32_t(0); // width, TBD
 	writer.write_int32_t(0); // height, TBD
-	writer.write_int32_t(0); // reserved
+	writer.write_int32_t(0); // border, TBD
+	// TBD missing one field here for depth
 	// Execute
 	VkResult retval = wrap_vkCreateWaylandSurfaceKHR(instance, pCreateInfo, pAllocator, pSurface);
 	writer.write_uint32_t(retval);
@@ -2149,6 +2154,7 @@ VKAPI_ATTR VkResult VKAPI_CALL trace_vkCreateAndroidSurfaceKHR(VkInstance instan
 	writer.write_int32_t(ANativeWindow_getFormat(pCreateInfo->window));
 	// Execute
 	VkResult retval = wrap_vkCreateAndroidSurfaceKHR(instance, pCreateInfo, pAllocator, pSurface);
+	// TBD missing return value write-out
 	// Post
 	const auto* surface_data = writer.parent->records.VkSurfaceKHR_index.add(*pSurface, writer.current);
 	surface_data->enter_created();
@@ -2157,7 +2163,7 @@ VKAPI_ATTR VkResult VKAPI_CALL trace_vkCreateAndroidSurfaceKHR(VkInstance instan
 	return retval;
 }
 
-VKAPI_ATTR uint32_t VKAPI_CALL bytes_per_pixel(uint32_t format)
+static uint32_t bytes_per_pixel(uint32_t format)
 {
 	switch (format) {
 		case AHARDWAREBUFFER_FORMAT_BLOB:
@@ -2184,7 +2190,7 @@ VKAPI_ATTR uint32_t VKAPI_CALL bytes_per_pixel(uint32_t format)
 	return 0;
 }
 
-VKAPI_ATTR void VKAPI_CALL save_hw_buffer(const AHardwareBuffer* buffer)
+static void save_hw_buffer(const AHardwareBuffer* buffer)
 {
 	lava_file_writer& writer = lava_writer::instance().file_writer();
 	AHardwareBuffer_Desc hw_buffer_description;
@@ -2416,6 +2422,7 @@ VKAPI_ATTR VkBool32 VKAPI_CALL trace_vkGetPhysicalDeviceXlibPresentationSupportK
 
 #endif
 
+// TBD handle vkGetPhysicalDeviceQueueFamilyProperties2
 VKAPI_ATTR void VKAPI_CALL trace_vkGetPhysicalDeviceQueueFamilyProperties(VkPhysicalDevice physicalDevice, uint32_t* pQueueFamilyPropertyCount, VkQueueFamilyProperties* pQueueFamilyProperties)
 {
 	lava_file_writer& writer = write_header("vkGetPhysicalDeviceQueueFamilyProperties", VKGETPHYSICALDEVICEQUEUEFAMILYPROPERTIES);

@@ -276,23 +276,39 @@ void lava_writer::finish()
 	frame_mutex.unlock();
 }
 
+void lava_writer::make_writer()
+{
+	tid = thread_streams.size();
+	lava_file_writer* f = new lava_file_writer(tid, this);
+	if (!mPath.empty())
+	{
+		f->set(mPath);
+	}
+	f->inject_thread_barrier();
+	thread_streams.emplace_back(std::move(f));
+	DLOG("Created thread %d, currently %d threads", (int)tid, (int)thread_streams.size());
+}
+
 lava_file_writer& lava_writer::file_writer()
 {
-	if (tid == -1)
+	if (tid == -1) // this thread does not yet have its own lava_file_writer, so create one
 	{
 		frame_mutex.lock();
-		tid = thread_streams.size();
-		lava_file_writer* f = new lava_file_writer(tid, this);
-		if (!mPath.empty())
-		{
-			f->set(mPath);
-		}
-		f->inject_thread_barrier();
-		thread_streams.emplace_back(std::move(f));
-		DLOG("Created thread %d, currently %d threads", (int)tid, (int)thread_streams.size());
+		make_writer();
 		frame_mutex.unlock();
 	}
 	return *thread_streams.at(tid);
+}
+
+// This function is NOT thread-safe! Only use when threads have been serialized
+lava_file_writer& lava_writer::file_writer(unsigned index)
+{
+	assert(index <= thread_streams.size());
+	if (index == thread_streams.size()) // this thread does not yet have its own lava_file_writer, so create one
+	{
+		make_writer();
+	}
+	return *thread_streams.at(index);
 }
 
 void lava_writer::new_frame()

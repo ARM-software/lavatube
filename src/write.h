@@ -217,6 +217,7 @@ public:
 	void set(const std::string& path);
 	Json::Value& json() REQUIRES(frame_mutex) { return mJson; }
 	lava_file_writer& file_writer();
+	lava_file_writer& file_writer(unsigned index); // not thread safe!
 	void serialize();
 	void finish();
 
@@ -248,6 +249,8 @@ public:
 	}
 
 private:
+	void make_writer();
+
 	std::string mPath;
 	std::string mPack;
 	VkuVulkanLibrary library = nullptr;
