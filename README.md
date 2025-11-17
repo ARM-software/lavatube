@@ -143,6 +143,17 @@ When tracing, the following files will be created in a separate directory:
   thread_X.vk -- one file for each thread containing API calls
   frames_X.json --- one JSON for each thread containing per-frame data
 
+Replay security
+===============
+
+You can set the environment variable LAVATUBE_SANDBOX_LEVEL to set your desired
+level of security paranoia. Levels are zero to four, from lowest to highest
+security, where zero means the security sandbox is completely turned off. High
+levels may interfere with other tools or layers. The security level may also be
+modified with a command line option, but this cannot set the level to zero.
+
+Also see our [SECURITY.md](SECURITY.md).
+
 Tracing options
 ===============
 

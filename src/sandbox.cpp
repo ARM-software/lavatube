@@ -41,7 +41,13 @@ static inline int landlock_restrict_self(const int ruleset_fd,
 }
 #endif
 
-const char* sandbox_tool_init()
+const char* sandbox_level_one()
+{
+	if (prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0) { return "Failed to restrict root privileges"; }
+	return nullptr;
+}
+
+const char* sandbox_level_two()
 {
 	int abi = landlock_create_ruleset(NULL, 0, LANDLOCK_CREATE_RULESET_VERSION);
 	if (abi < 0)
@@ -50,29 +56,27 @@ const char* sandbox_tool_init()
 		else if (errno == EOPNOTSUPP) return "Landlock sandbox is currently disabled";
 		else return "Landlock sandboxing not supported by your system for unknown reason";
 	}
-	struct landlock_ruleset_attr ruleset_attr;
+	struct landlock_ruleset_attr ruleset_attr = {};
 	// Prohibit things we never need to do:
-	ruleset_attr.handled_access_fs = LANDLOCK_ACCESS_FS_EXECUTE | LANDLOCK_ACCESS_FS_MAKE_SOCK | LANDLOCK_ACCESS_FS_MAKE_FIFO |
-		LANDLOCK_ACCESS_FS_MAKE_BLOCK | LANDLOCK_ACCESS_FS_MAKE_CHAR;
+	ruleset_attr.handled_access_fs = LANDLOCK_ACCESS_FS_EXECUTE | LANDLOCK_ACCESS_FS_MAKE_SOCK | LANDLOCK_ACCESS_FS_MAKE_FIFO | LANDLOCK_ACCESS_FS_MAKE_BLOCK | LANDLOCK_ACCESS_FS_MAKE_CHAR;
 	int ruleset_fd = landlock_create_ruleset(&ruleset_attr, sizeof(ruleset_attr), 0);
-	if (ruleset_fd < 0) return "Failed to create landlock sandbox ruleset";
-	if (prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0)) { close(ruleset_fd); return "Failed to restrict system privileges"; }
-	if (landlock_restrict_self(ruleset_fd, 0)) { close(ruleset_fd); return "Failed to enforce landlock sandbox ruleset"; }
+	if (ruleset_fd < 0) return "Failed to create landlock ruleset";
+	if (landlock_restrict_self(ruleset_fd, 0)) { close(ruleset_fd); return "Failed to enforce landlock ruleset"; }
 	close(ruleset_fd);
 	return nullptr;
 }
 
-const char* sandbox_replay_start()
+const char* sandbox_level_three()
 {
-	// error would have been spammed during init, do not need to repeat it; if we got here, we decided to ignore it
+	// Error would have been spammed during init, do not need to repeat it; if we got here, we decided to ignore it
 	if (landlock_create_ruleset(NULL, 0, LANDLOCK_CREATE_RULESET_VERSION) < 0) return nullptr;
-	struct landlock_ruleset_attr ruleset_attr;
-	ruleset_attr.handled_access_fs = LANDLOCK_ACCESS_FS_MAKE_SYM | LANDLOCK_ACCESS_FS_MAKE_DIR | LANDLOCK_ACCESS_FS_MAKE_REG |
-		LANDLOCK_ACCESS_FS_REMOVE_DIR | LANDLOCK_ACCESS_FS_REMOVE_FILE;
+	// Prohibit things we don't need during replay
+	struct landlock_ruleset_attr ruleset_attr = {};
+	ruleset_attr.handled_access_fs = LANDLOCK_ACCESS_FS_MAKE_SYM | LANDLOCK_ACCESS_FS_MAKE_DIR | LANDLOCK_ACCESS_FS_MAKE_REG | LANDLOCK_ACCESS_FS_REMOVE_DIR | LANDLOCK_ACCESS_FS_REMOVE_FILE;
 	// LANDLOCK_ACCESS_FS_WRITE_FILE needed for validation layers for some reason, somewhat random errors will occur without it
 	int ruleset_fd = landlock_create_ruleset(&ruleset_attr, sizeof(ruleset_attr), 0);
-	if (ruleset_fd < 0) return "Failed to create landlock sandbox ruleset";
-	if (landlock_restrict_self(ruleset_fd, 0)) { close(ruleset_fd); return "Failed to enforce landlock sandbox ruleset"; }
+	if (ruleset_fd < 0) return "Failed to create landlock ruleset";
+	if (landlock_restrict_self(ruleset_fd, 0)) { close(ruleset_fd); return "Failed to enforce landlock ruleset"; }
 	close(ruleset_fd);
 	return nullptr;
 }

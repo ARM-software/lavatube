@@ -103,6 +103,7 @@ uint_fast8_t p__allow_stalls = get_env_bool("LAVATUBE_ALLOW_STALLS", true);
 uint_fast16_t p__preload = get_env_int("LAVATUBE_PRELOAD_SIZE", 128); // two default size packets by default
 uint_fast8_t p__compression_type = get_env_int("LAVATUBE_COMPRESSION_TYPE", LAVATUBE_COMPRESSION_DENSITY);
 uint_fast16_t p__compression_level = get_env_int("LAVATUBE_COMPRESSION_LEVEL", 0); // zero means default
+uint_fast8_t p__sandbox_level = get_env_int("LAVATUBE_SANDBOX_LEVEL", 1);
 
 const char* errorString(const VkResult errorCode)
 {

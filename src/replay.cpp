@@ -18,7 +18,6 @@
 #include "sandbox.h"
 
 static lava_reader replayer;
-static bool sandbox = false;
 
 static void usage()
 {
@@ -39,7 +38,7 @@ static void usage()
 	printf("-L/--load-cache dir    Load cached objects from the specified directory\n");
 	printf("-B/--blackhole         Do not actually submit any work to the GPU. May be useful for CPU measurements.\n");
 	printf("--no-multithreaded-io  Do not do decompression and file read in a separate thread. May save some CPU load and memory.\n");
-	printf("-s/--sandbox           Enable security sandbox\n");
+	printf("-s/--sandbox level     Set security sandbox level (from 1 to 3, with 3 the most strict, default %d)\n", (int)p__sandbox_level);
 	printf("Vulkan specific options:\n");
 	printf("--swapchain mode       Swapchain mode [virtual, captured, offscreen]\n"); // swapchain offscreen == wsi none
 	printf("--virtualperfmode      Performance measurement mode - do not blit from our virtual swapchain to the real swapchain\n");
@@ -117,10 +116,10 @@ static void replay_thread(int thread_id)
 
 static void run_multithreaded()
 {
-	if (sandbox)
+	if (p__sandbox_level >= 3)
 	{
-		const char* err = sandbox_replay_start();
-		if (err) WLOG("Warning: Failed to change sandbox to replay mode: %s", err);
+		const char* err = sandbox_level_three();
+		if (err) WLOG("Warning: Failed to increase sandbox to level three: %s", err);
 	}
 
 	for (unsigned i = 0; i < replayer.threads.size(); i++)
@@ -142,6 +141,12 @@ int main(int argc, char **argv)
 	int remaining = argc - 1; // zeroth is name of program
 	std::string filename;
 	bool infodump = false;
+
+	if (p__sandbox_level >= 1)
+	{
+		const char* err = sandbox_level_one();
+		if (err) WLOG("Warning: Failed to increase sandbox to level one: %s", err);
+	}
 
 	// override defaults
 	//p__allow_stalls = get_env_bool("LAVATUBE_ALLOW_STALLS", false);
@@ -239,7 +244,8 @@ int main(int argc, char **argv)
 		}
 		else if (match(argv[i], "-s", "--sandbox", remaining))
 		{
-			sandbox = false;
+			p__sandbox_level = get_int(argv[++i], remaining);
+			if (p__sandbox_level <= 0 || p__sandbox_level > 3) DIE("Invalid sandbox level %d", (int)p__sandbox_level);
 		}
 		else if (match(argv[i], "-L", "--load-cache", remaining))
 		{
@@ -297,10 +303,10 @@ int main(int argc, char **argv)
 	if (p__realimages > 0 && !p__virtualswap) DIE("Setting the number of virtual images can only be done with a virtual swapchain!");
 	if (p__realpresentmode != VK_PRESENT_MODE_MAX_ENUM_KHR && !p__virtualswap) DIE("Changing present mode can only be used with a virtual swapchain!");
 
-	if (sandbox)
+	if (p__sandbox_level >= 2)
 	{
-		const char* err = sandbox_tool_init();
-		if (err) WLOG("Warning: Failed to initialize sandbox: %s", err);
+		const char* err = sandbox_level_two();
+		if (err) WLOG("Warning: Failed to increase sandbox to level two: %s", err);
 	}
 
 	if (filename.empty())

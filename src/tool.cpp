@@ -20,7 +20,6 @@ static bool verbose = false;
 static bool report_unused = false;
 static bool dump_shaders = false;
 static int invokation_count = 0;
-static bool sandbox = false;
 
 static void usage()
 {
@@ -37,7 +36,7 @@ static void usage()
 	printf("-r/--remap-validate    Validate existing device address remappings - abort if we find less or more addresses than already marked\n");
 	printf("-u/--unused            Find any found unused features and extensions in the trace file; remove them from the output file\n");
 	printf("-DS/--dump-shaders     Dump any shaders found to disk\n");
-	printf("-s/--sandbox           Enable security sandbox\n");
+	printf("-s/--sandbox level     Set security sandbox level (from 1 to 3, with 3 the most strict, default %d)\n", (int)p__sandbox_level);
 	//printf("-R/--remap-addresses   Adding remapping of device addresses. Replaces existing address remappings. Requires an output file.\n");
 	exit(-1);
 }
@@ -74,10 +73,10 @@ static std::string get_str(const char* in, int& remaining)
 
 static void replay_thread(lava_reader* replayer, int thread_id)
 {
-	if (sandbox)
+	if (p__sandbox_level >= 2)
 	{
-		const char* err = sandbox_replay_start();
-		if (err) WLOG("Warning: Failed to change sandbox to replay mode: %s", err);
+		const char* err = sandbox_level_three();
+		if (err) WLOG("Warning: Failed to increase sandbox to level three: %s", err);
 	}
 	lava_file_reader& t = replayer->file_reader(thread_id);
 	uint8_t instrtype;
@@ -163,6 +162,13 @@ int main(int argc, char **argv)
 	std::string filename_input;
 	std::string filename_output;
 	bool validate_remap = false;
+
+	if (p__sandbox_level >= 1)
+	{
+		const char* err = sandbox_level_one();
+		if (err) WLOG("Warning: Failed to increase sandbox to level one: %s", err);
+	}
+
 	for (int i = 1; i < argc; i++)
 	{
 		if (match(argv[i], "-h", "--help", remaining))
@@ -207,7 +213,8 @@ int main(int argc, char **argv)
 		}
 		else if (match(argv[i], "-s", "--sandbox", remaining))
 		{
-			sandbox = false;
+			p__sandbox_level = get_int(argv[++i], remaining);
+			if (p__sandbox_level <= 0 || p__sandbox_level > 3) DIE("Invalid sandbox level %d", (int)p__sandbox_level);
 		}
 		else if (match(argv[i], "-r", "--remap-validate", remaining))
 		{
@@ -241,10 +248,10 @@ int main(int argc, char **argv)
 
 	if (!filename_output.empty()) DIE("Output file support still to be done!");
 
-	if (sandbox)
+	if (p__sandbox_level >= 3)
 	{
-		const char* err = sandbox_tool_init();
-		if (err) WLOG("Warning: Failed to initialize sandbox: %s", err);
+		const char* err = sandbox_level_two();
+		if (err) WLOG("Warning: Failed to increase sandbox to level two: %s", err);
 	}
 
 	std::list<address_rewrite> rewrite_queue_copy;
