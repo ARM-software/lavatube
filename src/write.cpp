@@ -278,6 +278,7 @@ void lava_writer::finish()
 
 void lava_writer::make_writer()
 {
+	frame_mutex.lock();
 	tid = thread_streams.size();
 	lava_file_writer* f = new lava_file_writer(tid, this);
 	if (!mPath.empty())
@@ -287,15 +288,14 @@ void lava_writer::make_writer()
 	f->inject_thread_barrier();
 	thread_streams.emplace_back(std::move(f));
 	DLOG("Created thread %d, currently %d threads", (int)tid, (int)thread_streams.size());
+	frame_mutex.unlock();
 }
 
 lava_file_writer& lava_writer::file_writer()
 {
 	if (tid == -1) // this thread does not yet have its own lava_file_writer, so create one
 	{
-		frame_mutex.lock();
 		make_writer();
-		frame_mutex.unlock();
 	}
 	return *thread_streams.at(tid);
 }

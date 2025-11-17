@@ -141,6 +141,7 @@ int main(int argc, char **argv)
 	int remaining = argc - 1; // zeroth is name of program
 	std::string filename;
 	bool infodump = false;
+	std::string wsi;
 
 	if (p__sandbox_level >= 1)
 	{
@@ -270,7 +271,7 @@ int main(int argc, char **argv)
 		}
 		else if (match(argv[i], "-w", "--wsi", remaining))
 		{
-			std::string wsi = get_str(argv[++i], remaining);
+			wsi = get_str(argv[++i], remaining);
 			if (wsi == "none")
 			{
 				p__noscreen = 1;
@@ -279,7 +280,6 @@ int main(int argc, char **argv)
 			{
 				DIE("Non-supported window system: %s", wsi.c_str());
 			}
-			window_set_winsys(wsi);
 		}
 		else if (strcmp(argv[i], "--") == 0) // eg in case you have a file named -f ...
 		{
@@ -302,6 +302,9 @@ int main(int argc, char **argv)
 	if (p__noscreen && !p__virtualswap) DIE("The \"none\" WSI can only be used with a virtual swapchain!");
 	if (p__realimages > 0 && !p__virtualswap) DIE("Setting the number of virtual images can only be done with a virtual swapchain!");
 	if (p__realpresentmode != VK_PRESENT_MODE_MAX_ENUM_KHR && !p__virtualswap) DIE("Changing present mode can only be used with a virtual swapchain!");
+
+	if (wsi.empty()) wsi_initialize(nullptr);
+	else wsi_initialize(wsi.c_str());
 
 	if (p__sandbox_level >= 2)
 	{
@@ -326,6 +329,7 @@ int main(int argc, char **argv)
 
 	run_multithreaded();
 	if (p__custom_allocator) allocators_print(stdout);
+	wsi_shutdown();
 	vkuDestroyWrapper(library);
 	if (p__debug_destination) fclose(p__debug_destination);
 	return 0;

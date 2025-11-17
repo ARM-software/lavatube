@@ -31,3 +31,20 @@ sending it to an unsuspecting victim. Instead of attempting to harden
 this entire surface entrypoint by entrypoint, lavatube is
 experimenting with a sandbox to reduce what can be gained by such an
 attack.
+
+This sandbox is composed of four levels:
+
+* Zero - sandbox disabled.
+* One - ability of getting root privileges removed.
+* Two - network and file execution privileges removed.
+* Three - file system write privileges removed except to current
+  working directory and directories underneath it.
+
+The first level is entered on program startup, the second after
+parsing command line arguments, and the third just before parsing
+the trace file. This allows us to gradually drop privileges as
+as they are no longer needed.
+
+However, Vulkan layers are also affected by these capability changes,
+so validation layers, screenshot layers, and performance tools might
+all become dysfunctional.
