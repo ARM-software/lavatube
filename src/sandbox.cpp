@@ -69,7 +69,9 @@ const char* sandbox_level_two()
 	struct landlock_ruleset_attr ruleset_attr = {};
 	// Prohibit things we never need to do:
 	ruleset_attr.handled_access_fs = LANDLOCK_ACCESS_FS_EXECUTE | LANDLOCK_ACCESS_FS_MAKE_SOCK | LANDLOCK_ACCESS_FS_MAKE_FIFO | LANDLOCK_ACCESS_FS_MAKE_BLOCK | LANDLOCK_ACCESS_FS_MAKE_CHAR;
+#ifdef LANDLOCK_ACCESS_NET_BIND_TCP
 	ruleset_attr.handled_access_net = LANDLOCK_ACCESS_NET_BIND_TCP | LANDLOCK_ACCESS_NET_CONNECT_TCP;
+#endif
 	int ruleset_fd = landlock_create_ruleset(&ruleset_attr, sizeof(ruleset_attr), 0);
 	if (ruleset_fd < 0) return "Failed to create landlock ruleset";
 	if (landlock_restrict_self(ruleset_fd, 0)) { close(ruleset_fd); return "Failed to enforce landlock ruleset"; }
