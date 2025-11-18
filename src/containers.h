@@ -53,32 +53,33 @@ private:
 template<typename T>
 class address_remapper
 {
+	auto iter_by_address(uint64_t stored) const
+	{
+		if (remapping.empty()) return remapping.end(); // none kept
+		auto iter = remapping.lower_bound(stored);
+		if (iter == remapping.end() || iter->first > stored)
+		{
+			if (iter == remapping.begin()) return remapping.end(); // not found
+			iter--;
+		}
+		if (iter->first + iter->second->size < stored) return remapping.end(); // out of bounds
+		return iter;
+        }
+
 public:
 	/// Get stored object. Thread safe as long as only used after any calls to add() or iter().
 	T* get_by_address(uint64_t stored) const
 	{
-		if (remapping.empty()) return nullptr; // none kept
-		auto iter = remapping.lower_bound(stored);
-		if (iter == remapping.end() || iter->first > stored)
-		{
-			if (iter == remapping.begin()) return nullptr; // not found
-			iter--;
-		}
-		if (iter->first + iter->second->size < stored) return nullptr; // out of bounds
+		auto iter = iter_by_address(stored);
+		if (iter == remapping.end()) return nullptr;
 		return iter->second;
         }
 
 	/// Translate an address. Thread safe as long as only used after any calls to add() or iter().
 	uint64_t translate_address(uint64_t stored) const
 	{
-		if (remapping.empty()) return 0; // none kept
-		auto iter = remapping.lower_bound(stored);
-		if (iter == remapping.end() || iter->first > stored)
-		{
-			if (iter == remapping.begin()) return 0; // not found
-			iter--;
-		}
-		if (iter->first + iter->second->size < stored) return 0; // out of bounds
+		auto iter = iter_by_address(stored);
+		if (iter == remapping.end()) return 0;
 		return iter->second->device_address + (stored - iter->first);
         }
 
