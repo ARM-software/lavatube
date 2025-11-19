@@ -293,40 +293,62 @@ static void test_trace_remap_test2()
 	remapper.clear();
 }
 
-struct mobj
-{
-	uint64_t device_address;
-	uint64_t size;
-};
 static void test_address_remapper()
 {
-	mobj o1 = { 1100, 50 };
-	mobj o2 = { 1200, 50 };
-	mobj o3 = { 1300, 50 };
-	address_remapper<mobj> r;
+	address_remapper r;
+	const auto end = r.end();
+
+	// test empty set
+	assert(r.iter_by_address(0) == end);
+	assert(r.iter_by_address(50) == end);
 	assert(r.get_by_address(0) == nullptr);
 	assert(r.get_by_address(500) == nullptr);
 	assert(r.translate_address(0) == 0);
 	assert(r.translate_address(500) == 0);
-	r.add(100, &o1);
-	r.add(200, &o2);
-	r.add(300, &o3);
-	assert(r.get_by_address(100) == &o1);
-	assert(r.get_by_address(200) == &o2);
-	assert(r.get_by_address(300) == &o3);
+	assert(r.get_by_range(0, 100).size() == 0);
+	assert(r.get_by_range(100, 100).size() == 0);
+	assert(r.is_candidate(0) == false);
+	assert(r.is_candidate(100) == false);
+
+	// test non-overlapping ranges
+	r.add(100, 1100, 50);
+	r.add(200, 1200, 50);
+	r.add(300, 1300, 50);
+	assert(r.iter_by_address(50) == end);
+	assert(r.smallest_by_address(50) == end);
 	assert(r.get_by_address(50) == nullptr);
-	assert(r.get_by_address(150) == &o1);
 	assert(r.get_by_address(299) == nullptr);
 	assert(r.translate_address(50) == 0);
 	assert(r.translate_address(450) == 0);
 	assert(r.translate_address(199) == 0);
 	assert(r.translate_address(100) == 1100);
-	assert(r.translate_address(150) == 1150);
+	assert(r.translate_address(149) == 1149);
+	assert(r.translate_address(135) == 1135);
 	assert(r.is_candidate(0) == false);
 	assert(r.is_candidate(1) == false);
 	assert(r.is_candidate(100) == true);
 	assert(r.is_candidate((uint64_t)100 << 32) == true);
 	assert(r.is_candidate(199) == false);
+	assert(r.get_by_address(100)->new_address == 1100);
+	assert(r.get_by_address(200)->new_address == 1200);
+	assert(r.get_by_address(300)->new_address == 1300);
+	assert(r.get_by_address(149)->new_address == 1100);
+	assert(r.get_by_address(150) == nullptr);
+
+	// test overlapping ranges, shall return smallest range if multiple hits
+	r.add(110, 3110, 20);
+	r.add(190, 4190, 10);
+	assert(r.translate_address(110) == 3110);
+	assert(r.translate_address(135) == 1135);
+	assert(r.translate_address(190) == 4190);
+	assert(r.translate_address(120) == 3120);
+	assert(r.translate_address(195) == 4195);
+	assert(r.translate_address(109) == 1109);
+	assert(r.is_candidate(100) == true);
+	assert(r.is_candidate(115) == true);
+	assert(r.get_by_range(100, 5).size() == 1);
+	assert(r.get_by_range(100, 5)[0].new_address == 1100);
+	assert(r.get_by_range(110, 10).size() == 2);
 }
 
 int main()

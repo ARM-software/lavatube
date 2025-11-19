@@ -13,7 +13,7 @@
 #include <stdint.h>
 #include <memory>
 #include <mutex>
-#include <map>
+#include <set>
 
 #include "tbb/concurrent_unordered_map.h"
 
@@ -48,61 +48,92 @@ private:
 	tbb::concurrent_unordered_map<T, U> map;
 };
 
-/// Limited thread safe remapping allocator for memory addresses used for replay. The payload needs to
-/// store size in a 'size' member and its own remapped address in a 'device_address' member.
-template<typename T>
-class address_remapper
+/// Limited thread safe remapping allocator for memory addresses used for replay. Inspired by https://stackoverflow.com/a/39903868
+/// Implements an interval tree to be able to look up overlapping ranges of memory, and can be used to both remap addresses and
+/// detect aliased memory (though not from the same instance, as the former would contain device memory for which we have obtained
+/// device addresses, while the latter would be offsets of a particular memory object).
+struct tracked_address
 {
-	auto iter_by_address(uint64_t stored) const
+	uint64_t old_address;
+	uint64_t new_address;
+	uint64_t size;
+	uint32_t type;
+	uint32_t index;
+	bool operator() (const tracked_address& rhs) const { return rhs.old_address <= this->old_address && rhs.old_address + rhs.size >= this->old_address + this->size; }
+};
+struct compare_address { bool operator() (const tracked_address& lhs, const tracked_address& rhs) const { return rhs.old_address <= lhs.old_address && rhs.old_address + rhs.size >= lhs.old_address + lhs.size; } };
+struct address_remapper
+{
+	inline auto iter_by_address(uint64_t stored) const
 	{
-		if (remapping.empty()) return remapping.end(); // none kept
-		auto iter = remapping.lower_bound(stored);
-		if (iter == remapping.end() || iter->first > stored)
+		const tracked_address tmp = { stored, 0, 1 };
+		return std::find_if(remapping.begin(), remapping.end(), tmp);
+        }
+
+	inline auto smallest_by_address(uint64_t stored) const
+	{
+		const tracked_address tmp = { stored, 0, 1 };
+		auto smallest = remapping.end();
+		for (auto it = find_if(remapping.begin(), remapping.end(), tmp); it != remapping.end(); it = find_if(++it, remapping.end(), tmp))
 		{
-			if (iter == remapping.begin()) return remapping.end(); // not found
-			iter--;
+			if (smallest == remapping.end() || (smallest->size > it->size)) smallest = it;
 		}
-		if (iter->first + iter->second->size < stored) return remapping.end(); // out of bounds
-		return iter;
-        }
+		return smallest;
+	}
 
-public:
-	/// Get stored object. Thread safe as long as only used after any calls to add() or iter().
-	T* get_by_address(uint64_t stored) const
+	/// Get smallest stored object that matches a given capture address. Thread safe as long as not used
+	/// at the same time as any calls to add() or begin()/end().
+	const tracked_address* get_by_address(uint64_t stored) const
 	{
-		auto iter = iter_by_address(stored);
+		auto iter = smallest_by_address(stored);
 		if (iter == remapping.end()) return nullptr;
-		return iter->second;
+		return &(*iter);
         }
 
-	/// Translate an address. Thread safe as long as only used after any calls to add() or iter().
+	/// Translate an address that matches smallest stored object at a capture address. Thread safe as long
+	/// as not used at the same time as any calls to add() or begin()/end().
 	uint64_t translate_address(uint64_t stored) const
 	{
-		auto iter = iter_by_address(stored);
+		auto iter = smallest_by_address(stored);
 		if (iter == remapping.end()) return 0;
-		return iter->second->device_address + (stored - iter->first);
+		return iter->new_address + (stored - iter->old_address);
         }
 
 	/// Check if a value is a candidate for being a stored memory address. Also checks 32bit swapped addresses.
-	/// Thread safe as long as only used after any calls to add() or iter().
+	/// Thread safe as long as not used at the same time as any calls to add() or begin()/end().
 	bool is_candidate(uint64_t stored) const
 	{
-		return translate_address(stored) != 0 || translate_address((stored >> 32) | (stored << 32));
+		return iter_by_address(stored) != remapping.end() || iter_by_address((stored >> 32) | (stored << 32)) != remapping.end();
 	}
 
-	/// Add an address translation. 'addr' is the stored address. Unsafe. Only use before any calls to
-	/// translate_address() or get_by_address().
-	void add(uint64_t addr, T* obj)
+	/// Add an address translation. 'addr' is the stored address. Unsafe. Never use at the same time as any other function here.
+	void add(uint64_t addr, uint64_t new_address, uint64_t size, uint32_t type = 0, uint32_t index = 0)
 	{
-		remapping[addr] = obj;
+		remapping.insert(tracked_address{addr, new_address, size, type, index});
 	}
 
-	/// Get underlying container. Unsafe. Only use before any calls to translate_address() or get_by_address()
-	const std::map<uint64_t, T*>& iter() const { return remapping; }
+	/// Get begin iterator to the underlying container. Unsafe. Never use at the same time as any other function here.
+	const auto begin() const { return remapping.cbegin(); }
+
+	/// Get end iterator to the underlying container. Unsafe. Never use at the same time as any other function here.
+	const auto end() const { return remapping.cend(); }
+
+	/// Get all objects that match a given capture range. Useful for finding aliased objects.
+	/// Thread safe as long as not used at the same time as any calls to add() or begin()/end().
+	std::vector<tracked_address> get_by_range(uint64_t range_start, uint64_t length) const
+	{
+		std::vector<tracked_address> r;
+		tracked_address tmp = { range_start, 0, length };
+		for (auto it = find_if(remapping.begin(), remapping.end(), tmp); it != remapping.end(); it = find_if(++it, remapping.end(), tmp))
+		{
+			r.push_back(*it);
+		}
+		return r;
+	}
 
 private:
 	// This container is thread safe since we allocate it all before threading begins.
-	std::map<uint64_t, T*> remapping;
+	std::multiset<tracked_address, compare_address> remapping;
 };
 
 /// A very limited RCU-based lockless concurrent vector implementation. Compared to a

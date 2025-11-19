@@ -185,7 +185,8 @@ void lava_reader::init(const std::string& path, int heap_size)
 			if (buf.isMember("device_address"))
 			{
 				VkDeviceAddress address = buf["device_address"].asUInt64();
-				device_address_remapping.add(address, &VkBuffer_index.at(i));
+				const trackedbuffer& buffer = VkBuffer_index.at(i);
+				device_address_remapping.add(address, buffer.device_address, buffer.size, VK_OBJECT_TYPE_BUFFER, buffer.index);
 			}
 		}
 	}
@@ -197,7 +198,8 @@ void lava_reader::init(const std::string& path, int heap_size)
 			if (buf.isMember("device_address"))
 			{
 				VkDeviceAddress address = buf["device_address"].asUInt64();
-				acceleration_structure_address_remapping.add(address, &VkAccelerationStructureKHR_index.at(i));
+				const trackedaccelerationstructure& as = VkAccelerationStructureKHR_index.at(i);
+				device_address_remapping.add(address, as.device_address, as.size, VK_OBJECT_TYPE_ACCELERATION_STRUCTURE_KHR, as.index);
 			}
 		}
 	}
@@ -294,7 +296,7 @@ uint32_t lava_reader::find_address_candidates(trackedbuffer& buffer_data, VkDevi
 			auto it = buffer_data.candidate_lookup.at(offset);
 			if (it->address != candidate) // did it change? if so, update or remove it
 			{
-				if (device_address_remapping.get_by_address(candidate) || acceleration_structure_address_remapping.get_by_address(candidate))
+				if (device_address_remapping.is_candidate(candidate))
 				{
 					it->address = candidate;
 					it->source = source;
@@ -307,18 +309,8 @@ uint32_t lava_reader::find_address_candidates(trackedbuffer& buffer_data, VkDevi
 			continue;
 		}
 
-		// First check for whole buffer
-		const trackedmemoryobject* data = device_address_remapping.get_by_address(candidate);
-		if (data)
-		{
-			buffer_data.add_candidate(offset, candidate, source);
-			found++;
-			continue;
-		}
-		// Then check for the more restricted acceleration structure subset. Need to check both since user may not have
-		// taken the device address of the whole buffer.
-		data = acceleration_structure_address_remapping.get_by_address(candidate);
-		if (data)
+		// If not, look if it could be a candidate
+		if (device_address_remapping.is_candidate(candidate))
 		{
 			buffer_data.add_candidate(offset, candidate, source);
 			found++;

@@ -70,8 +70,7 @@ public:
 	uint32_t find_address_candidates(trackedbuffer& buffer_data, VkDeviceSize size, const void* ptr, change_source source) const;
 
 	// This is thread safe since we allocate it all before threading begins.
-	address_remapper<trackedmemoryobject> device_address_remapping;
-	address_remapper<trackedaccelerationstructure> acceleration_structure_address_remapping;
+	address_remapper device_address_remapping;
 
 	// Our rewrite queue. Only used during post-processing. During first pass entries are ordered by entry time. During second
 	// pass they must be ordered by change time.
