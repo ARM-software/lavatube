@@ -119,9 +119,16 @@ void wsi_initialize(const char* name)
 		int scr = 0;
 		context.xcb.connection = xcb_connect(nullptr, &scr);
 		int err = xcb_connection_has_error(context.xcb.connection);
-		if (err)
+		if (err && name)
 		{
 			ABORT("Failed to connect to XCB server: %s (%d)", lavaxcb_strerror(err), err);
+		}
+		else if (err) // graceful fallback
+		{
+			ILOG("Failed to connect to XCB server (%s) -- falling back to \"none\" WSI ", lavaxcb_strerror(err));
+			context.winsys = "none";
+			p__noscreen = 1;
+			return;
 		}
 		const xcb_setup_t *setup = xcb_get_setup(context.xcb.connection);
 		if (!setup) ABORT("Failed to setup XCB connection");

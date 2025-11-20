@@ -73,11 +73,7 @@ static std::string get_str(const char* in, int& remaining)
 
 static void replay_thread(lava_reader* replayer, int thread_id)
 {
-	if (p__sandbox_level >= 2)
-	{
-		const char* err = sandbox_level_three();
-		if (err) WLOG("Warning: Failed to increase sandbox to level three: %s", err);
-	}
+	if (p__sandbox_level >= 2) sandbox_level_three();
 	lava_file_reader& t = replayer->file_reader(thread_id);
 	uint8_t instrtype;
 	assert(t.run == false);
@@ -163,11 +159,7 @@ int main(int argc, char **argv)
 	std::string filename_output;
 	bool validate_remap = false;
 
-	if (p__sandbox_level >= 1)
-	{
-		const char* err = sandbox_level_one();
-		if (err) WLOG("Warning: Failed to increase sandbox to level one: %s", err);
-	}
+	if (p__sandbox_level >= 1) sandbox_level_one();
 
 	for (int i = 1; i < argc; i++)
 	{
@@ -248,11 +240,7 @@ int main(int argc, char **argv)
 
 	if (!filename_output.empty()) DIE("Output file support still to be done!");
 
-	if (p__sandbox_level >= 3)
-	{
-		const char* err = sandbox_level_two();
-		if (err) WLOG("Warning: Failed to increase sandbox to level two: %s", err);
-	}
+	if (p__sandbox_level >= 3) sandbox_level_two();
 
 	std::list<address_rewrite> rewrite_queue_copy;
 

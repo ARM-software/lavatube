@@ -116,11 +116,7 @@ static void replay_thread(int thread_id)
 
 static void run_multithreaded()
 {
-	if (p__sandbox_level >= 3)
-	{
-		const char* err = sandbox_level_three();
-		if (err) WLOG("Warning: Failed to increase sandbox to level three: %s", err);
-	}
+	if (p__sandbox_level >= 3) sandbox_level_three();
 
 	for (unsigned i = 0; i < replayer.threads.size(); i++)
 	{
@@ -143,11 +139,7 @@ int main(int argc, char **argv)
 	bool infodump = false;
 	std::string wsi;
 
-	if (p__sandbox_level >= 1)
-	{
-		const char* err = sandbox_level_one();
-		if (err) WLOG("Warning: Failed to increase sandbox to level one: %s", err);
-	}
+	if (p__sandbox_level >= 1) sandbox_level_one();
 
 	// override defaults
 	//p__allow_stalls = get_env_bool("LAVATUBE_ALLOW_STALLS", false);
@@ -186,7 +178,7 @@ int main(int argc, char **argv)
 			else if (val == "offscreen") p__noscreen = 1;
 			else ABORT("Bad --swapchain mode");
 		}
-		else if (match(argv[i], nullptr, "--presentationmode", remaining))
+		else if (match(argv[i], nullptr, "--presentation", remaining))
 		{
 			if (remaining < 1) usage();
 			std::string val = get_str(argv[++i], remaining);
@@ -306,11 +298,7 @@ int main(int argc, char **argv)
 	if (wsi.empty()) wsi_initialize(nullptr);
 	else wsi_initialize(wsi.c_str());
 
-	if (p__sandbox_level >= 2)
-	{
-		const char* err = sandbox_level_two();
-		if (err) WLOG("Warning: Failed to increase sandbox to level two: %s", err);
-	}
+	if (p__sandbox_level >= 2) sandbox_level_two();
 
 	if (filename.empty())
 	{

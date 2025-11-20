@@ -23,6 +23,7 @@
 #include <stdbool.h>
 
 #include "sandbox.h"
+#include "util.h"
 
 #ifndef landlock_create_ruleset
 static inline int
@@ -51,20 +52,19 @@ static inline int landlock_restrict_self(const int ruleset_fd,
 }
 #endif
 
-const char* sandbox_level_one()
+void sandbox_level_one()
 {
-	if (prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0) { return "Failed to restrict root privileges"; }
-	return nullptr;
+	if (prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0) ABORT("Failed to restrict root privileges");
 }
 
-const char* sandbox_level_two()
+void sandbox_level_two()
 {
 	int abi = landlock_create_ruleset(NULL, 0, LANDLOCK_CREATE_RULESET_VERSION);
 	if (abi < 0)
 	{
-		if (errno == ENOSYS) return "Landlock sandbox is not supported by the current kernel";
-		else if (errno == EOPNOTSUPP) return "Landlock sandbox is currently disabled";
-		else return "Landlock sandboxing not supported by your system for unknown reason";
+		if (errno == ENOSYS) ABORT("Landlock sandbox is not supported by the current kernel");
+		else if (errno == EOPNOTSUPP) ABORT("Landlock sandbox is currently disabled");
+		else ABORT("Landlock sandboxing not supported by your system: %s", strerror(errno));
 	}
 	struct landlock_ruleset_attr ruleset_attr = {};
 	// Prohibit things we never need to do:
@@ -73,43 +73,37 @@ const char* sandbox_level_two()
 	ruleset_attr.handled_access_net = LANDLOCK_ACCESS_NET_BIND_TCP | LANDLOCK_ACCESS_NET_CONNECT_TCP;
 #endif
 	int ruleset_fd = landlock_create_ruleset(&ruleset_attr, sizeof(ruleset_attr), 0);
-	if (ruleset_fd < 0) return "Failed to create landlock ruleset";
-	if (landlock_restrict_self(ruleset_fd, 0)) { close(ruleset_fd); return "Failed to enforce landlock ruleset"; }
+	if (ruleset_fd < 0) ABORT("Failed to create landlock ruleset: %s", strerror(errno));
+	if (landlock_restrict_self(ruleset_fd, 0) != 0) ABORT("Failed to enforce landlock ruleset: %s", strerror(errno));
 	close(ruleset_fd);
-
-	return nullptr;
 }
 
-const char* sandbox_level_three()
+static void sandbox_except_path(int ruleset_fd, const char* path, int access_flags)
 {
-	char path[255];
-	memset(path, 0, sizeof(path));
-	const char* exception_path = getcwd(path, sizeof(path));
-	// Error would have been spammed during init, do not need to repeat it; if we got here, we decided to ignore it
-	if (landlock_create_ruleset(NULL, 0, LANDLOCK_CREATE_RULESET_VERSION) < 0) return nullptr;
+	struct landlock_path_beneath_attr path_beneath = {};
+	path_beneath.allowed_access = access_flags;
+	path_beneath.parent_fd = open(path, O_PATH | O_CLOEXEC);
+	if (path_beneath.parent_fd < 0) ABORT("Failed to add exception for an app path from sandbox restrictions: %s", strerror(errno));
+	if (landlock_add_rule(ruleset_fd, LANDLOCK_RULE_PATH_BENEATH, &path_beneath, 0) != 0) ABORT("Failed to add path exception to landlock sandbox ruleset: %s", strerror(errno));
+	close(path_beneath.parent_fd);
+}
+
+void sandbox_level_three()
+{
 	// Prohibit things we don't need during replay
 	struct landlock_ruleset_attr ruleset_attr = {};
 	ruleset_attr.handled_access_fs = LANDLOCK_ACCESS_FS_MAKE_SYM | LANDLOCK_ACCESS_FS_MAKE_DIR | LANDLOCK_ACCESS_FS_MAKE_REG | LANDLOCK_ACCESS_FS_REMOVE_DIR | LANDLOCK_ACCESS_FS_REMOVE_FILE | LANDLOCK_ACCESS_FS_WRITE_FILE;
 	int ruleset_fd = landlock_create_ruleset(&ruleset_attr, sizeof(ruleset_attr), 0);
-	if (ruleset_fd < 0) return "Failed to create landlock ruleset";
+	if (ruleset_fd < 0) ABORT("Failed to create landlock ruleset: %s", strerror(errno));
+
 	// Set up exception path from current working directory
-	if (exception_path)
-	{
-		struct landlock_path_beneath_attr path_beneath = {};
-		path_beneath.allowed_access = LANDLOCK_ACCESS_FS_WRITE_FILE | LANDLOCK_ACCESS_FS_REMOVE_FILE | LANDLOCK_ACCESS_FS_MAKE_DIR | LANDLOCK_ACCESS_FS_REMOVE_DIR;
-		path_beneath.parent_fd = open(exception_path, O_PATH | O_CLOEXEC);
-		if (path_beneath.parent_fd < 0) { close(ruleset_fd); return "Failed to open app path"; }
-		int err = landlock_add_rule(ruleset_fd, LANDLOCK_RULE_PATH_BENEATH, &path_beneath, 0);
-		if (err)
-		{
-			printf("1: %s\n", strerror(errno));
-			close(ruleset_fd);
-			close(path_beneath.parent_fd);
-			return "Failed to add path exception to landlock sandbox ruleset";
-		}
-		close(path_beneath.parent_fd);
-	}
-	if (landlock_restrict_self(ruleset_fd, 0)) { close(ruleset_fd); return "Failed to enforce landlock ruleset"; }
+	char path[255];
+	memset(path, 0, sizeof(path));
+	const char* exception_path = getcwd(path, sizeof(path));
+	sandbox_except_path(ruleset_fd, exception_path, LANDLOCK_ACCESS_FS_WRITE_FILE | LANDLOCK_ACCESS_FS_REMOVE_FILE | LANDLOCK_ACCESS_FS_MAKE_DIR | LANDLOCK_ACCESS_FS_REMOVE_DIR);
+	sandbox_except_path(ruleset_fd, "/dev", LANDLOCK_ACCESS_FS_WRITE_FILE);
+
+	if (landlock_restrict_self(ruleset_fd, 0) != 0) ABORT("Failed to enforce landlock ruleset: %s", strerror(errno));
+
 	close(ruleset_fd);
-	return nullptr;
 }
