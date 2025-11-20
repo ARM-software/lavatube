@@ -205,6 +205,9 @@ void lava_reader::init(const std::string& path, int heap_size)
 	Json::Value meta = packed_json("metadata.json", mPackedFile);
 	const int num_threads = meta["threads"].asInt();
 	mGlobalFrames = meta["global_frames"].asInt();
+	stored_version_major = meta["lavatube_version_major"].asInt();
+	stored_version_minor = meta["lavatube_version_minor"].asInt();
+	stored_version_patch = meta["lavatube_version_patch"].asInt();
 
 	// initialize threads -- note that this happens before threading begins, so thread safe
 	threads.resize(num_threads);

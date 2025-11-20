@@ -95,6 +95,11 @@ public:
 	// TBD - should be in a replay-only copy of trackeddevice
 	suballocator allocator;
 
+	// Version numbers are never reset but just keep increasing
+	int stored_version_major = 0;
+	int stored_version_minor = 0;
+	int stored_version_patch = 0;
+
 private:
 	/// Start time of frame range
 	std::atomic_uint64_t mStartTime{ 0 };

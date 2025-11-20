@@ -86,6 +86,7 @@ lava_file_writer::~lava_file_writer()
 		k["global_frame"] = frame.global_frame;
 		k["local_frame"] = frame.local_frame;
 		k["position"] = (Json::Value::Int64)frame.start_pos;
+		k["call"] = current.call;
 		v["frames"].append(k);
 		highest = std::max(highest, frame.global_frame);
 	}
