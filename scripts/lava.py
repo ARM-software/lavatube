@@ -378,6 +378,7 @@ out(targets_all)
 
 out(targets_read_headers, 'void image_update(lava_file_reader& reader, uint32_t device_index, uint32_t image_index);')
 out(targets_read_headers, 'void buffer_update(lava_file_reader& reader, uint32_t device_index, uint32_t buffer_index);')
+out(targets_read_headers, 'void tensor_update(lava_file_reader& reader, uint32_t device_index, uint32_t tensor_index);')
 out(targets_read_headers, 'void terminate_all(lava_file_reader& reader, VkDevice device);')
 out(targets_read_headers, 'void reset_for_tools();')
 out(targets_read_headers)
@@ -386,6 +387,7 @@ out(targets_read, 'void retrace_init(lava_reader& replayer, const Json::Value& v
 out(targets_read, '{')
 out(targets_read, '\tint images = 0;')
 out(targets_read, '\tint buffers = 0;')
+out(targets_read, '\tint tensors = 0;')
 out(targets_read, '\tfor (const auto& p : v.getMemberNames())')
 out(targets_read, '\t{')
 for v in spec.root.findall('types/type'):
@@ -405,9 +407,11 @@ for v in spec.root.findall('types/type'):
 			out(targets_read, '\t\t\timages = v[p].asInt();')
 		if v.find('name').text == 'VkBuffer':
 			out(targets_read, '\t\t\tbuffers = v[p].asInt();')
+		if v.find('name').text == 'VkTensorARM':
+			out(targets_read, '\t\t\ttensors = v[p].asInt();')
 		out(targets_read, '\t\t}')
 out(targets_read, '\t}')
-out(targets_read, '\treplayer.allocator.init(images, buffers, heap_size, !run);')
+out(targets_read, '\treplayer.allocator.init(images, buffers, tensors, heap_size, !run);')
 out(targets_read, '}')
 out(targets_read_headers, 'void retrace_init(lava_reader& replayer, const Json::Value& v, int heap_size = -1, bool run = true);')
 

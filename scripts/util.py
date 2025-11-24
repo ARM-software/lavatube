@@ -164,7 +164,7 @@ trace_post_calls = [ 'vkCreateInstance', 'vkCreateDevice', 'vkDestroyInstance', 
 		'vkGetDeviceImageMemoryRequirements', 'vkGetDeviceImageMemoryRequirementsKHR', 'vkGetPhysicalDeviceFeatures2', 'vkGetPhysicalDeviceFeatures2KHR',
 		'vkGetPhysicalDeviceMemoryProperties2', 'vkGetDeviceImageSparseMemoryRequirementsKHR', 'vkGetDeviceImageSparseMemoryRequirements',
 		'vkCreateShaderModule', 'vkGetBufferDeviceAddress', 'vkGetBufferDeviceAddressKHR', 'vkGetAccelerationStructureDeviceAddressKHR',
-		'vkCmdBindDescriptorSets2KHR', 'vkCmdBindDescriptorSets2' ]
+		'vkCmdBindDescriptorSets2KHR', 'vkCmdBindDescriptorSets2', 'vkGetTensorMemoryRequirementsARM', 'vkBindTensorMemoryARM' ]
 validate_funcs(trace_post_calls)
 skip_post_calls = [ 'vkGetQueryPoolResults', 'vkGetPhysicalDeviceXcbPresentationSupportKHR' ]
 validate_funcs(skip_post_calls)
@@ -189,7 +189,7 @@ trackable_type_map_general = { 'VkBuffer': 'trackedbuffer', 'VkImage': 'trackedi
 	'VkDeviceMemory': 'trackedmemory', 'VkFence': 'trackedfence', 'VkPipeline': 'trackedpipeline', 'VkImageView': 'trackedimageview', 'VkBufferView': 'trackedbufferview',
 	'VkDevice': 'trackeddevice', 'VkFramebuffer': 'trackedframebuffer', 'VkRenderPass': 'trackedrenderpass', 'VkQueue': 'trackedqueue', 'VkPhysicalDevice': 'trackedphysicaldevice',
 	'VkShaderModule': 'trackedshadermodule', 'VkAccelerationStructureKHR': 'trackedaccelerationstructure', 'VkPipelineLayout': 'trackedpipelinelayout',
-	'VkDescriptorSetLayout': 'trackeddescriptorsetlayout' }
+	'VkDescriptorSetLayout': 'trackeddescriptorsetlayout', 'VkTensorARM': 'trackedtensor' }
 trackable_type_map_trace = trackable_type_map_general.copy()
 trackable_type_map_trace.update({ 'VkCommandBuffer': 'trackedcmdbuffer_trace', 'VkSwapchainKHR': 'trackedswapchain', 'VkDescriptorSet': 'trackeddescriptorset_trace',
 	'VkEvent': 'trackedevent_trace', 'VkDescriptorPool': 'trackeddescriptorpool_trace', 'VkCommandPool': 'trackedcommandpool_trace' })
@@ -1208,7 +1208,11 @@ def save_add_tracking(name):
 			z.do('add->physicalDevice = physicalDevice;')
 			z.do('add->explicit_host_updates = explicit_host_updates;')
 			z.do('add->requested_device_extensions = requested_device_extensions;')
+		elif type == 'VkTensorARM':
+			z.do('add->object_type = VK_OBJECT_TYPE_TENSOR_ARM;')
+			z.do('add->sharingMode = pCreateInfo->sharingMode;')
 		elif type == 'VkAccelerationStructureKHR':
+			z.do('add->flags = pCreateInfo->createFlags;')
 			z.do('add->type = pCreateInfo->type;')
 			z.do('add->offset = pCreateInfo->offset;')
 			z.do('add->buffer = pCreateInfo->buffer;')
@@ -1270,6 +1274,14 @@ def save_add_tracking(name):
 		z.do('meta->enter_destroyed();')
 		if type == 'VkCommandBuffer':
 			z.do('commandpool_data->commandbuffers.erase(meta);')
+		elif type in ['VkBuffer', 'VkImage', 'VkAccelerationStructureKHR', 'VkTensorARM']:
+			z.do('if (meta->backing != VK_NULL_HANDLE)')
+			z.brace_begin()
+			z.do('writer.parent->memory_mutex.lock();')
+			z.do('auto* memory_data = writer.parent->records.VkDeviceMemory_index.at(meta->backing);')
+			z.do('if (memory_data) memory_data->unbind(meta);')
+			z.do('writer.parent->memory_mutex.unlock();')
+			z.brace_end()
 		z.brace_end()
 	elif name == 'vkGetDescriptorSetLayoutSizeEXT':
 		type = 'VkDescriptorSetLayout'

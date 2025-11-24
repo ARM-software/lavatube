@@ -374,6 +374,7 @@ static void trace_post_vkBindImageMemory(lava_file_writer& writer, VkResult resu
 	assert(image_data->backing == 0); // cannot re-bind
 	image_data->backing = memory;
 	image_data->offset = memoryOffset;
+	memory_data->bind(image_data);
 	if (image_data->req.size == 0) // no prior call to get reqs for this object
 	{
 		wrap_vkGetImageMemoryRequirements(device, image, &image_data->req);
@@ -394,6 +395,7 @@ static void trace_post_vkBindBufferMemory(lava_file_writer& writer, VkResult res
 	assert(buffer_data->backing == 0); // cannot re-bind
 	buffer_data->backing = memory;
 	buffer_data->offset = memoryOffset;
+	memory_data->bind(buffer_data);
 	if (buffer_data->req.size == 0) // no prior call to get reqs for this object
 	{
 		wrap_vkGetBufferMemoryRequirements(device, buffer, &buffer_data->req);
@@ -430,6 +432,35 @@ static void trace_post_vkBindBufferMemory2(lava_file_writer& writer, VkResult re
 static void trace_post_vkBindBufferMemory2KHR(lava_file_writer& writer, VkResult result, VkDevice device, uint32_t bindInfoCount, const VkBindBufferMemoryInfo* pBindInfos)
 {
 	trace_post_vkBindBufferMemory2(writer, result, device, bindInfoCount, pBindInfos);
+}
+
+static void trace_post_vkGetTensorMemoryRequirementsARM(lava_file_writer& writer, VkDevice device, const VkTensorMemoryRequirementsInfoARM* pInfo, VkMemoryRequirements2* pMemoryRequirements)
+{
+	auto* tensor_data = writer.parent->records.VkTensorARM_index.at(pInfo->tensor);
+	tensor_data->req = pMemoryRequirements->memoryRequirements;
+}
+
+static void trace_post_vkBindTensorMemoryARM(lava_file_writer& writer, VkResult result, VkDevice device, uint32_t bindInfoCount, const VkBindTensorMemoryInfoARM* pBindInfos)
+{
+	writer.parent->memory_mutex.lock();
+	for (unsigned i = 0; i < bindInfoCount; i++)
+	{
+		auto* tensor_data = writer.parent->records.VkTensorARM_index.at(pBindInfos[i].tensor);
+		auto* memory_data = writer.parent->records.VkDeviceMemory_index.at(pBindInfos[i].memory);
+		assert(tensor_data->backing == 0); // cannot re-bind
+		tensor_data->backing = pBindInfos[i].memory;
+		tensor_data->offset = pBindInfos[i].memoryOffset;
+		memory_data->bind(tensor_data);
+		if (tensor_data->req.size == 0) // no prior call to get reqs for this object
+		{
+			VkTensorMemoryRequirementsInfoARM tmr = { VK_STRUCTURE_TYPE_TENSOR_MEMORY_REQUIREMENTS_INFO_ARM, nullptr };
+			VkMemoryRequirements2 mr = { VK_STRUCTURE_TYPE_MEMORY_REQUIREMENTS_2, nullptr };
+			wrap_vkGetTensorMemoryRequirementsARM(device, &tmr, &mr);
+			tensor_data->req = mr.memoryRequirements;
+		}
+		tensor_data->enter_bound();
+	}
+	writer.parent->memory_mutex.unlock();
 }
 
 static void trace_post_vkCmdBindDescriptorSets(lava_file_writer& writer,
@@ -682,7 +713,13 @@ static void memory_update(lava_file_writer& writer, trackedqueue* queue_data, co
 					range r2 = { r.first + object_data->offset, r.last + object_data->offset };
 					assert(r2.last < object_data->offset + object_data->size);
 					range v = memory_data->exposed.fetch(r2, memory_data->ptr != nullptr);
-					writer.write_uint8_t((uint8_t)(object_data->object_type == VK_OBJECT_TYPE_IMAGE) ? PACKET_IMAGE_UPDATE : PACKET_BUFFER_UPDATE);
+					switch (object_data->object_type)
+					{
+					case VK_OBJECT_TYPE_IMAGE: writer.write_uint8_t((uint8_t)PACKET_IMAGE_UPDATE); break;
+					case VK_OBJECT_TYPE_BUFFER: writer.write_uint8_t((uint8_t)PACKET_BUFFER_UPDATE); break;
+					case VK_OBJECT_TYPE_TENSOR_ARM: writer.write_uint8_t((uint8_t)PACKET_TENSOR_UPDATE); break;
+					default: assert(false); break;
+					}
 					writer.write_handle(device_data);
 					writer.write_handle(object_data);
 					written += writer.write_patch(cloneptr, changedptr, v.first - object_data->offset, v.last - v.first + 1);

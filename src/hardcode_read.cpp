@@ -2361,6 +2361,17 @@ void buffer_update(lava_file_reader& reader, uint32_t device_index, uint32_t buf
 	mem_unmap(reader, device, loc, nullptr, ptr);
 }
 
+void tensor_update(lava_file_reader& reader, uint32_t device_index, uint32_t tensor_index)
+{
+	suballoc_location loc = reader.parent->allocator.find_tensor_memory(tensor_index);
+	DLOG2("tensor update idx=%u flush=%s init=%s size=%lu", tensor_index, loc.needs_flush ? "yes" : "no", loc.needs_init ? "yes" : "no", (unsigned long)loc.size);
+	VkDevice device = index_to_VkDevice.at(device_index);
+	char* ptr = mem_map(reader, device, loc);
+	int32_t changed = 0;
+	reader.read_patch(ptr, loc.size);
+	mem_unmap(reader, device, loc, nullptr, ptr);
+}
+
 // -- terminate everything cleanly
 
 template<typename T, typename U, typename V>

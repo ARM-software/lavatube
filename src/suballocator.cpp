@@ -71,6 +71,7 @@ struct suballocator_private
 	VkPhysicalDeviceMemoryProperties memory_properties;
 	std::vector<lookup> image_lookup;
 	std::vector<lookup> buffer_lookup;
+	std::vector<lookup> tensor_lookup;
 
 	void print_memory_usage();
 	uint32_t get_device_memory_type(uint32_t type_filter, VkMemoryPropertyFlags& properties);
@@ -143,11 +144,12 @@ suballocator::suballocator()
 	priv = new suballocator_private;
 }
 
-void suballocator::init(int num_images, int num_buffers, int heap_size, bool fake)
+void suballocator::init(int num_images, int num_buffers, int num_tensors, int heap_size, bool fake)
 {
 	priv->run = !fake;
 	priv->image_lookup.resize(num_images);
 	priv->buffer_lookup.resize(num_buffers);
+	priv->tensor_lookup.resize(num_tensors);
 	memset(&priv->memory_properties, 0, sizeof(priv->memory_properties));
 	if (heap_size != -1) priv->min_heap_size = heap_size;
 }
@@ -485,6 +487,15 @@ suballoc_location suballocator::find_buffer_memory(uint32_t buffer_index)
 {
 	lookup& l = priv->buffer_lookup.at(buffer_index);
 	if (!l.home) SUBALLOC_ABORT(priv, "Buffer %u is missing its memory!", buffer_index);
+	const bool needs_init = !l.initialized;
+	l.initialized = true;
+	return { l.home->mem, l.offset, l.size, needs_init, priv->needs_flush(l.home->memoryTypeIndex) };
+}
+
+suballoc_location suballocator::find_tensor_memory(uint32_t tensor_index)
+{
+	lookup& l = priv->tensor_lookup.at(tensor_index);
+	if (!l.home) SUBALLOC_ABORT(priv, "Tensor %u is missing its memory!", tensor_index);
 	const bool needs_init = !l.initialized;
 	l.initialized = true;
 	return { l.home->mem, l.offset, l.size, needs_init, priv->needs_flush(l.home->memoryTypeIndex) };

@@ -16,7 +16,7 @@ struct suballocator_private;
 struct suballocator
 {
 	/// Call as early as possible to set up internal data structures. Must be called before any other suballoc function.
-	void init(int num_images, int num_buffers, int heap_size = -1, bool fake = false);
+	void init(int num_images, int num_buffers, int tensors, int heap_size = -1, bool fake = false);
 
 	suballocator();
 	~suballocator();
@@ -50,6 +50,8 @@ struct suballocator
 	/// is needed.
 	/// Note that the size returned is the (possibly padded) allocated size, not the size of the image inside the allocation.
 	suballoc_location find_buffer_memory(uint32_t buffer_index);
+
+	suballoc_location find_tensor_memory(uint32_t tensor_index);
 
 	/// Check that our internal structures are internally consistent and abort if not. (This is NOT thread-safe!)
 	int self_test();

@@ -38,6 +38,7 @@ enum
 	PACKET_IMAGE_UPDATE = 4,
 	PACKET_BUFFER_UPDATE = 5,
 	PACKET_VULKANSC_API_CALL = 6,
+	PACKET_TENSOR_UPDATE = 7,
 };
 
 struct trackable
@@ -90,37 +91,36 @@ struct trackable
 	}
 };
 
+struct trackedobject;
+
 struct trackedmemory : trackable
 {
 	using trackable::trackable; // inherit constructor
-
-	// the members below are ephemeral and not saved to disk:
-
 	VkMemoryPropertyFlags propertyFlags = 0;
-
 	/// Current mappping offset
 	VkDeviceSize offset = 0;
 	/// Current mapping size
 	VkDeviceSize size = 0;
-
 	/// Total size
 	VkDeviceSize allocationSize = 0;
-
 	/// Sparse copy of entire memory object. Compare against it when diffing
 	/// using the touched ranges below. We only do this for memory objects that
 	/// are mapped at least once.
 	char* clone = nullptr;
-
 	/// Mapped memory area
 	char* ptr = nullptr;
-
 	/// If we use external memory, keep track of our allocation
 	char* extmem = nullptr;
-
 	/// Tracking all memory exposed to client through memory mapping.
 	exposure exposed;
-
+	/// Native handle of the memory
 	VkDeviceMemory backing = VK_NULL_HANDLE;
+	/// Data structure used to find aliasing objects to make sure we recreate them together again on replay.
+	/// For now, this only supports 1-to-1 aliasing. Only used during capture.
+	std::multimap<VkDeviceSize, trackedobject*> aliasing;
+
+	void bind(trackedobject* obj);
+	void unbind(trackedobject* obj);
 
 	void self_test() const
 	{
@@ -156,9 +156,10 @@ struct trackeddevice : trackable
 	std::unordered_set<std::string> enabled_device_extensions; // from replay tool to driver
 };
 
+/// Anything that is bound to device memory should inherit from this structure.
 struct trackedobject : trackable
 {
-	enum class states : uint8_t { uninitialized, initialized, created, destroyed, bound }; // must add at end
+	enum class states : uint8_t { uninitialized, initialized, created, destroyed, bound }; // must add new states at the end
 	using trackable::trackable; // inherit constructor
 	VkDeviceMemory backing = VK_NULL_HANDLE;
 	VkDeviceSize size = 0;
@@ -169,6 +170,11 @@ struct trackedobject : trackable
 	uint32_t updates = 0; // number of times it was updated
 	bool accessible = false; // whether our backing memory is host visible and understandable
 	int source = 0; // code line that is the last source for us to be scanned, only for debugging
+	/// Do we alias another object in memory? if we alias 1-to-1, both point to each other, otherwise only the child points to
+	/// the parent object.
+	uint32_t alias_type = VK_OBJECT_TYPE_UNKNOWN;
+	uint32_t alias_index = UINT32_MAX;
+	VkDeviceAddress device_address = 0;
 
 	bool is_state(states s) const { return (uint8_t)s == state; }
 	void set_state(states s) { state = (uint8_t)s; }
@@ -207,12 +213,6 @@ struct trackedshadermodule : trackable
 	uint32_t calls = 0; // numbere of times this shader was called
 };
 
-struct trackedmemoryobject : trackedobject
-{
-	using trackedobject::trackedobject; // inherit constructor
-	VkDeviceAddress device_address = 0;
-};
-
 /// Tracking device address candidates
 struct remap_candidate
 {
@@ -225,9 +225,9 @@ struct remap_candidate
 	remap_candidate(remap_candidate&& c) { address = c.address; offset = c.offset; source = c.source; }
 };
 
-struct trackedbuffer : trackedmemoryobject
+struct trackedbuffer : trackedobject
 {
-	using trackedmemoryobject::trackedmemoryobject; // inherit constructor
+	using trackedobject::trackedobject; // inherit constructor
 	VkBufferCreateFlags flags = VK_BUFFER_CREATE_FLAG_BITS_MAX_ENUM;
 	VkSharingMode sharingMode = VK_SHARING_MODE_MAX_ENUM;
 	VkBufferUsageFlags usage = VK_BUFFER_USAGE_FLAG_BITS_MAX_ENUM;
@@ -265,13 +265,29 @@ struct trackedbuffer : trackedmemoryobject
 	}
 };
 
-struct trackedaccelerationstructure : trackedmemoryobject
+struct trackedtensor : trackedobject
 {
-	using trackedmemoryobject::trackedmemoryobject; // inherit constructor
+	using trackedobject::trackedobject; // inherit constructor
+	VkSharingMode sharingMode = VK_SHARING_MODE_MAX_ENUM;
+
+	void self_test() const
+	{
+		static_assert(offsetof(trackedtensor, magic) == 0, "ICD loader magic must be at offset zero!");
+		assert(sharingMode != VK_SHARING_MODE_MAX_ENUM);
+		assert(object_type == VK_OBJECT_TYPE_TENSOR_ARM);
+		if (is_state(states::bound)) assert(size != 0);
+		trackedobject::self_test();
+	}
+};
+
+struct trackedaccelerationstructure : trackedobject
+{
+	using trackedobject::trackedobject; // inherit constructor
 	VkBuffer buffer = VK_NULL_HANDLE;
 	uint32_t buffer_index = CONTAINER_INVALID_INDEX;
 	VkAccelerationStructureTypeKHR type = VK_ACCELERATION_STRUCTURE_TYPE_MAX_ENUM_KHR;
 	VkDeviceSize offset = 0;
+	VkAccelerationStructureCreateFlagsKHR flags = VK_ACCELERATION_STRUCTURE_CREATE_FLAG_BITS_MAX_ENUM_KHR;
 
 	void self_test() const
 	{
@@ -697,3 +713,36 @@ struct trackedframebuffer : trackable
 		trackable::self_test();
 	}
 };
+
+inline void trackedmemory::bind(trackedobject* obj)
+{
+	// only 1-to-1 aliasing for now
+	auto it = aliasing.find(obj->offset);
+	if (it != aliasing.end()) // we are aliasing
+	{
+		trackedobject* other = it->second;
+		assert(obj->offset == it->first); // offset is the same for now
+		assert(obj->size == other->size); // size is the same for now
+		ILOG("We found aliasing objects %s %u and %s %u at offset %lu", pretty_print_VkObjectType(obj->object_type), obj->index,
+		     pretty_print_VkObjectType(other->object_type), other->index, (unsigned long)obj->offset);
+		other->alias_type = obj->object_type;
+		other->alias_index = obj->index;
+		obj->alias_type = other->object_type;
+		obj->alias_index = other->index;
+	}
+	aliasing.insert({obj->offset, obj});
+}
+
+inline void trackedmemory::unbind(trackedobject* obj)
+{
+	auto it = aliasing.find(obj->offset);
+	assert(it != aliasing.end());
+	for (; it != aliasing.end(); ++it)
+	{
+		if (it->first == obj->offset)
+		{
+			aliasing.erase(it);
+			return;
+		}
+	}
+}

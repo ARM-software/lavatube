@@ -23,23 +23,34 @@ Json::Value trackable_json(const trackable* t)
 	return v;
 }
 
-Json::Value trackedaccelerationstructure_json(const trackedaccelerationstructure* t)
+static Json::Value trackedobject_json(const trackedobject *t)
 {
 	Json::Value v = trackable_json(t);
 	v["size"] = (Json::Value::UInt64)t->size;
-	v["offset"] = (Json::Value::UInt64)t->offset;
-	v["buffer_index"] = t->buffer_index;
 	if (t->device_address != 0)
 	{
 		v["device_address"] = (Json::Value::UInt64)t->device_address;
 	}
+	if (t->alias_index != UINT32_MAX)
+	{
+		v["alias_index"] = t->alias_index;
+		v["alias_type"] = (unsigned)t->alias_type;
+	}
+	return v;
+}
+
+Json::Value trackedaccelerationstructure_json(const trackedaccelerationstructure* t)
+{
+	Json::Value v = trackedobject_json(t);
+	v["offset"] = (Json::Value::UInt64)t->offset;
+	v["buffer_index"] = t->buffer_index;
+	v["flags"] = (unsigned)t->flags;
 	return v;
 }
 
 Json::Value trackedbuffer_json(const trackedbuffer* t)
 {
-	Json::Value v = trackable_json(t);
-	v["size"] = (Json::Value::UInt64)t->size;
+	Json::Value v = trackedobject_json(t);
 	v["flags"] = (unsigned)t->flags;
 	v["sharingMode"] = (unsigned)t->sharingMode;
 	v["usage"] = (unsigned)t->usage;
@@ -47,16 +58,21 @@ Json::Value trackedbuffer_json(const trackedbuffer* t)
 	v["req_alignment"] = (unsigned)t->req.alignment;
 	v["written"] = (Json::Value::UInt64)t->written;
 	v["updates"] = (unsigned)t->updates;
-	if (t->device_address != 0)
-	{
-		v["device_address"] = (Json::Value::UInt64)t->device_address;
-	}
+	return v;
+}
+
+Json::Value trackedtensor_json(const trackedtensor* t)
+{
+	Json::Value v = trackedobject_json(t);
+	v["sharingMode"] = (unsigned)t->sharingMode;
+	v["req_size"] = (Json::Value::UInt64)t->req.size;
+	v["req_alignment"] = (unsigned)t->req.alignment;
 	return v;
 }
 
 Json::Value trackedimage_json(const trackedimage* t)
 {
-	Json::Value v = trackable_json(t);
+	Json::Value v = trackedobject_json(t);
 	v["tiling"] = (unsigned)t->tiling;
 	v["flags"] = (unsigned)t->flags;
 	v["sharingMode"] = (unsigned)t->sharingMode;
@@ -265,11 +281,17 @@ trackedaccelerationstructure trackedaccelerationstructure_json(const Json::Value
 {
 	trackedaccelerationstructure t;
 	trackable_helper(t, v);
+	t.flags = (VkAccelerationStructureCreateFlagsKHR)v["flags"].asUInt();
 	t.size = (VkDeviceSize)v["size"].asUInt64();
 	t.offset = (VkDeviceSize)v["offset"].asUInt64();
 	t.buffer_index = v["buffer_index"].asUInt();
-	t.enter_initialized();
 	t.object_type = VK_OBJECT_TYPE_ACCELERATION_STRUCTURE_KHR;
+	if (v.isMember("alias_index"))
+	{
+		t.alias_index = v["alias_index"].asUInt();
+		t.alias_type = (VkObjectType)v["alias_type"].asUInt();
+	}
+	t.enter_initialized();
 	return t;
 }
 
@@ -285,6 +307,11 @@ trackedbuffer trackedbuffer_json(const Json::Value& v)
 	t.req.alignment = v["req_alignment"].asUInt();
 	t.req.memoryTypeBits = 0;
 	t.object_type = VK_OBJECT_TYPE_BUFFER;
+	if (v.isMember("alias_index"))
+	{
+		t.alias_index = v["alias_index"].asUInt();
+		t.alias_type = (VkObjectType)v["alias_type"].asUInt();
+	}
 	t.enter_initialized();
 	return t;
 }
@@ -313,7 +340,30 @@ trackedimage trackedimage_json(const Json::Value& v)
 		t.extent.height = v["extent"][1].asUInt();
 		t.extent.depth = v["extent"][2].asUInt();
 	}
+	if (v.isMember("alias_index"))
+	{
+		t.alias_index = v["alias_index"].asUInt();
+		t.alias_type = (VkObjectType)v["alias_type"].asUInt();
+	}
 	t.object_type = VK_OBJECT_TYPE_IMAGE;
+	t.enter_initialized();
+	return t;
+}
+
+trackedtensor trackedtensor_json(const Json::Value& v)
+{
+	trackedtensor t;
+	trackable_helper(t, v);
+	t.sharingMode = (VkSharingMode)v["sharingMode"].asUInt();
+	t.req.size = v["req_size"].asUInt64();
+	t.req.alignment = v["req_alignment"].asUInt();
+	t.req.memoryTypeBits = 0;
+	t.object_type = VK_OBJECT_TYPE_TENSOR_ARM;
+	if (v.isMember("alias_index"))
+	{
+		t.alias_index = v["alias_index"].asUInt();
+		t.alias_type = (VkObjectType)v["alias_type"].asUInt();
+	}
 	t.enter_initialized();
 	return t;
 }

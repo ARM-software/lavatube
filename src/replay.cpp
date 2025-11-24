@@ -109,6 +109,13 @@ static void replay_thread(int thread_id)
 			const uint32_t buffer_index = t.read_handle(DEBUGPARAM("VkBuffer"));
 			buffer_update(t, device_index, buffer_index);
 		}
+		else if (instrtype == PACKET_TENSOR_UPDATE)
+		{
+			DLOG2("Update tensor packet on thread %d", thread_id);
+			const uint32_t device_index = t.read_handle(DEBUGPARAM("VkDevice"));
+			const uint32_t tensor_index = t.read_handle(DEBUGPARAM("VkTensorARM"));
+			tensor_update(t, device_index, tensor_index);
+		}
 		t.device = VK_NULL_HANDLE;
 		t.physicalDevice = VK_NULL_HANDLE;
 	}

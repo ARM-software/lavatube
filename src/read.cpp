@@ -311,7 +311,7 @@ uint32_t lava_reader::find_address_candidates(trackedbuffer& buffer_data, VkDevi
 		}
 
 		// First check for whole buffer
-		const trackedmemoryobject* data = device_address_remapping.get_by_address(candidate);
+		const trackedobject* data = device_address_remapping.get_by_address(candidate);
 		if (data)
 		{
 			buffer_data.add_candidate(offset, candidate, source);
