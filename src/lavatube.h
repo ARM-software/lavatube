@@ -172,7 +172,7 @@ struct trackedobject : trackable
 	int source = 0; // code line that is the last source for us to be scanned, only for debugging
 	/// Do we alias another object in memory? if we alias 1-to-1, both point to each other, otherwise only the child points to
 	/// the parent object.
-	uint32_t alias_type = VK_OBJECT_TYPE_UNKNOWN;
+	VkObjectType alias_type = VK_OBJECT_TYPE_UNKNOWN;
 	uint32_t alias_index = UINT32_MAX;
 	VkDeviceAddress device_address = 0;
 

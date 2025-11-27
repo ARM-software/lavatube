@@ -24,6 +24,7 @@ struct suballocation
 	{
 		VkImage image;
 		VkBuffer buffer;
+		VkTensorARM tensor;
 	} handle;
 	VkDeviceSize size = 0;
 	VkDeviceSize offset = 0;
@@ -406,21 +407,18 @@ void suballocator::virtualswap_images(VkDevice device, const std::vector<VkImage
 	}
 }
 
-suballoc_location suballocator::add_buffer(uint16_t tid, VkDevice device, VkBuffer buffer, uint32_t buffer_index, VkMemoryPropertyFlags mempropflags, const trackedbuffer& buffer_data)
+suballoc_location suballocator::add_buffer(uint16_t tid, VkDevice device, VkBuffer buffer, VkMemoryPropertyFlags mempropflags, const trackedbuffer& buffer_data)
 {
 	const VkBufferUsageFlags buffer_flags = buffer_data.usage;
 	if ((mempropflags & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT) || (mempropflags & VK_MEMORY_PROPERTY_HOST_CACHED_BIT))
 	{
 		mempropflags &= ~VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT; // do not require this bit in these cases
 	}
-	VkMemoryRequirements2 req = {};
-	req.sType = VK_STRUCTURE_TYPE_MEMORY_REQUIREMENTS_2;
-	VkMemoryDedicatedRequirements dedicated = {};
-	dedicated.sType = VK_STRUCTURE_TYPE_MEMORY_DEDICATED_REQUIREMENTS;
+	VkMemoryRequirements2 req = { VK_STRUCTURE_TYPE_MEMORY_REQUIREMENTS_2, nullptr };
+	VkMemoryDedicatedRequirements dedicated = { VK_STRUCTURE_TYPE_MEMORY_DEDICATED_REQUIREMENTS, nullptr };
 	if (use_dedicated_allocation() && priv->run)
 	{
-		VkBufferMemoryRequirementsInfo2 info = {};
-		info.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_REQUIREMENTS_INFO_2;
+		VkBufferMemoryRequirementsInfo2 info = { VK_STRUCTURE_TYPE_BUFFER_MEMORY_REQUIREMENTS_INFO_2, nullptr };
 		info.buffer = buffer;
 		req.pNext = &dedicated;
 		wrap_vkGetBufferMemoryRequirements2(device, &info, &req);
@@ -441,7 +439,7 @@ suballoc_location suballocator::add_buffer(uint16_t tid, VkDevice device, VkBuff
 	s.handle.buffer = buffer;
 	s.size = req.memoryRequirements.size;
 	s.offset = 0;
-	s.index = buffer_index;
+	s.index = buffer_data.index;
 	s.alignment = req.memoryRequirements.alignment;
 	VkMemoryAllocateFlags allocflags = 0;
 	if (buffer_flags & VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT) { dedicated.prefersDedicatedAllocation = VK_TRUE; allocflags |= VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT_KHR; }

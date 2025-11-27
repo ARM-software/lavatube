@@ -79,12 +79,10 @@ def struct_impl_read(r, selected = None):
 		accessor = '%s* sptr' % name
 		special = ''
 		if name == 'VkDeviceCreateInfo': special = ', VkPhysicalDevice physicalDevice'
-		elif 'VkBindBufferMemoryInfo' in name or 'VkBindImageMemoryInfo' in name: special = ', VkDevice device'
 		print('static void read_%s(lava_file_reader& reader, %s%s)' % (name, accessor, special), file=r)
 		print('{', file=r)
 		if v.attrib.get('alias'):
 			if 'VkDeviceCreateInfo' in name: special = ', physicalDevice'
-			elif 'VkBindBufferMemoryInfo' in name or 'VkBindImageMemoryInfo' in name: special = ', device'
 			print('\tread_%s(reader, sptr%s);' % (v.attrib.get('alias'), special), file=r)
 		else:
 			z.target(r)

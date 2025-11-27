@@ -449,7 +449,6 @@ class parameter(spec.base_parameter):
 		elif 'vkCmdPushDescriptorSet' in self.funcname and mytype == 'VkWriteDescriptorSet' and not self.read: accessor += ', true'
 		elif mytype == 'VkWriteDescriptorSet' and not self.read: accessor += ', false'
 		elif mytype == 'VkDeviceCreateInfo' and self.read: accessor += ', physicalDevice'
-		elif ('VkBindImageMemoryInfo' in mytype or 'VkBindBufferMemoryInfo' in mytype) and self.read: accessor += ', device'
 
 		if self.funcname[0] == 'V' and mytype in deconst_struct and not self.read: # we cannot modify passed in memory when writing
 			if size:
@@ -721,11 +720,11 @@ class parameter(spec.base_parameter):
 			z.do('const VkImageTiling tiling = static_cast<VkImageTiling>(reader.read_uint32_t()); // fetch tiling property especially added')
 			z.do('const VkDeviceSize min_size = static_cast<VkDeviceSize>(reader.read_uint64_t()); // fetch padded memory size')
 			z.do('trackedimage& image_data = VkImage_index.at(image_index);')
-			z.do('suballoc_location loc = reader.parent->allocator.add_image(reader.thread_index(), device, %s, image_index, special_flags, tiling, min_size);' % varname)
+			z.do('suballoc_location loc = reader.parent->allocator.add_image(reader.thread_index(), reader.device, %s, image_index, special_flags, tiling, min_size);' % varname)
 		elif self.funcname in ['vkBindBufferMemory', 'VkBindBufferMemoryInfo', 'VkBindBufferMemoryInfoKHR'] and self.name == 'buffer':
 			z.do('const VkMemoryPropertyFlags special_flags = static_cast<VkMemoryPropertyFlags>(reader.read_uint32_t()); // fetch memory flags especially added')
 			z.do('trackedbuffer& buffer_data = VkBuffer_index.at(buffer_index);')
-			z.do('suballoc_location loc = reader.parent->allocator.add_buffer(reader.thread_index(), device, %s, buffer_index, special_flags, buffer_data);' % varname)
+			z.do('suballoc_location loc = reader.parent->allocator.add_buffer(reader.thread_index(), reader.device, %s, special_flags, buffer_data);' % varname)
 
 		if self.funcname in ['vkBindImageMemory', 'vkBindBufferMemory', 'VkBindBufferMemoryInfo', 'VkBindBufferMemoryInfoKHR', 'VkBindImageMemoryInfoKHR', 'VkBindImageMemoryInfo']:
 			if self.name == 'memory':
