@@ -1122,6 +1122,8 @@ def save_add_tracking(name):
 			z.do('add->size = pCreateInfo->size;')
 			z.do('add->flags = pCreateInfo->flags;')
 			z.do('add->usage = pCreateInfo->usage;')
+			z.do('auto* usageflags2 = (VkBufferUsageFlags2CreateInfo*)find_extension(pCreateInfo, VK_STRUCTURE_TYPE_BUFFER_USAGE_FLAGS_2_CREATE_INFO);')
+			z.do('if (usageflags2) add->usage2 = usageflags2->usage;')
 			z.do('add->sharingMode = pCreateInfo->sharingMode;')
 			z.do('add->object_type = VK_OBJECT_TYPE_BUFFER;')
 		elif type == 'VkPipelineLayout':
@@ -1210,6 +1212,13 @@ def save_add_tracking(name):
 		elif type == 'VkTensorARM':
 			z.do('add->object_type = VK_OBJECT_TYPE_TENSOR_ARM;')
 			z.do('add->sharingMode = pCreateInfo->sharingMode;')
+			z.do('add->tiling = pCreateInfo->pDescription->tiling;')
+			z.do('add->format = pCreateInfo->pDescription->format;')
+			z.do('add->usage = pCreateInfo->pDescription->usage;')
+			z.do('add->dimensions.resize(pCreateInfo->pDescription->dimensionCount);')
+			z.do('if (pCreateInfo->pDescription->pStrides) add->strides.resize(pCreateInfo->pDescription->dimensionCount);')
+			z.do('memcpy(add->dimensions.data(), pCreateInfo->pDescription->pDimensions, sizeof(int64_t) * pCreateInfo->pDescription->dimensionCount);')
+			z.do('if (pCreateInfo->pDescription->pStrides) memcpy(add->strides.data(), pCreateInfo->pDescription->pStrides, sizeof(int64_t) * pCreateInfo->pDescription->dimensionCount);')
 		elif type == 'VkAccelerationStructureKHR':
 			z.do('add->flags = pCreateInfo->createFlags;')
 			z.do('add->type = pCreateInfo->type;')

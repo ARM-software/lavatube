@@ -54,6 +54,7 @@ Json::Value trackedbuffer_json(const trackedbuffer* t)
 	v["flags"] = (unsigned)t->flags;
 	v["sharingMode"] = (unsigned)t->sharingMode;
 	v["usage"] = (unsigned)t->usage;
+	v["usage2"] = (Json::Value::UInt64)t->usage2;
 	v["req_size"] = (Json::Value::UInt64)t->req.size;
 	v["req_alignment"] = (unsigned)t->req.alignment;
 	v["written"] = (Json::Value::UInt64)t->written;
@@ -67,6 +68,19 @@ Json::Value trackedtensor_json(const trackedtensor* t)
 	v["sharingMode"] = (unsigned)t->sharingMode;
 	v["req_size"] = (Json::Value::UInt64)t->req.size;
 	v["req_alignment"] = (unsigned)t->req.alignment;
+	v["tiling"] = (unsigned)t->tiling;
+	v["format"] = (unsigned)t->format;
+	v["usage"] = (unsigned)t->usage;
+	v["dimensions"] = Json::arrayValue;
+	for (unsigned i = 0; i < t->strides.size() ; i++)
+	{
+		v["dimensions"].append((Json::Value::UInt64)t->dimensions.at(i));
+	}
+	if (t->strides.size() > 0) v["strides"] = Json::arrayValue;
+	for (unsigned i = 0; i < t->strides.size() ; i++)
+	{
+		v["strides"].append((Json::Value::UInt64)t->strides.at(i));;
+	}
 	return v;
 }
 
@@ -303,6 +317,7 @@ trackedbuffer trackedbuffer_json(const Json::Value& v)
 	t.flags = (VkBufferCreateFlags)v["flags"].asUInt();
 	t.sharingMode = (VkSharingMode)v["sharingMode"].asUInt();
 	t.usage = (VkBufferUsageFlags)v["usage"].asUInt();
+	if (v.isMember("usage2")) t.usage2 = (VkBufferUsageFlags2)v["usage2"].asUInt64();
 	t.req.size = v["req_size"].asUInt64();
 	t.req.alignment = v["req_alignment"].asUInt();
 	t.req.memoryTypeBits = 0;
@@ -359,6 +374,14 @@ trackedtensor trackedtensor_json(const Json::Value& v)
 	t.req.alignment = v["req_alignment"].asUInt();
 	t.req.memoryTypeBits = 0;
 	t.object_type = VK_OBJECT_TYPE_TENSOR_ARM;
+	t.tiling = (VkTensorTilingARM)v["tiling"].asUInt();
+	t.format = (VkFormat)v["format"].asUInt();
+	t.usage = (VkTensorUsageFlagsARM)v["dimensions"].asUInt64();
+	for (const auto& val : v["dimensions"]) t.dimensions.push_back(val.asUInt64());
+	if (v.isMember("strides"))
+	{
+		for (const auto& val : v["strides"]) t.strides.push_back(val.asUInt64());
+	}
 	if (v.isMember("alias_index"))
 	{
 		t.alias_index = v["alias_index"].asUInt();

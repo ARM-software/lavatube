@@ -231,6 +231,7 @@ struct trackedbuffer : trackedobject
 	VkBufferCreateFlags flags = VK_BUFFER_CREATE_FLAG_BITS_MAX_ENUM;
 	VkSharingMode sharingMode = VK_SHARING_MODE_MAX_ENUM;
 	VkBufferUsageFlags usage = VK_BUFFER_USAGE_FLAG_BITS_MAX_ENUM;
+	VkBufferUsageFlags2 usage2 = 0;
 
 	void self_test() const
 	{
@@ -269,10 +270,17 @@ struct trackedtensor : trackedobject
 {
 	using trackedobject::trackedobject; // inherit constructor
 	VkSharingMode sharingMode = VK_SHARING_MODE_MAX_ENUM;
+	VkTensorTilingARM tiling = VK_TENSOR_TILING_MAX_ENUM_ARM;
+	VkFormat format = VK_FORMAT_MAX_ENUM;
+	std::vector<int64_t> dimensions;
+	std::vector<int64_t> strides;
+	VkTensorUsageFlagsARM usage = 0;
 
 	void self_test() const
 	{
 		static_assert(offsetof(trackedtensor, magic) == 0, "ICD loader magic must be at offset zero!");
+		assert(format != VK_FORMAT_MAX_ENUM);
+		assert(tiling != VK_TENSOR_TILING_MAX_ENUM_ARM);
 		assert(sharingMode != VK_SHARING_MODE_MAX_ENUM);
 		assert(object_type == VK_OBJECT_TYPE_TENSOR_ARM);
 		if (is_state(states::bound)) assert(size != 0);
