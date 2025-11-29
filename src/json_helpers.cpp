@@ -36,6 +36,9 @@ static Json::Value trackedobject_json(const trackedobject *t)
 		v["alias_index"] = t->alias_index;
 		v["alias_type"] = (unsigned)t->alias_type;
 	}
+	v["req_size"] = (Json::Value::UInt64)t->req.size; // info only, do not read
+	v["req_alignment"] = (unsigned)t->req.alignment; // info only, do not read
+	v["memory_flags"] = (unsigned)t->memory_flags;
 	return v;
 }
 
@@ -55,8 +58,6 @@ Json::Value trackedbuffer_json(const trackedbuffer* t)
 	v["sharingMode"] = (unsigned)t->sharingMode;
 	v["usage"] = (unsigned)t->usage;
 	v["usage2"] = (Json::Value::UInt64)t->usage2;
-	v["req_size"] = (Json::Value::UInt64)t->req.size;
-	v["req_alignment"] = (unsigned)t->req.alignment;
 	v["written"] = (Json::Value::UInt64)t->written;
 	v["updates"] = (unsigned)t->updates;
 	return v;
@@ -66,8 +67,6 @@ Json::Value trackedtensor_json(const trackedtensor* t)
 {
 	Json::Value v = trackedobject_json(t);
 	v["sharingMode"] = (unsigned)t->sharingMode;
-	v["req_size"] = (Json::Value::UInt64)t->req.size;
-	v["req_alignment"] = (unsigned)t->req.alignment;
 	v["tiling"] = (unsigned)t->tiling;
 	v["format"] = (unsigned)t->format;
 	v["usage"] = (unsigned)t->usage;
@@ -92,8 +91,6 @@ Json::Value trackedimage_json(const trackedimage* t)
 	v["sharingMode"] = (unsigned)t->sharingMode;
 	v["usage"] = (unsigned)t->usage;
 	v["imageType"] = (unsigned)t->imageType;
-	v["req_size"] = (Json::Value::UInt64)t->req.size;
-	v["req_alignment"] = (unsigned)t->req.alignment;
 	v["format"] = (unsigned)t->format;
 	v["written"] = (Json::Value::UInt64)t->written;
 	v["updates"] = (unsigned)t->updates;
@@ -305,6 +302,7 @@ trackedaccelerationstructure trackedaccelerationstructure_json(const Json::Value
 		t.alias_index = v["alias_index"].asUInt();
 		t.alias_type = (VkObjectType)v["alias_type"].asUInt();
 	}
+	if (v.isMember("memory_flags")) t.memory_flags = (VkMemoryPropertyFlags)v["memory_flags"].asUInt();
 	t.enter_initialized();
 	return t;
 }
@@ -318,15 +316,13 @@ trackedbuffer trackedbuffer_json(const Json::Value& v)
 	t.sharingMode = (VkSharingMode)v["sharingMode"].asUInt();
 	t.usage = (VkBufferUsageFlags)v["usage"].asUInt();
 	if (v.isMember("usage2")) t.usage2 = (VkBufferUsageFlags2)v["usage2"].asUInt64();
-	t.req.size = v["req_size"].asUInt64();
-	t.req.alignment = v["req_alignment"].asUInt();
-	t.req.memoryTypeBits = 0;
 	t.object_type = VK_OBJECT_TYPE_BUFFER;
 	if (v.isMember("alias_index"))
 	{
 		t.alias_index = v["alias_index"].asUInt();
 		t.alias_type = (VkObjectType)v["alias_type"].asUInt();
 	}
+	if (v.isMember("memory_flags")) t.memory_flags = (VkMemoryPropertyFlags)v["memory_flags"].asUInt();
 	t.enter_initialized();
 	return t;
 }
@@ -340,9 +336,6 @@ trackedimage trackedimage_json(const Json::Value& v)
 	t.sharingMode = (VkSharingMode)v["sharingMode"].asUInt();
 	t.usage = (VkImageUsageFlags)v["usage"].asUInt();
 	t.imageType = (VkImageType)v["imageType"].asUInt();
-	t.req.size = v["req_size"].asUInt64();
-	t.req.alignment = v["req_alignment"].asUInt();
-	t.req.memoryTypeBits = 0;
 	t.initialLayout = (VkImageLayout)(v.get("initialLayout", 0).asUInt());
 	t.currentLayout = t.initialLayout;
 	t.samples = (VkSampleCountFlagBits)(v.get("samples", 0).asUInt());
@@ -360,6 +353,7 @@ trackedimage trackedimage_json(const Json::Value& v)
 		t.alias_index = v["alias_index"].asUInt();
 		t.alias_type = (VkObjectType)v["alias_type"].asUInt();
 	}
+	if (v.isMember("memory_flags")) t.memory_flags = (VkMemoryPropertyFlags)v["memory_flags"].asUInt();
 	t.object_type = VK_OBJECT_TYPE_IMAGE;
 	t.enter_initialized();
 	return t;
@@ -370,9 +364,6 @@ trackedtensor trackedtensor_json(const Json::Value& v)
 	trackedtensor t;
 	trackable_helper(t, v);
 	t.sharingMode = (VkSharingMode)v["sharingMode"].asUInt();
-	t.req.size = v["req_size"].asUInt64();
-	t.req.alignment = v["req_alignment"].asUInt();
-	t.req.memoryTypeBits = 0;
 	t.object_type = VK_OBJECT_TYPE_TENSOR_ARM;
 	t.tiling = (VkTensorTilingARM)v["tiling"].asUInt();
 	t.format = (VkFormat)v["format"].asUInt();
@@ -387,6 +378,7 @@ trackedtensor trackedtensor_json(const Json::Value& v)
 		t.alias_index = v["alias_index"].asUInt();
 		t.alias_type = (VkObjectType)v["alias_type"].asUInt();
 	}
+	if (v.isMember("memory_flags")) t.memory_flags = (VkMemoryPropertyFlags)v["memory_flags"].asUInt();
 	t.enter_initialized();
 	return t;
 }

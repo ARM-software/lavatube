@@ -29,10 +29,10 @@ struct suballocator
 
 	/// Add an image to our memory pools. Thread safe because each thread gets its own set of memory pools that only they
 	/// can modify. Other threads may access the objects stored inside subject to Vulkan external synchronization rules.
-	suballoc_location add_image(uint16_t tid, VkDevice device, VkImage image, uint32_t image_index, VkMemoryPropertyFlags flags, VkImageTiling tiling, VkDeviceSize min_size);
+	suballoc_location add_image(uint16_t tid, VkDevice device, VkImage image, const trackedimage& image_data);
 
 	/// Add a buffer to our memory pools. See above.
-	suballoc_location add_buffer(uint16_t tid, VkDevice device, VkBuffer buffer, VkMemoryPropertyFlags memory_flags, const trackedbuffer& buffer_data);
+	suballoc_location add_buffer(uint16_t tid, VkDevice device, VkBuffer buffer, const trackedbuffer& buffer_data);
 
 	/// Delete an image from our memory pools. Thread safe because the internal data structure is preallocated and never resized,
 	/// and deleted entries are never reused.

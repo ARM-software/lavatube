@@ -716,15 +716,17 @@ class parameter(spec.base_parameter):
 			z.do('%s = reader.read_%s();' % (varname, self.type))
 
 		if self.funcname in ['vkBindImageMemory', 'VkBindImageMemoryInfoKHR', 'VkBindImageMemoryInfo'] and self.name == 'image':
-			z.do('const VkMemoryPropertyFlags special_flags = static_cast<VkMemoryPropertyFlags>(reader.read_uint32_t()); // fetch memory flags especially added')
-			z.do('const VkImageTiling tiling = static_cast<VkImageTiling>(reader.read_uint32_t()); // fetch tiling property especially added')
-			z.do('const VkDeviceSize min_size = static_cast<VkDeviceSize>(reader.read_uint64_t()); // fetch padded memory size')
 			z.do('trackedimage& image_data = VkImage_index.at(image_index);')
-			z.do('suballoc_location loc = reader.parent->allocator.add_image(reader.thread_index(), reader.device, %s, image_index, special_flags, tiling, min_size);' % varname)
+			z.do('image_data.memory_flags = static_cast<VkMemoryPropertyFlags>(reader.read_uint32_t()); // fetch memory flags especially added') # TBD remove me
+			z.do('const VkImageTiling tiling = static_cast<VkImageTiling>(reader.read_uint32_t()); // fetch tiling property especially added') # TBD remove me
+			z.do('assert(tiling == image_data.tiling);')
+			z.do('const VkDeviceSize min_size = static_cast<VkDeviceSize>(reader.read_uint64_t()); // fetch padded memory size') # TBD remove me
+			z.do('assert(min_size == image_data.size);')
+			z.do('suballoc_location loc = reader.parent->allocator.add_image(reader.thread_index(), reader.device, %s, image_data);' % varname)
 		elif self.funcname in ['vkBindBufferMemory', 'VkBindBufferMemoryInfo', 'VkBindBufferMemoryInfoKHR'] and self.name == 'buffer':
-			z.do('const VkMemoryPropertyFlags special_flags = static_cast<VkMemoryPropertyFlags>(reader.read_uint32_t()); // fetch memory flags especially added')
 			z.do('trackedbuffer& buffer_data = VkBuffer_index.at(buffer_index);')
-			z.do('suballoc_location loc = reader.parent->allocator.add_buffer(reader.thread_index(), reader.device, %s, special_flags, buffer_data);' % varname)
+			z.do('buffer_data.memory_flags = static_cast<VkMemoryPropertyFlags>(reader.read_uint32_t()); // fetch memory flags especially added') # TBD remove me
+			z.do('suballoc_location loc = reader.parent->allocator.add_buffer(reader.thread_index(), reader.device, %s, buffer_data);' % varname)
 
 		if self.funcname in ['vkBindImageMemory', 'vkBindBufferMemory', 'VkBindBufferMemoryInfo', 'VkBindBufferMemoryInfoKHR', 'VkBindImageMemoryInfoKHR', 'VkBindImageMemoryInfo']:
 			if self.name == 'memory':
@@ -1007,12 +1009,13 @@ class parameter(spec.base_parameter):
 			z.do('writer.commandBuffer = %s;' % varname) # always earlier in the parameter list than images and buffers, fortunately
 			z.do('writer.device = commandbuffer_data->device;')
 			z.do('writer.physicalDevice = commandbuffer_data->physicalDevice;')
-		if self.funcname in ['vkBindImageMemory', 'vkBindBufferMemory', 'VkBindImageMemoryInfo', 'VkBindImageMemoryInfoKHR', 'VkBindBufferMemoryInfo', 'VkBindBufferMemoryInfoKHR'] and self.name in ['image', 'buffer']:
+		if self.funcname in ['vkBindImageMemory', 'vkBindBufferMemory', 'VkBindImageMemoryInfo', 'VkBindImageMemoryInfoKHR', 'VkBindBufferMemoryInfo', 'VkBindBufferMemoryInfoKHR', 'VkBindTensorMemoryInfoARM'] and self.name in ['image', 'buffer', 'tensor']:
 			z.do('const auto* meminfo = writer.parent->records.VkDeviceMemory_index.at(%s);' % (owner + 'memory'))
-			z.do('writer.write_uint32_t(static_cast<uint32_t>(meminfo->propertyFlags)); // save memory flags')
-		if self.funcname in ['vkBindImageMemory', 'VkBindImageMemoryInfo', 'VkBindImageMemoryInfoKHR'] and self.name == 'image':
-			z.do('writer.write_uint32_t(static_cast<uint32_t>(image_data->tiling)); // save tiling info')
-			z.do('writer.write_uint64_t(static_cast<uint64_t>(image_data->size)); // save padded image size')
+			z.do('%s->memory_flags = meminfo->propertyFlags;' % totrackable(self.type))
+			z.do('writer.write_uint32_t(static_cast<uint32_t>(meminfo->propertyFlags)); // save memory flags') # TBD remove
+		if self.funcname in ['vkBindImageMemory', 'VkBindImageMemoryInfo', 'VkBindImageMemoryInfoKHR'] and self.name == 'image': # TBD remove
+			z.do('writer.write_uint32_t(static_cast<uint32_t>(image_data->tiling)); // save tiling info') # TBD remove
+			z.do('writer.write_uint64_t(static_cast<uint64_t>(image_data->size)); // save padded image size') # TBD remove
 		if self.funcname == 'vkAllocateMemory' and self.name == 'pAllocateInfo' and not postprocess:
 			z.do('frame_mutex.lock();')
 			z.do('assert(real_memory_properties.memoryTypeCount > 0);')

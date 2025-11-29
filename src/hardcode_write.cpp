@@ -400,7 +400,8 @@ static void trace_post_vkBindBufferMemory(lava_file_writer& writer, VkResult res
 	{
 		wrap_vkGetBufferMemoryRequirements(device, buffer, &buffer_data->req);
 	}
-	// we pass in size recorded from vkCreateBuffer, which is the actually used size, rather than required allocation size
+	// we store size recorded from vkCreateBuffer, which is the actually used size, rather than required allocation size
+	assert(buffer_data->size >= buffer_data->req.size);
 	buffer_data->accessible = (memory_data->propertyFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
 	buffer_data->enter_bound();
 	writer.parent->memory_mutex.unlock();

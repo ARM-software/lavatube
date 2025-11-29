@@ -73,6 +73,8 @@ struct suballocator_private
 	std::vector<lookup> image_lookup;
 	std::vector<lookup> buffer_lookup;
 	std::vector<lookup> tensor_lookup;
+	/// Does this device have the an annoying optimal-to-linear padding requirement? If so, put optimal and linear objects in different memory heaps
+	bool allow_mixed_tiling = true;
 
 	void print_memory_usage();
 	uint32_t get_device_memory_type(uint32_t type_filter, VkMemoryPropertyFlags& properties);
@@ -89,6 +91,15 @@ struct suballocator_private
 };
 
 // helpers
+
+static VkMemoryPropertyFlags prune_memory_flags(VkMemoryPropertyFlags flags)
+{
+	if ((flags & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT) || (flags & VK_MEMORY_PROPERTY_HOST_CACHED_BIT))
+	{
+		flags &= ~VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT; // do not require this bit in these cases
+	}
+	return flags;
+}
 
 void suballocator_private::print_memory_usage()
 {
@@ -166,6 +177,9 @@ void suballocator::setup(VkPhysicalDevice physicaldevice)
 	if (priv->run)
 	{
 		wrap_vkGetPhysicalDeviceMemoryProperties(physicaldevice, &priv->memory_properties);
+		VkPhysicalDeviceProperties pdprops = {};
+		wrap_vkGetPhysicalDeviceProperties(physicaldevice, &pdprops);
+		priv->allow_mixed_tiling = (pdprops.limits.bufferImageGranularity == 1);
 	}
 	else
 	{
@@ -175,6 +189,7 @@ void suballocator::setup(VkPhysicalDevice physicaldevice)
 		priv->memory_properties.memoryHeapCount = 1;
 		priv->memory_properties.memoryHeaps[0].size = UINT64_MAX;
 		priv->memory_properties.memoryHeaps[0].flags = VK_MEMORY_HEAP_DEVICE_LOCAL_BIT;
+		priv->allow_mixed_tiling = true;
 	}
 	assert(priv->memory_properties.memoryTypeCount > 0);
 }
@@ -262,12 +277,11 @@ suballoc_location suballocator_private::add_object(VkDevice device, uint16_t tid
 			h.deletes.clear();
 		}
 		// find suballocation
-		if (h.tid == tid && (flags & f) == flags && h.free >= s.size && h.memoryTypeIndex == memoryTypeIndex && h.tiling == tiling)
+		if (h.tid == tid && (flags & f) == flags && h.free >= s.size && h.memoryTypeIndex == memoryTypeIndex && (h.tiling == tiling || allow_mixed_tiling))
 		{
 			// First case: nothing allocated in heap. In this case, we do not care about alignment, because according to the spec:
 			// "Allocations returned by vkAllocateMemory are guaranteed to meet any alignment requirement of the implementation."
-			// Also second case: some memory is available before the first allocation. Like above, we are guaranteed not to have
-			// to care about alignment in this case.
+			// Also second case: We place our allocation first. Like above, we are guaranteed not to have to care about alignment.
 			if (h.subs.empty() || (h.subs.front().offset >= s.size))
 			{
 				s.offset = 0;
@@ -354,30 +368,28 @@ void suballocator_private::bind(heap& h, const suballocation& s)
 	assert(s.offset + s.size <= h.total);
 }
 
-suballoc_location suballocator::add_image(uint16_t tid, VkDevice device, VkImage image, uint32_t image_index, VkMemoryPropertyFlags flags, VkImageTiling tiling, VkDeviceSize min_size)
+suballoc_location suballocator::add_image(uint16_t tid, VkDevice device, VkImage image, const trackedimage& image_data)
 {
-	if ((flags & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT) || (flags & VK_MEMORY_PROPERTY_HOST_CACHED_BIT))
-	{
-		flags &= ~VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT; // do not require this bit in these cases
-	}
 	VkMemoryRequirements2 req = {};
-	const bool dedicated = priv->fill_image_memreq(device, image, req, min_size);
-	const uint32_t memoryTypeIndex = priv->get_device_memory_type(req.memoryRequirements.memoryTypeBits, flags);
+	VkMemoryPropertyFlags memory_flags = prune_memory_flags(image_data.memory_flags);
+	const bool dedicated = priv->fill_image_memreq(device, image, req, image_data.size);
+	const uint32_t memoryTypeIndex = priv->get_device_memory_type(req.memoryRequirements.memoryTypeBits, memory_flags);
 	suballocation s;
 	s.type = VK_OBJECT_TYPE_IMAGE;
 	s.handle.image = image;
-	s.size = std::max(req.memoryRequirements.size, min_size);
+	s.size = std::max(req.memoryRequirements.size, image_data.size);
 	s.offset = 0;
-	s.index = image_index;
+	s.index = image_data.index;
 	s.alignment = req.memoryRequirements.alignment;
-	auto r = priv->add_object(device, tid, memoryTypeIndex, s, flags, tiling, dedicated, 0);
+	auto r = priv->add_object(device, tid, memoryTypeIndex, s, memory_flags, image_data.tiling, dedicated, 0);
 	assert(r.offset == s.offset);
 	return r;
 }
 
-void suballocator::virtualswap_images(VkDevice device, const std::vector<VkImage>& images, VkMemoryPropertyFlags flags)
+void suballocator::virtualswap_images(VkDevice device, const std::vector<VkImage>& images, VkMemoryPropertyFlags memory_flags)
 {
 	assert(priv->run);
+	VkMemoryPropertyFlags flags = prune_memory_flags(memory_flags);
 	VkMemoryRequirements2 req = {};
 	const bool dedicated = priv->fill_image_memreq(device, images.at(0), req, 0);
 	const uint32_t memoryTypeIndex = priv->get_device_memory_type(req.memoryRequirements.memoryTypeBits, flags);
@@ -407,13 +419,10 @@ void suballocator::virtualswap_images(VkDevice device, const std::vector<VkImage
 	}
 }
 
-suballoc_location suballocator::add_buffer(uint16_t tid, VkDevice device, VkBuffer buffer, VkMemoryPropertyFlags mempropflags, const trackedbuffer& buffer_data)
+suballoc_location suballocator::add_buffer(uint16_t tid, VkDevice device, VkBuffer buffer, const trackedbuffer& buffer_data)
 {
+	VkMemoryPropertyFlags memory_flags = prune_memory_flags(buffer_data.memory_flags);
 	const VkBufferUsageFlags buffer_flags = buffer_data.usage;
-	if ((mempropflags & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT) || (mempropflags & VK_MEMORY_PROPERTY_HOST_CACHED_BIT))
-	{
-		mempropflags &= ~VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT; // do not require this bit in these cases
-	}
 	VkMemoryRequirements2 req = { VK_STRUCTURE_TYPE_MEMORY_REQUIREMENTS_2, nullptr };
 	VkMemoryDedicatedRequirements dedicated = { VK_STRUCTURE_TYPE_MEMORY_DEDICATED_REQUIREMENTS, nullptr };
 	if (use_dedicated_allocation() && priv->run)
@@ -433,7 +442,7 @@ suballoc_location suballocator::add_buffer(uint16_t tid, VkDevice device, VkBuff
 		req.memoryRequirements.alignment = 1;
 		req.memoryRequirements.memoryTypeBits = 1;
 	}
-	uint32_t memoryTypeIndex = priv->get_device_memory_type(req.memoryRequirements.memoryTypeBits, mempropflags);
+	uint32_t memoryTypeIndex = priv->get_device_memory_type(req.memoryRequirements.memoryTypeBits, memory_flags);
 	suballocation s;
 	s.type = VK_OBJECT_TYPE_BUFFER;
 	s.handle.buffer = buffer;
@@ -443,7 +452,7 @@ suballoc_location suballocator::add_buffer(uint16_t tid, VkDevice device, VkBuff
 	s.alignment = req.memoryRequirements.alignment;
 	VkMemoryAllocateFlags allocflags = 0;
 	if (buffer_flags & VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT) { dedicated.prefersDedicatedAllocation = VK_TRUE; allocflags |= VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT_KHR; }
-	auto r = priv->add_object(device, tid, memoryTypeIndex, s, mempropflags, VK_IMAGE_TILING_LINEAR, dedicated.prefersDedicatedAllocation, allocflags);
+	auto r = priv->add_object(device, tid, memoryTypeIndex, s, memory_flags, VK_IMAGE_TILING_LINEAR, dedicated.prefersDedicatedAllocation, allocflags);
 	assert(r.offset == s.offset);
 	return r;
 }

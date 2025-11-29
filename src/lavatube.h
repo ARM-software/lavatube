@@ -175,6 +175,7 @@ struct trackedobject : trackable
 	VkObjectType alias_type = VK_OBJECT_TYPE_UNKNOWN;
 	uint32_t alias_index = UINT32_MAX;
 	VkDeviceAddress device_address = 0;
+	VkMemoryPropertyFlags memory_flags = 0;
 
 	bool is_state(states s) const { return (uint8_t)s == state; }
 	void set_state(states s) { state = (uint8_t)s; }
