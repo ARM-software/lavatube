@@ -652,6 +652,17 @@ void replay_pre_vkCreateDevice(lava_file_reader& reader, VkPhysicalDevice physic
 	}
 }
 
+void replay_pre_vkCreateInstance(lava_file_reader& reader, VkInstanceCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkInstance* pInstance)
+{
+	VkApplicationInfo* pApplicationInfo = reader.pool.allocate<VkApplicationInfo>(1);
+	if (pCreateInfo->pApplicationInfo)
+	{
+		*pApplicationInfo = *pCreateInfo->pApplicationInfo;
+	}
+	pApplicationInfo->apiVersion = std::max(VK_API_VERSION_1_3, pApplicationInfo->apiVersion);
+	pCreateInfo->pApplicationInfo = pApplicationInfo;
+}
+
 void replay_post_vkCreateInstance(lava_file_reader& reader, VkResult result, const VkInstanceCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkInstance* pInstance)
 {
 	if (!pInstance || !*pInstance || *pInstance == VK_NULL_HANDLE)

@@ -39,6 +39,7 @@ static Json::Value trackedobject_json(const trackedobject *t)
 	v["req_size"] = (Json::Value::UInt64)t->req.size; // info only, do not read
 	v["req_alignment"] = (unsigned)t->req.alignment; // info only, do not read
 	v["memory_flags"] = (unsigned)t->memory_flags;
+	v["tiling"] = (unsigned)t->tiling;
 	return v;
 }
 
@@ -66,8 +67,8 @@ Json::Value trackedbuffer_json(const trackedbuffer* t)
 Json::Value trackedtensor_json(const trackedtensor* t)
 {
 	Json::Value v = trackedobject_json(t);
+	v["flags"] = (Json::Value::UInt64)t->flags;
 	v["sharingMode"] = (unsigned)t->sharingMode;
-	v["tiling"] = (unsigned)t->tiling;
 	v["format"] = (unsigned)t->format;
 	v["usage"] = (unsigned)t->usage;
 	v["dimensions"] = Json::arrayValue;
@@ -86,7 +87,6 @@ Json::Value trackedtensor_json(const trackedtensor* t)
 Json::Value trackedimage_json(const trackedimage* t)
 {
 	Json::Value v = trackedobject_json(t);
-	v["tiling"] = (unsigned)t->tiling;
 	v["flags"] = (unsigned)t->flags;
 	v["sharingMode"] = (unsigned)t->sharingMode;
 	v["usage"] = (unsigned)t->usage;
@@ -331,7 +331,7 @@ trackedimage trackedimage_json(const Json::Value& v)
 {
 	trackedimage t;
 	trackable_helper(t, v);
-	t.tiling = (VkImageTiling)v["tiling"].asUInt();
+	t.tiling = (lava_tiling)v["tiling"].asUInt();
 	t.flags = (VkImageCreateFlags)v["flags"].asUInt();
 	t.sharingMode = (VkSharingMode)v["sharingMode"].asUInt();
 	t.usage = (VkImageUsageFlags)v["usage"].asUInt();
@@ -363,9 +363,10 @@ trackedtensor trackedtensor_json(const Json::Value& v)
 {
 	trackedtensor t;
 	trackable_helper(t, v);
+	t.flags = (VkTensorCreateFlagsARM)v["flags"].asUInt64();
 	t.sharingMode = (VkSharingMode)v["sharingMode"].asUInt();
 	t.object_type = VK_OBJECT_TYPE_TENSOR_ARM;
-	t.tiling = (VkTensorTilingARM)v["tiling"].asUInt();
+	t.tiling = (lava_tiling)v["tiling"].asUInt();
 	t.format = (VkFormat)v["format"].asUInt();
 	t.usage = (VkTensorUsageFlagsARM)v["dimensions"].asUInt64();
 	for (const auto& val : v["dimensions"]) t.dimensions.push_back(val.asUInt64());

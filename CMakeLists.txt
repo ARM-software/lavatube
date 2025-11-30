@@ -173,6 +173,8 @@ set(LAVATUBE_SRC
     ${PROJECT_SOURCE_DIR}/src/allocators.h
     ${PROJECT_SOURCE_DIR}/src/suballocator.cpp
     ${PROJECT_SOURCE_DIR}/src/suballocator.h
+    ${PROJECT_SOURCE_DIR}/src/memory.cpp
+    ${PROJECT_SOURCE_DIR}/src/memory.h
 
     ${PROJECT_SOURCE_DIR}/generated/read_auto.cpp
     ${PROJECT_SOURCE_DIR}/generated/read_auto.h

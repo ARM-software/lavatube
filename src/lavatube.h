@@ -42,6 +42,13 @@ enum
 	PACKET_TENSOR_UPDATE = 7,
 };
 
+enum lava_tiling // generalize memory tiling
+{
+	TILING_OPTIMAL = VK_IMAGE_TILING_OPTIMAL,
+	TILING_LINEAR = VK_IMAGE_TILING_LINEAR,
+	TILING_DRM = VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT,
+};
+
 struct trackable
 {
 	uintptr_t magic = ICD_LOADER_MAGIC; // in case we want to pass this around as a vulkan object; must be first
@@ -177,6 +184,7 @@ struct trackedobject : trackable
 	uint32_t alias_index = UINT32_MAX;
 	VkDeviceAddress device_address = 0;
 	VkMemoryPropertyFlags memory_flags = 0;
+	lava_tiling tiling = TILING_LINEAR; // linear is the default
 
 	bool is_state(states s) const { return (uint8_t)s == state; }
 	void set_state(states s) { state = (uint8_t)s; }
@@ -271,8 +279,8 @@ struct trackedbuffer : trackedobject
 struct trackedtensor : trackedobject
 {
 	using trackedobject::trackedobject; // inherit constructor
+	VkTensorCreateFlagsARM flags = VK_TENSOR_TILING_MAX_ENUM_ARM;
 	VkSharingMode sharingMode = VK_SHARING_MODE_MAX_ENUM;
-	VkTensorTilingARM tiling = VK_TENSOR_TILING_MAX_ENUM_ARM;
 	VkFormat format = VK_FORMAT_MAX_ENUM;
 	std::vector<int64_t> dimensions;
 	std::vector<int64_t> strides;
@@ -281,8 +289,8 @@ struct trackedtensor : trackedobject
 	void self_test() const
 	{
 		static_assert(offsetof(trackedtensor, magic) == 0, "ICD loader magic must be at offset zero!");
+		assert(flags != VK_TENSOR_TILING_MAX_ENUM_ARM);
 		assert(format != VK_FORMAT_MAX_ENUM);
-		assert(tiling != VK_TENSOR_TILING_MAX_ENUM_ARM);
 		assert(sharingMode != VK_SHARING_MODE_MAX_ENUM);
 		assert(object_type == VK_OBJECT_TYPE_TENSOR_ARM);
 		if (is_state(states::bound)) assert(size != 0);
@@ -312,7 +320,6 @@ struct trackedaccelerationstructure : trackedobject
 struct trackedimage : trackedobject
 {
 	using trackedobject::trackedobject; // inherit constructor
-	VkImageTiling tiling = VK_IMAGE_TILING_MAX_ENUM;
 	VkImageUsageFlags usage = VK_IMAGE_USAGE_FLAG_BITS_MAX_ENUM;
 	VkSharingMode sharingMode = VK_SHARING_MODE_MAX_ENUM;
 	VkImageType imageType = VK_IMAGE_TYPE_MAX_ENUM;
@@ -329,7 +336,6 @@ struct trackedimage : trackedobject
 	void self_test() const
 	{
 		static_assert(offsetof(trackedimage, magic) == 0, "ICD loader magic must be at offset zero!");
-		assert(tiling != VK_IMAGE_TILING_MAX_ENUM);
 		assert(usage != VK_IMAGE_USAGE_FLAG_BITS_MAX_ENUM);
 		assert(sharingMode != VK_SHARING_MODE_MAX_ENUM);
 		assert(imageType != VK_IMAGE_TYPE_MAX_ENUM);
@@ -724,11 +730,12 @@ struct trackedframebuffer : trackable
 	}
 };
 
+/// Only called for capture, for replay we read this info off the metadata
 inline void trackedmemory::bind(trackedobject* obj)
 {
 	// only 1-to-1 aliasing for now
 	auto it = aliasing.find(obj->offset);
-	if (it != aliasing.end()) // we are aliasing
+	if (it != aliasing.end()) // we are aliasing some other object
 	{
 		trackedobject* other = it->second;
 		if (obj->object_type == VK_OBJECT_TYPE_IMAGE && other->object_type == VK_OBJECT_TYPE_IMAGE)

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "lavatube.h"
+#include "memory.h"
 
 struct suballoc_location
 {
@@ -27,11 +28,11 @@ struct suballocator
 	/// Queries information and caches it for later.
 	void setup(VkPhysicalDevice physicaldevice);
 
-	/// Add an image to our memory pools. Thread safe because each thread gets its own set of memory pools that only they
+	/// Add an object to our memory pools. Thread safe because each thread gets its own set of memory pools that only they
 	/// can modify. Other threads may access the objects stored inside subject to Vulkan external synchronization rules.
-	suballoc_location add_image(uint16_t tid, VkDevice device, VkImage image, const trackedimage& image_data);
+	suballoc_location add_trackedobject(uint16_t tid, VkDevice device, const memory_requirements& reqs, uint64_t native, const trackedobject& data);
 
-	/// Add a buffer to our memory pools. See above.
+	suballoc_location add_image(uint16_t tid, VkDevice device, VkImage image, const trackedimage& image_data);
 	suballoc_location add_buffer(uint16_t tid, VkDevice device, VkBuffer buffer, const trackedbuffer& buffer_data);
 
 	/// Delete an image from our memory pools. Thread safe because the internal data structure is preallocated and never resized,
@@ -43,12 +44,12 @@ struct suballocator
 
 	/// Find an image based its index, and return its memory pool, offset and size. Thread safe as long as the usual Vulkan
 	/// external synchronization rules are followed in regards to object creation. Returns if an explicit flush is needed.
-	/// Note that the size returned is the (possibly padded) allocated size, not the size of the buffer inside the allocation.
+	/// Note that the size returned is the (possibly padded) allocated size, not the size of the image inside the allocation.
 	suballoc_location find_image_memory(uint32_t buffer_index);
 
 	/// Find a buffer based its index, and return its memory pool, offset and size. See above. Returns if an explicit flush
 	/// is needed.
-	/// Note that the size returned is the (possibly padded) allocated size, not the size of the image inside the allocation.
+	/// Note that the size returned is the (possibly padded) allocated size, not the size of the buffer inside the allocation.
 	suballoc_location find_buffer_memory(uint32_t buffer_index);
 
 	suballoc_location find_tensor_memory(uint32_t tensor_index);

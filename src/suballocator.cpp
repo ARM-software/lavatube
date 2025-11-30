@@ -22,6 +22,7 @@ struct suballocation
 	VkObjectType type = VK_OBJECT_TYPE_UNKNOWN;
 	union
 	{
+		uint64_t native;
 		VkImage image;
 		VkBuffer buffer;
 		VkTensorARM tensor;
@@ -45,7 +46,7 @@ struct heap
 	/// We cannot allow other threads to delete anything in our list, so they can queue
 	/// up deletes in this concurrency safe vector instead.
 	tbb::concurrent_vector<uint32_t> deletes;
-	VkImageTiling tiling = VK_IMAGE_TILING_LINEAR; // buffers are assumed to be linear
+	lava_tiling tiling = TILING_LINEAR; // default assumed to be linear
 
 	void self_test() const
 	{
@@ -77,13 +78,13 @@ struct suballocator_private
 	bool allow_mixed_tiling = true;
 
 	void print_memory_usage();
-	uint32_t get_device_memory_type(uint32_t type_filter, VkMemoryPropertyFlags& properties);
+	uint32_t get_device_memory_type(uint32_t type_filter, VkMemoryPropertyFlags properties);
 	suballoc_location add_object_new(VkDevice device, uint16_t tid, uint32_t memoryTypeIndex, suballocation &s, VkMemoryPropertyFlags flags,
-		VkImageTiling tiling, bool dedicated, VkMemoryAllocateFlags allocflags);
+		lava_tiling tiling, bool dedicated, VkMemoryAllocateFlags allocflags);
 	bool fill_image_memreq(VkDevice device, VkImage image, VkMemoryRequirements2& req, VkDeviceSize size);
 	void suballoc_print(FILE* fp);
 	suballoc_location add_object(VkDevice device, uint16_t tid, uint32_t memoryTypeIndex, suballocation &s, VkMemoryPropertyFlags flags,
-		VkImageTiling tiling, bool dedicated, VkMemoryAllocateFlags allocflags);
+		lava_tiling tiling, bool dedicated, VkMemoryAllocateFlags allocflags);
 	void self_test();
 	void bind(heap& h, const suballocation& s);
 
@@ -120,7 +121,7 @@ void suballocator_private::print_memory_usage()
 	printf("Total memory wasted: %10lu\n", (unsigned long)waste);
 }
 
-uint32_t suballocator_private::get_device_memory_type(uint32_t type_filter, VkMemoryPropertyFlags& properties)
+uint32_t suballocator_private::get_device_memory_type(uint32_t type_filter, VkMemoryPropertyFlags properties)
 {
 	for (uint32_t i = 0; i < memory_properties.memoryTypeCount; ++i)
 	{
@@ -195,24 +196,33 @@ void suballocator::setup(VkPhysicalDevice physicaldevice)
 }
 
 suballoc_location suballocator_private::add_object_new(VkDevice device, uint16_t tid, uint32_t memoryTypeIndex, suballocation &s, VkMemoryPropertyFlags flags,
-        VkImageTiling tiling, bool dedicated, VkMemoryAllocateFlags allocflags)
+        lava_tiling tiling, bool dedicated, VkMemoryAllocateFlags allocflags)
 {
 	heap h;
 	h.tid = tid;
+	VkMemoryDedicatedAllocateInfoTensorARM tensorded = { VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO_TENSOR_ARM, nullptr };
 	VkMemoryDedicatedAllocateInfoKHR dedinfo = { VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO, nullptr };
-	VkMemoryAllocateFlagsInfo flaginfo = { VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_FLAGS_INFO, nullptr, allocflags, 0 };
+	VkMemoryAllocateFlagsInfo flaginfo = { VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_FLAGS_INFO, nullptr };
 	VkMemoryAllocateInfo info = { VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO, &flaginfo };
+	flaginfo.flags = allocflags;
+	flaginfo.deviceMask = 0; // TBD
 	if (dedicated)
 	{
+		flaginfo.pNext = &dedinfo;
 		if (s.type == VK_OBJECT_TYPE_BUFFER)
 		{
 			dedinfo.buffer = s.handle.buffer;
 		}
+		else if (s.type == VK_OBJECT_TYPE_TENSOR_ARM)
+		{
+			tensorded.tensor = s.handle.tensor;
+			flaginfo.pNext = &tensorded;
+		}
 		else
 		{
+			assert(s.type == VK_OBJECT_TYPE_IMAGE);
 			dedinfo.image = s.handle.image;
 		}
-		flaginfo.pNext = &dedinfo;
 		info.allocationSize = s.size;
 	}
 	else
@@ -248,7 +258,7 @@ suballoc_location suballocator_private::add_object_new(VkDevice device, uint16_t
 }
 
 suballoc_location suballocator_private::add_object(VkDevice device, uint16_t tid, uint32_t memoryTypeIndex, suballocation &s, VkMemoryPropertyFlags flags,
-	VkImageTiling tiling, bool dedicated, VkMemoryAllocateFlags allocflags)
+	lava_tiling tiling, bool dedicated, VkMemoryAllocateFlags allocflags)
 {
 	if (dedicated)
 	{
@@ -346,7 +356,7 @@ bool suballocator_private::fill_image_memreq(VkDevice device, VkImage image, VkM
 	{
 		wrap_vkGetImageMemoryRequirements(device, image, &req.memoryRequirements);
 	}
-	return dedicated.prefersDedicatedAllocation;
+	return dedicated.prefersDedicatedAllocation || dedicated.requiresDedicatedAllocation;
 }
 
 void suballocator_private::bind(heap& h, const suballocation& s)
@@ -382,6 +392,23 @@ suballoc_location suballocator::add_image(uint16_t tid, VkDevice device, VkImage
 	s.index = image_data.index;
 	s.alignment = req.memoryRequirements.alignment;
 	auto r = priv->add_object(device, tid, memoryTypeIndex, s, memory_flags, image_data.tiling, dedicated, 0);
+	assert(r.offset == s.offset);
+	return r;
+}
+
+suballoc_location suballocator::add_trackedobject(uint16_t tid, VkDevice device, const memory_requirements& reqs, uint64_t native, const trackedobject& data)
+{
+	const VkMemoryPropertyFlags memory_flags = prune_memory_flags(data.memory_flags);
+	const uint32_t memoryTypeIndex = priv->get_device_memory_type(reqs.requirements.memoryTypeBits, memory_flags);
+	suballocation s;
+	s.type = data.object_type;
+	s.handle.native = native;
+	s.size = reqs.requirements.size;
+	s.offset = 0;
+	s.index = data.index;
+	s.alignment = reqs.requirements.alignment;
+	const bool dedicated = reqs.dedicated.prefersDedicatedAllocation || reqs.dedicated.requiresDedicatedAllocation;
+	auto r = priv->add_object(device, tid, memoryTypeIndex, s, memory_flags, data.tiling, dedicated, reqs.allocate_flags);
 	assert(r.offset == s.offset);
 	return r;
 }
@@ -452,7 +479,7 @@ suballoc_location suballocator::add_buffer(uint16_t tid, VkDevice device, VkBuff
 	s.alignment = req.memoryRequirements.alignment;
 	VkMemoryAllocateFlags allocflags = 0;
 	if (buffer_flags & VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT) { dedicated.prefersDedicatedAllocation = VK_TRUE; allocflags |= VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT_KHR; }
-	auto r = priv->add_object(device, tid, memoryTypeIndex, s, memory_flags, VK_IMAGE_TILING_LINEAR, dedicated.prefersDedicatedAllocation, allocflags);
+	auto r = priv->add_object(device, tid, memoryTypeIndex, s, memory_flags, TILING_LINEAR, dedicated.prefersDedicatedAllocation, allocflags);
 	assert(r.offset == s.offset);
 	return r;
 }

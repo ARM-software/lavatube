@@ -379,7 +379,7 @@ static void trace_post_vkBindImageMemory(lava_file_writer& writer, VkResult resu
 		wrap_vkGetImageMemoryRequirements(device, image, &image_data->req);
 	}
 	image_data->size = image_data->req.size; // we do not try to second guess this for images
-	image_data->accessible = ((image_data->tiling != VK_IMAGE_TILING_OPTIMAL) && (memory_data->propertyFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT));
+	image_data->accessible = ((image_data->tiling != TILING_OPTIMAL) && (memory_data->propertyFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT));
 	memory_data->bind(image_data);
 	image_data->enter_bound();
 	writer.parent->memory_mutex.unlock();
@@ -1192,7 +1192,7 @@ static void trace_pre_vkCreateInstance(VkInstanceCreateInfo* pCreateInfo, const 
 	frame_mutex.lock();
 	if (instance_extension_properties.size() == 0) modify_instance_extensions(); // in case empty
 
-	// Upgrade Vulkan version used to at least 1.1 to support our injected functionality
+	// Upgrade Vulkan version used to at least 1.3 to support our tracing functionality
 	if (pCreateInfo->pApplicationInfo == nullptr)
 	{
 		VkApplicationInfo* pApplicationInfo = writer.pool.allocate<VkApplicationInfo>(1);
@@ -1832,7 +1832,7 @@ void trace_post_vkCreateSwapchainKHR(lava_file_writer& writer, VkResult result, 
 		add->object_type = VK_OBJECT_TYPE_IMAGE;
 		add->sharingMode = pCreateInfo->imageSharingMode;
 		add->is_swapchain_image = true;
-		add->tiling = VK_IMAGE_TILING_OPTIMAL;
+		add->tiling = TILING_OPTIMAL;
 		add->usage = pCreateInfo->imageUsage;
 		add->imageType = VK_IMAGE_TYPE_2D;
 		add->flags = pCreateInfo->flags;

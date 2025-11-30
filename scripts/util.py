@@ -142,7 +142,7 @@ validate_funcs(ignore_on_trace)
 # these functions have hard-coded post-execute callbacks
 replay_pre_calls = [ 'vkDestroyInstance', 'vkDestroyDevice', 'vkCreateDevice', 'vkCreateSampler', 'vkQueuePresentKHR', 'vkCreateSwapchainKHR',
 	'vkCreateSharedSwapchainsKHR', 'vkCreateGraphicsPipelines', 'vkCreateComputePipelines', 'vkCreateRayTracingPipelinesKHR', 'vkCmdPushConstants2KHR',
-	'vkQueueSubmit', 'vkQueueSubmit2', 'vkQueueSubmit2KHR', 'vkDestroyPipelineCache', 'vkDestroySwapchainKHR' ]
+	'vkQueueSubmit', 'vkQueueSubmit2', 'vkQueueSubmit2KHR', 'vkDestroyPipelineCache', 'vkDestroySwapchainKHR', 'vkCreateInstance' ]
 validate_funcs(replay_pre_calls)
 replay_post_calls = [ 'vkCreateInstance', 'vkDestroyInstance', 'vkQueuePresentKHR', 'vkAcquireNextImageKHR', 'vkAcquireNextImage2KHR',
 	'vkGetBufferDeviceAddress', 'vkGetBufferDeviceAddressKHR', 'vkGetAccelerationStructureDeviceAddressKHR' ]
@@ -725,7 +725,7 @@ class parameter(spec.base_parameter):
 			z.do('trackedimage& image_data = VkImage_index.at(image_index);')
 			z.do('image_data.memory_flags = static_cast<VkMemoryPropertyFlags>(reader.read_uint32_t()); // fetch memory flags especially added') # TBD remove me
 			z.do('const VkImageTiling tiling = static_cast<VkImageTiling>(reader.read_uint32_t()); // fetch tiling property especially added') # TBD remove me
-			z.do('assert(tiling == image_data.tiling);')
+			z.do('assert((lava_tiling)tiling == image_data.tiling);')
 			z.do('const VkDeviceSize min_size = static_cast<VkDeviceSize>(reader.read_uint64_t()); // fetch padded memory size') # TBD remove me
 			z.do('assert(min_size == image_data.size);')
 			z.do('suballoc_location loc = reader.parent->allocator.add_image(reader.thread_index(), reader.device, %s, image_data);' % varname)
@@ -733,8 +733,15 @@ class parameter(spec.base_parameter):
 			z.do('trackedbuffer& buffer_data = VkBuffer_index.at(buffer_index);')
 			z.do('buffer_data.memory_flags = static_cast<VkMemoryPropertyFlags>(reader.read_uint32_t()); // fetch memory flags especially added') # TBD remove me
 			z.do('suballoc_location loc = reader.parent->allocator.add_buffer(reader.thread_index(), reader.device, %s, buffer_data);' % varname)
+		elif self.funcname in ['VkBindTensorMemoryInfoARM'] and self.name == 'tensor':
+			z.do('trackedtensor& tensor_data = VkTensorARM_index.at(tensorarm_index);')
+			z.do('tensor_data.memory_flags = static_cast<VkMemoryPropertyFlags>(reader.read_uint32_t()); // fetch memory flags especially added') # TBD remove
+			z.do('memory_requirements reqs;')
+			z.do('if (reader.run) reqs = get_trackedtensor_memory_requirements(reader.device, tensor_data);')
+			z.do('else reqs = get_fake_memory_requirements(reader.device, tensor_data);')
+			z.do('suballoc_location loc = reader.parent->allocator.add_trackedobject(reader.thread_index(), reader.device, reqs, (uint64_t)%s, tensor_data);' % varname)
 
-		if self.funcname in ['vkBindImageMemory', 'vkBindBufferMemory', 'VkBindBufferMemoryInfo', 'VkBindBufferMemoryInfoKHR', 'VkBindImageMemoryInfoKHR', 'VkBindImageMemoryInfo']:
+		if self.funcname in ['vkBindImageMemory', 'vkBindBufferMemory', 'VkBindBufferMemoryInfo', 'VkBindBufferMemoryInfoKHR', 'VkBindImageMemoryInfoKHR', 'VkBindImageMemoryInfo', 'VkBindTensorMemoryInfoARM']:
 			if self.name == 'memory':
 				z.do('assert(loc.memory != VK_NULL_HANDLE);')
 				z.do('%s = loc.memory;' % varname) # relying on the order of arguments here; see case above
@@ -1141,7 +1148,7 @@ def save_add_tracking(name):
 			z.do('add->layouts.reserve(pCreateInfo->setLayoutCount);')
 			z.do('for (uint32_t i = 0; i < pCreateInfo->setLayoutCount; i++) add->layouts.push_back(pCreateInfo->pSetLayouts[i]);')
 		elif type == 'VkImage':
-			z.do('add->tiling = pCreateInfo->tiling;')
+			z.do('add->tiling = (lava_tiling)pCreateInfo->tiling;')
 			z.do('add->usage = pCreateInfo->usage;')
 			z.do('add->sharingMode = pCreateInfo->sharingMode;')
 			z.do('add->imageType = pCreateInfo->imageType;')
@@ -1220,8 +1227,9 @@ def save_add_tracking(name):
 			z.do('add->requested_device_extensions = requested_device_extensions;')
 		elif type == 'VkTensorARM':
 			z.do('add->object_type = VK_OBJECT_TYPE_TENSOR_ARM;')
+			z.do('add->flags = pCreateInfo->flags;')
 			z.do('add->sharingMode = pCreateInfo->sharingMode;')
-			z.do('add->tiling = pCreateInfo->pDescription->tiling;')
+			z.do('add->tiling = (lava_tiling)pCreateInfo->pDescription->tiling;')
 			z.do('add->format = pCreateInfo->pDescription->format;')
 			z.do('add->usage = pCreateInfo->pDescription->usage;')
 			z.do('add->dimensions.resize(pCreateInfo->pDescription->dimensionCount);')
@@ -1363,6 +1371,10 @@ def load_add_tracking(name):
 				z.do('data.initialLayout = pCreateInfo->initialLayout; // duplicates info stored in json but needed for compatibility with older traces')
 				z.do('data.currentLayout = pCreateInfo->initialLayout;')
 				z.do('data.format = pCreateInfo->format; // as above, might be missing in json')
+				z.do('data.extent = pCreateInfo->extent; // also might be missing in json')
+				z.do('data.mipLevels = pCreateInfo->mipLevels; // as above')
+				z.do('data.arrayLayers = pCreateInfo->arrayLayers; // as above')
+				z.do('assert(data.format == pCreateInfo->format);') # sanity check
 			elif type == 'VkDescriptorSet':
 				z.do('data.pool = pAllocateInfo->descriptorPool;')
 			elif type == 'VkShaderModule':
