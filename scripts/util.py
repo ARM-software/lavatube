@@ -1582,6 +1582,12 @@ def loadfunc(name, node, target, header):
 		z.do('if (stored_retval == VK_SUCCESS) { timeout = UINT64_MAX; }')
 		z.do('else if (stored_retval == VK_TIMEOUT) { timeout = 0; }')
 		z.do('if (reader.run) retval = wrap_vkWaitForFences(device, fenceCount, pFences, waitAll, timeout);')
+	elif name == "vkWaitSemaphores": # as above
+		z.do('VkResult stored_retval = static_cast<VkResult>(reader.read_uint32_t());')
+		z.do('retval = VK_SUCCESS;')
+		z.do('if (stored_retval == VK_SUCCESS) { timeout = UINT64_MAX; }')
+		z.do('else if (stored_retval == VK_TIMEOUT) { timeout = 0; }')
+		z.do('if (reader.run) retval = wrap_vkWaitSemaphores(device, pWaitInfo, timeout);')
 	elif name == "vkGetEventStatus": # loop until same result achieved
 		z.do('VkResult stored_retval = static_cast<VkResult>(reader.read_uint32_t());')
 		z.do('retval = VK_SUCCESS;')
