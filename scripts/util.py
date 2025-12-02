@@ -501,7 +501,10 @@ class parameter(spec.base_parameter):
 			z.do('for (unsigned i = 0; i < infoCount; i++) %s[i] = reader.pool.allocate<VkAccelerationStructureBuildRangeInfoKHR>(pInfos[i].geometryCount);' % varname)
 			z.do('for (unsigned i = 0; i < infoCount; i++) for (unsigned j = 0; j < pInfos[i].geometryCount; j++) { auto* p = %s[i]; read_VkAccelerationStructureBuildRangeInfoKHR(reader, &p[j]); }' % varname)
 		elif self.name in ['deviceAddress', 'bufferDeviceAddress'] and self.type == 'VkDeviceAddress':
-			z.do('%s = reader.parent->device_address_remapping.translate_address(reader.read_uint64_t());' % varname)
+			z.decl('uint64_t', 'stored_address')
+			z.do('stored_address = reader.read_uint64_t();')
+			z.do('%s = reader.parent->device_address_remapping.translate_address(stored_address);' % varname)
+			z.do('ILOG("%s changing device address from %%lu to %%lu", (unsigned long)stored_address, (unsigned long)%s);' % (self.funcname, varname))
 		elif self.name == 'queueFamilyIndex':
 			z.decl('uint32_t', self.name)
 			z.do('%s = reader.read_uint32_t();' % self.name)
@@ -591,7 +594,10 @@ class parameter(spec.base_parameter):
 				elif self.type != 'VkDeviceMemory' and not self.funcname in ignore_on_read:
 					z.do('%s = index_to_%s.at(%s);' % (varname, self.type, tmpname))
 		elif self.type == 'VkDeviceOrHostAddressKHR' or self.type == 'VkDeviceOrHostAddressConstKHR':
-			z.do('%s.deviceAddress = reader.parent->device_address_remapping.translate_address(reader.read_uint64_t()); // assume device address since we do not support host addresses' % varname)
+			z.decl('uint64_t', 'stored_address')
+			z.do('stored_address = reader.read_uint64_t();')
+			z.do('%s.deviceAddress = reader.parent->device_address_remapping.translate_address(stored_address); // assume device address since we do not support host addresses' % varname)
+			z.do('ILOG("%s changing device address from %%lu to %%lu", (unsigned long)stored_address, (unsigned long)%s.deviceAddress);' % (self.funcname, varname))
 		elif self.type == 'VkAccelerationStructureGeometryDataKHR': # union, requires special handling
 			z.do('if (%sgeometryType == VK_GEOMETRY_TYPE_TRIANGLES_KHR) read_VkAccelerationStructureGeometryTrianglesDataKHR(reader, &%s.triangles);' % (owner, varname))
 			z.do('else if (%sgeometryType == VK_GEOMETRY_TYPE_AABBS_KHR) read_VkAccelerationStructureGeometryAabbsDataKHR(reader, &%s.aabbs);' % (owner, varname))
