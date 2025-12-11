@@ -106,7 +106,7 @@ static void trace()
 
 	u64ptr = (uint64_t*)umi.pData;
 	u64ptr[16] = address; // first address, on 8 byte aligned boundary
-	VkAddressRemapARM ar = { VK_STRUCTURE_TYPE_ADDRESS_REMAP_ARM, nullptr };
+	VkDeviceAddressOffsetsARM ar = { VK_STRUCTURE_TYPE_DEVICE_ADDRESS_OFFSETS_ARM, nullptr };
 	ar.count = 1;
 	std::vector<uint64_t> offsets(2);
 	ar.pOffsets = offsets.data();

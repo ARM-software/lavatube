@@ -12,7 +12,7 @@ import struct
 fake_functions = [ 'vkAssertBufferARM', 'vkSyncBufferTRACETOOLTEST', 'vkGetDeviceTracingObjectPropertyTRACETOOLTEST',
 	'vkCmdUpdateBuffer2ARM', 'vkThreadBarrierTRACETOOLTEST', 'vkUpdateBufferTRACETOOLTEST',  'vkUpdateImageTRACETOOLTEST' ]
 fake_extension_structs = {
-	'VkAddressRemapARM': 'VK_STRUCTURE_TYPE_ADDRESS_REMAP_ARM',
+	'VkDeviceAddressOffsetsARM': 'VK_STRUCTURE_TYPE_DEVICE_ADDRESS_OFFSETS_ARM',
 	'VkUpdateMemoryInfoARM': 'VK_STRUCTURE_TYPE_UPDATE_MEMORY_INFO_ARM',
 	'VkPhysicalDeviceExplicitHostUpdatesFeaturesARM': 'VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXPLICIT_HOST_UPDATES_FEATURES_ARM',
 	'VkFlushRangesFlagsARM' : 'VK_STRUCTURE_TYPE_FLUSH_RANGES_FLAGS_ARM',
@@ -345,13 +345,13 @@ for f in fake_extension_structs:
 for f in fake_functions:
 	out(targets_read_headers, 'void retrace_%s(lava_file_reader& reader);' % f)
 	if f == 'vkAssertBufferARM':
-		out([wh], 'VKAPI_ATTR uint32_t VKAPI_CALL trace_vkAssertBufferARM(VkDevice device, VkBuffer buffer, VkDeviceSize offset, VkDeviceSize size, const char* comment);')
+		out([wh], 'VKAPI_ATTR VkResult VKAPI_CALL trace_vkAssertBufferARM(VkDevice device, VkBuffer buffer, VkDeviceSize offset, VkDeviceSize size, uint32_t* checksum, const char* comment);')
 	elif f == 'vkSyncBufferTRACETOOLTEST':
 		out([wh], 'VKAPI_ATTR void VKAPI_CALL trace_vkSyncBufferTRACETOOLTEST(VkDevice device, VkBuffer buffer);')
 	elif f == 'vkGetDeviceTracingObjectPropertyTRACETOOLTEST':
 		out([wh], 'VKAPI_ATTR uint64_t VKAPI_CALL trace_vkGetDeviceTracingObjectPropertyTRACETOOLTEST(VkDevice device, VkObjectType objectType, uint64_t objectHandle, VkTracingObjectPropertyTRACETOOLTEST valueType);')
 	elif f == 'vkCmdUpdateBuffer2ARM':
-		out([wh], 'VKAPI_ATTR void trace_vkCmdUpdateBuffer2ARM(VkCommandBuffer commandBuffer, VkBuffer dstBuffer, VkUpdateMemoryInfoARM* pInfo);')
+		out([wh], 'VKAPI_ATTR void trace_vkCmdUpdateBuffer2ARM(VkCommandBuffer commandBuffer, const VkUpdateMemoryInfoARM* pInfo);')
 	elif f == 'vkUpdateBufferTRACETOOLTEST':
 		out([wh], 'VKAPI_ATTR void trace_vkUpdateBufferTRACETOOLTEST(VkDevice device, VkBuffer buffer, VkUpdateMemoryInfoARM* pInfo);')
 	elif f == 'vkUpdateImageTRACETOOLTEST':

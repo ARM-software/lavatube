@@ -1081,10 +1081,10 @@ void read_VkFlushRangesFlagsARM(lava_file_reader& reader, VkFlushRangesFlagsARM*
 	sptr->flags = reader.read_uint32_t();
 }
 
-void read_VkAddressRemapARM(lava_file_reader& reader, VkAddressRemapARM* sptr)
+void read_VkDeviceAddressOffsetsARM(lava_file_reader& reader, VkDeviceAddressOffsetsARM* sptr)
 {
 	sptr->sType = (VkStructureType)reader.read_uint32_t();
-	assert(sptr->sType == VK_STRUCTURE_TYPE_ADDRESS_REMAP_ARM);
+	assert(sptr->sType == VK_STRUCTURE_TYPE_DEVICE_ADDRESS_OFFSETS_ARM);
 	read_extension(reader, (VkBaseOutStructure**)&sptr->pNext);
 	sptr->count = reader.read_uint32_t();
 	const bool pOffsets_opt = reader.read_uint8_t();
@@ -1099,7 +1099,7 @@ void read_VkAddressRemapARM(lava_file_reader& reader, VkAddressRemapARM* sptr)
 	DLOG("Got a memory markup struct with count=%u", (unsigned)sptr->count);
 }
 
-static void translate_addresses(lava_file_reader& reader, uint32_t count, VkDeviceSize* pOffsets, void* ptr)
+static void translate_addresses(lava_file_reader& reader, uint32_t count, const VkDeviceSize* pOffsets, void* ptr)
 {
 	for (uint32_t i = 0; i < count; i++)
 	{
@@ -1447,13 +1447,13 @@ void replay_postprocess_vkCreateRayTracingPipelinesKHR(lava_file_reader& reader,
 void replay_pre_vkCmdPushConstants2KHR(lava_file_reader& reader, VkCommandBuffer commandBuffer, const VkPushConstantsInfoKHR* pPushConstantsInfo)
 {
 	assert(pPushConstantsInfo);
-	const VkAddressRemapARM* remap = (const VkAddressRemapARM*)find_extension(pPushConstantsInfo, VK_STRUCTURE_TYPE_ADDRESS_REMAP_ARM);
+	const VkDeviceAddressOffsetsARM* remap = (const VkDeviceAddressOffsetsARM*)find_extension(pPushConstantsInfo, VK_STRUCTURE_TYPE_DEVICE_ADDRESS_OFFSETS_ARM);
 	if (!remap) return; // nothing to do here
 	assert(pPushConstantsInfo->pValues);
 	assert(pPushConstantsInfo->size >= remap->count);
 	translate_addresses(reader, remap->count, remap->pOffsets, const_cast<void*>(pPushConstantsInfo->pValues));
 	// make sure we don't leak this to the driver, as this would break validation
-	purge_extension_parent(const_cast<VkPushConstantsInfoKHR*>(pPushConstantsInfo), VK_STRUCTURE_TYPE_ADDRESS_REMAP_ARM);
+	purge_extension_parent(const_cast<VkPushConstantsInfoKHR*>(pPushConstantsInfo), VK_STRUCTURE_TYPE_DEVICE_ADDRESS_OFFSETS_ARM);
 }
 
 void replay_pre_vkCmdPushConstants2(lava_file_reader& reader, VkCommandBuffer commandBuffer, const VkPushConstantsInfoKHR* pPushConstantsInfo)
@@ -1466,7 +1466,7 @@ void replay_pre_vkCreateComputePipelines(lava_file_reader& reader, VkDevice devi
 {
 	for (uint32_t i = 0; i < createInfoCount; i++)
 	{
-		const VkAddressRemapARM* remap = (const VkAddressRemapARM*)find_extension(&pCreateInfos[i].stage, VK_STRUCTURE_TYPE_ADDRESS_REMAP_ARM);
+		const VkDeviceAddressOffsetsARM* remap = (const VkDeviceAddressOffsetsARM*)find_extension(&pCreateInfos[i].stage, VK_STRUCTURE_TYPE_DEVICE_ADDRESS_OFFSETS_ARM);
 		if (!remap) continue; // nothing to do here
 
 		assert(pCreateInfos[i].stage.pSpecializationInfo != nullptr);
@@ -1476,7 +1476,7 @@ void replay_pre_vkCreateComputePipelines(lava_file_reader& reader, VkDevice devi
 		translate_addresses(reader, remap->count, remap->pOffsets, const_cast<void*>(pCreateInfos[i].stage.pSpecializationInfo->pData));
 
 		// make sure we don't leak this to the driver, as this would break validation
-		purge_extension_parent(const_cast<VkPipelineShaderStageCreateInfo*>(&pCreateInfos[i].stage), VK_STRUCTURE_TYPE_ADDRESS_REMAP_ARM);
+		purge_extension_parent(const_cast<VkPipelineShaderStageCreateInfo*>(&pCreateInfos[i].stage), VK_STRUCTURE_TYPE_DEVICE_ADDRESS_OFFSETS_ARM);
 	}
 }
 
@@ -1487,7 +1487,7 @@ void replay_pre_vkCreateGraphicsPipelines(lava_file_reader& reader, VkDevice dev
 	{
 		for (uint32_t stage = 0; stage < pCreateInfos[i].stageCount; stage++)
 		{
-			const VkAddressRemapARM* remap = (const VkAddressRemapARM*)find_extension(&pCreateInfos[i].pStages[stage], VK_STRUCTURE_TYPE_ADDRESS_REMAP_ARM);
+			const VkDeviceAddressOffsetsARM* remap = (const VkDeviceAddressOffsetsARM*)find_extension(&pCreateInfos[i].pStages[stage], VK_STRUCTURE_TYPE_DEVICE_ADDRESS_OFFSETS_ARM);
 			if (!remap) continue; // nothing to do here
 
 			assert(pCreateInfos[i].pStages[stage].pSpecializationInfo != nullptr);
@@ -1497,7 +1497,7 @@ void replay_pre_vkCreateGraphicsPipelines(lava_file_reader& reader, VkDevice dev
 			translate_addresses(reader, remap->count, remap->pOffsets, const_cast<void*>(pCreateInfos[i].pStages[stage].pSpecializationInfo->pData));
 
 			// make sure we don't leak this to the driver, as this would break validation
-			purge_extension_parent(const_cast<VkPipelineShaderStageCreateInfo*>(&pCreateInfos[i].pStages[stage]), VK_STRUCTURE_TYPE_ADDRESS_REMAP_ARM);
+			purge_extension_parent(const_cast<VkPipelineShaderStageCreateInfo*>(&pCreateInfos[i].pStages[stage]), VK_STRUCTURE_TYPE_DEVICE_ADDRESS_OFFSETS_ARM);
 		}
 	}
 }
@@ -1509,7 +1509,7 @@ void replay_pre_vkCreateRayTracingPipelinesKHR(lava_file_reader& reader, VkDevic
 	{
 		for (uint32_t stage = 0; stage < pCreateInfos[i].stageCount; stage++)
 		{
-			const VkAddressRemapARM* remap = (const VkAddressRemapARM*)find_extension(&pCreateInfos[i].pStages[stage], VK_STRUCTURE_TYPE_ADDRESS_REMAP_ARM);
+			const VkDeviceAddressOffsetsARM* remap = (const VkDeviceAddressOffsetsARM*)find_extension(&pCreateInfos[i].pStages[stage], VK_STRUCTURE_TYPE_DEVICE_ADDRESS_OFFSETS_ARM);
 			if (!remap) continue; // nothing to do here
 
 			assert(pCreateInfos[i].pStages[stage].pSpecializationInfo != nullptr);
@@ -1519,7 +1519,7 @@ void replay_pre_vkCreateRayTracingPipelinesKHR(lava_file_reader& reader, VkDevic
 			translate_addresses(reader, remap->count, remap->pOffsets, const_cast<void*>(pCreateInfos[i].pStages[stage].pSpecializationInfo->pData));
 
 			// make sure we don't leak this to the driver, as this would break validation
-			purge_extension_parent(const_cast<VkPipelineShaderStageCreateInfo*>(&pCreateInfos[i].pStages[stage]), VK_STRUCTURE_TYPE_ADDRESS_REMAP_ARM);
+			purge_extension_parent(const_cast<VkPipelineShaderStageCreateInfo*>(&pCreateInfos[i].pStages[stage]), VK_STRUCTURE_TYPE_DEVICE_ADDRESS_OFFSETS_ARM);
 		}
 	}
 }
@@ -1543,7 +1543,7 @@ static char* mem_map(lava_file_reader& reader, VkDevice device, const suballoc_l
 	return ptr;
 }
 
-static void mem_unmap(lava_file_reader& reader, VkDevice device, const suballoc_location& loc, VkAddressRemapARM* ar, char* ptr)
+static void mem_unmap(lava_file_reader& reader, VkDevice device, const suballoc_location& loc, VkDeviceAddressOffsetsARM* ar, char* ptr)
 {
 	if (ar) translate_addresses(reader, ar->count, ar->pOffsets, ptr);
 	if (loc.needs_flush && reader.run)
@@ -1577,12 +1577,14 @@ VKAPI_ATTR void retrace_vkUpdateBufferTRACETOOLTEST(lava_file_reader& reader)
 	const uint32_t buffer_index = reader.read_handle(DEBUGPARAM("VkBuffer"));
 	VkUpdateMemoryInfoARM info = {};
 	read_VkUpdateMemoryInfoARM(reader, &info);
+	if (info.dstBuffer == VK_NULL_HANDLE) info.dstBuffer = index_to_VkBuffer.at(buffer_index);
+	else assert(buffer_index == index_to_VkBuffer.index(info.dstBuffer));
 
 	// Lookup
 	VkDevice device = index_to_VkDevice.at(device_index);
 	trackedbuffer& tbuf = VkBuffer_index.at(buffer_index);
 	suballoc_location loc = reader.parent->allocator.find_buffer_memory(buffer_index);
-	VkAddressRemapARM* ar = (VkAddressRemapARM*)find_extension(&info, (VkStructureType)VK_STRUCTURE_TYPE_ADDRESS_REMAP_ARM);
+	VkDeviceAddressOffsetsARM* ar = (VkDeviceAddressOffsetsARM*)find_extension(&info, (VkStructureType)VK_STRUCTURE_TYPE_DEVICE_ADDRESS_OFFSETS_ARM);
 
 	// Verify
 	assert(info.pData);
@@ -1612,7 +1614,7 @@ VKAPI_ATTR void retrace_vkUpdateImageTRACETOOLTEST(lava_file_reader& reader)
 	VkDevice device = index_to_VkDevice.at(device_index);
 	trackedimage& timg = VkImage_index.at(image_index);
 	suballoc_location loc = reader.parent->allocator.find_image_memory(image_index);
-	VkAddressRemapARM* ar = (VkAddressRemapARM*)find_extension(&info, VK_STRUCTURE_TYPE_ADDRESS_REMAP_ARM);
+	VkDeviceAddressOffsetsARM* ar = (VkDeviceAddressOffsetsARM*)find_extension(&info, VK_STRUCTURE_TYPE_DEVICE_ADDRESS_OFFSETS_ARM);
 
 	// Verify
 	assert(info.pData);
@@ -1631,9 +1633,12 @@ void read_VkUpdateMemoryInfoARM(lava_file_reader& reader, VkUpdateMemoryInfoARM*
 	sptr->sType = (VkStructureType)reader.read_uint32_t();
 	assert(sptr->sType == VK_STRUCTURE_TYPE_UPDATE_MEMORY_INFO_ARM);
 	read_extension(reader, (VkBaseOutStructure**)&sptr->pNext);
+	const uint32_t buffer_index = reader.read_handle(DEBUGPARAM("VkBuffer"));
+	sptr->dstBuffer = index_to_VkBuffer.at(buffer_index);
 	sptr->dstOffset = reader.read_uint64_t();
 	sptr->dataSize = reader.read_uint64_t();
 	uint8_t pData_opt = reader.read_uint8_t();
+	sptr->pData = nullptr;
 	if (pData_opt)
 	{
 		uint8_t* backing = reader.pool.allocate<uint8_t>(sptr->dataSize);
@@ -1647,15 +1652,15 @@ VKAPI_ATTR void retrace_vkCmdUpdateBuffer2ARM(lava_file_reader& reader)
 {
 	VkUpdateMemoryInfoARM info = {};
 	const uint32_t commandbuffer_index = reader.read_handle(DEBUGPARAM("VkCommandBuffer"));
-	const uint32_t buffer_index = reader.read_handle(DEBUGPARAM("VkBuffer"));
-	VkBuffer dstBuffer = index_to_VkBuffer.at(buffer_index);
-	trackedobject& tbuf = VkBuffer_index.at(buffer_index);
 	VkCommandBuffer commandBuffer = index_to_VkCommandBuffer.at(commandbuffer_index);
 	read_VkUpdateMemoryInfoARM(reader, &info);
-	VkAddressRemapARM* ar = (VkAddressRemapARM*)find_extension(&info, VK_STRUCTURE_TYPE_ADDRESS_REMAP_ARM);
+	assert(info.dstBuffer != VK_NULL_HANDLE);
+	uint32_t buffer_index = index_to_VkBuffer.index(info.dstBuffer);
+	trackedobject& tbuf = VkBuffer_index.at(buffer_index);
+	VkDeviceAddressOffsetsARM* ar = (VkDeviceAddressOffsetsARM*)find_extension(&info, VK_STRUCTURE_TYPE_DEVICE_ADDRESS_OFFSETS_ARM);
 	// -- Execute --
 	if (ar) translate_addresses(reader, ar->count, ar->pOffsets, const_cast<void*>(info.pData));
-	if (reader.run) wrap_vkCmdUpdateBuffer(commandBuffer, dstBuffer, info.dstOffset, info.dataSize, info.pData);
+	if (reader.run) wrap_vkCmdUpdateBuffer(commandBuffer, info.dstBuffer, info.dstOffset, info.dataSize, info.pData);
 	ILOG("Ran vkCmdUpdateBuffer2ARM"); // TBD REMOVE ME
 	tbuf.last_modified = reader.current;
 }

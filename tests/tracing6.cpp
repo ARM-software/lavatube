@@ -60,7 +60,9 @@ static void thread_runner(int tid)
 			offset += req.size;
 		}
 		trace_vkSyncBufferTRACETOOLTEST(vulkan.device, buffer[i]);
-		trace_vkAssertBufferARM(vulkan.device, buffer[i], 0, VK_WHOLE_SIZE, nullptr);
+		uint32_t checksum = 0;
+		result = trace_vkAssertBufferARM(vulkan.device, buffer[i], 0, VK_WHOLE_SIZE, &checksum, nullptr);
+		check(result);
 		for (unsigned j = 0; j < NUM_BUFFERS; j++)
 		{
 			trace_vkDestroyBuffer(vulkan.device, buffer[j], nullptr);

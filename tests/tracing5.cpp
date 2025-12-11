@@ -74,7 +74,9 @@ static void trace_3()
 	for (unsigned i = 0; i < NUM_BUFFERS; i++)
 	{
 		trace_vkSyncBufferTRACETOOLTEST(vulkan.device, buffer[i]);
-		uint32_t checksum = trace_vkAssertBufferARM(vulkan.device, buffer[i], 0, VK_WHOLE_SIZE, nullptr);
+		uint32_t checksum = 0;
+		result = trace_vkAssertBufferARM(vulkan.device, buffer[i], 0, VK_WHOLE_SIZE, &checksum, nullptr);
+		check(result);
 		assert(checksum == checksums[i]);
 
 		const uint64_t updates = trace_vkGetDeviceTracingObjectPropertyTRACETOOLTEST(vulkan.device, VK_OBJECT_TYPE_BUFFER, (uint64_t)buffer[i], VK_TRACING_OBJECT_PROPERTY_UPDATES_COUNT_TRACETOOLTEST);

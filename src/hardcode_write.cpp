@@ -1552,10 +1552,10 @@ static void write_VkFlushRangesFlagsARM(lava_file_writer& writer, const VkFlushR
 	writer.write_uint32_t(sptr->flags);
 }
 
-static void write_VkAddressRemapARM(lava_file_writer& writer, const VkAddressRemapARM* sptr)
+static void write_VkDeviceAddressOffsetsARM(lava_file_writer& writer, const VkDeviceAddressOffsetsARM* sptr)
 {
 	writer.write_uint32_t(sptr->sType);
-	assert(sptr->sType == VK_STRUCTURE_TYPE_ADDRESS_REMAP_ARM);
+	assert(sptr->sType == VK_STRUCTURE_TYPE_DEVICE_ADDRESS_OFFSETS_ARM);
 	write_extension(writer, (VkBaseOutStructure*)sptr->pNext);
 	writer.write_uint32_t(sptr->count);
 	bool pOffsets_opt = (sptr->pOffsets != 0 && sptr->count > 0); // whether we should save pData
@@ -1571,6 +1571,12 @@ static void write_VkUpdateMemoryInfoARM(lava_file_writer& writer, const VkUpdate
 	writer.write_uint32_t(sptr->sType);
 	assert(sptr->sType == VK_STRUCTURE_TYPE_UPDATE_MEMORY_INFO_ARM);
 	write_extension(writer, (VkBaseOutStructure*)sptr->pNext);
+	const trackable* buffer_data = nullptr;
+	if (sptr->dstBuffer != VK_NULL_HANDLE)
+	{
+		buffer_data = writer.parent->records.VkBuffer_index.at(sptr->dstBuffer);
+	}
+	writer.write_handle(buffer_data);
 	writer.write_uint64_t(sptr->dstOffset);
 	writer.write_uint64_t(sptr->dataSize);
 	uint8_t pData_opt = (sptr->pData != 0 && sptr->dataSize > 0); // whether we should save pData
@@ -1586,6 +1592,7 @@ VKAPI_ATTR void trace_vkUpdateBufferTRACETOOLTEST(VkDevice device, VkBuffer dstB
 	lava_file_writer& writer = write_header("vkUpdateBufferTRACETOOLTEST", VKUPDATEBUFFERTRACETOOLTEST);
 	const auto* device_data = writer.parent->records.VkDevice_index.at(device);
 	auto* buffer_data = writer.parent->records.VkBuffer_index.at(dstBuffer);
+	pInfo->dstBuffer = dstBuffer;
 	writer.write_handle(device_data);
 	writer.write_handle(buffer_data);
 	if (buffer_data)
@@ -1629,14 +1636,14 @@ VKAPI_ATTR void trace_vkUpdateImageTRACETOOLTEST(VkDevice device, VkImage dstIma
 	wrap_vkUnmapMemory(device, memory_data->backing);
 }
 
-VKAPI_ATTR void trace_vkCmdUpdateBuffer2ARM(VkCommandBuffer commandBuffer, VkBuffer dstBuffer, VkUpdateMemoryInfoARM* pInfo)
+VKAPI_ATTR void trace_vkCmdUpdateBuffer2ARM(VkCommandBuffer commandBuffer, const VkUpdateMemoryInfoARM* pInfo)
 {
 	lava_file_writer& writer = write_header("vkCmdUpdateBuffer2ARM", VKCMDUPDATEBUFFER2ARM);
 	auto* commandbuffer_data = writer.parent->records.VkCommandBuffer_index.at(commandBuffer);
-	auto* buffer_data = writer.parent->records.VkBuffer_index.at(dstBuffer);
+	assert(pInfo);
+	trackable* buffer_data = writer.parent->records.VkBuffer_index.at(pInfo->dstBuffer);
 	if (commandbuffer_data) commandbuffer_data->self_test();
 	writer.write_handle(commandbuffer_data);
-	writer.write_handle(buffer_data);
 	if (commandbuffer_data)
 	{
 		commandbuffer_data->last_modified = writer.current;
@@ -1663,7 +1670,7 @@ VKAPI_ATTR void trace_vkThreadBarrierTRACETOOLTEST(uint32_t count, uint32_t* pVa
 	}
 }
 
-VKAPI_ATTR uint32_t VKAPI_CALL trace_vkAssertBufferARM(VkDevice device, VkBuffer buffer, VkDeviceSize offset, VkDeviceSize size, const char* comment)
+VKAPI_ATTR VkResult VKAPI_CALL trace_vkAssertBufferARM(VkDevice device, VkBuffer buffer, VkDeviceSize offset, VkDeviceSize size, uint32_t* checksum, const char* comment)
 {
 	lava_file_writer& writer = write_header("vkAssertBufferARM", VKASSERTBUFFERARM);
 	auto* buffer_data = writer.parent->records.VkBuffer_index.at(buffer);
@@ -1683,11 +1690,11 @@ VKAPI_ATTR uint32_t VKAPI_CALL trace_vkAssertBufferARM(VkDevice device, VkBuffer
 	{
 		size = buffer_data->size - offset; // set to remaining size
 	}
-	uint32_t checksum = 0;
+	uint32_t checksum_value = 0;
 	if (memory_data->ptr && (memory_data->offset <= buffer_data->offset) && (memory_data->offset + memory_data->size > buffer_data->offset + buffer_data->size)) // we already have it mapped
 	{
-		checksum = adler32((unsigned char*)(memory_data->ptr + buffer_data->offset + offset), size);
-		DLOG2("branch1 buffer=%u offset=%u memoffset=%u size=%u checksum=%u first byte=%u", buffer_data->index, (unsigned)offset, (unsigned)buffer_data->offset, (unsigned)size, checksum, (unsigned)*(memory_data->ptr + buffer_data->offset));
+		checksum_value = adler32((unsigned char*)(memory_data->ptr + buffer_data->offset + offset), size);
+		DLOG2("branch1 buffer=%u offset=%u memoffset=%u size=%u checksum=%u first byte=%u", buffer_data->index, (unsigned)offset, (unsigned)buffer_data->offset, (unsigned)size, checksum_value, (unsigned)*(memory_data->ptr + buffer_data->offset));
 	}
 	else if (memory_data->ptr) // mapped but not including our object
 	{
@@ -1695,8 +1702,8 @@ VKAPI_ATTR uint32_t VKAPI_CALL trace_vkAssertBufferARM(VkDevice device, VkBuffer
 		wrap_vkUnmapMemory(device, memory_data->backing);
 		VkResult result = wrap_vkMapMemory(device, buffer_data->backing, buffer_data->offset + offset, size, 0, (void**)&ptr);
 		if (result != VK_SUCCESS) ABORT("Failed to map memory in vkAssertBuffer");
-		checksum = adler32((unsigned char*)ptr, buffer_data->size);
-		DLOG2("branch1 buffer=%u offset=%u memoffset=%u size=%u checksum=%u first byte=%u", buffer_data->index, (unsigned)offset, (unsigned)buffer_data->offset, (unsigned)size, checksum, (unsigned)ptr[0]);
+		checksum_value = adler32((unsigned char*)ptr, buffer_data->size);
+		DLOG2("branch1 buffer=%u offset=%u memoffset=%u size=%u checksum=%u first byte=%u", buffer_data->index, (unsigned)offset, (unsigned)buffer_data->offset, (unsigned)size, checksum_value, (unsigned)ptr[0]);
 		wrap_vkUnmapMemory(device, buffer_data->backing);
 		result = wrap_vkMapMemory(device, memory_data->backing, memory_data->offset, memory_data->size, 0, (void**)&ptr); // restore back
 		assert(result == VK_SUCCESS);
@@ -1706,12 +1713,13 @@ VKAPI_ATTR uint32_t VKAPI_CALL trace_vkAssertBufferARM(VkDevice device, VkBuffer
 		uint8_t* ptr = nullptr;
 		VkResult result = wrap_vkMapMemory(device, buffer_data->backing, buffer_data->offset + offset, size, 0, (void**)&ptr);
 		if (result != VK_SUCCESS) ABORT("Failed to map memory in vkAssertBuffer");
-		checksum = adler32((unsigned char*)ptr, buffer_data->size);
-		DLOG2("branch1 buffer=%u offset=%u memoffset=%u size=%u checksum=%u first byte=%u", buffer_data->index, (unsigned)offset, (unsigned)buffer_data->offset, (unsigned)size, checksum, (unsigned)ptr[0]);
+		checksum_value = adler32((unsigned char*)ptr, buffer_data->size);
+		DLOG2("branch1 buffer=%u offset=%u memoffset=%u size=%u checksum=%u first byte=%u", buffer_data->index, (unsigned)offset, (unsigned)buffer_data->offset, (unsigned)size, checksum_value, (unsigned)ptr[0]);
 		wrap_vkUnmapMemory(device, buffer_data->backing);
 	}
-	writer.write_uint32_t(checksum);
-	return checksum;
+	writer.write_uint32_t(checksum_value);
+	if (checksum) *checksum = checksum_value;
+	return VK_SUCCESS;
 }
 
 void trace_post_vkMapMemory(lava_file_writer& writer, VkResult result, VkDevice device, VkDeviceMemory memory, VkDeviceSize offset, VkDeviceSize size, VkMemoryMapFlags flags, void** ppData)

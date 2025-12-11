@@ -1,4 +1,4 @@
-// Test of VK_TRACETOOLS_trace_helpers support
+// Test of VK_ARM_trace_helpers support
 
 #include "tests/common.h"
 #include <inttypes.h>
@@ -85,7 +85,9 @@ static void trace_3()
 	for (unsigned i = 0; i < NUM_BUFFERS; i++)
 	{
 		trace_vkSyncBufferTRACETOOLTEST(vulkan.device, buffer[i]);
-		uint32_t checksum2 = trace_vkAssertBufferARM(vulkan.device, buffer[i], 0, VK_WHOLE_SIZE, "test");
+		uint32_t checksum2 = 0;
+		result = trace_vkAssertBufferARM(vulkan.device, buffer[i], 0, VK_WHOLE_SIZE, &checksum2, "test");
+		check(result);
 		assert(checksum == checksum2);
 	}
 

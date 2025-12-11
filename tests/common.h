@@ -51,6 +51,8 @@ static inline void test_destroy_buffer(vulkan_setup_t& vulkan, unsigned value, V
 	if (result != VK_SUCCESS) ABORT("Failed to map memory in test_assert_buffer");
 	assert(ptr[0] == value);
 	trace_vkUnmapMemory(vulkan.device, memory);
-	trace_vkAssertBufferARM(vulkan.device, buffer, 0, VK_WHOLE_SIZE, "buffer at end of lifetime");
+	uint32_t checksum = 0;
+	result = trace_vkAssertBufferARM(vulkan.device, buffer, 0, VK_WHOLE_SIZE, &checksum, "buffer at end of lifetime");
+	check(result);
 	trace_vkDestroyBuffer(vulkan.device, buffer, nullptr);
 }
