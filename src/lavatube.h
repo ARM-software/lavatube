@@ -14,6 +14,7 @@
 #include "vulkan_ext.h"
 #include "containers.h"
 #include "util_auto.h"
+#include "tostring.h"
 
 #include <unordered_set>
 #include <list>
@@ -730,10 +731,17 @@ inline void trackedmemory::bind(trackedobject* obj)
 	if (it != aliasing.end()) // we are aliasing
 	{
 		trackedobject* other = it->second;
-		assert(obj->offset == it->first); // offset is the same for now
-		assert(obj->size == other->size); // size is the same for now
-		ILOG("We found aliasing objects %s %u and %s %u at offset %lu", pretty_print_VkObjectType(obj->object_type), obj->index,
-		     pretty_print_VkObjectType(other->object_type), other->index, (unsigned long)obj->offset);
+		if (obj->object_type == VK_OBJECT_TYPE_IMAGE && other->object_type == VK_OBJECT_TYPE_IMAGE)
+		{
+			trackedimage* imgobj = (trackedimage*)obj;
+			trackedimage* imgother = (trackedimage*)it->second;
+			ILOG("We found aliasing images %u (size %u, imagetype %s, format %s) and %u (size %u, imagetype %s, format %s) at offset %lu", obj->index,
+			     (unsigned)obj->size, VkImageType_to_string(imgobj->imageType).c_str(), VkFormat_to_string(imgobj->format).c_str(), other->index, (unsigned)other->size,
+			     VkImageType_to_string(imgother->imageType).c_str(), VkFormat_to_string(imgother->format).c_str(), (unsigned long)obj->offset);
+		}
+		else ILOG("We found aliasing objects %s %u (size %u) and %s %u (size %u) at offset %lu", pretty_print_VkObjectType(obj->object_type), obj->index,
+		     (unsigned)obj->size, pretty_print_VkObjectType(other->object_type), other->index, (unsigned)other->size, (unsigned long)obj->offset);
+		assert(obj->offset == it->first); // offset must be the same for now, TBD improve to find more cases
 		other->alias_type = obj->object_type;
 		other->alias_index = obj->index;
 		obj->alias_type = other->object_type;

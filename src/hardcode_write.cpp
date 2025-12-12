@@ -374,13 +374,13 @@ static void trace_post_vkBindImageMemory(lava_file_writer& writer, VkResult resu
 	assert(image_data->backing == 0); // cannot re-bind
 	image_data->backing = memory;
 	image_data->offset = memoryOffset;
-	memory_data->bind(image_data);
 	if (image_data->req.size == 0) // no prior call to get reqs for this object
 	{
 		wrap_vkGetImageMemoryRequirements(device, image, &image_data->req);
 	}
 	image_data->size = image_data->req.size; // we do not try to second guess this for images
 	image_data->accessible = ((image_data->tiling != VK_IMAGE_TILING_OPTIMAL) && (memory_data->propertyFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT));
+	memory_data->bind(image_data);
 	image_data->enter_bound();
 	writer.parent->memory_mutex.unlock();
 }
@@ -395,14 +395,14 @@ static void trace_post_vkBindBufferMemory(lava_file_writer& writer, VkResult res
 	assert(buffer_data->backing == 0); // cannot re-bind
 	buffer_data->backing = memory;
 	buffer_data->offset = memoryOffset;
-	memory_data->bind(buffer_data);
 	if (buffer_data->req.size == 0) // no prior call to get reqs for this object
 	{
 		wrap_vkGetBufferMemoryRequirements(device, buffer, &buffer_data->req);
 	}
 	// we store size recorded from vkCreateBuffer, which is the actually used size, rather than required allocation size
-	assert(buffer_data->size >= buffer_data->req.size);
+	assert(buffer_data->size <= buffer_data->req.size);
 	buffer_data->accessible = (memory_data->propertyFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
+	memory_data->bind(buffer_data);
 	buffer_data->enter_bound();
 	writer.parent->memory_mutex.unlock();
 }
@@ -451,7 +451,6 @@ static void trace_post_vkBindTensorMemoryARM(lava_file_writer& writer, VkResult 
 		assert(tensor_data->backing == 0); // cannot re-bind
 		tensor_data->backing = pBindInfos[i].memory;
 		tensor_data->offset = pBindInfos[i].memoryOffset;
-		memory_data->bind(tensor_data);
 		if (tensor_data->req.size == 0) // no prior call to get reqs for this object
 		{
 			VkTensorMemoryRequirementsInfoARM tmr = { VK_STRUCTURE_TYPE_TENSOR_MEMORY_REQUIREMENTS_INFO_ARM, nullptr };
@@ -459,6 +458,7 @@ static void trace_post_vkBindTensorMemoryARM(lava_file_writer& writer, VkResult 
 			wrap_vkGetTensorMemoryRequirementsARM(device, &tmr, &mr);
 			tensor_data->req = mr.memoryRequirements;
 		}
+		memory_data->bind(tensor_data);
 		tensor_data->enter_bound();
 	}
 	writer.parent->memory_mutex.unlock();
