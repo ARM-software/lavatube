@@ -43,7 +43,6 @@ const Value& Value::null = reinterpret_cast<const Value&>(kNull);
 const Int Value::minInt = Int(~(UInt(-1) / 2));
 const Int Value::maxInt = Int(UInt(-1) / 2);
 const UInt Value::maxUInt = UInt(-1);
-#if defined(JSON_HAS_INT64)
 const Int64 Value::minInt64 = Int64(~(UInt64(-1) / 2));
 const Int64 Value::maxInt64 = Int64(UInt64(-1) / 2);
 const UInt64 Value::maxUInt64 = UInt64(-1);
@@ -51,7 +50,6 @@ const UInt64 Value::maxUInt64 = UInt64(-1);
 // converting Value::maxUInt64 to a double correctly (AIX/xlC).
 // Assumes that UInt64 is a 64 bits integer.
 static const double maxUInt64AsDouble = 18446744073709551615.0;
-#endif // defined(JSON_HAS_INT64)
 const LargestInt Value::minLargestInt = LargestInt(~(LargestUInt(-1) / 2));
 const LargestInt Value::maxLargestInt = LargestInt(LargestUInt(-1) / 2);
 const LargestUInt Value::maxLargestUInt = LargestUInt(-1);
@@ -296,7 +294,6 @@ Value::Value(Int value)
   value_.int_ = value;
 }
 
-#if defined(JSON_HAS_INT64)
 Value::Value(Int64 value)
     : type_(intValue), allocated_(false)
 #ifdef JSON_VALUE_USE_INTERNAL_MAP
@@ -318,7 +315,6 @@ Value::Value(UInt64 value)
       comments_(0), start_(0), limit_(0) {
   value_.uint_ = value;
 }
-#endif // defined(JSON_HAS_INT64)
 
 Value::Value(double value)
     : type_(realValue), allocated_(false)
@@ -675,8 +671,6 @@ Value::UInt Value::asUInt() const {
   JSON_FAIL_MESSAGE("Value is not convertible to UInt.");
 }
 
-#if defined(JSON_HAS_INT64)
-
 Value::Int64 Value::asInt64() const {
   switch (type_) {
   case intValue:
@@ -718,22 +712,13 @@ Value::UInt64 Value::asUInt64() const {
   }
   JSON_FAIL_MESSAGE("Value is not convertible to UInt64.");
 }
-#endif // if defined(JSON_HAS_INT64)
 
 LargestInt Value::asLargestInt() const {
-#if defined(JSON_NO_INT64)
-  return asInt();
-#else
   return asInt64();
-#endif
 }
 
 LargestUInt Value::asLargestUInt() const {
-#if defined(JSON_NO_INT64)
-  return asUInt();
-#else
   return asUInt64();
-#endif
 }
 
 double Value::asDouble() const {
@@ -1194,7 +1179,6 @@ bool Value::isUInt() const {
 }
 
 bool Value::isInt64() const {
-#if defined(JSON_HAS_INT64)
   switch (type_) {
   case intValue:
     return true;
@@ -1209,12 +1193,10 @@ bool Value::isInt64() const {
   default:
     break;
   }
-#endif // JSON_HAS_INT64
   return false;
 }
 
 bool Value::isUInt64() const {
-#if defined(JSON_HAS_INT64)
   switch (type_) {
   case intValue:
     return value_.int_ >= 0;
@@ -1229,16 +1211,11 @@ bool Value::isUInt64() const {
   default:
     break;
   }
-#endif // JSON_HAS_INT64
   return false;
 }
 
 bool Value::isIntegral() const {
-#if defined(JSON_HAS_INT64)
   return isInt64() || isUInt64();
-#else
-  return isInt() || isUInt();
-#endif
 }
 
 bool Value::isDouble() const { return type_ == realValue || isIntegral(); }

@@ -187,10 +187,8 @@ private:
   bool addChildValues_;
 };
 
-#if defined(JSON_HAS_INT64)
 std::string JSON_API valueToString(Int value);
 std::string JSON_API valueToString(UInt value);
-#endif // if defined(JSON_HAS_INT64)
 std::string JSON_API valueToString(LargestInt value);
 std::string JSON_API valueToString(LargestUInt value);
 std::string JSON_API valueToString(double value);

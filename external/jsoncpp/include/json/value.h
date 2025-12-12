@@ -125,10 +125,8 @@ public:
   typedef ValueConstIterator const_iterator;
   typedef Json::UInt UInt;
   typedef Json::Int Int;
-#if defined(JSON_HAS_INT64)
   typedef Json::UInt64 UInt64;
   typedef Json::Int64 Int64;
-#endif // defined(JSON_HAS_INT64)
   typedef Json::LargestInt LargestInt;
   typedef Json::LargestUInt LargestUInt;
   typedef Json::ArrayIndex ArrayIndex;
@@ -148,14 +146,12 @@ public:
   /// Maximum unsigned int value that can be stored in a Json::Value.
   static const UInt maxUInt;
 
-#if defined(JSON_HAS_INT64)
   /// Minimum signed 64 bits int value that can be stored in a Json::Value.
   static const Int64 minInt64;
   /// Maximum signed 64 bits int value that can be stored in a Json::Value.
   static const Int64 maxInt64;
   /// Maximum unsigned 64 bits int value that can be stored in a Json::Value.
   static const UInt64 maxUInt64;
-#endif // defined(JSON_HAS_INT64)
 
 private:
 #ifndef JSONCPP_DOC_EXCLUDE_IMPLEMENTATION
@@ -212,10 +208,8 @@ Json::Value obj_value(Json::objectValue); // {}
   Value(ValueType type = nullValue);
   Value(Int value);
   Value(UInt value);
-#if defined(JSON_HAS_INT64)
   Value(Int64 value);
   Value(UInt64 value);
-#endif // if defined(JSON_HAS_INT64)
   Value(double value);
   Value(const char *value);
   Value(const char *beginValue, const char *endValue);
@@ -263,10 +257,8 @@ Json::Value obj_value(Json::objectValue); // {}
 #endif
   Int asInt() const;
   UInt asUInt() const;
-#if defined(JSON_HAS_INT64)
   Int64 asInt64() const;
   UInt64 asUInt64() const;
-#endif // if defined(JSON_HAS_INT64)
   LargestInt asLargestInt() const;
   LargestUInt asLargestUInt() const;
   float asFloat() const;

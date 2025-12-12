@@ -50,8 +50,6 @@ std::string valueToString(LargestUInt value) {
   return current;
 }
 
-#if defined(JSON_HAS_INT64)
-
 std::string valueToString(Int value) {
   return valueToString(LargestInt(value));
 }
@@ -59,8 +57,6 @@ std::string valueToString(Int value) {
 std::string valueToString(UInt value) {
   return valueToString(LargestUInt(value));
 }
-
-#endif // # if defined(JSON_HAS_INT64)
 
 std::string valueToString(double value) {
   // Allocate a buffer that is more than large enough to store the 16 digits of
