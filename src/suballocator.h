@@ -14,10 +14,22 @@ struct suballoc_location
 
 struct suballocator_private;
 
+struct suballoc_metrics
+{
+	uint64_t used = 0;
+	uint64_t allocated = 0;
+	uint32_t heaps = 0;
+	uint32_t objects = 0;
+	double efficiency = 0.0;
+};
+
 struct suballocator
 {
 	/// Call as early as possible to set up internal data structures. Must be called before any other suballoc function.
 	void init(int num_images, int num_buffers, int tensors, int heap_size = -1, bool fake = false);
+
+	/// Get performance metrics for the suballocator. This is not thread safe.
+	suballoc_metrics performance() const;
 
 	suballocator();
 	~suballocator();

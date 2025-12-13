@@ -40,6 +40,7 @@ struct heap
 	VkDeviceMemory mem;
 	VkDeviceSize free;
 	VkDeviceSize total;
+	VkMemoryPropertyFlags flags;
 	/// This one does not need to be concurrent safe, since each thread owns its own heap
 	/// and only it may iterate over and modify the allocations list.
 	std::list<suballocation> subs;
@@ -76,6 +77,10 @@ struct suballocator_private
 	std::vector<lookup> tensor_lookup;
 	/// Does this device have the an annoying optimal-to-linear padding requirement? If so, put optimal and linear objects in different memory heaps
 	bool allow_mixed_tiling = true;
+	std::atomic_uint64_t used_bytes { 0 };
+	std::atomic_uint_least32_t used_count { 0 };
+	std::atomic_uint64_t allocated_bytes { 0 };
+	std::atomic_uint_least32_t allocated_heaps { 0 };
 
 	void print_memory_usage();
 	uint32_t get_device_memory_type(uint32_t type_filter, VkMemoryPropertyFlags properties);
@@ -87,6 +92,7 @@ struct suballocator_private
 		lava_tiling tiling, bool dedicated, VkMemoryAllocateFlags allocflags);
 	void self_test();
 	void bind(heap& h, const suballocation& s);
+	suballoc_metrics performance() const;
 
 	inline bool needs_flush(unsigned memoryTypeIndex) { return !(memory_properties.memoryTypes[memoryTypeIndex].propertyFlags & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT); }
 };
@@ -100,6 +106,22 @@ static VkMemoryPropertyFlags prune_memory_flags(VkMemoryPropertyFlags flags)
 		flags &= ~VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT; // do not require this bit in these cases
 	}
 	return flags;
+}
+
+suballoc_metrics suballocator::performance() const
+{
+	return priv->performance();
+}
+
+suballoc_metrics suballocator_private::performance() const
+{
+	suballoc_metrics m;
+	m.used = used_bytes;
+	m.objects = used_count;
+	m.heaps = allocated_heaps;
+	m.allocated = allocated_bytes;
+	m.efficiency = (double)used_bytes / (double)allocated_bytes;
+	return m;
 }
 
 void suballocator_private::print_memory_usage()
@@ -244,11 +266,14 @@ suballoc_location suballocator_private::add_object_new(VkDevice device, uint16_t
 	{
 		h.mem = (VkDeviceMemory)malloc(info.allocationSize);
 	}
+	allocated_bytes += info.allocationSize;
+	allocated_heaps++;
 	h.free = info.allocationSize - s.size;
 	h.total = info.allocationSize;
 	h.memoryTypeIndex = memoryTypeIndex;
 	h.tiling = tiling;
 	h.subs.push_back(s);
+	h.flags = flags;
 	DLOG2("allocating new memory pool with size = %lu, free = %lu (memoryTypeIndex=%u, tiling=%u)", (unsigned long)info.allocationSize,
 	      (unsigned long)h.free, (unsigned)memoryTypeIndex, (unsigned)tiling);
 	auto it = heaps.push_back(h);
@@ -260,13 +285,15 @@ suballoc_location suballocator_private::add_object_new(VkDevice device, uint16_t
 suballoc_location suballocator_private::add_object(VkDevice device, uint16_t tid, uint32_t memoryTypeIndex, suballocation &s, VkMemoryPropertyFlags flags,
 	lava_tiling tiling, bool dedicated, VkMemoryAllocateFlags allocflags)
 {
+	used_count++;
+	used_bytes += s.size;
+	assert(s.alignment != 0);
 	if (dedicated)
 	{
 		return add_object_new(device, tid, memoryTypeIndex, s, flags, tiling, dedicated, allocflags);
 	}
 	for (heap& h : heaps)
 	{
-		VkMemoryPropertyFlags f = memory_properties.memoryTypes[h.memoryTypeIndex].propertyFlags;
 		// this is a safe time to actually delete things
 		if (!h.deletes.empty())
 		{
@@ -287,7 +314,7 @@ suballoc_location suballocator_private::add_object(VkDevice device, uint16_t tid
 			h.deletes.clear();
 		}
 		// find suballocation
-		if (h.tid == tid && (flags & f) == flags && h.free >= s.size && h.memoryTypeIndex == memoryTypeIndex && (h.tiling == tiling || allow_mixed_tiling))
+		if (h.tid == tid && (flags & h.flags) == flags && h.free >= s.size && h.memoryTypeIndex == memoryTypeIndex && (h.tiling == tiling || allow_mixed_tiling))
 		{
 			// First case: nothing allocated in heap. In this case, we do not care about alignment, because according to the spec:
 			// "Allocations returned by vkAllocateMemory are guaranteed to meet any alignment requirement of the implementation."
@@ -398,6 +425,7 @@ suballoc_location suballocator::add_image(uint16_t tid, VkDevice device, VkImage
 
 suballoc_location suballocator::add_trackedobject(uint16_t tid, VkDevice device, const memory_requirements& reqs, uint64_t native, const trackedobject& data)
 {
+	assert(reqs.requirements.alignment != 0); // not properly initialized!
 	const VkMemoryPropertyFlags memory_flags = prune_memory_flags(data.memory_flags);
 	const uint32_t memoryTypeIndex = priv->get_device_memory_type(reqs.requirements.memoryTypeBits, memory_flags);
 	suballocation s;

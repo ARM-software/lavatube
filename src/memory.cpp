@@ -81,6 +81,7 @@ memory_requirements get_trackedimage_memory_requirements(VkDevice device, const 
 	wrap_vkGetDeviceImageMemoryRequirements(device, &info, &req);
 	reqs.requirements = req.memoryRequirements;
 	reqs.memory_flags = data.memory_flags;
+	assert(reqs.requirements.alignment != 0);
 	return reqs;
 }
 

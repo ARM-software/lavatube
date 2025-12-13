@@ -132,9 +132,16 @@ void lava_reader::finalize(bool terminate)
 	assert(stop_process_cpu_usage.tv_sec >= process_cpu_usage.tv_sec);
 	const uint64_t process_time = diff_timespec(&stop_process_cpu_usage, &process_cpu_usage);
 	ILOG("CPU time spent in ms - readhead workers %lu, API runners %lu, full process %lu", (long unsigned)worker, (long unsigned)runner, (long unsigned)process_time);
-	out["readahead_workers_time"] = (Json::Value::UInt64)worker;
-	out["api_runners_time"] = (Json::Value::UInt64)runner;
-	out["process_time"] = (Json::Value::UInt64)process_time;
+	out["readahead_workers_time"] = worker;
+	out["api_runners_time"] = runner;
+	out["process_time"] = process_time;
+	suballoc_metrics sm = allocator.performance();
+	out["suballocator_used"] = sm.used;
+	out["suballocator_allocated"] = sm.allocated;
+	out["suballocator_heaps"] = sm.heaps;
+	out["suballocator_objects"] = sm.objects;
+	out["suballocator_efficiency"] = sm.efficiency;
+	ILOG("Suballocator used=%lu allocated=%lu heaps=%u objects=%u efficiency=%g", (unsigned long)sm.used, (unsigned long)sm.allocated, (unsigned)sm.heaps, (unsigned)sm.objects, sm.efficiency);
 	if (terminate)
 	{
 		for (auto& v : *thread_call_numbers) v = 0; // stop waiting threads from progressing
