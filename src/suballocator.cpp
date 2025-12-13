@@ -405,24 +405,6 @@ void suballocator_private::bind(heap& h, const suballocation& s)
 	assert(s.offset + s.size <= h.total);
 }
 
-suballoc_location suballocator::add_image(uint16_t tid, VkDevice device, VkImage image, const trackedimage& image_data)
-{
-	VkMemoryRequirements2 req = {};
-	VkMemoryPropertyFlags memory_flags = prune_memory_flags(image_data.memory_flags);
-	const bool dedicated = priv->fill_image_memreq(device, image, req, image_data.size);
-	const uint32_t memoryTypeIndex = priv->get_device_memory_type(req.memoryRequirements.memoryTypeBits, memory_flags);
-	suballocation s;
-	s.type = VK_OBJECT_TYPE_IMAGE;
-	s.handle.image = image;
-	s.size = std::max(req.memoryRequirements.size, image_data.size);
-	s.offset = 0;
-	s.index = image_data.index;
-	s.alignment = req.memoryRequirements.alignment;
-	auto r = priv->add_object(device, tid, memoryTypeIndex, s, memory_flags, image_data.tiling, dedicated, 0);
-	assert(r.offset == s.offset);
-	return r;
-}
-
 suballoc_location suballocator::add_trackedobject(uint16_t tid, VkDevice device, const memory_requirements& reqs, uint64_t native, const trackedobject& data)
 {
 	assert(reqs.requirements.alignment != 0); // not properly initialized!
@@ -472,44 +454,6 @@ void suballocator::virtualswap_images(VkDevice device, const std::vector<VkImage
 		uint32_t offset = 0;
 		for (unsigned i = 0; i < images.size(); i++) { wrap_vkBindImageMemory(device, images.at(i), mem, offset); offset += image_size; }
 	}
-}
-
-suballoc_location suballocator::add_buffer(uint16_t tid, VkDevice device, VkBuffer buffer, const trackedbuffer& buffer_data)
-{
-	VkMemoryPropertyFlags memory_flags = prune_memory_flags(buffer_data.memory_flags);
-	const VkBufferUsageFlags buffer_flags = buffer_data.usage;
-	VkMemoryRequirements2 req = { VK_STRUCTURE_TYPE_MEMORY_REQUIREMENTS_2, nullptr };
-	VkMemoryDedicatedRequirements dedicated = { VK_STRUCTURE_TYPE_MEMORY_DEDICATED_REQUIREMENTS, nullptr };
-	if (use_dedicated_allocation() && priv->run)
-	{
-		VkBufferMemoryRequirementsInfo2 info = { VK_STRUCTURE_TYPE_BUFFER_MEMORY_REQUIREMENTS_INFO_2, nullptr };
-		info.buffer = buffer;
-		req.pNext = &dedicated;
-		wrap_vkGetBufferMemoryRequirements2(device, &info, &req);
-	}
-	else if (priv->run)
-	{
-		wrap_vkGetBufferMemoryRequirements(device, buffer, &req.memoryRequirements);
-	}
-	else // fake mem system
-	{
-		req.memoryRequirements.size = buffer_data.size;
-		req.memoryRequirements.alignment = 1;
-		req.memoryRequirements.memoryTypeBits = 1;
-	}
-	uint32_t memoryTypeIndex = priv->get_device_memory_type(req.memoryRequirements.memoryTypeBits, memory_flags);
-	suballocation s;
-	s.type = VK_OBJECT_TYPE_BUFFER;
-	s.handle.buffer = buffer;
-	s.size = req.memoryRequirements.size;
-	s.offset = 0;
-	s.index = buffer_data.index;
-	s.alignment = req.memoryRequirements.alignment;
-	VkMemoryAllocateFlags allocflags = 0;
-	if (buffer_flags & VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT) { dedicated.prefersDedicatedAllocation = VK_TRUE; allocflags |= VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT_KHR; }
-	auto r = priv->add_object(device, tid, memoryTypeIndex, s, memory_flags, TILING_LINEAR, dedicated.prefersDedicatedAllocation, allocflags);
-	assert(r.offset == s.offset);
-	return r;
 }
 
 void suballocator::free_image(uint32_t image_index)

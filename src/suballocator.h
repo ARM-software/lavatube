@@ -44,9 +44,6 @@ struct suballocator
 	/// can modify. Other threads may access the objects stored inside subject to Vulkan external synchronization rules.
 	suballoc_location add_trackedobject(uint16_t tid, VkDevice device, const memory_requirements& reqs, uint64_t native, const trackedobject& data);
 
-	suballoc_location add_image(uint16_t tid, VkDevice device, VkImage image, const trackedimage& image_data);
-	suballoc_location add_buffer(uint16_t tid, VkDevice device, VkBuffer buffer, const trackedbuffer& buffer_data);
-
 	/// Delete an image from our memory pools. Thread safe because the internal data structure is preallocated and never resized,
 	/// and deleted entries are never reused.
 	void free_image(uint32_t image_index);

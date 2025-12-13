@@ -5,6 +5,8 @@ API tracer designed for multi-threaded replay with a minimum overhead and maximu
 across different platforms. It is an experimental project that aims to explore options in API
 tracing.
 
+Requires Vulkan at least version 1.3.
+
 Features
 --------
 

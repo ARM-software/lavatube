@@ -721,27 +721,19 @@ class parameter(spec.base_parameter):
 				z.decl(self.type, self.name)
 			z.do('%s = reader.read_%s();' % (varname, self.type))
 
-		if self.funcname in ['vkBindImageMemory', 'VkBindImageMemoryInfoKHR', 'VkBindImageMemoryInfo'] and self.name == 'image':
-			z.do('trackedimage& image_data = VkImage_index.at(image_index);')
-			z.do('image_data.memory_flags = static_cast<VkMemoryPropertyFlags>(reader.read_uint32_t()); // fetch memory flags especially added') # TBD remove me
-			z.do('const VkImageTiling tiling = static_cast<VkImageTiling>(reader.read_uint32_t()); // fetch tiling property especially added') # TBD remove me
-			z.do('assert((lava_tiling)tiling == image_data.tiling);')
-			z.do('const VkDeviceSize min_size = static_cast<VkDeviceSize>(reader.read_uint64_t()); // fetch padded memory size') # TBD remove me
-			z.do('assert(min_size == image_data.size);')
-			z.do('suballoc_location loc = reader.parent->allocator.add_image(reader.thread_index(), reader.device, %s, image_data);' % varname)
-		elif self.funcname in ['vkBindBufferMemory', 'VkBindBufferMemoryInfo', 'VkBindBufferMemoryInfoKHR'] and self.name == 'buffer':
-			z.do('trackedbuffer& buffer_data = VkBuffer_index.at(buffer_index);')
-			z.do('buffer_data.memory_flags = static_cast<VkMemoryPropertyFlags>(reader.read_uint32_t()); // fetch memory flags especially added') # TBD remove me
-			z.do('suballoc_location loc = reader.parent->allocator.add_buffer(reader.thread_index(), reader.device, %s, buffer_data);' % varname)
-		elif self.funcname in ['VkBindTensorMemoryInfoARM'] and self.name == 'tensor':
-			z.do('trackedtensor& tensor_data = VkTensorARM_index.at(tensorarm_index);')
-			z.do('tensor_data.memory_flags = static_cast<VkMemoryPropertyFlags>(reader.read_uint32_t()); // fetch memory flags especially added') # TBD remove
-			z.do('memory_requirements reqs;')
-			z.do('if (reader.run) reqs = get_trackedtensor_memory_requirements(reader.device, tensor_data);')
-			z.do('else reqs = get_fake_memory_requirements(reader.device, tensor_data);')
-			z.do('suballoc_location loc = reader.parent->allocator.add_trackedobject(reader.thread_index(), reader.device, reqs, (uint64_t)%s, tensor_data);' % varname)
-
 		if self.funcname in ['vkBindImageMemory', 'vkBindBufferMemory', 'VkBindBufferMemoryInfo', 'VkBindBufferMemoryInfoKHR', 'VkBindImageMemoryInfoKHR', 'VkBindImageMemoryInfo', 'VkBindTensorMemoryInfoARM']:
+			if self.name in ['image', 'buffer', 'tensor']:
+				z.do('%s& %s = %s_index.at(%s);' % (trackable_type_map_replay[self.type], totrackable(self.type), self.type, toindex(self.type)))
+				z.do('%s.memory_flags = static_cast<VkMemoryPropertyFlags>(reader.read_uint32_t()); // fetch memory flags especially added' % totrackable(self.type)) # TBD remove
+				if self.funcname in ['vkBindImageMemory', 'VkBindImageMemoryInfoKHR', 'VkBindImageMemoryInfo'] and self.name == 'image': # TBD remove me
+					z.do('const VkImageTiling tiling = static_cast<VkImageTiling>(reader.read_uint32_t()); // fetch tiling property especially added')
+					z.do('assert((lava_tiling)tiling == image_data.tiling);')
+					z.do('const VkDeviceSize min_size = static_cast<VkDeviceSize>(reader.read_uint64_t()); // fetch padded memory size')
+					z.do('assert(min_size == image_data.size);')
+				z.do('memory_requirements reqs;')
+				z.do('if (reader.run) reqs = get_%s_memory_requirements(reader.device, %s);' % (trackable_type_map_replay[self.type], totrackable(self.type)))
+				z.do('else reqs = get_fake_memory_requirements(reader.device, %s);' % totrackable(self.type))
+				z.do('suballoc_location loc = reader.parent->allocator.add_trackedobject(reader.thread_index(), reader.device, reqs, (uint64_t)%s, %s);' % (varname, totrackable(self.type)))
 			if self.name == 'memory':
 				z.do('assert(loc.memory != VK_NULL_HANDLE);')
 				z.do('%s = loc.memory;' % varname) # relying on the order of arguments here; see case above
