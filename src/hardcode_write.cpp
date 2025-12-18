@@ -1863,19 +1863,24 @@ VKAPI_ATTR VkResult VKAPI_CALL trace_vkGetSwapchainImagesKHR(VkDevice device, Vk
 	return retval;
 }
 
+static void write_surface_data(lava_file_writer& writer, uint32_t flags, int32_t x, int32_t y, int32_t width, int32_t height, int32_t border, int32_t depth)
+{
+	writer.write_uint32_t(flags);
+	writer.write_int32_t(x);
+	writer.write_int32_t(y);
+	writer.write_int32_t(width);
+	writer.write_int32_t(height);
+	writer.write_int32_t(border);
+	writer.write_int32_t(depth);
+}
+
 VKAPI_ATTR VkResult VKAPI_CALL trace_vkCreateHeadlessSurfaceEXT(VkInstance instance, const VkHeadlessSurfaceCreateInfoEXT* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkSurfaceKHR* pSurface)
 {
 	lava_file_writer& writer = write_header("vkCreateHeadlessSurfaceEXT", VKCREATEHEADLESSSURFACEEXT);
 	writer.write_handle(writer.parent->records.VkInstance_index.at(instance));
 	writer.write_uint32_t(pCreateInfo->sType);
 	write_extension(writer, (VkBaseOutStructure*)pCreateInfo->pNext);
-	writer.write_uint32_t(static_cast<uint32_t>(pCreateInfo->flags));
-	writer.write_int32_t(0); // reserved
-	writer.write_int32_t(0); // reserved
-	writer.write_int32_t(0); // reserved
-	writer.write_int32_t(0); // reserved
-	writer.write_int32_t(0); // reserved
-	writer.write_int32_t(0); // reserved
+	write_surface_data(writer, pCreateInfo->flags, 0, 0, 0, 0, 0, 0);
 	// Execute
 	PFN_vkCreateHeadlessSurfaceEXT hack_vkCreateHeadlessSurfaceEXT = reinterpret_cast<PFN_vkCreateHeadlessSurfaceEXT>(wrap_vkGetInstanceProcAddr(instance,"vkCreateHeadlessSurfaceEXT"));
 	assert(hack_vkCreateHeadlessSurfaceEXT);
@@ -1928,15 +1933,9 @@ VKAPI_ATTR VkResult VKAPI_CALL trace_vkCreateXlibSurfaceKHR(VkInstance instance,
 	assert(pCreateInfo->sType == VK_STRUCTURE_TYPE_XLIB_SURFACE_CREATE_INFO_KHR);
 	write_extension(writer, (VkBaseOutStructure*)pCreateInfo->pNext);
 	// Write out xlib info
-	writer.write_uint32_t(static_cast<uint32_t>(pCreateInfo->flags));
 	XWindowAttributes attr = {};
 	Status s = XGetWindowAttributes(pCreateInfo->dpy, pCreateInfo->window, &attr);
-	writer.write_uint32_t(attr.x);
-	writer.write_uint32_t(attr.y);
-	writer.write_uint32_t(attr.width);
-	writer.write_uint32_t(attr.height);
-	writer.write_uint32_t(attr.border_width);
-	writer.write_uint32_t(attr.depth); // bpp
+	write_surface_data(writer, pCreateInfo->flags, attr.x, attr.y, attr.width, attr.height, attr.border_width, attr.depth);
 	DLOG2("\twindow found at position (%d, %d) of size (%d, %d)", attr.x, attr.y, attr.width, attr.height);
 	// -- Execute --
 	VkResult retval = wrap_vkCreateXlibSurfaceKHR(instance, pCreateInfo, pAllocator, pSurface);
@@ -1985,13 +1984,7 @@ VKAPI_ATTR VkResult VKAPI_CALL trace_vkCreateXcbSurfaceKHR(VkInstance instance, 
 	assert(trans_reply);
 
 	// Write out XCB info
-	writer.write_uint32_t(static_cast<uint32_t>(pCreateInfo->flags));
-	writer.write_int32_t(trans_reply->dst_x);
-	writer.write_int32_t(trans_reply->dst_y);
-	writer.write_int32_t(geom_reply->width);
-	writer.write_int32_t(geom_reply->height);
-	writer.write_int32_t(geom_reply->border_width); // just FYI
-	writer.write_int32_t(geom_reply->depth); // just FYI
+	write_surface_data(writer, pCreateInfo->flags, trans_reply->dst_x, trans_reply->dst_y, geom_reply->width, geom_reply->height, geom_reply->border_width, geom_reply->depth);
 	DLOG("window size written as size=%u,%u pos=%u,%u", (unsigned)geom_reply->width, (unsigned)geom_reply->height, (unsigned)trans_reply->dst_x, (unsigned)trans_reply->dst_y);
 
 	// Execute
@@ -2024,13 +2017,7 @@ VKAPI_ATTR VkResult VKAPI_CALL trace_vkCreateWaylandSurfaceKHR(VkInstance instan
 	writer.write_uint32_t(pCreateInfo->sType);
 	assert(pCreateInfo->sType == VK_STRUCTURE_TYPE_WAYLAND_SURFACE_CREATE_INFO_KHR);
 	write_extension(writer, (VkBaseOutStructure*)pCreateInfo->pNext);
-	writer.write_uint32_t(static_cast<uint32_t>(pCreateInfo->flags));
-	writer.write_int32_t(0); // x, TBD
-	writer.write_int32_t(0); // y, TBD
-	writer.write_int32_t(0); // width, TBD
-	writer.write_int32_t(0); // height, TBD
-	writer.write_int32_t(0); // border, TBD
-	// TBD missing one field here for depth
+	write_surface_data(writer, pCreateInfo->flags, 0, 0, 0, 0, 0, 0);
 	// Execute
 	VkResult retval = wrap_vkCreateWaylandSurfaceKHR(instance, pCreateInfo, pAllocator, pSurface);
 	writer.write_uint32_t(retval);
@@ -2191,16 +2178,11 @@ VKAPI_ATTR VkResult VKAPI_CALL trace_vkCreateAndroidSurfaceKHR(VkInstance instan
 	writer.write_uint32_t(pCreateInfo->sType);
 	assert(pCreateInfo->sType == VK_STRUCTURE_TYPE_ANDROID_SURFACE_CREATE_INFO_KHR);
 	write_extension(writer, (VkBaseOutStructure*)pCreateInfo->pNext);
-	writer.write_uint32_t(static_cast<uint32_t>(pCreateInfo->flags));
-	writer.write_int32_t(0); // x position - TBD
-	writer.write_int32_t(0); // y position - TBD
-	writer.write_int32_t(ANativeWindow_getWidth(pCreateInfo->window));
-	writer.write_int32_t(ANativeWindow_getHeight(pCreateInfo->window));
-	writer.write_int32_t(0);
-	writer.write_int32_t(ANativeWindow_getFormat(pCreateInfo->window));
+	write_surface_data((uint32_t)pCreateInfo->flags, 0, 0, ANativeWindow_getWidth(pCreateInfo->window),
+	                   ANativeWindow_getHeight(pCreateInfo->window), 0, ANativeWindow_getFormat(pCreateInfo->window));
 	// Execute
 	VkResult retval = wrap_vkCreateAndroidSurfaceKHR(instance, pCreateInfo, pAllocator, pSurface);
-	// TBD missing return value write-out
+	writer.write_uint32_t(retval);
 	// Post
 	const auto* surface_data = writer.parent->records.VkSurfaceKHR_index.add(*pSurface, writer.current);
 	surface_data->enter_created();
