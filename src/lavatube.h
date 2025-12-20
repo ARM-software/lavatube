@@ -157,7 +157,7 @@ struct trackeddevice : trackable
 	using trackable::trackable; // inherit constructor
 	VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
 
-	/// Trust host to notify us about memory updates?
+	/// capture only: Trust host to notify us about memory updates?
 	bool explicit_host_updates = false;
 
 	std::unordered_set<std::string> requested_device_extensions; // from app to tool
@@ -674,6 +674,9 @@ struct trackedqueue : trackable
 	uint32_t realFamily = UINT32_MAX;
 	VkQueue realQueue = VK_NULL_HANDLE;
 	VkQueueFlags queueFlags = VK_QUEUE_FLAG_BITS_MAX_ENUM;
+
+	/// capture only: Trust host to notify us about memory updates? (Propagated from VkDevice)
+	bool explicit_host_updates = false;
 
 	void self_test() const
 	{

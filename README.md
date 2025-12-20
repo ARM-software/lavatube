@@ -183,6 +183,10 @@ one graphics queue family containing two queues. If the host system does not sup
 two queues, work for the second queue will be passed to the first queue. All other
 queue families and queues will be hidden.
 
+LAVATUBE_TRUST_HOST_FLUSHING can be set to 1 to disable active tracking of bindings,
+and instead trust the application to flush all host memory before using it on the GPU
+device.
+
 Lavatube uses separate threads for both compression and writeout to disk with their
 own queues, which may cause you to run out of memory. To disable this, you can set
 the environment variables LAVATUBE_DISABLE_MULTITHREADED_WRITEOUT and

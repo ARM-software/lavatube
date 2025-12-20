@@ -88,6 +88,7 @@ extern uint_fast16_t p__preload;
 extern uint_fast8_t p__compression_type;
 extern uint_fast16_t p__compression_level;
 extern uint_fast8_t p__sandbox_level;
+extern uint_fast8_t p__trust_host_flushes;
 
 /// Logging to be enable as needed by source recompilation
 #define NEVER(_format, ...)

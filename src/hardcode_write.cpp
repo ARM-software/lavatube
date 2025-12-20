@@ -752,6 +752,7 @@ static void trace_pre_vkQueueSubmit2(VkQueue queue, uint32_t submitCount, const 
 	assert(queue != VK_NULL_HANDLE);
 	auto* queue_data = instance.records.VkQueue_index.at(queue);
 	queue_data->self_test();
+	if (queue_data->explicit_host_updates) return;
 
 	instance.memory_mutex.lock();
 	std::unordered_map<VkDeviceMemory, range> ranges_by_memory;
@@ -779,6 +780,7 @@ static void trace_pre_vkQueueSubmit(VkQueue queue, uint32_t submitCount, const V
 	lava_file_writer& writer = instance.file_writer();
 	auto* queue_data = instance.records.VkQueue_index.at(queue);
 	queue_data->self_test();
+	if (queue_data->explicit_host_updates) return;
 
 	instance.memory_mutex.lock();
 	std::unordered_map<VkDeviceMemory, range> ranges_by_memory;
@@ -2109,6 +2111,7 @@ VKAPI_ATTR void VKAPI_CALL trace_vkGetDeviceQueue2(VkDevice device, const VkDevi
 		queue_data->realFamily = realFamily;
 		queue_data->realQueue = *pQueue;
 		queue_data->physicalDevice = device_data->physicalDevice;
+		queue_data->explicit_host_updates = device_data->explicit_host_updates;
 		queue_data->enter_initialized();
 	}
 	auto* queue_data = writer.parent->records.VkQueue_index.at(*pQueue);
@@ -2157,6 +2160,7 @@ VKAPI_ATTR void VKAPI_CALL trace_vkGetDeviceQueue(VkDevice device, uint32_t queu
 		queue_data->realFamily = realFamily;
 		queue_data->realQueue = *pQueue;
 		queue_data->physicalDevice = device_data->physicalDevice;
+		queue_data->explicit_host_updates = device_data->explicit_host_updates;
 		queue_data->enter_initialized();
 	}
 	auto* queue_data = writer.parent->records.VkQueue_index.at(*pQueue);
