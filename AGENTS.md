@@ -23,6 +23,7 @@
 - C++ with tab indentation and Allman braces (opening brace on a new line). Mirror existing spacing and logging patterns.
 - Names are generally lower_snake_case for functions/files; macros and constants stay uppercase.
 - Keep headers and implementations paired in `src/`; avoid introducing extra dependencies without CMake updates.
+- Do not modify generated files in `generated/` directly. First line in a generated file says which script generated it.
 
 ## Testing Guidelines
 - Add new tests under `tests/` (see `container_test.cpp`, `tracing*.cpp` for patterns) and reuse helpers in `tests/common.*`.
@@ -35,4 +36,23 @@
 - Always note test coverage (commands and results)
 
 ## Debugging
-- For troubleshooting, set `LAVATUBE_DEBUG` (1–3) but keep default output quiet in commits.
+- For troubleshooting, set `LAVATUBE_DEBUG` (value from 1 to 3) but keep default output quiet in commits.
+
+## Modifying capture functionality
+- Capture is often also called `write` or `trace` in the code.
+- Capture file IO code is in `src/filewriter.cpp` and higher-level code in `src/write.cpp`.
+- Manually implemented functions are found in `src/hardcode_write.cpp`
+- Capture is often initiated from the script `scripts/lava-capture.py`
+
+## Modifying replay functionality (lava-replay)
+- Capture is often also called `read` in the code.
+- Replay file IO code is in `src/filereader.cpp` and higher-level code in `src/read.cpp`.
+- Manually implemented functions are found in `src/hardcode_read.cpp`
+- SPIRV simulation is handled in `src/execute_commands.cpp`
+- The memory suballocator is in `src/suballocator.cpp`
+- General window management (WSI) code is in `src/window.cpp`
+- The replay binary is built from `src/replay.cpp`
+
+## Modifying post-processing functionality (lava-tool)
+- The post-processing tool uses both capture and replay functionality (as described above).
+- The post-process binary is built from `src/tool.cpp`
