@@ -28,8 +28,8 @@ struct wsi
 #ifdef VK_USE_PLATFORM_WAYLAND_KHR
 	struct
 	{
-		struct wl_display *display = nullptr;
-		struct wl_registry *registry = nullptr;
+		struct wl_display* display = nullptr;
+		struct wl_registry* registry = nullptr;
 	} wayland;
 #endif
 };
@@ -55,7 +55,7 @@ struct LWindow
 		struct wl_registry *registry = nullptr;
 		struct wl_compositor *compositor = nullptr;
 		struct wl_shell *shell = nullptr;
-		struct wl_surface *wl_surface = nullptr;
+		struct wl_surface *surface = nullptr;
 		struct wl_shell_surface *shell_surface = nullptr;
 		struct wl_seat *seat = nullptr;
 		struct wl_pointer *pointer = nullptr;
@@ -324,27 +324,27 @@ VkSurfaceKHR window_create(VkInstance instance, uint32_t index, int32_t x, int32
 #else
 		w.wayland.display = wl_display_connect(nullptr);
 		if (!w.wayland.display) ABORT("Failed to connect to Wayland display server");
-		w.wayland.registry = wl_display_get_registry(m_display);
+		w.wayland.registry = wl_display_get_registry(w.wayland.display);
 		if (!w.wayland.registry) ABORT("Failed to connect to Wayland registry");
 		//wl_registry_add_listener(w.wayland.registry, &vkDisplayWayland::registry_listener, this);
 		wl_display_roundtrip(w.wayland.display);
 		w.wayland.surface = wl_compositor_create_surface(w.wayland.compositor);
-		VkWaylandSurfaceCreateInfoKHR pInfo = {};
-		pInfo.sType = VK_STRUCTURE_TYPE_WAYLAND_SURFACE_CREATE_INFO_KHR;
-		pInfo.pNext = nullptr;
+		VkWaylandSurfaceCreateInfoKHR pInfo = { VK_STRUCTURE_TYPE_WAYLAND_SURFACE_CREATE_INFO_KHR, nullptr };
+		pInfo.display = w.wayland.display;
+		pInfo.surface = w.wayland.surface;
 		pInfo.flags = 0;
-		pInfo.display = (wl_display*)m_context_descriptor.m_user_data[0];
-		pInfo.surface = (wl_surface*)m_context_descriptor.m_user_data[1];
+		VkResult result = wrap_vkCreateWaylandSurfaceKHR(instance, &pInfo, nullptr, &surface);
+		if (result != VK_SUCCESS)
+		{
+			ABORT("Failed to create wayland surface");
+		}
 #endif
 	}
 	else if (context.winsys == "headless")
 	{
-		VkHeadlessSurfaceCreateInfoEXT pInfo = {};
-		pInfo.pNext = nullptr;
-		pInfo.sType = VK_STRUCTURE_TYPE_HEADLESS_SURFACE_CREATE_INFO_EXT;
+		VkHeadlessSurfaceCreateInfoEXT pInfo = { VK_STRUCTURE_TYPE_HEADLESS_SURFACE_CREATE_INFO_EXT, nullptr };
 		pInfo.flags = 0;
-		PFN_vkCreateHeadlessSurfaceEXT hack_vkCreateHeadlessSurfaceEXT = reinterpret_cast<PFN_vkCreateHeadlessSurfaceEXT>(wrap_vkGetInstanceProcAddr(instance,"vkCreateHeadlessSurfaceEXT"));
-		VkResult result = hack_vkCreateHeadlessSurfaceEXT(instance, &pInfo, nullptr, &surface);
+		VkResult result = wrap_vkCreateHeadlessSurfaceEXT(instance, &pInfo, nullptr, &surface);
 		if (result != VK_SUCCESS)
 		{
 			ABORT("Failed to create headless surface");

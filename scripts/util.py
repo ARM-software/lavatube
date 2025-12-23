@@ -134,7 +134,7 @@ ignore_on_read = [ 'vkGetMemoryHostPointerPropertiesEXT', 'vkCreateDebugUtilsMes
 	'vkInvalidateMappedMemoryRanges', 'vkFreeMemory', 'vkGetPhysicalDeviceXcbPresentationSupportKHR', 'vkMapMemory2KHR', 'vkUnmapMemory2KHR',
 	'vkGetImageMemoryRequirements2KHR', 'vkGetBufferMemoryRequirements2KHR', 'vkGetImageSparseMemoryRequirements2KHR', 'vkGetImageMemoryRequirements',
 	'vkGetBufferMemoryRequirements', 'vkGetImageSparseMemoryRequirements', 'vkGetImageMemoryRequirements2', 'vkGetBufferMemoryRequirements2',
-	'vkGetImageSparseMemoryRequirements2', 'vkMapMemory2' ]
+	'vkGetImageSparseMemoryRequirements2', 'vkMapMemory2', 'vkGetPhysicalDeviceWaylandPresentationSupportKHR' ]
 validate_funcs(ignore_on_read)
 # functions we should not call natively when tracing - let pre or post calls handle it
 ignore_on_trace = []
@@ -494,6 +494,8 @@ class parameter(spec.base_parameter):
 		elif self.funcname in ['VkDebugUtilsObjectNameInfoEXT', 'VkDebugUtilsObjectTagInfoEXT', 'vkSetPrivateData', 'vkSetPrivateDataEXT', 'vkGetPrivateData', 'vkGetPrivateDataEXT'] and self.name == 'objectHandle':
 			z.decl('uint64_t', 'objectHandle')
 			z.do('%s = reader.read_handle(DEBUGPARAM("%s"));' % (varname, self.type))
+		elif self.type in ['wl_display', 'wl_surface']:
+			z.do('(void)reader.read_uint64_t();') # ignore it, if we actually replay on wayland, we'll have to regenerate it
 		elif self.type == 'VkAccelerationStructureBuildRangeInfoKHR':
 			assert(self.funcname == 'vkBuildAccelerationStructuresKHR' or self.funcname == 'vkCmdBuildAccelerationStructuresKHR')
 			z.decl(self.type + '**', self.name)
@@ -821,6 +823,8 @@ class parameter(spec.base_parameter):
 			z.do('writer.write_handle(object_data);')
 		elif self.name == 'pNext':
 			z.do('write_extension(writer, (VkBaseOutStructure*)%s);' % varname)
+		elif self.type in ['wl_display', 'wl_surface']:
+			z.do('writer.write_uint64_t((uint64_t)%s);' % varname) # write pointer value so that we can distinguish between different instances of it on replay, if we want to
 		elif self.type == 'VkDeviceOrHostAddressKHR' or self.type == 'VkDeviceOrHostAddressConstKHR':
 			z.do('writer.write_uint64_t(%s.deviceAddress);' % (varname))
 		elif self.type == 'VkAccelerationStructureGeometryDataKHR': # union, requires special handling
