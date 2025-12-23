@@ -522,6 +522,28 @@ class parameter(spec.base_parameter):
 			z.do('%s = debug_report_callback; // hijacking this pointer with our own callback function' % varname)
 		elif self.name == 'pNext':
 			z.do('read_extension(reader, (VkBaseOutStructure**)&%s);' % varname)
+		elif self.type == 'VkDescriptorDataEXT':
+			z.decl('uint8_t', 'opt')
+			z.do('switch (sptr->type)')
+			z.brace_begin()
+			z.do('case VK_DESCRIPTOR_TYPE_SAMPLER: { VkSampler* tmp = reader.pool.allocate<VkSampler>(1); uint32_t index = reader.read_handle(DEBUGPARAM("%s")); *tmp = index_to_VkSampler.at(index); sptr->data.pSampler = tmp; } break;' % self.type)
+			z.do('case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER: opt = reader.read_uint8_t(); if (opt) read_VkDescriptorImageInfo(reader, (VkDescriptorImageInfo*)sptr->data.pCombinedImageSampler); break;')
+			z.do('case VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT: opt = reader.read_uint8_t(); if (opt) read_VkDescriptorImageInfo(reader, (VkDescriptorImageInfo*)sptr->data.pInputAttachmentImage); break;')
+			z.do('case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE: opt = reader.read_uint8_t(); if (opt) read_VkDescriptorImageInfo(reader, (VkDescriptorImageInfo*)sptr->data.pSampledImage); break;')
+			z.do('case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE: opt = reader.read_uint8_t(); if (opt) read_VkDescriptorImageInfo(reader, (VkDescriptorImageInfo*)sptr->data.pStorageImage); break;')
+			z.do('case VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER: opt = reader.read_uint8_t(); if (opt) read_VkDescriptorAddressInfoEXT(reader, (VkDescriptorAddressInfoEXT*)sptr->data.pUniformTexelBuffer); break;')
+			z.do('case VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER: opt = reader.read_uint8_t(); if (opt) read_VkDescriptorAddressInfoEXT(reader, (VkDescriptorAddressInfoEXT*)sptr->data.pStorageTexelBuffer); break;')
+			z.do('case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER: opt = reader.read_uint8_t(); if (opt) read_VkDescriptorAddressInfoEXT(reader, (VkDescriptorAddressInfoEXT*)sptr->data.pUniformBuffer); break;')
+			z.do('case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER: opt = reader.read_uint8_t(); if (opt) read_VkDescriptorAddressInfoEXT(reader, (VkDescriptorAddressInfoEXT*)sptr->data.pStorageBuffer); break;')
+			z.do('case VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR:')
+			z.brace_begin()
+			z.do('uint64_t stored_address = reader.read_uint64_t();')
+			z.do('sptr->data.accelerationStructure = reader.parent->device_address_remapping.translate_address(stored_address);')
+			z.do('ILOG("%s changing device address from %%lu to %%lu", (unsigned long)stored_address, (unsigned long)%s.accelerationStructure);' % (self.funcname, varname))
+			z.brace_end()
+			z.do('break;')
+			z.do('default: ABORT("Unsupported descriptor type for VkDescriptorDataEXT"); break;')
+			z.brace_end()
 		elif self.string_array:
 			len = self.length.split(',')[0]
 			if self.funcname == 'VkInstanceCreateInfo' and self.name == 'ppEnabledExtensionNames':
@@ -816,6 +838,21 @@ class parameter(spec.base_parameter):
 		elif self.funcname in ['VkDebugMarkerObjectNameInfoEXT', 'VkDebugMarkerObjectTagInfoEXT', 'vkDebugReportMessageEXT'] and self.name == 'object':
 			z.do('auto* object_data = debug_object_trackable(writer.parent->records, %sobjectType, %s);' % (owner, varname))
 			z.do('writer.write_handle(object_data);')
+		elif self.type == 'VkDescriptorDataEXT':
+			z.do('switch (sptr->type)')
+			z.brace_begin()
+			z.do('case VK_DESCRIPTOR_TYPE_SAMPLER: { auto* sampler_data = writer.parent->records.VkSampler_index.at(*sptr->data.pSampler); writer.write_handle(sampler_data); } break;')
+			z.do('case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER: writer.write_uint8_t(sptr->data.pCombinedImageSampler != nullptr); if (sptr->data.pCombinedImageSampler) write_VkDescriptorImageInfo(writer, sptr->data.pCombinedImageSampler); break;')
+			z.do('case VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT: writer.write_uint8_t(sptr->data.pInputAttachmentImage != nullptr); if (sptr->data.pInputAttachmentImage) write_VkDescriptorImageInfo(writer, sptr->data.pInputAttachmentImage); break;')
+			z.do('case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE: writer.write_uint8_t(sptr->data.pSampledImage != nullptr); if (sptr->data.pSampledImage) write_VkDescriptorImageInfo(writer, sptr->data.pSampledImage); break;')
+			z.do('case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE: writer.write_uint8_t(sptr->data.pStorageImage != nullptr); if (sptr->data.pStorageImage) write_VkDescriptorImageInfo(writer, sptr->data.pStorageImage); break;')
+			z.do('case VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER: writer.write_uint8_t(sptr->data.pUniformTexelBuffer != nullptr); if (sptr->data.pUniformTexelBuffer) write_VkDescriptorAddressInfoEXT(writer, sptr->data.pUniformTexelBuffer); break;')
+			z.do('case VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER: writer.write_uint8_t(sptr->data.pStorageTexelBuffer != nullptr); if (sptr->data.pStorageTexelBuffer) write_VkDescriptorAddressInfoEXT(writer, sptr->data.pStorageTexelBuffer); break;')
+			z.do('case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER: writer.write_uint8_t(sptr->data.pUniformBuffer != nullptr); if (sptr->data.pUniformBuffer) write_VkDescriptorAddressInfoEXT(writer, sptr->data.pUniformBuffer); break;')
+			z.do('case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER: writer.write_uint8_t(sptr->data.pStorageBuffer != nullptr); if (sptr->data.pStorageBuffer) write_VkDescriptorAddressInfoEXT(writer, sptr->data.pStorageBuffer); break;')
+			z.do('case VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR: writer.write_uint64_t(sptr->data.accelerationStructure); break;')
+			z.do('default: ABORT("Unsupported descriptor type for VkDescriptorDataEXT"); break;')
+			z.brace_end()
 		elif 'CaptureReplayHandle' in self.name:
 			z.do('writer.write_uint64_t((uint64_t)%s);' % varname)
 		elif self.funcname in ['VkDebugUtilsObjectNameInfoEXT', 'VkDebugUtilsObjectTagInfoEXT', 'vkSetPrivateData', 'vkSetPrivateDataEXT', 'vkGetPrivateData', 'vkGetPrivateDataEXT'] and self.name == 'objectHandle':
