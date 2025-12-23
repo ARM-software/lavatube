@@ -13,6 +13,7 @@
 #endif
 #ifdef VK_USE_PLATFORM_WAYLAND_KHR
 #include <wayland-client.h>
+#include <wayland-client-protocol.h>
 #endif
 
 struct wsi
@@ -77,6 +78,42 @@ struct LWindow
 	bool fullscreen = false;
 };
 static std::vector<LWindow> index_to_LWindow;
+
+#ifdef VK_USE_PLATFORM_WAYLAND_KHR
+static void wayland_registry_handler(void* data, struct wl_registry* registry, uint32_t id, const char* interface, uint32_t version)
+{
+	LWindow* w = (LWindow*)data;
+	if (strcmp(interface, wl_compositor_interface.name) == 0)
+	{
+		w->wayland.compositor = (wl_compositor*)wl_registry_bind(registry, id, &wl_compositor_interface, 1);
+	}
+	else if (strcmp(interface, wl_shell_interface.name) == 0)
+	{
+		w->wayland.shell = (wl_shell*)wl_registry_bind(registry, id, &wl_shell_interface, 1);
+	}
+	else if (strcmp(interface, wl_seat_interface.name) == 0)
+	{
+		w->wayland.seat = (wl_seat*)wl_registry_bind(registry, id, &wl_seat_interface, 1);
+	}
+	else if (strcmp(interface, wl_output_interface.name) == 0)
+	{
+		w->wayland.output = (wl_output*)wl_registry_bind(registry, id, &wl_output_interface, 1);
+	}
+	(void)version;
+}
+
+static void wayland_registry_remove(void* data, struct wl_registry* registry, uint32_t id)
+{
+	(void)data;
+	(void)registry;
+	(void)id;
+}
+
+static const struct wl_registry_listener wayland_registry_listener = {
+	wayland_registry_handler,
+	wayland_registry_remove
+};
+#endif
 
 #ifdef VK_USE_PLATFORM_XCB_KHR
 static const char* lavaxcb_strerror(int err)
@@ -326,9 +363,16 @@ VkSurfaceKHR window_create(VkInstance instance, uint32_t index, int32_t x, int32
 		if (!w.wayland.display) ABORT("Failed to connect to Wayland display server");
 		w.wayland.registry = wl_display_get_registry(w.wayland.display);
 		if (!w.wayland.registry) ABORT("Failed to connect to Wayland registry");
-		//wl_registry_add_listener(w.wayland.registry, &vkDisplayWayland::registry_listener, this);
+		wl_registry_add_listener(w.wayland.registry, &wayland_registry_listener, &w);
 		wl_display_roundtrip(w.wayland.display);
+		if (!w.wayland.compositor) ABORT("Failed to bind Wayland compositor");
 		w.wayland.surface = wl_compositor_create_surface(w.wayland.compositor);
+		if (!w.wayland.surface) ABORT("Failed to create Wayland surface");
+		if (w.wayland.shell)
+		{
+			w.wayland.shell_surface = wl_shell_get_shell_surface(w.wayland.shell, w.wayland.surface);
+			if (w.wayland.shell_surface) wl_shell_surface_set_toplevel(w.wayland.shell_surface);
+		}
 		VkWaylandSurfaceCreateInfoKHR pInfo = { VK_STRUCTURE_TYPE_WAYLAND_SURFACE_CREATE_INFO_KHR, nullptr };
 		pInfo.display = w.wayland.display;
 		pInfo.surface = w.wayland.surface;
@@ -336,7 +380,7 @@ VkSurfaceKHR window_create(VkInstance instance, uint32_t index, int32_t x, int32
 		VkResult result = wrap_vkCreateWaylandSurfaceKHR(instance, &pInfo, nullptr, &surface);
 		if (result != VK_SUCCESS)
 		{
-			ABORT("Failed to create wayland surface");
+			ABORT("Failed to create Wayland Vulkan surface object: %s", errorString(result));
 		}
 #endif
 	}

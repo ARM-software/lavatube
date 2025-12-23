@@ -903,6 +903,12 @@ const char* const* instance_extensions(lava_file_reader& reader, uint32_t& len)
 		backing.push_back(VK_KHR_XCB_SURFACE_EXTENSION_NAME);
 	}
 #endif
+#ifdef VK_USE_PLATFORM_XCB_KHR
+	if (strcmp(winsys, "wayland") == 0 && !is_noscreen())
+	{
+		backing.push_back(VK_KHR_WAYLAND_SURFACE_EXTENSION_NAME);
+	}
+#endif
 #ifdef VK_USE_PLATFORM_XLIB_KHR
 	if (strcmp(winsys, "x11") == 0 && !is_noscreen())
 	{
