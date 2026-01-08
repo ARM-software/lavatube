@@ -7,3 +7,5 @@
 [submodule "external/spirv-simulator"]
 	path = external/spirv-simulator
 	url = https://github.com/ARM-software/spirv-simulator
+[submodule "https://github.com/flanglet/kanzi-cpp.git"]
+	url = external/kanzi

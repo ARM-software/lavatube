@@ -1841,7 +1841,12 @@ void trace_post_vkCreateSwapchainKHR(lava_file_writer& writer, VkResult result, 
 		add->format = pCreateInfo->imageFormat;
 		add->initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 		add->currentLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+		add->extent.width = pCreateInfo->imageExtent.width;
+		add->extent.height = pCreateInfo->imageExtent.height;
+		add->extent.depth = 1;
+		add->arrayLayers = pCreateInfo->imageArrayLayers;
 		add->enter_created();
+		add->self_test();
 		DLOG("Image index %u is swapchain image %u", add->index, i);
 	}
 }

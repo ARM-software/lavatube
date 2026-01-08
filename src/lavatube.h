@@ -336,7 +336,7 @@ struct trackedimage : trackedobject
 	void self_test() const
 	{
 		static_assert(offsetof(trackedimage, magic) == 0, "ICD loader magic must be at offset zero!");
-		assert(samples != VK_SAMPLE_COUNT_FLAG_BITS_MAX_ENUM);
+		assert(samples != VK_SAMPLE_COUNT_FLAG_BITS_MAX_ENUM || is_swapchain_image);
 		assert(samples != 0);
 		assert(usage != VK_IMAGE_USAGE_FLAG_BITS_MAX_ENUM);
 		assert(sharingMode != VK_SHARING_MODE_MAX_ENUM);
