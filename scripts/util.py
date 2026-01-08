@@ -1401,6 +1401,11 @@ def load_add_tracking(name):
 				z.do('data.physicalDevice = physicalDevice; // track parentage')
 				z.do('reader.parent->allocator.setup(selected_physical_device);')
 			elif type == 'VkImage':
+				z.do('data.tiling = (lava_tiling)pCreateInfo->tiling;')
+				z.do('data.usage = pCreateInfo->usage;')
+				z.do('data.sharingMode = pCreateInfo->sharingMode;')
+				z.do('data.imageType = pCreateInfo->imageType;')
+				z.do('data.samples = pCreateInfo->samples;')
 				z.do('data.initialLayout = pCreateInfo->initialLayout; // duplicates info stored in json but needed for compatibility with older traces')
 				z.do('data.currentLayout = pCreateInfo->initialLayout;')
 				z.do('data.format = pCreateInfo->format; // as above, might be missing in json')

@@ -100,6 +100,7 @@ void sandbox_level_three()
 	char path[255];
 	memset(path, 0, sizeof(path));
 	const char* exception_path = getcwd(path, sizeof(path));
+	if (!exception_path) ABORT("Failed to get current working directory: %s\n", strerror(errno));
 	sandbox_except_path(ruleset_fd, exception_path, LANDLOCK_ACCESS_FS_WRITE_FILE | LANDLOCK_ACCESS_FS_REMOVE_FILE | LANDLOCK_ACCESS_FS_MAKE_DIR | LANDLOCK_ACCESS_FS_REMOVE_DIR);
 	sandbox_except_path(ruleset_fd, "/dev", LANDLOCK_ACCESS_FS_WRITE_FILE);
 
