@@ -31,8 +31,11 @@ void file_reader::init(int fd, size_t uncompressed_size, size_t uncompressed_tar
 		const uint8_t version = (uint8_t)compressed_data[0];
 		assert(version == 1);
 		compression_algorithm = compressed_data[1];
-		assert(compression_algorithm == LAVATUBE_COMPRESSION_DENSITY || compression_algorithm == LAVATUBE_COMPRESSION_LZ4);
+		assert(compression_algorithm == LAVATUBE_COMPRESSION_DENSITY || compression_algorithm == LAVATUBE_COMPRESSION_LZ4 || compression_algorithm == LAVATUBE_COMPRESSION_UNCOMPRESSED);
+		const size_t header_bytes = strlen(magic_word) + 32;
+		assert(total_left >= header_bytes);
 		compressed_data += 32; // the rest is reserved space
+		total_left -= header_bytes;
 		(void)version;
 		(void)compression_algorithm;
 	}
@@ -109,11 +112,16 @@ void file_reader::decompress_chunk()
 		density_processing_result result = density_decompress((const uint8_t*)compressed_data, compressed_size, destination, estimated_size);
 		if (result.state != DENSITY_STATE_OK) ABORT("Failed to decompress infile - aborting");
 	}
-	else // LZ4
+	else if (compression_algorithm == LAVATUBE_COMPRESSION_LZ4)
 	{
 		int result = LZ4_decompress_safe(compressed_data, (char*)destination, compressed_size, uncompressed_size);
 		if (result < 0) ABORT("Failed to decompress infile - aborting read thread");
 		if ((uint64_t)result != uncompressed_size) ABORT("Failed to decompress the full chunk in infile - aborting read thread");
+	}
+	else // uncompressed
+	{
+		assert(compression_algorithm == LAVATUBE_COMPRESSION_UNCOMPRESSED);
+		memcpy(destination, compressed_data, uncompressed_size);
 	}
 	compressed_data += compressed_size;
 	write_position += uncompressed_size;

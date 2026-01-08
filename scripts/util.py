@@ -1279,6 +1279,7 @@ def save_add_tracking(name):
 			z.do('add->object_type = VK_OBJECT_TYPE_ACCELERATION_STRUCTURE_KHR;')
 		z.do('DLOG2("insert %s into %s index %%u at call=%%d", (unsigned)add->index, (int)writer.current.call);' % (type, name))
 		z.do('add->enter_created();')
+		z.do('add->self_test();')
 		z.do('writer.write_handle(add);')
 		z.brace_end()
 		z.do('else')
