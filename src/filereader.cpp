@@ -188,13 +188,18 @@ void file_reader::stop_measurement(uint64_t& worker, uint64_t& runner)
 	if (r != 0)
 	{
 		ELOG("Failed to get runner thread %u ID: %s", tid, strerror(r));
+		runner = 0;
 	}
 	else if (clock_gettime(id, &stop_runner_cpu_usage) != 0)
 	{
 		ELOG("Failed to get runner thread %u CPU usage: %s", tid, strerror(errno));
+		runner = 0;
 	}
-	assert(stop_runner_cpu_usage.tv_sec >= runner_cpu_usage.tv_sec);
-	runner = diff_timespec(&stop_runner_cpu_usage, &runner_cpu_usage);
+	else
+	{
+		assert(stop_runner_cpu_usage.tv_sec >= runner_cpu_usage.tv_sec);
+		runner = diff_timespec(&stop_runner_cpu_usage, &runner_cpu_usage);
+	}
 
 	if (!multithreaded_read)
 	{
@@ -207,11 +212,16 @@ void file_reader::stop_measurement(uint64_t& worker, uint64_t& runner)
 	{
 		// Read-ahead worker is already done. This is ok, if it stopped during frame range,
 		// we got data in stop_worker_cpu_usage already
+		worker = 0;
 	}
 	else if (clock_gettime(id, &stop_worker_cpu_usage) != 0)
 	{
 		ELOG("Failed to get worker thread %u CPU usage: %s", tid, strerror(errno));
+		worker = 0;
 	}
-	assert(stop_worker_cpu_usage.tv_sec >= worker_cpu_usage.tv_sec);
-	worker = diff_timespec(&stop_worker_cpu_usage, &worker_cpu_usage);
+	else
+	{
+		assert(stop_worker_cpu_usage.tv_sec >= worker_cpu_usage.tv_sec);
+		worker = diff_timespec(&stop_worker_cpu_usage, &worker_cpu_usage);
+	}
 }

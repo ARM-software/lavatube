@@ -936,7 +936,7 @@ static void modify_device_extensions(VkPhysicalDevice physicalDevice) REQUIRES(f
 	device_extension_properties.push_back({VK_EXT_FRAME_BOUNDARY_EXTENSION_NAME, 1});
 	device_extension_properties.push_back({VK_ARM_TRACE_HELPERS_EXTENSION_NAME, 1});
 	device_extension_properties.push_back({VK_ARM_TRACE_DESCRIPTOR_BUFFER_EXTENSION_NAME, 1});
-	device_extension_properties.push_back({VK_ARM_EXPLICIT_HOST_UPDATES_EXTENSION_NAME, 1});
+	//device_extension_properties.push_back({VK_ARM_EXPLICIT_HOST_UPDATES_EXTENSION_NAME, 1});
 	device_extension_properties.push_back({VK_TRACETOOLTEST_TRACE_HELPERS2_EXTENSION_NAME, 1});
 
 	for (const auto &ext : tmp_device_extension_properties)
