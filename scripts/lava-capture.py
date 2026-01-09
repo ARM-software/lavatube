@@ -23,6 +23,7 @@ def args():
 	parser.add_argument('--gpu', dest='gpu', metavar='<gpu>', help='Use the specified GPU for tracing')
 	parser.add_argument('--automate', dest='automate', action='store_true', help='Try to automate the run as much as possible if app supports CBS')
 	parser.add_argument('--no-multithread', dest='nomp', action='store_true', help='Turn off multi-threaded compression and disk writeout (saves memory)')
+	parser.add_argument('--trust-flushing', dest='explicit', action='store_true', help='Trust app to flush modified host memory instead of tracking usage')
 	parser.add_argument('programAndArgs', metavar='<program> [<program args>]', nargs=argparse.REMAINDER, help='Application to capture and any program arguments')
 	return parser
 
@@ -81,6 +82,7 @@ if __name__ == '__main__':
 	if args.debug: os.environ['LAVATUBE_DEBUG'] = args.debug
 	if args.file: os.environ['LAVATUBE_DESTINATION'] = os.path.abspath(args.file)
 	if args.log: os.environ['LAVATUBE_DEBUG_FILE'] = args.log
+	if args.explicit: os.environ['LAVATUBE_TRUST_HOST_FLUSHING'] = '1'
 	if args.layer: os.environ['VK_LAYER_PATH'] = args.layer
 	else: os.environ['VK_LAYER_PATH'] = '/opt/lavatube'
 	if args.nomp:

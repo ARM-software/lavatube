@@ -123,9 +123,11 @@ struct trackedmemory : trackable
 	exposure exposed;
 	/// Native handle of the memory
 	VkDeviceMemory backing = VK_NULL_HANDLE;
-	/// Data structure used to find aliasing objects to make sure we recreate them together again on replay.
+
+	/// Data structure used to track usage of Vulkan objects. We can use this to
+	/// make sure we recreate them together again on replay if they are aliased.
 	/// For now, this only supports 1-to-1 aliasing. Only used during capture.
-	std::multimap<VkDeviceSize, trackedobject*> aliasing;
+	std::multimap<VkDeviceSize, trackedobject*> usage; // do not touch unless you hold the memory mutex
 
 	void bind(trackedobject* obj);
 	void unbind(trackedobject* obj);
@@ -739,8 +741,8 @@ struct trackedframebuffer : trackable
 inline void trackedmemory::bind(trackedobject* obj)
 {
 	// only 1-to-1 aliasing for now
-	auto it = aliasing.find(obj->offset);
-	if (it != aliasing.end()) // we are aliasing some other object
+	auto it = usage.find(obj->offset);
+	if (it != usage.end()) // we are aliasing some other object
 	{
 		trackedobject* other = it->second;
 		if (obj->object_type == VK_OBJECT_TYPE_IMAGE && other->object_type == VK_OBJECT_TYPE_IMAGE)
@@ -759,18 +761,18 @@ inline void trackedmemory::bind(trackedobject* obj)
 		obj->alias_type = other->object_type;
 		obj->alias_index = other->index;
 	}
-	aliasing.insert({obj->offset, obj});
+	usage.insert({obj->offset, obj});
 }
 
 inline void trackedmemory::unbind(trackedobject* obj)
 {
-	auto it = aliasing.find(obj->offset);
-	assert(it != aliasing.end());
-	for (; it != aliasing.end(); ++it)
+	auto it = usage.find(obj->offset);
+	assert(it != usage.end());
+	for (; it != usage.end(); ++it)
 	{
 		if (it->first == obj->offset)
 		{
-			aliasing.erase(it);
+			usage.erase(it);
 			return;
 		}
 	}
