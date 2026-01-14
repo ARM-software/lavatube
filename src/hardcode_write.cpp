@@ -1796,13 +1796,14 @@ void trace_post_vkFlushMappedMemoryRanges(lava_file_writer& writer, VkResult res
 				if (pair.first > v.offset + size) continue; // our beginning is later than its end
 				trackedobject* object_data = pair.second;
 				assert(pair.first == object_data->offset);
-				if (pair.first + object_data->size > pair.first) continue; // its beginning is later than our end
+				if (pair.first + object_data->size <= v.offset) continue; // its beginning is later than our end
 				char* cloneptr = memory_data->clone + object_data->offset;
 				char* changedptr = memory_data->ptr + object_data->offset - memory_data->offset;
-				uint64_t start = std::max<uint64_t>(pair.first, v.offset);
-				uint64_t end = std::min<uint64_t>(pair.first + object_data->size, v.offset + size);
+				uint64_t start = std::max<uint64_t>(object_data->offset, v.offset) - object_data->offset;
+				uint64_t end = std::min<uint64_t>(object_data->offset + object_data->size, v.offset + size) - object_data->offset;
 				uint64_t written = write_out_object(writer, device_data, object_data, cloneptr, changedptr, start, end - start);
-				ILOG("vkFlushMappedMemoryRanges[%u] from [%u] %lu to %lu", i, (unsigned)object_data->index, (unsigned long)start, (unsigned long)end);
+				ILOG("vkFlushMappedMemoryRanges[%u] flushing %s[%u] obj(%lu to %lu) object memory offset=%lu object size=%lu flush(off=%u, size=%u)", i, pretty_print_VkObjectType(object_data->object_type),
+				     (unsigned)object_data->index, (unsigned long)start, (unsigned long)end, (unsigned long)object_data->offset, (unsigned long)object_data->size, (unsigned)v.offset, (unsigned)v.size);
 			}
 		}
 	}

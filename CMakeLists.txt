@@ -336,6 +336,12 @@ add_test(NAME trace_test_remap_replay COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-r
 add_test(NAME trace_test_remap_validate COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-tool -V tracing_remap.vk)
 add_test(NAME trace_test_remap_validate_remap COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-tool -V -r tracing_remap.vk)
 
+internal_test(tracing_buffers)
+add_test(NAME trace_test_buffers_replay COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -V tracing_buffers.vk)
+set_tests_properties(trace_test_buffers_replay PROPERTIES FIXTURES_REQUIRED tracing_buffers)
+add_test(NAME trace_test_buffers_validate COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-tool -V tracing_buffers.vk)
+set_tests_properties(trace_test_buffers_validate PROPERTIES FIXTURES_REQUIRED tracing_buffers)
+
 add_executable(write1 tests/write1.cpp)
 target_include_directories(write1 ${COMMON_INCLUDE})
 target_link_libraries(write1 ${COMMON_LIBRARIES} lavatube)
