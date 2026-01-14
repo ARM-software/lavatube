@@ -87,37 +87,7 @@ static void replay_thread(int thread_id)
 	uint8_t instrtype;
 	while ((instrtype = t.step()))
 	{
-		if (instrtype == PACKET_VULKAN_API_CALL)
-		{
-			t.read_apicall();
-		}
-		else if (instrtype == PACKET_THREAD_BARRIER)
-		{
-			t.read_barrier();
-		}
-		else if (instrtype == PACKET_IMAGE_UPDATE)
-		{
-			DLOG2("Update image packet on thread %d", thread_id);
-			const uint32_t device_index = t.read_handle(DEBUGPARAM("VkDevice"));
-			const uint32_t image_index = t.read_handle(DEBUGPARAM("VkImage"));
-			image_update(t, device_index, image_index);
-		}
-		else if (instrtype == PACKET_BUFFER_UPDATE)
-		{
-			DLOG2("Update buffer packet on thread %d", thread_id);
-			const uint32_t device_index = t.read_handle(DEBUGPARAM("VkDevice"));
-			const uint32_t buffer_index = t.read_handle(DEBUGPARAM("VkBuffer"));
-			buffer_update(t, device_index, buffer_index);
-		}
-		else if (instrtype == PACKET_TENSOR_UPDATE)
-		{
-			DLOG2("Update tensor packet on thread %d", thread_id);
-			const uint32_t device_index = t.read_handle(DEBUGPARAM("VkDevice"));
-			const uint32_t tensor_index = t.read_handle(DEBUGPARAM("VkTensorARM"));
-			tensor_update(t, device_index, tensor_index);
-		}
-		t.device = VK_NULL_HANDLE;
-		t.physicalDevice = VK_NULL_HANDLE;
+		switchboard_packet(instrtype, t);
 	}
 }
 

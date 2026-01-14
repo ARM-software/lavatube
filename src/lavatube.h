@@ -34,12 +34,19 @@ using lava_trace_func = PFN_vkVoidFunction;
 
 enum
 {
+	PACKET_FLAG_HAS_PNEXT = 0x1,
+};
+
+enum
+{
 	PACKET_VULKAN_API_CALL = 2,
 	PACKET_THREAD_BARRIER = 3,
 	PACKET_IMAGE_UPDATE = 4,
 	PACKET_BUFFER_UPDATE = 5,
 	PACKET_VULKANSC_API_CALL = 6,
 	PACKET_TENSOR_UPDATE = 7,
+	PACKET_IMAGE_UPDATE2 = 8,
+	PACKET_BUFFER_UPDATE2 = 9,
 };
 
 enum lava_tiling // generalize memory tiling

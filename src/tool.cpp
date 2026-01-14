@@ -90,28 +90,7 @@ static void replay_thread(lava_reader* replayer, int thread_id)
 	}
 	while ((instrtype = t.step()))
 	{
-		if (instrtype == PACKET_VULKAN_API_CALL)
-		{
-			t.read_apicall();
-		}
-		else if (instrtype == PACKET_THREAD_BARRIER)
-		{
-			t.read_barrier();
-		}
-		else if (instrtype == PACKET_IMAGE_UPDATE)
-		{
-			const uint32_t device_index = t.read_handle(DEBUGPARAM("VkDevice"));
-			const uint32_t image_index = t.read_handle(DEBUGPARAM("VkImage"));
-			image_update(t, device_index, image_index);
-		}
-		else if (instrtype == PACKET_BUFFER_UPDATE)
-		{
-			const uint32_t device_index = t.read_handle(DEBUGPARAM("VkDevice"));
-			const uint32_t buffer_index = t.read_handle(DEBUGPARAM("VkBuffer"));
-			buffer_update(t, device_index, buffer_index);
-		}
-		t.device = VK_NULL_HANDLE;
-		t.physicalDevice = VK_NULL_HANDLE;
+		switchboard_packet(instrtype, t);
 		t.self_test();
 	}
 }
@@ -264,7 +243,7 @@ int main(int argc, char **argv)
 		replayer.run = false; // do not actually run anything
 		replayer.set_frames(start, end);
 		replayer.init(filename_input, heap_size);
-		replayer.remap = validate_remap;
+		replayer.remap_scan = validate_remap;
 
 		// Add callbacks
 		vkCreateShaderModule_callbacks.push_back(callback_vkCreateShaderModule);
@@ -299,7 +278,7 @@ int main(int argc, char **argv)
 		replayer.run = false; // do not actually run anything
 		replayer.init(filename_input, heap_size);
 		replayer.set_frames(start, end);
-		replayer.remap = false;
+		replayer.remap_scan = false;
 
 		// Add in the rewrite queue from the previous run
 		replayer.rewrite_queue = rewrite_queue_copy;

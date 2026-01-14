@@ -142,6 +142,33 @@ static void trace()
 
 static int buffer_count = 0;
 
+static void test_buffer(const trackedbuffer& buffer_data)
+{
+	if (buffer_count == 0) // first test: should be no addresses
+	{
+		assert(buffer_data.candidates.size() == 0);
+	}
+	else if (buffer_count == 1) // second test: should be one address
+	{
+		assert(buffer_data.candidates.size() == 1);
+		assert(buffer_data.candidate_lookup.size() == 1);
+	}
+	else if (buffer_count == 2) // third test: should be two addresses
+	{
+		assert(buffer_data.candidates.size() == 2);
+	}
+	else if (buffer_count == 3) // fourth test: should still only be two addresses
+	{
+		assert(buffer_data.candidates.size() == 2);
+	}
+	else if (buffer_count == 4) // fifth test: should be no addresses again
+	{
+		assert(buffer_data.candidates.size() == 0);
+		assert(buffer_data.candidate_lookup.size() == 0);
+	}
+	buffer_count++;
+}
+
 static bool getnext(lava_file_reader& t)
 {
 	bool done = false;
@@ -179,35 +206,21 @@ static bool getnext(lava_file_reader& t)
 			buffer_count++;
 		}
 	}
-	else if (instrtype == PACKET_BUFFER_UPDATE)
+	else if (instrtype == PACKET_IMAGE_UPDATE || instrtype == PACKET_IMAGE_UPDATE2)
 	{
-		const uint32_t device_index = t.read_handle(DEBUGPARAM("VkDevice"));
-		const uint32_t buffer_index = t.read_handle(DEBUGPARAM("VkBuffer"));
-		buffer_update(t, device_index, buffer_index);
+		assert(false);
+		update_image_packet(instrtype, t);
+	}
+	else if (instrtype == PACKET_BUFFER_UPDATE || instrtype == PACKET_BUFFER_UPDATE2)
+	{
+		uint32_t buffer_index = update_buffer_packet(instrtype, t);
 		trackedbuffer& buffer_data = VkBuffer_index.at(buffer_index);
-		if (buffer_count == 0) // first test: should be no addresses
-		{
-			assert(buffer_data.candidates.size() == 0);
-		}
-		else if (buffer_count == 1) // second test: should be one address
-		{
-			assert(buffer_data.candidates.size() == 1);
-			assert(buffer_data.candidate_lookup.size() == 1);
-		}
-		else if (buffer_count == 2) // third test: should be two addresses
-		{
-			assert(buffer_data.candidates.size() == 2);
-		}
-		else if (buffer_count == 3) // fourth test: should still only be two addresses
-		{
-			assert(buffer_data.candidates.size() == 2);
-		}
-		else if (buffer_count == 4) // fifth test: should be no addresses again
-		{
-			assert(buffer_data.candidates.size() == 0);
-			assert(buffer_data.candidate_lookup.size() == 0);
-		}
-		buffer_count++;
+		test_buffer(buffer_data);
+	}
+	else if (instrtype == PACKET_TENSOR_UPDATE)
+	{
+		assert(false);
+		update_tensor_packet(instrtype, t);
 	}
 	else if (instrtype == PACKET_THREAD_BARRIER)
 	{
@@ -221,7 +234,7 @@ static bool getnext(lava_file_reader& t)
 static void retrace()
 {
 	lava_reader r(TEST_NAME_1 ".vk");
-	r.remap = true;
+	r.remap_scan = true;
 	lava_file_reader& t = r.file_reader(0);
 	int remaining = r.allocator.self_test();
 	assert(remaining == 0); // there should be nothing now

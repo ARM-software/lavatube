@@ -186,11 +186,19 @@ static bool getnext(lava_file_reader& t)
 		const uint16_t apicall = t.read_apicall();
 		if (apicall == 1) done = true; // is vkDestroyInstance
 	}
-	else if (instrtype == PACKET_BUFFER_UPDATE)
+	else if (instrtype == PACKET_IMAGE_UPDATE || instrtype == PACKET_IMAGE_UPDATE2)
 	{
-		const uint32_t device_index = t.read_handle(DEBUGPARAM("VkDevice"));
-		const uint32_t buffer_index = t.read_handle(DEBUGPARAM("VkBuffer"));
-		buffer_update(t, device_index, buffer_index);
+		assert(false);
+		update_image_packet(instrtype, t);
+	}
+	else if (instrtype == PACKET_BUFFER_UPDATE || instrtype == PACKET_BUFFER_UPDATE2)
+	{
+		update_buffer_packet(instrtype, t);
+	}
+	else if (instrtype == PACKET_TENSOR_UPDATE)
+	{
+		assert(false);
+		update_tensor_packet(instrtype, t);
 	}
 	else if (instrtype == PACKET_THREAD_BARRIER)
 	{

@@ -104,11 +104,19 @@ static bool getnext(lava_file_reader& t)
 	{
 		t.read_barrier();
 	}
-	else if (instrtype == PACKET_BUFFER_UPDATE)
+	else if (instrtype == PACKET_IMAGE_UPDATE || instrtype == PACKET_IMAGE_UPDATE2)
 	{
-		const uint32_t device_index = t.read_handle(DEBUGPARAM("VkDevice"));
-		const uint32_t buffer_index = t.read_handle(DEBUGPARAM("VkBuffer"));
-		buffer_update(t, device_index, buffer_index);
+		assert(false);
+		update_image_packet(instrtype, t);
+	}
+	else if (instrtype == PACKET_BUFFER_UPDATE || instrtype == PACKET_BUFFER_UPDATE2)
+	{
+		update_buffer_packet(instrtype, t);
+	}
+	else if (instrtype == PACKET_TENSOR_UPDATE)
+	{
+		assert(false);
+		update_tensor_packet(instrtype, t);
 	}
 	else if (instrtype != 0) ABORT("Unexpected packet type %d in thread %d", (int)instrtype, (int)t.thread_index());
 	t.parent->allocator.self_test();

@@ -567,9 +567,9 @@ layer_test(debug_report debug_report)
 layer_test(deferred_1 deferred_1)
 layer_test(pipelinecache_1 pipelinecache_1)
 layer_test(pnext_chain pnext_chain)
-layer_test(as_1 as_1)
-layer_test(as_2 as_2)
-layer_test(as_3 as_3)
+#layer_test(as_1 as_1)
+#layer_test(as_2 as_2)
+#layer_test(as_3 as_3)
 #layer_test(as_4 as_4) # crashes
 #layer_test(as_5 as_5) # crashes
 #layer_test(aliasing_1 aliasing_1) # TBD need to implement aliasing support

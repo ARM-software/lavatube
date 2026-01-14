@@ -664,17 +664,20 @@ static uint64_t write_out_object(lava_file_writer& writer, const auto* device_da
 {
 	switch (object_data->object_type)
 	{
-	case VK_OBJECT_TYPE_IMAGE: writer.write_uint8_t((uint8_t)PACKET_IMAGE_UPDATE); break;
-	case VK_OBJECT_TYPE_BUFFER: writer.write_uint8_t((uint8_t)PACKET_BUFFER_UPDATE); break;
+	case VK_OBJECT_TYPE_IMAGE: writer.write_uint8_t((uint8_t)PACKET_IMAGE_UPDATE2); break;
+	case VK_OBJECT_TYPE_BUFFER: writer.write_uint8_t((uint8_t)PACKET_BUFFER_UPDATE2); break;
 	case VK_OBJECT_TYPE_TENSOR_ARM: writer.write_uint8_t((uint8_t)PACKET_TENSOR_UPDATE); break;
 	default: assert(false); break;
 	}
 	writer.write_handle(device_data);
 	writer.write_handle(object_data);
+	uint64_t* sizeptr = writer.write_later_uint64_t(); // locks write chunks
+	writer.write_later_uint16_t(0); // flags
 	uint64_t written = writer.write_patch(cloneptr, changedptr, offset, size);
 	object_data->updates++;
 	object_data->written += written;
-	writer.thaw();
+	*sizeptr = written + 2; // includes size of flags and anything beyond until the end of our packet
+	writer.thaw(); // releases write chunks again
 	return written;
 }
 
@@ -738,7 +741,7 @@ static void memory_update(lava_file_writer& writer, trackedqueue* queue_data, co
 					      object_data->index, r.first, r.last, r2.first, r2.last, v.first, v.last, memory_data->exposed.span().first, memory_data->exposed.span().last,
 					      (unsigned long)object_data->written, memory_data->index, binding_offset, binding_size, memory_data->ptr);
 				}
-				NEVER("%s(%u) offset=%u size=%u memory=%u(total size=%u) written=%u scanned=%u cmdbuf=%u source=%d", pretty_print_VkObjectType(object_data->type), (unsigned)object_data->index, (unsigned)object_data->offset, (unsigned)object_data->size, memory_data->index, (unsigned)memory_data->allocationSize, (unsigned)written, (unsigned)scanned, cmdbuf_data->index, (int)object_data->source);
+				NEVER("%s(%u) offset=%u size=%u memory=%u(total size=%u) written=%u scanned=%u cmdbuf=%u source=%d", pretty_print_VkObjectType(object_data->object_type), (unsigned)object_data->index, (unsigned)object_data->offset, (unsigned)object_data->size, memory_data->index, (unsigned)memory_data->allocationSize, (unsigned)written, (unsigned)scanned, cmdbuf_data->index, (int)object_data->source);
 			}
 		}
 
@@ -1790,9 +1793,10 @@ void trace_post_vkFlushMappedMemoryRanges(lava_file_writer& writer, VkResult res
 		{
 			for (auto& pair : memory_data->usage)
 			{
-				if (pair.first > v.offset + size) continue;
+				if (pair.first > v.offset + size) continue; // our beginning is later than its end
 				trackedobject* object_data = pair.second;
-				if (pair.first + object_data->size > pair.first) continue;
+				assert(pair.first == object_data->offset);
+				if (pair.first + object_data->size > pair.first) continue; // its beginning is later than our end
 				char* cloneptr = memory_data->clone + object_data->offset;
 				char* changedptr = memory_data->ptr + object_data->offset - memory_data->offset;
 				uint64_t start = std::max<uint64_t>(pair.first, v.offset);

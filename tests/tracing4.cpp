@@ -413,6 +413,21 @@ static void trace_4()
 	test_done(vulkan);
 }
 
+static void test_buffer(lava_file_reader& t, uint32_t device_index, uint32_t buffer_index)
+{
+	VkDevice device = index_to_VkDevice.at(device_index);
+	assert(buffer_index % 2 == 0); // every second buffer is target, which is off-limits
+	suballoc_location loc = t.parent->allocator.find_buffer_memory(buffer_index);
+	assert(loc.size >= buffer_size);
+	char* ptr = nullptr;
+	VkResult result = wrap_vkMapMemory(device, loc.memory, loc.offset, loc.size, 0, (void**)&ptr);
+	assert(result == VK_SUCCESS);
+	uint32_t changed = t.read_patch(ptr, loc.size);
+	if (changed == 0) spurious_checks++;
+	assert(changed == buffer_size || changed == 0);
+	wrap_vkUnmapMemory(device, loc.memory);
+}
+
 static bool getnext(lava_file_reader& t)
 {
 	const uint8_t instrtype = t.step();
@@ -431,25 +446,27 @@ static bool getnext(lava_file_reader& t)
 	{
 		t.read_barrier();
 	}
-	else if (instrtype == PACKET_IMAGE_UPDATE)
+	else if (instrtype == PACKET_IMAGE_UPDATE || instrtype == PACKET_IMAGE_UPDATE2)
 	{
 		assert(false); // should not happen here!
+		update_image_packet(instrtype, t);
 	}
-	else if (instrtype == PACKET_BUFFER_UPDATE)
+	else if (instrtype == PACKET_BUFFER_UPDATE || instrtype == PACKET_BUFFER_UPDATE2)
 	{
+		DLOG2("Update buffer packet on thread %d", t.thread_index());
 		const uint32_t device_index = t.read_handle(DEBUGPARAM("VkDevice"));
 		const uint32_t buffer_index = t.read_handle(DEBUGPARAM("VkBuffer"));
-		VkDevice device = index_to_VkDevice.at(device_index);
-		assert(buffer_index % 2 == 0); // every second buffer is target, which is off-limits
-		suballoc_location loc = t.parent->allocator.find_buffer_memory(buffer_index);
-		assert(loc.size >= buffer_size);
-		char* ptr = nullptr;
-		VkResult result = wrap_vkMapMemory(device, loc.memory, loc.offset, loc.size, 0, (void**)&ptr);
-		assert(result == VK_SUCCESS);
-		uint32_t changed = t.read_patch(ptr, loc.size);
-		if (changed == 0) spurious_checks++;
-		assert(changed == buffer_size || changed == 0);
-		wrap_vkUnmapMemory(device, loc.memory);
+		if (instrtype == PACKET_BUFFER_UPDATE2)
+		{
+			(void)t.read_uint64_t();
+			(void)t.read_uint16_t();
+		}
+		test_buffer(t, device_index, buffer_index);
+	}
+	else if (instrtype == PACKET_TENSOR_UPDATE)
+	{
+		assert(false);
+		update_tensor_packet(instrtype, t);
 	}
 	else assert(false);
 	return true;

@@ -78,7 +78,7 @@ public:
 	std::list<address_rewrite> rewrite_queue;
 
 	/// Are we currently looking for remap and rewrite candidates?
-	bool remap = false;
+	bool remap_scan = false;
 
 	/// Current global frame (only use for logging)
 	std::atomic_int global_frame{ 0 };
@@ -143,7 +143,8 @@ public:
 	inline void read_barrier();
 	uint16_t read_apicall();
 
-	uint32_t read_patch_remapping(char* buf, uint64_t maxsize, trackedbuffer& buffer_data)
+	/// Read patch update while scanning for remap candidates
+	uint32_t read_patch_scanning(char* buf, uint64_t maxsize, trackedbuffer& buffer_data)
 	{
 		char* ptr = buf;
 		uint32_t offset;

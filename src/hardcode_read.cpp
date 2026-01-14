@@ -1611,7 +1611,7 @@ VKAPI_ATTR void retrace_vkUpdateBufferTRACETOOLTEST(lava_file_reader& reader)
 	// Act
 	char* ptr = mem_map(reader, device, loc);
 	memcpy(ptr, info.pData, info.dataSize);
-	if (reader.parent->remap)
+	if (reader.parent->remap_scan)
 	{
 		reader.parent->find_address_candidates(tbuf, info.dataSize, info.pData, reader.current);
 		if (ar) assert(tbuf.candidates.size() >= ar->count);
@@ -2361,37 +2361,111 @@ void retrace_vkGetPhysicalDeviceXlibPresentationSupportKHR(lava_file_reader& rea
 
 // --- read helpers : legacy code ---
 
-void image_update(lava_file_reader& reader, uint32_t device_index, uint32_t image_index)
+void image_update(lava_file_reader& reader, uint32_t device_index, uint32_t image_index, uint64_t size, const VkBaseOutStructure* sptr)
 {
 	suballoc_location loc = reader.parent->allocator.find_image_memory(image_index);
 	DLOG2("image update idx=%u flush=%s init=%s size=%lu", image_index, loc.needs_flush ? "yes" : "no", loc.needs_init ? "yes" : "no", (unsigned long)loc.size);
+	assert(sptr == nullptr);
 	VkDevice device = index_to_VkDevice.at(device_index);
 	char* ptr = mem_map(reader, device, loc);
 	int32_t changed = reader.read_patch(ptr, loc.size);
 	mem_unmap(reader, device, loc, nullptr, ptr);
 }
 
-void buffer_update(lava_file_reader& reader, uint32_t device_index, uint32_t buffer_index)
+void buffer_update(lava_file_reader& reader, uint32_t device_index, uint32_t buffer_index, uint64_t size, const VkBaseOutStructure* sptr)
 {
 	suballoc_location loc = reader.parent->allocator.find_buffer_memory(buffer_index);
 	DLOG2("buffer update idx=%u flush=%s init=%s size=%lu", buffer_index, loc.needs_flush ? "yes" : "no", loc.needs_init ? "yes" : "no", (unsigned long)loc.size);
+	assert(sptr == nullptr || sptr->sType == VK_STRUCTURE_TYPE_DEVICE_ADDRESS_OFFSETS_ARM);
 	VkDevice device = index_to_VkDevice.at(device_index);
 	char* ptr = mem_map(reader, device, loc);
 	int32_t changed = 0;
-	if (!reader.parent->remap) reader.read_patch(ptr, loc.size);
-	else reader.read_patch_remapping(ptr, loc.size, VkBuffer_index.at(buffer_index));
+	if (reader.parent->remap_scan) reader.read_patch_scanning(ptr, loc.size, VkBuffer_index.at(buffer_index));
+	//else if (sptr) TBD implement variant of read_patch for use here that actually remaps identified pointer values
+	else reader.read_patch(ptr, loc.size);
 	mem_unmap(reader, device, loc, nullptr, ptr);
 }
 
-void tensor_update(lava_file_reader& reader, uint32_t device_index, uint32_t tensor_index)
+void tensor_update(lava_file_reader& reader, uint32_t device_index, uint32_t tensor_index, uint64_t size, const VkBaseOutStructure* sptr)
 {
 	suballoc_location loc = reader.parent->allocator.find_tensor_memory(tensor_index);
 	DLOG2("tensor update idx=%u flush=%s init=%s size=%lu", tensor_index, loc.needs_flush ? "yes" : "no", loc.needs_init ? "yes" : "no", (unsigned long)loc.size);
+	assert(sptr == nullptr);
 	VkDevice device = index_to_VkDevice.at(device_index);
 	char* ptr = mem_map(reader, device, loc);
 	int32_t changed = 0;
 	reader.read_patch(ptr, loc.size);
 	mem_unmap(reader, device, loc, nullptr, ptr);
+}
+
+static inline int64_t read_version2_packet(lava_file_reader& reader, VkBaseOutStructure** sptr)
+{
+	const uint64_t size = reader.read_uint64_t();
+	const uint16_t flags = reader.read_uint16_t();
+	if (flags & PACKET_FLAG_HAS_PNEXT) read_extension(reader, sptr);
+	else assert(flags == 0);
+	return size;
+}
+
+uint32_t update_image_packet(uint8_t instrtype, lava_file_reader& reader)
+{
+	DLOG2("Update image packet (%d) on thread %d", (int)instrtype, reader.thread_index());
+	const uint32_t device_index = reader.read_handle(DEBUGPARAM("VkDevice"));
+	const uint32_t image_index = reader.read_handle(DEBUGPARAM("VkImage"));
+	VkBaseOutStructure* sptr = nullptr;
+	uint64_t size = 0;
+	if (instrtype == PACKET_IMAGE_UPDATE2) size = read_version2_packet(reader, &sptr);
+	image_update(reader, device_index, image_index, size, sptr);
+	return image_index;
+}
+
+uint32_t update_buffer_packet(uint8_t instrtype, lava_file_reader& reader)
+{
+	DLOG2("Update buffer packet (%d) on thread %d", (int)instrtype, reader.thread_index());
+	const uint32_t device_index = reader.read_handle(DEBUGPARAM("VkDevice"));
+	const uint32_t buffer_index = reader.read_handle(DEBUGPARAM("VkBuffer"));
+	VkBaseOutStructure* sptr = nullptr;
+	uint64_t size = 0;
+	if (instrtype == PACKET_BUFFER_UPDATE2) size = read_version2_packet(reader, &sptr);
+	buffer_update(reader, device_index, buffer_index, size, sptr);
+	return buffer_index;
+}
+
+uint32_t update_tensor_packet(uint8_t instrtype, lava_file_reader& reader)
+{
+	DLOG2("Update tensor packet (%d) on thread %d", (int)instrtype, reader.thread_index());
+	const uint32_t device_index = reader.read_handle(DEBUGPARAM("VkDevice"));
+	const uint32_t tensor_index = reader.read_handle(DEBUGPARAM("VkTensorARM"));
+	VkBaseOutStructure* sptr = nullptr;
+	const uint64_t size = read_version2_packet(reader, &sptr);
+	tensor_update(reader, device_index, tensor_index, size, sptr);
+	return tensor_index;
+}
+
+void switchboard_packet(uint8_t instrtype, lava_file_reader& reader)
+{
+	if (instrtype == PACKET_VULKAN_API_CALL)
+	{
+		reader.read_apicall();
+	}
+	else if (instrtype == PACKET_THREAD_BARRIER)
+	{
+		reader.read_barrier();
+	}
+	else if (instrtype == PACKET_IMAGE_UPDATE || instrtype == PACKET_IMAGE_UPDATE2)
+	{
+		update_image_packet(instrtype, reader);
+	}
+	else if (instrtype == PACKET_BUFFER_UPDATE || instrtype == PACKET_BUFFER_UPDATE2)
+	{
+		update_buffer_packet(instrtype, reader);
+	}
+	else if (instrtype == PACKET_TENSOR_UPDATE)
+	{
+		update_tensor_packet(instrtype, reader);
+	}
+	reader.device = VK_NULL_HANDLE;
+	reader.physicalDevice = VK_NULL_HANDLE;
 }
 
 // -- terminate everything cleanly
