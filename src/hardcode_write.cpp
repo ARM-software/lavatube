@@ -513,11 +513,14 @@ static void trace_post_vkCmdBindDescriptorSets2(lava_file_writer& writer, VkComm
 	trace_post_vkCmdBindDescriptorSets2KHR(writer, commandBuffer, pBindDescriptorSetsInfo);
 }
 
-static void handle_VkWriteDescriptorSets(lava_file_writer& writer, uint32_t descriptorWriteCount, const VkWriteDescriptorSet* pDescriptorWrites, bool clear)
+static void handle_VkWriteDescriptorSets(lava_file_writer& writer, uint32_t descriptorWriteCount, const VkWriteDescriptorSet* pDescriptorWrites, bool clear, bool push)
 {
+	trackedcmdbuffer_trace* commandbuffer_data = push ? writer.parent->records.VkCommandBuffer_index.at(writer.commandBuffer) : nullptr;
+
 	for (unsigned i = 0; i < descriptorWriteCount; i++)
 	{
 		const VkDescriptorType type = pDescriptorWrites[i].descriptorType;
+		if (push) continue; // nothing to clear
 		auto* tds = writer.parent->records.VkDescriptorSet_index.at(pDescriptorWrites[i].dstSet);
 		// TBD I do not think this is correct. We are allowed to keep descriptor state for bindings not touched here from a previous call.
 		// Not sure how to handle this well, and not seen any content where this breaks anything, but should fix it...
@@ -526,7 +529,8 @@ static void handle_VkWriteDescriptorSets(lava_file_writer& writer, uint32_t desc
 	for (unsigned i = 0; i < descriptorWriteCount; i++)
 	{
 		const VkDescriptorType type = pDescriptorWrites[i].descriptorType;
-		auto* tds = writer.parent->records.VkDescriptorSet_index.at(pDescriptorWrites[i].dstSet);
+		trackeddescriptorset_trace* tds = nullptr;
+		if (!push) tds = writer.parent->records.VkDescriptorSet_index.at(pDescriptorWrites[i].dstSet);
 
 		switch (type)
 		{
@@ -540,7 +544,8 @@ static void handle_VkWriteDescriptorSets(lava_file_writer& writer, uint32_t desc
 				if (pDescriptorWrites[i].pImageInfo[j].imageView == VK_NULL_HANDLE) continue;
 				auto* imageview_data = writer.parent->records.VkImageView_index.at(pDescriptorWrites[i].pImageInfo[j].imageView);
 				auto* image_data = writer.parent->records.VkImage_index.at(imageview_data->image);
-				tds->touch(image_data, 0, image_data->size, __LINE__);
+				if (push) commandbuffer_data->touch(image_data, 0, image_data->size, __LINE__);
+				else tds->touch(image_data, 0, image_data->size, __LINE__);
 			}
 			break;
 		case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
@@ -551,14 +556,15 @@ static void handle_VkWriteDescriptorSets(lava_file_writer& writer, uint32_t desc
 				auto* buffer_data = writer.parent->records.VkBuffer_index.at(pDescriptorWrites[i].pBufferInfo[j].buffer);
 				VkDeviceSize size = pDescriptorWrites[i].pBufferInfo[j].range;
 				if (size == VK_WHOLE_SIZE) size = buffer_data->size - pDescriptorWrites[i].pBufferInfo[j].offset;
-				tds->touch(buffer_data, pDescriptorWrites[i].pBufferInfo[j].offset, size, __LINE__);
+				if (push) commandbuffer_data->touch(buffer_data, pDescriptorWrites[i].pBufferInfo[j].offset, size, __LINE__);
+				else tds->touch(buffer_data, pDescriptorWrites[i].pBufferInfo[j].offset, size, __LINE__);
 			}
 			break;
 		case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC:
 		case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC:
 			for (unsigned j = 0; j < pDescriptorWrites[i].descriptorCount; j++)
 			{
-				tds->dynamic_buffers.push_back(pDescriptorWrites[i].pBufferInfo[j]);
+				if (!push) tds->dynamic_buffers.push_back(pDescriptorWrites[i].pBufferInfo[j]);
 			}
 			break;
 		case VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER:
@@ -568,7 +574,8 @@ static void handle_VkWriteDescriptorSets(lava_file_writer& writer, uint32_t desc
 				if (pDescriptorWrites[i].pTexelBufferView[j] == VK_NULL_HANDLE) continue;
 				auto* bufferview_data = writer.parent->records.VkBufferView_index.at(pDescriptorWrites[i].pTexelBufferView[j]);
 				auto* buffer_data = writer.parent->records.VkBuffer_index.at(bufferview_data->buffer);
-				tds->touch(buffer_data, bufferview_data->offset, bufferview_data->range, __LINE__);
+				if (push) commandbuffer_data->touch(buffer_data, bufferview_data->offset, bufferview_data->range, __LINE__);
+				else tds->touch(buffer_data, bufferview_data->offset, bufferview_data->range, __LINE__);
 			}
 			break;
 		case VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK: // Provided by VK_VERSION_1_3
@@ -612,17 +619,17 @@ static void handle_VkWriteDescriptorSets(lava_file_writer& writer, uint32_t desc
 
 static void trace_post_vkCmdPushDescriptorSetKHR(lava_file_writer& writer, VkCommandBuffer commandBuffer, VkPipelineBindPoint pipelineBindPoint, VkPipelineLayout layout, uint32_t set, uint32_t descriptorWriteCount, const VkWriteDescriptorSet* pDescriptorWrites)
 {
-	handle_VkWriteDescriptorSets(writer, descriptorWriteCount, pDescriptorWrites, false);
+	handle_VkWriteDescriptorSets(writer, descriptorWriteCount, pDescriptorWrites, false, true);
 }
 
 static void trace_post_vkCmdPushDescriptorSet2KHR(lava_file_writer& writer, VkCommandBuffer commandBuffer, const VkPushDescriptorSetInfoKHR* pPushDescriptorSetInfo)
 {
-	handle_VkWriteDescriptorSets(writer, pPushDescriptorSetInfo->descriptorWriteCount, pPushDescriptorSetInfo->pDescriptorWrites, false);
+	handle_VkWriteDescriptorSets(writer, pPushDescriptorSetInfo->descriptorWriteCount, pPushDescriptorSetInfo->pDescriptorWrites, false, true);
 }
 
 static void trace_post_vkUpdateDescriptorSets(lava_file_writer& writer, VkDevice device, uint32_t descriptorWriteCount, const VkWriteDescriptorSet* pDescriptorWrites, uint32_t descriptorCopyCount, const VkCopyDescriptorSet* pDescriptorCopies)
 {
-	handle_VkWriteDescriptorSets(writer, descriptorWriteCount, pDescriptorWrites, true);
+	handle_VkWriteDescriptorSets(writer, descriptorWriteCount, pDescriptorWrites, true, false);
 
 	// TBD handle copy
 	assert(descriptorCopyCount == 0);
