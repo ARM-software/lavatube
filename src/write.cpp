@@ -90,6 +90,10 @@ lava_file_writer::~lava_file_writer()
 		v["frames"].append(k);
 		highest = std::max(highest, frame.global_frame);
 	}
+	v["uncompressed_sizes"] = Json::arrayValue;
+	v["compressed_sizes"] = Json::arrayValue;
+	for (const auto i : uncompressed_sizes) v["uncompressed_sizes"].append((Json::Value::UInt64)i);
+	for (const auto i : compressed_sizes) v["compressed_sizes"].append((Json::Value::UInt64)i);
 	DLOG("Wrapping up thread %u with %d frames", current.thread, highest);
 	v["highest_global_frame"] = highest;
 	const std::string path = mPath + "/frames_" + _to_string(current.thread) + ".json";

@@ -258,6 +258,8 @@ buffer file_writer::compress_chunk(buffer& uncompressed)
 	uint64_t header[2] = { was_written, was_read }; // store compressed and uncompressed sizes
 	memcpy(compressed.data(), header, header_size); // use memcpy to avoid aliasing issues
 	compressed.shrink(was_written + header_size);
+	compressed_sizes.push_back(was_written);
+	uncompressed_sizes.push_back(was_read);
 	DLOG3("Filewriter thread %d handing over compressed buffer of %lu bytes, was %lu bytes uncompressed", mTid, (unsigned long)(was_written + header_size), (unsigned long)was_read);
 	return compressed;
 }

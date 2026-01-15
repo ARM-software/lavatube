@@ -196,6 +196,11 @@ public:
 		chunk_mutex.unlock();
 	}
 
+protected:
+	// these only written to by worker thread until the end when they are read out
+	std::vector<uint64_t> compressed_sizes;
+	std::vector<uint64_t> uncompressed_sizes;
+
 public:
 	/// Stop sending packets to compression, useful if you want to keep pointers to written memory to keep working
 	inline void freeze() { if (!holding) holding = true; }
