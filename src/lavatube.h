@@ -236,7 +236,7 @@ struct trackedshadermodule : trackable
 struct remap_candidate
 {
 	VkDeviceAddress address; // contained value
-	VkDeviceSize offset; // the offset of the candidate
+	VkDeviceSize offset; // byte offset from start of buffer
 	change_source source; // last write to memory area from which we came
 
 	remap_candidate(VkDeviceAddress a, VkDeviceSize b, change_source c) { address = a; offset = b; source = c; }

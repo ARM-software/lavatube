@@ -282,20 +282,21 @@ void lava_reader::dump_info()
 	}
 }
 
-uint32_t lava_reader::find_address_candidates(trackedbuffer& buffer_data, VkDeviceSize size, const void* ptr, change_source source) const
+uint32_t lava_reader::find_address_candidates(trackedbuffer& buffer_data, VkDeviceSize size, const void* ptr, VkDeviceSize base_offset, change_source source) const
 {
 	buffer_data.self_test();
+	const char* base_ptr = (const char*)ptr;
 	// Search on a 4-byte aligned boundary
 	if ((uintptr_t)ptr % sizeof(uint32_t) != 0)
 	{
 		ptr = (const void*)aligned_size((uintptr_t)ptr, sizeof(uint32_t));
 	}
 	const uint32_t* start = (const uint32_t*)ptr;
-	const uint32_t* end = (const uint32_t*)((char*)ptr + size);
+	const uint32_t* end = (const uint32_t*)(base_ptr + size);
 	uint32_t found = 0;
 	for (const uint32_t* p = start; p + 2 <= end; p++)
 	{
-		const VkDeviceSize offset = (VkDeviceSize)p;
+		const VkDeviceSize offset = base_offset + (VkDeviceSize)((const char*)p - base_ptr);
 		const VkDeviceAddress candidate = *((uintptr_t*)p); // read full 64bit word at current position
 
 		// Do we already have a candidate for this address?

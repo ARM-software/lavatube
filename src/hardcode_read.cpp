@@ -1614,7 +1614,7 @@ VKAPI_ATTR void retrace_vkUpdateBufferTRACETOOLTEST(lava_file_reader& reader)
 	memcpy(ptr, info.pData, info.dataSize);
 	if (reader.parent->remap_scan)
 	{
-		reader.parent->find_address_candidates(tbuf, info.dataSize, info.pData, reader.current);
+		reader.parent->find_address_candidates(tbuf, info.dataSize, info.pData, info.dstOffset, reader.current);
 		if (ar) assert(tbuf.candidates.size() >= ar->count);
 	}
 	mem_unmap(reader, device, loc, ar, ptr);

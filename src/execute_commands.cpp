@@ -25,7 +25,24 @@ static bool run_spirv(lava_file_reader& reader, const trackedpipeline& pipeline_
 			const uint32_t buffer_index = access.buffer_data->index;
 			suballoc_location loc = reader.parent->allocator.find_buffer_memory(buffer_index);
 			std::byte* base = (std::byte*)loc.memory;
-			set_bindings[binding_pair.first] = base + access.offset;
+			std::byte* binding_ptr = base + access.offset;
+			set_bindings[binding_pair.first] = binding_ptr;
+			if (!access.buffer_data->candidates.empty() && access.size != 0)
+			{
+				const VkDeviceSize binding_start = access.offset;
+				const VkDeviceSize binding_end = access.offset + access.size;
+				std::vector<SPIRVSimulator::PhysicalAddressCandidate>* candidate_list = nullptr;
+				for (const auto& candidate : access.buffer_data->candidates)
+				{
+					if (candidate.offset < binding_start || candidate.offset >= binding_end) continue;
+					if (!candidate_list) candidate_list = &inputs.candidates[static_cast<const void*>(binding_ptr)];
+					SPIRVSimulator::PhysicalAddressCandidate sim_candidate;
+					sim_candidate.address = candidate.address;
+					sim_candidate.offset = candidate.offset - binding_start;
+					sim_candidate.payload = access.buffer_data;
+					candidate_list->push_back(sim_candidate);
+				}
+			}
 		}
 	}
 	shader_data.calls++;
