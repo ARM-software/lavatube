@@ -259,8 +259,6 @@ static void extend_bits(VkMemoryRequirements* pMemoryRequirements)
 			pMemoryRequirements->memoryTypeBits &= ~(1 << i); // no, clear
 		}
 	}
-	// extend alignment
-	pMemoryRequirements->alignment = std::max<VkDeviceSize>(pMemoryRequirements->alignment, 256);
 	frame_mutex.unlock();
 }
 

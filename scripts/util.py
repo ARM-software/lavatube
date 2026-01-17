@@ -1752,7 +1752,7 @@ def loadfunc(name, node, target, header):
 	if name in replay_post_calls: # hard-coded post handling
 		z.do('if (reader.run) replay_post_%s(reader, %s%s);' % (name, 'retval, ' if retval != 'void' else '', ', '.join(call_list)))
 	# Flexible post-handling
-	if not name in spec.special_count_funcs and not name in ignore_on_read:
+	if not name in spec.special_count_funcs and not name in skip_post_calls and name != 'vkGetPhysicalDeviceWaylandPresentationSupportKHR':
 		z.do('for (auto* c : %s_callbacks) c(%s);' % (name, ', '.join(call_list)))
 	if name in replay_postprocess_calls:
 		z.do('if (!reader.run) replay_postprocess_%s(reader, %s%s);' % (name, 'retval, ' if retval != 'void' else '', ', '.join(call_list)))

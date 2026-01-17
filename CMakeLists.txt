@@ -342,6 +342,12 @@ set_tests_properties(trace_test_buffers_replay PROPERTIES FIXTURES_REQUIRED trac
 add_test(NAME trace_test_buffers_validate COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-tool -V tracing_buffers.vk)
 set_tests_properties(trace_test_buffers_validate PROPERTIES FIXTURES_REQUIRED tracing_buffers)
 
+internal_test(tracing_alignment)
+add_test(NAME trace_test_alignment_replay COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -V tracing_alignment.vk)
+set_tests_properties(trace_test_alignment_replay PROPERTIES FIXTURES_REQUIRED tracing_alignment)
+add_test(NAME trace_test_alignment_validate COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-tool -V tracing_alignment.vk)
+set_tests_properties(trace_test_alignment_validate PROPERTIES FIXTURES_REQUIRED tracing_alignment)
+
 add_executable(write1 tests/write1.cpp)
 target_include_directories(write1 ${COMMON_INCLUDE})
 target_link_libraries(write1 ${COMMON_LIBRARIES} lavatube)
