@@ -491,6 +491,9 @@ class parameter(spec.base_parameter):
 			z.do('allocators_set(pAllocator);')
 		elif self.name in ['pUserData']:
 			pass
+		elif self.funcname in ['VkDebugMarkerObjectNameInfoEXT', 'VkDebugMarkerObjectTagInfoEXT', 'vkDebugReportMessageEXT'] and self.name == 'object':
+			z.decl('uint64_t', 'object')
+			z.do('%s = reader.read_handle(DEBUGPARAM("%s"));' % (varname, self.type))
 		elif self.funcname in ['VkDebugUtilsObjectNameInfoEXT', 'VkDebugUtilsObjectTagInfoEXT', 'vkSetPrivateData', 'vkSetPrivateDataEXT', 'vkGetPrivateData', 'vkGetPrivateDataEXT'] and self.name == 'objectHandle':
 			z.decl('uint64_t', 'objectHandle')
 			z.do('%s = reader.read_handle(DEBUGPARAM("%s"));' % (varname, self.type))
