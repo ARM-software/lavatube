@@ -472,13 +472,13 @@ install(TARGETS packtool RUNTIME)
 # --- layer tests ---
 
 function(layer_test test_name test_exe)
-	add_test(NAME layer_test_${ARGV0} COMMAND ${CMAKE_CURRENT_BINARY_DIR}/tracetooltests/vulkan_${ARGV1} --gpu-native ${ARGV2} ${ARGV3} ${ARGV4} ${ARGV5} ${ARGV6} ${ARGV7})
+	add_test(NAME layer_test_${ARGV0} COMMAND ${CMAKE_CURRENT_BINARY_DIR}/tracetooltests/vulkan_${ARGV1} --gpu ${ARGV2} ${ARGV3} ${ARGV4} ${ARGV5} ${ARGV6} ${ARGV7})
 	set_tests_properties(layer_test_${ARGV0} PROPERTIES
 		FIXTURES_SETUP ${ARGV0}
 		ENVIRONMENT "LAVATUBE_VIRTUAL_QUEUES=1;LAVATUBE_DESTINATION=vulkan_${ARGV0};VK_LAYER_PATH=${CMAKE_CURRENT_BINARY_DIR}/implicit_layer.d;VK_INSTANCE_LAYERS=VK_LAYER_ARM_lavatube;LD_LIBRARY_PATH=${CMAKE_CURRENT_BINARY_DIR}/implicit_layer.d"
 		SKIP_RETURN_CODE 77
 	)
-	add_test(NAME layer_test_${ARGV0}_simulation COMMAND ${CMAKE_CURRENT_BINARY_DIR}/tracetooltests/vulkan_${ARGV1} --gpu-simulated ${ARGV2} ${ARGV3} ${ARGV4} ${ARGV5} ${ARGV6} ${ARGV7})
+	add_test(NAME layer_test_${ARGV0}_simulation COMMAND ${CMAKE_CURRENT_BINARY_DIR}/tracetooltests/vulkan_${ARGV1} --cpu ${ARGV2} ${ARGV3} ${ARGV4} ${ARGV5} ${ARGV6} ${ARGV7})
 	set_tests_properties(layer_test_${ARGV0}_simulation PROPERTIES
 		FIXTURES_SETUP ${ARGV0}_simulation
 		ENVIRONMENT "LAVATUBE_VIRTUAL_QUEUES=1;LAVATUBE_DESTINATION=vulkan_${ARGV0}_simulation;VK_LAYER_PATH=${CMAKE_CURRENT_BINARY_DIR}/implicit_layer.d;VK_INSTANCE_LAYERS=VK_LAYER_ARM_lavatube;LD_LIBRARY_PATH=${CMAKE_CURRENT_BINARY_DIR}/implicit_layer.d"

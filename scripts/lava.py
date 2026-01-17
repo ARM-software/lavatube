@@ -10,9 +10,9 @@ import struct
 
 # New functions that we implement
 fake_functions = [ 'vkAssertBufferARM', 'vkSyncBufferTRACETOOLTEST', 'vkGetDeviceTracingObjectPropertyTRACETOOLTEST',
-	'vkCmdUpdateBuffer2ARM', 'vkThreadBarrierTRACETOOLTEST', 'vkUpdateBufferTRACETOOLTEST',  'vkUpdateImageTRACETOOLTEST' ]
+	'vkCmdUpdateBuffer2ARM' ]
 fake_extension_structs = {
-	'VkDeviceAddressOffsetsARM': 'VK_STRUCTURE_TYPE_DEVICE_ADDRESS_OFFSETS_ARM',
+	'VkMarkedOffsetsARM': 'VK_STRUCTURE_TYPE_MARKED_OFFSETS_ARM',
 	'VkUpdateMemoryInfoARM': 'VK_STRUCTURE_TYPE_UPDATE_MEMORY_INFO_ARM',
 	'VkPhysicalDeviceExplicitHostUpdatesFeaturesARM': 'VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXPLICIT_HOST_UPDATES_FEATURES_ARM',
 	'VkFlushRangesFlagsARM' : 'VK_STRUCTURE_TYPE_FLUSH_RANGES_FLAGS_ARM',
@@ -352,12 +352,6 @@ for f in fake_functions:
 		out([wh], 'VKAPI_ATTR uint64_t VKAPI_CALL trace_vkGetDeviceTracingObjectPropertyTRACETOOLTEST(VkDevice device, VkObjectType objectType, uint64_t objectHandle, VkTracingObjectPropertyTRACETOOLTEST valueType);')
 	elif f == 'vkCmdUpdateBuffer2ARM':
 		out([wh], 'VKAPI_ATTR void trace_vkCmdUpdateBuffer2ARM(VkCommandBuffer commandBuffer, const VkUpdateMemoryInfoARM* pInfo);')
-	elif f == 'vkUpdateBufferTRACETOOLTEST':
-		out([wh], 'VKAPI_ATTR void trace_vkUpdateBufferTRACETOOLTEST(VkDevice device, VkBuffer buffer, VkUpdateMemoryInfoARM* pInfo);')
-	elif f == 'vkUpdateImageTRACETOOLTEST':
-		out([wh], 'VKAPI_ATTR void trace_vkUpdateImageTRACETOOLTEST(VkDevice device, VkImage buffer, VkUpdateMemoryInfoARM* pInfo);')
-	elif f == 'vkThreadBarrierTRACETOOLTEST':
-		out([wh], 'VKAPI_ATTR void trace_vkThreadBarrierTRACETOOLTEST(uint32_t count, uint32_t* pValues);')
 	else:
 		assert False, 'Missing fake function header implementation: %s' % f
 out([gh])

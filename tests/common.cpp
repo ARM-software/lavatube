@@ -213,3 +213,17 @@ uint32_t get_device_memory_type(uint32_t type_filter, VkMemoryPropertyFlags prop
 	assert(false);
 	return 0xffff; // satisfy compiler
 }
+
+void testFlushMemory(const vulkan_setup_t& vulkan, VkDeviceMemory memory, VkDeviceSize offset, VkDeviceSize size, bool extra, VkMarkedOffsetsARM* markings)
+{
+	VkFlushRangesFlagsARM frf = { VK_STRUCTURE_TYPE_FLUSH_RANGES_FLAGS_ARM, nullptr };
+	frf.flags = VK_FLUSH_OPERATION_INFORMATIVE_BIT_ARM;
+	VkMappedMemoryRange range = { VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE, nullptr };
+	range.memory = memory;
+	range.size = size;
+	range.offset = offset;
+	if (markings) { range.pNext = markings; }
+	if (extra) { frf.pNext = range.pNext; range.pNext = &frf; }
+	VkResult result = trace_vkFlushMappedMemoryRanges(vulkan.device, 1, &range);
+	check(result);
+}

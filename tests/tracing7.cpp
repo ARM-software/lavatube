@@ -23,12 +23,6 @@ static void trace_3()
 	assert(vkAssertBuffer != nullptr);
 	PFN_vkSyncBufferTRACETOOLTEST vkSyncBuffer = (PFN_vkSyncBufferTRACETOOLTEST)trace_vkGetDeviceProcAddr(vulkan.device, "vkSyncBufferTRACETOOLTEST");
 	assert(vkSyncBuffer != nullptr);
-	PFN_vkUpdateBufferTRACETOOLTEST vkUpdateBuffer = (PFN_vkUpdateBufferTRACETOOLTEST)trace_vkGetDeviceProcAddr(vulkan.device, "vkUpdateBufferTRACETOOLTEST");
-	assert(vkUpdateBuffer);
-	PFN_vkUpdateImageTRACETOOLTEST vkUpdateImage = (PFN_vkUpdateImageTRACETOOLTEST)trace_vkGetDeviceProcAddr(vulkan.device, "vkUpdateImageTRACETOOLTEST");
-	assert(vkUpdateImage);
-	PFN_vkThreadBarrierTRACETOOLTEST vkThreadBarrier = (PFN_vkThreadBarrierTRACETOOLTEST)trace_vkGetDeviceProcAddr(vulkan.device, "vkThreadBarrierTRACETOOLTEST");
-	assert(vkThreadBarrier);
 
 	VkBuffer buffer[NUM_BUFFERS];
 	VkBufferCreateInfo bufferCreateInfo = {};
@@ -69,18 +63,19 @@ static void trace_3()
 	{
 		trace_vkBindBufferMemory(vulkan.device, buffer[i], memory, offset);
 
-		VkUpdateMemoryInfoARM updateInfo = { VK_STRUCTURE_TYPE_UPDATE_MEMORY_INFO_ARM, nullptr };
-		updateInfo.dstOffset = 0; // relative to start of buffer
-		updateInfo.dataSize = bufferCreateInfo.size;
-		updateInfo.pData = ptr;
-		trace_vkUpdateBufferTRACETOOLTEST(vulkan.device, buffer[i], &updateInfo);
+		char* mapptr = nullptr;
+		result = trace_vkMapMemory(vulkan.device, memory, offset, bufferCreateInfo.size, 0, (void**)&mapptr);
+		check(result);
+
+		// TBD memory map and send in some descriptor buffer stuff here that should not change on replay
+		memcpy(mapptr, ptr, bufferCreateInfo.size); // TBD replace
+
+		trace_vkUnmapMemory(vulkan.device, memory);
 
 		offset += req.size;
 	}
 	free(ptr);
 	ptr = nullptr;
-
-	vkThreadBarrier(nullptr);
 
 	for (unsigned i = 0; i < NUM_BUFFERS; i++)
 	{

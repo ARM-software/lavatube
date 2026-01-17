@@ -38,6 +38,7 @@ vulkan_setup_t test_init(const std::string& testname, vulkan_req_t& reqs, size_t
 void test_done(vulkan_setup_t s);
 uint32_t get_device_memory_type(uint32_t type_filter, VkMemoryPropertyFlags properties);
 void test_set_name(VkDevice device, VkObjectType type, uint64_t handle, const char* name);
+void testFlushMemory(const vulkan_setup_t& vulkan, VkDeviceMemory memory, VkDeviceSize offset, VkDeviceSize size, bool extra, VkMarkedOffsetsARM* markings);
 
 void print_cmdbuf(vulkan_setup_t& vulkan, VkCommandBuffer cmdbuf);
 void print_memory(vulkan_setup_t& vulkan, VkDeviceMemory memory, const char* name);

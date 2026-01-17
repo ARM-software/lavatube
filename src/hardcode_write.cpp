@@ -24,6 +24,9 @@ static std::vector<VkExtensionProperties> device_extension_properties GUARDED_BY
 static VkPhysicalDeviceMemoryProperties virtual_memory_properties GUARDED_BY(frame_mutex) = {};
 static uint32_t remap_memory_types_to_real[VK_MAX_MEMORY_TYPES] GUARDED_BY(frame_mutex);
 
+// Protos
+static void write_VkMarkedOffsetsARM(lava_file_writer& writer, const VkMarkedOffsetsARM* sptr);
+
 static trackable* debug_object_trackable(trace_records& r, VkDebugReportObjectTypeEXT type, uint64_t object)
 {
 	switch (type)
@@ -665,7 +668,9 @@ static void queue_update(lava_file_writer& writer, trackedqueue* t, VkCommandBuf
 	}
 }
 
-static uint64_t write_out_object(lava_file_writer& writer, const auto* device_data, trackedobject* object_data, char* cloneptr, char* changedptr, uint64_t offset, uint64_t size)
+/// cloneptr and changedptr shall point to start of object, reading or writing from this pointer before the first given offset may not be safe,
+/// as the memory might not have been mapped.
+static uint64_t write_out_object(lava_file_writer& writer, const auto* device_data, trackedobject* object_data, char* cloneptr, char* changedptr, uint64_t offset, uint64_t size, VkMarkedOffsetsARM* ar)
 {
 	switch (object_data->object_type)
 	{
@@ -676,12 +681,16 @@ static uint64_t write_out_object(lava_file_writer& writer, const auto* device_da
 	}
 	writer.write_handle(device_data);
 	writer.write_handle(object_data);
-	uint64_t* sizeptr = writer.write_later_uint64_t(); // locks write chunks
-	writer.write_later_uint16_t(0); // flags
+	uint64_t* sizeptr = writer.write_later_uint64_t(); // this locks the write chunks
+	uint64_t bytes = writer.uncompressed_bytes;
+	uint16_t flags = 0;
+	if (ar) flags |= PACKET_FLAG_HAS_PNEXT;
+	writer.write_uint16_t(flags);
+	if (ar) write_extension(writer, (VkBaseOutStructure*)ar);
 	uint64_t written = writer.write_patch(cloneptr, changedptr, offset, size);
 	object_data->updates++;
 	object_data->written += written;
-	*sizeptr = written + 2; // includes size of flags and anything beyond until the end of our packet
+	*sizeptr = writer.uncompressed_bytes - bytes; // includes size of flags and anything beyond until the end of our packet
 	writer.thaw(); // releases write chunks again
 	return written;
 }
@@ -740,7 +749,7 @@ static void memory_update(lava_file_writer& writer, trackedqueue* queue_data, co
 					range r2 = { r.first + object_data->offset, r.last + object_data->offset };
 					assert(r2.last < object_data->offset + object_data->size);
 					range v = memory_data->exposed.fetch(r2, memory_data->ptr != nullptr);
-					written += write_out_object(writer, device_data, object_data, cloneptr, changedptr, v.first - object_data->offset, v.last - v.first + 1);
+					written += write_out_object(writer, device_data, object_data, cloneptr, changedptr, v.first - object_data->offset, v.last - v.first + 1, nullptr);
 					scanned += v.last - v.first + 1;
 					NEVER("flushing obj %u (%lu, %lu) -> (%lu, %lu) -> (%lu, %lu), exposed after (%lu, %lu), total written %lu, memory %u; binding_offset=%lu binding_size=%lu ptr=%p",
 					      object_data->index, r.first, r.last, r2.first, r2.last, v.first, v.last, memory_data->exposed.span().first, memory_data->exposed.span().last,
@@ -949,9 +958,7 @@ static void modify_device_extensions(VkPhysicalDevice physicalDevice) REQUIRES(f
 	device_extension_properties.push_back({VK_EXT_TOOLING_INFO_EXTENSION_NAME, 1});
 	device_extension_properties.push_back({VK_EXT_FRAME_BOUNDARY_EXTENSION_NAME, 1});
 	device_extension_properties.push_back({VK_ARM_TRACE_HELPERS_EXTENSION_NAME, 1});
-	device_extension_properties.push_back({VK_ARM_TRACE_DESCRIPTOR_BUFFER_EXTENSION_NAME, 1});
 	device_extension_properties.push_back({VK_ARM_EXPLICIT_HOST_UPDATES_EXTENSION_NAME, 1});
-	device_extension_properties.push_back({VK_TRACETOOLTEST_TRACE_HELPERS2_EXTENSION_NAME, 1});
 
 	for (const auto &ext : tmp_device_extension_properties)
 	{
@@ -1072,13 +1079,11 @@ static void trace_pre_vkCreateDevice(VkPhysicalDevice physicalDevice, VkDeviceCr
 		if (strcmp(name, VK_EXT_TOOLING_INFO_EXTENSION_NAME) == 0 && !physicaldevice_data->supported_device_extensions.count(VK_EXT_TOOLING_INFO_EXTENSION_NAME)) continue; // do not pass to host
 		if (strcmp(name, VK_TRACETOOLTEST_OBJECT_PROPERTY_EXTENSION_NAME) == 0) continue; // do not pass to host
 		if (strcmp(name, VK_ARM_TRACE_HELPERS_EXTENSION_NAME) == 0) continue; // do not pass to host
-		if (strcmp(name, VK_ARM_TRACE_DESCRIPTOR_BUFFER_EXTENSION_NAME) == 0) continue; // do not pass to host
 		if (strcmp(name, VK_ARM_EXPLICIT_HOST_UPDATES_EXTENSION_NAME) == 0) // do not pass to host
 		{
 			purge_extension_parent(pCreateInfo, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXPLICIT_HOST_UPDATES_FEATURES_ARM); // we need to consume it, driver will not understand
 			continue;
 		}
-		if (strcmp(name, VK_TRACETOOLTEST_TRACE_HELPERS2_EXTENSION_NAME) == 0) continue; // do not pass to host
 		if (!physicaldevice_data->supported_device_extensions.count(VK_EXT_FRAME_BOUNDARY_EXTENSION_NAME) && strcmp(name, VK_EXT_FRAME_BOUNDARY_EXTENSION_NAME) == 0) // do not pass to host
 		{
 			purge_extension_parent(pCreateInfo, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FRAME_BOUNDARY_FEATURES_EXT);
@@ -1568,13 +1573,25 @@ static void write_VkFlushRangesFlagsARM(lava_file_writer& writer, const VkFlushR
 	writer.write_uint32_t(sptr->flags);
 }
 
-static void write_VkDeviceAddressOffsetsARM(lava_file_writer& writer, const VkDeviceAddressOffsetsARM* sptr)
+static void write_VkMarkedOffsetsARM(lava_file_writer& writer, const VkMarkedOffsetsARM* sptr)
 {
 	writer.write_uint32_t(sptr->sType);
-	assert(sptr->sType == VK_STRUCTURE_TYPE_DEVICE_ADDRESS_OFFSETS_ARM);
+	assert(sptr->sType == VK_STRUCTURE_TYPE_MARKED_OFFSETS_ARM);
 	write_extension(writer, (VkBaseOutStructure*)sptr->pNext);
 	writer.write_uint32_t(sptr->count);
-	bool pOffsets_opt = (sptr->pOffsets != 0 && sptr->count > 0); // whether we should save pData
+	bool pMarkingTypes_opt = (sptr->pMarkingTypes != 0 && sptr->count > 0);
+	writer.write_uint8_t(pMarkingTypes_opt);
+	if (pMarkingTypes_opt)
+	{
+		writer.write_array(reinterpret_cast<const char*>(sptr->pMarkingTypes), sptr->count * sizeof(VkMarkingTypeARM));
+	}
+	bool pSubTypes_opt = (sptr->pSubTypes != 0 && sptr->count > 0);
+	writer.write_uint8_t(pSubTypes_opt);
+	if (pSubTypes_opt)
+	{
+		writer.write_array(reinterpret_cast<const char*>(sptr->pSubTypes), sptr->count * sizeof(VkMarkingSubTypeARM));
+	}
+	bool pOffsets_opt = (sptr->pOffsets != 0 && sptr->count > 0);
 	writer.write_uint8_t(pOffsets_opt);
 	if (pOffsets_opt)
 	{
@@ -1603,55 +1620,6 @@ static void write_VkUpdateMemoryInfoARM(lava_file_writer& writer, const VkUpdate
 	}
 }
 
-VKAPI_ATTR void trace_vkUpdateBufferTRACETOOLTEST(VkDevice device, VkBuffer dstBuffer, VkUpdateMemoryInfoARM* pInfo)
-{
-	lava_file_writer& writer = write_header("vkUpdateBufferTRACETOOLTEST", VKUPDATEBUFFERTRACETOOLTEST);
-	const auto* device_data = writer.parent->records.VkDevice_index.at(device);
-	auto* buffer_data = writer.parent->records.VkBuffer_index.at(dstBuffer);
-	pInfo->dstBuffer = dstBuffer;
-	writer.write_handle(device_data);
-	writer.write_handle(buffer_data);
-	if (buffer_data)
-	{
-		buffer_data->last_modified = writer.current;
-		buffer_data->self_test();
-	}
-	write_VkUpdateMemoryInfoARM(writer, pInfo);
-
-	// Act
-	auto* memory_data = writer.parent->records.VkDeviceMemory_index.at(buffer_data->backing);
-	char* ptr = nullptr;
-	VkResult result = wrap_vkMapMemory(device, memory_data->backing, buffer_data->offset + pInfo->dstOffset, buffer_data->size - pInfo->dstOffset, 0, (void**)&ptr);
-	assert(result == VK_SUCCESS);
-	buffer_data->updates++;
-	memcpy(ptr, pInfo->pData, pInfo->dataSize);
-	wrap_vkUnmapMemory(device, memory_data->backing);
-}
-
-VKAPI_ATTR void trace_vkUpdateImageTRACETOOLTEST(VkDevice device, VkImage dstImage, VkUpdateMemoryInfoARM* pInfo)
-{
-	lava_file_writer& writer = write_header("vkUpdateImageTRACETOOLTEST", VKUPDATEIMAGETRACETOOLTEST);
-	const auto* device_data = writer.parent->records.VkDevice_index.at(device);
-	auto* image_data = writer.parent->records.VkImage_index.at(dstImage);
-	writer.write_handle(device_data);
-	writer.write_handle(image_data);
-	if (image_data)
-	{
-		image_data->last_modified = writer.current;
-		image_data->self_test();
-	}
-	write_VkUpdateMemoryInfoARM(writer, pInfo);
-
-	// Act
-	auto* memory_data = writer.parent->records.VkDeviceMemory_index.at(image_data->backing);
-	char* ptr = nullptr;
-	VkResult result = wrap_vkMapMemory(device, memory_data->backing, image_data->offset + pInfo->dstOffset, image_data->size - pInfo->dstOffset, 0, (void**)&ptr);
-	assert(result == VK_SUCCESS);
-	image_data->updates++;
-	memcpy(ptr, pInfo->pData, pInfo->dataSize);
-	wrap_vkUnmapMemory(device, memory_data->backing);
-}
-
 VKAPI_ATTR void trace_vkCmdUpdateBuffer2ARM(VkCommandBuffer commandBuffer, const VkUpdateMemoryInfoARM* pInfo)
 {
 	lava_file_writer& writer = write_header("vkCmdUpdateBuffer2ARM", VKCMDUPDATEBUFFER2ARM);
@@ -1674,16 +1642,6 @@ VKAPI_ATTR void trace_vkCmdUpdateBuffer2ARM(VkCommandBuffer commandBuffer, const
 	writer.device = commandbuffer_data->device;
 	writer.physicalDevice = commandbuffer_data->physicalDevice;
 	write_VkUpdateMemoryInfoARM(writer, pInfo);
-}
-
-VKAPI_ATTR void trace_vkThreadBarrierTRACETOOLTEST(uint32_t count, uint32_t* pValues)
-{
-	lava_file_writer& writer = write_header("vkThreadBarrierTRACETOOLTEST", VKTHREADBARRIERTRACETOOLTEST);
-	writer.write_uint32_t(count);
-	for (uint32_t i = 0; i < count; i++)
-	{
-		writer.write_uint32_t(pValues[i]);
-	}
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL trace_vkAssertBufferARM(VkDevice device, VkBuffer buffer, VkDeviceSize offset, VkDeviceSize size, uint32_t* checksum, const char* comment)
@@ -1785,7 +1743,7 @@ void trace_post_vkFlushMappedMemoryRanges(lava_file_writer& writer, VkResult res
 	// The memory must be memory mapped
 	for (unsigned i = 0; i < memoryRangeCount; i++)
 	{
-		VkMappedMemoryRange v = pMemoryRanges[i];
+		const VkMappedMemoryRange& v = pMemoryRanges[i];
 		auto* memory_data = writer.parent->records.VkDeviceMemory_index.at(v.memory);
 		VkDeviceSize size = v.size;
 		if (v.size == VK_WHOLE_SIZE)
@@ -1794,7 +1752,10 @@ void trace_post_vkFlushMappedMemoryRanges(lava_file_writer& writer, VkResult res
 		}
 		assert(memory_data->ptr != nullptr && memory_data->size != 0); // the memory must be memory mapped
 		memory_data->exposed.add_os(v.offset, size);
-		if (device_data->explicit_host_updates)
+		// Handle VK_ARM_trace_helpers
+		VkMarkedOffsetsARM* ar = (VkMarkedOffsetsARM*)find_extension(&v, VK_STRUCTURE_TYPE_MARKED_OFFSETS_ARM);
+		// Handle VK_ARM_explicit_host_updates and/or VK_ARM_trace_helpers
+		if (device_data->explicit_host_updates || ar)
 		{
 			for (auto& pair : memory_data->usage)
 			{
@@ -1806,7 +1767,12 @@ void trace_post_vkFlushMappedMemoryRanges(lava_file_writer& writer, VkResult res
 				char* changedptr = memory_data->ptr + object_data->offset - memory_data->offset;
 				uint64_t start = std::max<uint64_t>(object_data->offset, v.offset) - object_data->offset;
 				uint64_t end = std::min<uint64_t>(object_data->offset + object_data->size, v.offset + size) - object_data->offset;
-				uint64_t written = write_out_object(writer, device_data, object_data, cloneptr, changedptr, start, end - start);
+				if (ar && v.offset != object_data->offset) // flush range has a different offset than the object, modify the offsets in ar->pOffsets to be relative to start of the object in memory
+				{
+					// TBD
+					assert(false);
+				}
+				else uint64_t written = write_out_object(writer, device_data, object_data, cloneptr, changedptr, start, end - start, ar);
 				ILOG("vkFlushMappedMemoryRanges[%u] flushing %s[%u] obj(%lu to %lu) object memory offset=%lu object size=%lu flush(off=%u, size=%u)", i, pretty_print_VkObjectType(object_data->object_type),
 				     (unsigned)object_data->index, (unsigned long)start, (unsigned long)end, (unsigned long)object_data->offset, (unsigned long)object_data->size, (unsigned)v.offset, (unsigned)v.size);
 			}
