@@ -1,5 +1,3 @@
-#include <iostream>
-
 static bool run_spirv(lava_file_reader& reader, const trackedpipeline& pipeline_data, const shader_stage& stage, const std::vector<std::byte>& push_constants,
 	const std::unordered_map<uint32_t, std::unordered_map<uint32_t, buffer_access>>& descriptorsets)
 {
@@ -8,6 +6,7 @@ static bool run_spirv(lava_file_reader& reader, const trackedpipeline& pipeline_
 	const uint32_t shader_index = index_to_VkShaderModule.index(stage.module);
 	trackedshadermodule& shader_data = VkShaderModule_index.at(shader_index);
 	SPIRVSimulator::InputData inputs;
+	std::unordered_map<const void*, std::pair<uint32_t, uint32_t>> binding_lookup;
 	inputs.push_constants = push_constants.empty() ? nullptr : push_constants.data();
 	inputs.entry_point_op_name = stage.name;
 	inputs.specialization_constants = stage.specialization_data.empty() ? nullptr : stage.specialization_data.data();
@@ -27,6 +26,7 @@ static bool run_spirv(lava_file_reader& reader, const trackedpipeline& pipeline_
 			std::byte* base = (std::byte*)loc.memory;
 			std::byte* binding_ptr = base + access.offset;
 			set_bindings[binding_pair.first] = binding_ptr;
+			binding_lookup.emplace(binding_ptr, std::make_pair(set_pair.first, binding_pair.first));
 			if (!access.buffer_data->candidates.empty() && access.size != 0)
 			{
 				const VkDeviceSize binding_start = access.offset;
@@ -49,34 +49,26 @@ static bool run_spirv(lava_file_reader& reader, const trackedpipeline& pipeline_
 	SPIRVSimulator::SPIRVSimulator sim(shader_data.code, inputs, false);
 	sim.Run();
 
-#if 0
-	auto physical_address_data = sim.GetPhysicalAddressData();
-
-	if (physical_address_data.size() > 0) std::cout << "Pointers to pbuffers:" << std::endl;
-	for (const auto& pointer_t : physical_address_data)
+	for (const auto& candidates : inputs.candidates)
 	{
-		std::cout << "  Found pointer with address: 0x" << std::hex << pointer_t.raw_pointer_value << std::dec << " made from input bit components:" << std::endl;
-		for (auto bit_component : pointer_t.bit_components)
+		ILOG("Found set of %u candidates for %p", (unsigned)candidates.second.size(), candidates.first);
+		const void* base_ptr = candidates.first;
+		const auto binding_it = binding_lookup.find(base_ptr);
+		for (const auto& candidate : candidates.second)
 		{
-			if (bit_component.location == SPIRVSimulator::BitLocation::Constant)
+			if (binding_it != binding_lookup.end())
 			{
-				std::cout << "    " << "From Constant in SPIRV input words, at Byte Offset: " << bit_component.byte_offset << std::endl;
-			} else {
-				if (bit_component.location == SPIRVSimulator::BitLocation::SpecConstant)
-				{
-					std::cout << "    " << "From SpecId: " << bit_component.binding_id;
-				} else {
-					std::cout << "    " << "From DescriptorSetID: " << bit_component.set_id << ", Binding: " << bit_component.binding_id;
-				}
-				if (bit_component.location == SPIRVSimulator::BitLocation::StorageClass)
-				{
-					std::cout << ", in StorageClass: " << spv::StorageClassToString(bit_component.storage_class);
-				}
-				std::cout << ", Byte Offset: " << bit_component.byte_offset << ", Bitsize: " << bit_component.bitcount << ", to val Bit Offset: " << bit_component.val_bit_offset << std::endl;
+				ILOG("SPIRV candidate %s in %s set=%u binding=%u base=%p offset=%lu address=0x%llx", candidate.verified ? "verified" : "UNVERIFIED", stage.name.c_str(),
+					(unsigned)binding_it->second.first, (unsigned)binding_it->second.second, base_ptr, (unsigned long)candidate.offset,
+					(unsigned long long)candidate.address);
+			}
+			else
+			{
+				ILOG("SPIRV candidate %s in %s base=%p offset=%lu address=0x%llx", candidate.verified ? "verified" : "UNVERIFIED", stage.name.c_str(), base_ptr,
+					(unsigned long)candidate.offset, (unsigned long long)candidate.address);
 			}
 		}
 	}
-#endif
 
 	return true;
 }
