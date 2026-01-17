@@ -1409,7 +1409,8 @@ static void copy_shader_stage(const trackedpipeline& pipeline_data, shader_stage
 	if (info.pSpecializationInfo)
 	{
 		stage.specialization_constants.resize(info.pSpecializationInfo->mapEntryCount);
-		memcpy(stage.specialization_constants.data(), info.pSpecializationInfo->pMapEntries, info.pSpecializationInfo->mapEntryCount * sizeof(uint32_t));
+		memcpy(stage.specialization_constants.data(), info.pSpecializationInfo->pMapEntries,
+			info.pSpecializationInfo->mapEntryCount * sizeof(VkSpecializationMapEntry));
 		stage.specialization_data.resize(info.pSpecializationInfo->dataSize);
 		memcpy(stage.specialization_data.data(), info.pSpecializationInfo->pData, info.pSpecializationInfo->dataSize);
 	}

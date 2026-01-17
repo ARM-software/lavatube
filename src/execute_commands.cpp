@@ -1,19 +1,32 @@
 #include <iostream>
 
-static bool run_spirv(lava_file_reader& reader, const trackedpipeline& pipeline_data, const shader_stage& stage, const std::vector<std::byte>& push_constants)
+static bool run_spirv(lava_file_reader& reader, const trackedpipeline& pipeline_data, const shader_stage& stage, const std::vector<std::byte>& push_constants,
+	const std::unordered_map<uint32_t, std::unordered_map<uint32_t, buffer_access>>& descriptorsets)
 {
+	assert(!reader.run); // this code is only run when post-processing
 	assert(stage.module != VK_NULL_HANDLE);
 	const uint32_t shader_index = index_to_VkShaderModule.index(stage.module);
 	trackedshadermodule& shader_data = VkShaderModule_index.at(shader_index);
 	SPIRVSimulator::InputData inputs;
-	inputs.push_constants = push_constants.data();
+	inputs.push_constants = push_constants.empty() ? nullptr : push_constants.data();
 	inputs.entry_point_op_name = stage.name;
-	inputs.specialization_constants = stage.specialization_data.data();
-	uint32_t i = 0;
-	for (auto& v : stage.specialization_constants)
+	inputs.specialization_constants = stage.specialization_data.empty() ? nullptr : stage.specialization_data.data();
+	for (const auto& v : stage.specialization_constants)
 	{
-		inputs.specialization_constant_offsets[i] = v.offset;
-		i++;
+		inputs.specialization_constant_offsets[v.constantID] = v.offset;
+	}
+	for (const auto& set_pair : descriptorsets)
+	{
+		auto& set_bindings = inputs.bindings[set_pair.first];
+		for (const auto& binding_pair : set_pair.second)
+		{
+			const buffer_access& access = binding_pair.second;
+			if (!access.buffer_data) continue;
+			const uint32_t buffer_index = access.buffer_data->index;
+			suballoc_location loc = reader.parent->allocator.find_buffer_memory(buffer_index);
+			std::byte* base = (std::byte*)loc.memory;
+			set_bindings[binding_pair.first] = base + access.offset;
+		}
 	}
 	shader_data.calls++;
 	SPIRVSimulator::SPIRVSimulator sim(shader_data.code, inputs, false);
@@ -128,7 +141,7 @@ static bool execute_commands(lava_file_reader& reader, VkCommandBuffer commandBu
 				const auto& pipeline_data = VkPipeline_index.at(compute_pipeline_bound);
 				assert(pipeline_data.shader_stages.size() == 1);
 				assert(pipeline_data.shader_stages[0].stage == VK_SHADER_STAGE_COMPUTE_BIT);
-				run_spirv(reader, pipeline_data, pipeline_data.shader_stages[0], push_constants);
+				run_spirv(reader, pipeline_data, pipeline_data.shader_stages[0], push_constants, descriptorsets);
 			}
 			break;
 		case VKCMDDRAW: // proxy for all draw commands
@@ -136,7 +149,7 @@ static bool execute_commands(lava_file_reader& reader, VkCommandBuffer commandBu
 				const auto& pipeline_data = VkPipeline_index.at(graphics_pipeline_bound);
 				for (const auto& stage : pipeline_data.shader_stages)
 				{
-					run_spirv(reader, pipeline_data, stage, push_constants);
+					run_spirv(reader, pipeline_data, stage, push_constants, descriptorsets);
 				}
 			}
 			break;
