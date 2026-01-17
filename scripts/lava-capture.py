@@ -59,11 +59,11 @@ def DetectCBS(args):
 	enable_file['target'] = base
 	if 'capabilities' in cap_data and args.automate:
 		if 'non_interactive' in cap_data['capabilities'] and cap_data['capabilities']['non_interactive'] == 'option':
-			enable_file['capabilities'] = { 'non_interactive': true }
+			enable_file['capabilities'] = { 'non_interactive': True }
 		if 'fixed_framerate' in cap_data['capabilities'] and cap_data['capabilities']['fixed_framerate'] == 'option':
 			enable_file['capabilities'] = { 'fixed_framerate': 0 }
 		if 'gpu_frame_deterministic' in cap_data['capabilities'] and cap_data['capabilities']['gpu_frame_deterministic'] == 'option':
-			enable_file['capabilities'] = { 'gpu_frame_deterministic': true }
+			enable_file['capabilities'] = { 'gpu_frame_deterministic': True }
 
 	os.environ['BENCHMARKING_ENABLE_JSON'] = json.dumps(enable_file, sort_keys=True, separators=(',', ':'))
 

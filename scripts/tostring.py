@@ -165,8 +165,6 @@ for v in spec.root.findall('enums'):
 		print('\tcase %s: return "%s";' % (itemname, itemname), file=source)
 		added_case.append(itemname)
 	# Find and add extensions enums
-		supported = ext.attrib.get('supported')
-		if supported in ['disabled', 'vulkansc']: continue
 	for vv in spec.root.findall('extensions/extension'):
 		extname = vv.attrib.get('name')
 		if vv.attrib.get('supported') in ['disabled', 'vulkansc']:
