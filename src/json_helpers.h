@@ -30,6 +30,9 @@ Json::Value trackedrenderpass_json(const trackedrenderpass* t);
 Json::Value trackedpipelinelayout_json(const trackedpipelinelayout* t);
 Json::Value trackeddescriptorsetlayout_json(const trackeddescriptorsetlayout* t);
 
+void write_json(const std::string& path, const Json::Value& v);
+void write_json(FILE* fp, const Json::Value& v);
+
 // --- JSON read helpers ---
 
 trackable trackable_json(const Json::Value& v);

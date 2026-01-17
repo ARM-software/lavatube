@@ -1,6 +1,8 @@
 // --- JSON write helpers ---
 // We only write out static info that does not change for the duration of the trace.
 
+#include "jsoncpp/json/writer.h"
+
 #include "json_helpers.h"
 
 Json::Value trackable_json(const trackable* t)
@@ -498,4 +500,32 @@ trackeddescriptorsetlayout trackeddescriptorsetlayout_json(const Json::Value& v)
 	trackable_helper(t, v);
 	t.enter_initialized();
 	return t;
+}
+
+void write_json(FILE* fp, const Json::Value& v)
+{
+	Json::StyledWriter writer;
+	std::string data = writer.write(v);
+	size_t written;
+	int err = 0;
+	do {
+		written = fwrite(data.c_str(), data.size(), 1, fp);
+		err = ferror(fp);
+	} while (!err && !written);
+	if (err)
+	{
+		ELOG("Failed to write dictionary: %s", strerror(err));
+	}
+}
+
+void write_json(const std::string& path, const Json::Value& v)
+{
+	FILE* fp = fopen(path.c_str(), "w");
+	if (!fp)
+	{
+		ELOG("Failed to open \"%s\": %s", path.c_str(), strerror(errno));
+		return;
+	}
+	write_json(fp, v);
+	fclose(fp);
 }

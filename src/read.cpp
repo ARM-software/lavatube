@@ -5,6 +5,7 @@
 #include "read.h"
 #include "packfile.h"
 #include "jsoncpp/json/reader.h"
+#include "json_helpers.h"
 #include "read_auto.h"
 #include "util_auto.h"
 
