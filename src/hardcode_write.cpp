@@ -13,7 +13,6 @@ const VkLayerProperties LAYER_PROPERTIES = {
 /// Cached system properties (these may not be in a sane state at shutdown time)
 static VkPhysicalDeviceMemoryProperties real_memory_properties GUARDED_BY(frame_mutex) = {};
 static std::vector<VkExtensionProperties> instance_extension_properties GUARDED_BY(frame_mutex);
-static std::vector<VkExtensionProperties> device_extension_properties GUARDED_BY(frame_mutex);
 
 // Vulkan has a fundamental problem that it does not require the user to
 // tell the API what its memory requirements are for any given memory allocation.
@@ -862,7 +861,6 @@ void trace_post_vkDestroyInstance(lava_file_writer& writer, VkInstance instance,
 	virtual_memory_properties = {};
 	memset(remap_memory_types_to_real, 0, sizeof(remap_memory_types_to_real));
 	instance_extension_properties.clear();
-	device_extension_properties.clear();
 	reset_all(&inst.records);
 
 	frame_mutex.unlock();
@@ -963,6 +961,9 @@ static void modify_device_extensions(VkPhysicalDevice physicalDevice) REQUIRES(f
 	r["devicePresented"] = Json::objectValue;
 	r["devicePresented"]["extensions"] = Json::arrayValue;
 	auto* physicaldevice_data = instance.records.VkPhysicalDevice_index.at(physicalDevice);
+	physicaldevice_data->presented_device_extensions.clear();
+	physicaldevice_data->supported_device_extensions.clear();
+	physicaldevice_data->device_extension_properties.clear();
 
 	uint32_t propertyCount = 0;
 	VkResult result = wrap_vkEnumerateDeviceExtensionProperties(physicalDevice, nullptr, &propertyCount, nullptr); // call first to get correct count on host
@@ -972,11 +973,12 @@ static void modify_device_extensions(VkPhysicalDevice physicalDevice) REQUIRES(f
 	assert(result == VK_SUCCESS);
 
 	// Present extensions we provide
-	device_extension_properties.push_back({VK_TRACETOOLTEST_OBJECT_PROPERTY_EXTENSION_NAME, 1});
-	device_extension_properties.push_back({VK_EXT_TOOLING_INFO_EXTENSION_NAME, 1});
-	device_extension_properties.push_back({VK_EXT_FRAME_BOUNDARY_EXTENSION_NAME, 1});
-	device_extension_properties.push_back({VK_ARM_TRACE_HELPERS_EXTENSION_NAME, 1});
-	device_extension_properties.push_back({VK_ARM_EXPLICIT_HOST_UPDATES_EXTENSION_NAME, 1});
+	std::vector<VkExtensionProperties> presented_extensions;
+	presented_extensions.push_back({VK_TRACETOOLTEST_OBJECT_PROPERTY_EXTENSION_NAME, 1});
+	presented_extensions.push_back({VK_EXT_TOOLING_INFO_EXTENSION_NAME, 1});
+	presented_extensions.push_back({VK_EXT_FRAME_BOUNDARY_EXTENSION_NAME, 1});
+	presented_extensions.push_back({VK_ARM_TRACE_HELPERS_EXTENSION_NAME, 1});
+	presented_extensions.push_back({VK_ARM_EXPLICIT_HOST_UPDATES_EXTENSION_NAME, 1});
 
 	for (const auto &ext : tmp_device_extension_properties)
 	{
@@ -991,11 +993,11 @@ static void modify_device_extensions(VkPhysicalDevice physicalDevice) REQUIRES(f
 		    // deduplicate in case host also provides this
 		    && name != VK_EXT_TOOLING_INFO_EXTENSION_NAME && name != VK_EXT_FRAME_BOUNDARY_EXTENSION_NAME)
 		{
-			device_extension_properties.push_back(ext); // add to list of extensions presented to app
+			presented_extensions.push_back(ext); // add to list of extensions presented to app
 		}
 	}
-	for (const auto& ext : device_extension_properties) physicaldevice_data->presented_device_extensions.insert(ext.extensionName);
-	physicaldevice_data->device_extension_properties = device_extension_properties;
+	for (const auto& ext : presented_extensions) physicaldevice_data->presented_device_extensions.insert(ext.extensionName);
+	physicaldevice_data->device_extension_properties = presented_extensions;
 }
 
 static void trace_pre_vkCreateDevice(VkPhysicalDevice physicalDevice, VkDeviceCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkDevice* pDevice)
@@ -1008,7 +1010,7 @@ static void trace_pre_vkCreateDevice(VkPhysicalDevice physicalDevice, VkDeviceCr
 	Json::Value& r = instance.json();
 
 	r["deviceRequested"] = Json::objectValue;
-	if (device_extension_properties.size() == 0) modify_device_extensions(physicalDevice); // in case empty
+	if (physicaldevice_data->device_extension_properties.empty()) modify_device_extensions(physicalDevice); // in case empty
 
 	// Logging
 	const VkBaseOutStructure* pNext = (const VkBaseOutStructure*)pCreateInfo->pNext;
@@ -2424,22 +2426,24 @@ VKAPI_ATTR VkResult VKAPI_CALL trace_vkEnumerateDeviceExtensionProperties(VkPhys
 	}
 #endif
 	frame_mutex.lock();
-	if (device_extension_properties.size() == 0)
+	auto* physicaldevice_data = writer.parent->records.VkPhysicalDevice_index.at(physicalDevice);
+	if (physicaldevice_data->device_extension_properties.empty())
 	{
 		modify_device_extensions(physicalDevice);
 	}
+	const auto& presented_extensions = physicaldevice_data->device_extension_properties;
 	VkResult retval = VK_SUCCESS;
 	if (pProperties == nullptr)
 	{
-		*pPropertyCount = device_extension_properties.size();
+		*pPropertyCount = presented_extensions.size();
 	}
 	else
 	{
-		for (unsigned i = 0; i < std::min<unsigned>(device_extension_properties.size(), *pPropertyCount); i++)
+		for (unsigned i = 0; i < std::min<unsigned>(presented_extensions.size(), *pPropertyCount); i++)
 		{
-			memcpy(&pProperties[i], &device_extension_properties[i], sizeof(VkExtensionProperties));
+			memcpy(&pProperties[i], &presented_extensions[i], sizeof(VkExtensionProperties));
 		}
-		if (device_extension_properties.size() > *pPropertyCount) retval = VK_INCOMPLETE;
+		if (presented_extensions.size() > *pPropertyCount) retval = VK_INCOMPLETE;
 	}
 	frame_mutex.unlock();
 	writer.write_uint32_t(retval);
