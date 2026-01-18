@@ -19,13 +19,13 @@ jobs:
     - name: Install deps
       run: |
          sudo apt-get update
-         sudo apt-get install git cmake pkg-config python3 libxcb1-dev libxrandr-dev libxcb-randr0-dev libtbb-dev libvulkan-dev spirv-headers clang-19 libglm-dev libegl-dev libgles-dev mesa-opencl-icd liblz4-dev libwayland-dev
+         sudo apt-get install git cmake pkg-config python3 libxcb1-dev libxrandr-dev libxcb-randr0-dev libtbb-dev libvulkan-dev spirv-headers clang-20 libglm-dev libegl-dev libgles-dev mesa-opencl-icd liblz4-dev libwayland-dev
 
     - name: Checkout
       run: git submodule update --init --recursive --force
 
     - name: Configure CMake
-      run: CXX=clang++-19 CC=clang-19 cmake -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}
+      run: CXX=clang++-20 CC=clang-20 cmake -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}
 
     - name: Build
       run: cmake --build ${{github.workspace}}/build --config ${{env.BUILD_TYPE}}
