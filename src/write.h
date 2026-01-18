@@ -162,6 +162,7 @@ public:
 	VkDevice device = VK_NULL_HANDLE;
 	VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
 	VkCommandBuffer commandBuffer = VK_NULL_HANDLE;
+	VkFormat host_copy_format = VK_FORMAT_UNDEFINED;
 
 	inline void write_api_command(uint16_t id);
 

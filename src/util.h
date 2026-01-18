@@ -169,6 +169,7 @@ static inline std::string version_to_string(uint32_t v) { return _to_string(VK_V
 const char* errorString(const VkResult errorCode);
 
 void check_retval(VkResult stored_retval, VkResult retval);
+uint64_t host_image_copy_size(VkFormat format, const VkImageSubresourceLayers* subresource, const VkExtent3D* extent, uint32_t memory_row_length, uint32_t memory_image_height);
 
 static inline bool is_blackhole_mode() { return p__blackhole; }
 static inline int selected_gpu() { return p__gpu; }

@@ -515,7 +515,20 @@ class parameter(spec.base_parameter):
 			z.do('%s = reader.read_uint32_t();' % self.name)
 			z.do('if (%s == LAVATUBE_VIRTUAL_QUEUE) %s = selected_queue_family_index;' % (self.name, self.name))
 			if not is_root: z.do('%s = %s;' % (varname, self.name))
-		elif (self.name == 'ppData' and self.funcname in ['vkMapMemory', 'vkMapMemory2KHR', 'vkMapMemory2']) or self.name == 'pHostPointer':
+		elif self.name == 'pHostPointer':
+			if self.funcname in ['VkMemoryToImageCopy', 'VkImageToMemoryCopy']:
+				tmp_uuint64t = z.tmp('uint64_t')
+				z.do('%s = reader.read_uint64_t();' % tmp_uuint64t)
+				z.do('if (%s > 0)' % tmp_uuint64t)
+				z.brace_begin()
+				tmp_uuint8t_ptr = z.tmpmem('uint8_t', tmp_uuint64t)
+				z.do('reader.read_array(%s, %s);' % (tmp_uuint8t_ptr, tmp_uuint64t))
+				z.do('%s = %s;' % (varname, tmp_uuint8t_ptr))
+				z.brace_end()
+				z.do('else %s = nullptr;' % varname)
+			else:
+				z.decl('%s%s%s' % (self.mod, self.type, self.param_ptrstr), self.name)
+		elif (self.name == 'ppData' and self.funcname in ['vkMapMemory', 'vkMapMemory2KHR', 'vkMapMemory2']):
 			z.decl('%s%s%s' % (self.mod, self.type, self.param_ptrstr), self.name)
 		elif self.name == 'pfnUserCallback' and self.funcname == 'VkDebugUtilsMessengerCreateInfoEXT':
 			z.do('%s = messenger_callback; // hijacking this pointer with our own callback function' % varname)
@@ -834,10 +847,24 @@ class parameter(spec.base_parameter):
 			z.do('initialDataSize = 0;')
 		elif (self.name == 'pInitialData' and self.funcname == 'VkPipelineCacheCreateInfo'):
 			z.do('assert(false); // pInitialData')
-		elif (self.name == 'ppData' and self.funcname in ['vkMapMemory', 'vkMapMemory2KHR', 'vkMapMemory2']) or self.name == 'pHostPointer':
+		elif self.name == 'pHostPointer':
+			if self.funcname in ['VkMemoryToImageCopy', 'VkImageToMemoryCopy']:
+				z.decl('uint64_t', 'host_copy_size')
+				z.do('host_copy_size = host_image_copy_size(writer.host_copy_format, &sptr->imageSubresource, &sptr->imageExtent, sptr->memoryRowLength, sptr->memoryImageHeight);')
+				z.do('writer.write_uint64_t(host_copy_size);')
+				z.do('if (host_copy_size > 0 && sptr->pHostPointer) writer.write_array(reinterpret_cast<const char*>(sptr->pHostPointer), host_copy_size);')
+			else:
+				pass
+		elif (self.name == 'ppData' and self.funcname in ['vkMapMemory', 'vkMapMemory2KHR', 'vkMapMemory2']):
 			pass
 		elif self.structure:
-			self.print_struct(self.type, varname, owner, size=self.length)
+			if self.name == 'pRegions' and self.type in ['VkMemoryToImageCopy', 'VkImageToMemoryCopy'] and self.funcname in ['VkCopyMemoryToImageInfo', 'VkCopyImageToMemoryInfo']:
+				z.decl('VkFormat', 'prev_host_copy_format', custom='writer.host_copy_format')
+				z.do('writer.host_copy_format = image_data ? image_data->format : VK_FORMAT_UNDEFINED;')
+				self.print_struct(self.type, varname, owner, size=self.length)
+				z.do('writer.host_copy_format = prev_host_copy_format;')
+			else:
+				self.print_struct(self.type, varname, owner, size=self.length)
 		elif self.funcname in ['VkDebugMarkerObjectNameInfoEXT', 'VkDebugMarkerObjectTagInfoEXT', 'vkDebugReportMessageEXT'] and self.name == 'object':
 			z.do('auto* object_data = debug_object_trackable(writer.parent->records, %sobjectType, %s);' % (owner, varname))
 			z.do('writer.write_handle(object_data);')
