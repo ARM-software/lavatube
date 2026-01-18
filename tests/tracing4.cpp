@@ -312,7 +312,15 @@ static void trace_4()
 			VkMappedMemoryRange range = {}; // and only one flush call!
 			range.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE;
 			range.memory = origin_memory;
-			range.size = VK_WHOLE_SIZE;
+			if (map_variant == 2)
+			{
+				range.offset = 10;
+				range.size = 20;
+			}
+			else
+			{
+				range.size = VK_WHOLE_SIZE;
+			}
 			result = trace_vkFlushMappedMemoryRanges(vulkan.device, 1, &range);
 			check(result);
 		}
@@ -345,7 +353,15 @@ static void trace_4()
 			VkMappedMemoryRange range = {}; // and only one flush call! not N calls to flush the entire memory area...
 			range.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE;
 			range.memory = origin_memory;
-			range.size = VK_WHOLE_SIZE;
+			if (map_variant == 2)
+			{
+				range.offset = 10;
+				range.size = 20;
+			}
+			else
+			{
+				range.size = VK_WHOLE_SIZE;
+			}
 			result = trace_vkFlushMappedMemoryRanges(vulkan.device, 1, &range);
 			check(result);
 		}
@@ -376,7 +392,15 @@ static void trace_4()
 			VkMappedMemoryRange range = {}; // and only one flush call! not N calls to flush the entire memory area...
 			range.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE;
 			range.memory = origin_memory;
-			range.size = VK_WHOLE_SIZE;
+			if (map_variant == 2)
+			{
+				range.offset = 10;
+				range.size = 20;
+			}
+			else
+			{
+				range.size = VK_WHOLE_SIZE;
+			}
 			result = trace_vkFlushMappedMemoryRanges(vulkan.device, 1, &range);
 			check(result);
 		}

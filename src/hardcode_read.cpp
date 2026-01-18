@@ -1228,11 +1228,14 @@ static void translate_marked_offsets(lava_file_reader& reader, const VkMarkedOff
 	{
 		if (markings->pMarkingTypes[i] != VK_MARKING_TYPE_DEVICE_ADDRESS_ARM) continue;
 		const uint64_t offset = markings->pOffsets[i];
-		uint64_t* addr = (uint64_t*)(((char*)ptr) + offset);
-		const uint64_t current = *addr;
+		void* addr = (char*)ptr + offset;
+		uint64_t current = 0;
+		// Use memcpy to handle unaligned device address storage.
+		memcpy(&current, addr, sizeof(current));
 		const uint64_t newval = reader.parent->device_address_remapping.translate_address(current);
+		assert(newval != 0 || !reader.run);
 		DLOG("%u: Changing memory value at offset %lu from %lu to %lu", (unsigned)i, (unsigned long)offset, (unsigned long)current, (unsigned long)newval);
-		*addr = newval;
+		memcpy(addr, &newval, sizeof(newval));
 	}
 }
 

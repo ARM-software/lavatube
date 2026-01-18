@@ -1765,13 +1765,19 @@ void trace_post_vkFlushMappedMemoryRanges(lava_file_writer& writer, VkResult res
 	{
 		const VkMappedMemoryRange& v = pMemoryRanges[i];
 		auto* memory_data = writer.parent->records.VkDeviceMemory_index.at(v.memory);
+		assert(memory_data->ptr != nullptr && memory_data->size != 0); // the memory must be memory mapped
+		const uint64_t mapped_base = memory_data->offset;
+		const uint64_t mapped_limit = memory_data->offset + memory_data->size;
+		assert(v.offset >= mapped_base && v.offset <= mapped_limit);
 		VkDeviceSize size = v.size;
 		if (v.size == VK_WHOLE_SIZE)
 		{
-			size = memory_data->allocationSize - v.offset;
+			size = mapped_limit - v.offset;
 		}
-		assert(memory_data->ptr != nullptr && memory_data->size != 0); // the memory must be memory mapped
-		memory_data->exposed.add_os(v.offset, size);
+		assert(v.offset + size <= mapped_limit);
+		const uint64_t mapped_start = v.offset;
+		const uint64_t mapped_end = mapped_start + size;
+		memory_data->exposed.add_os(mapped_start, size);
 		// Handle VK_ARM_trace_helpers
 		VkMarkedOffsetsARM* ar = (VkMarkedOffsetsARM*)find_extension(&v, VK_STRUCTURE_TYPE_MARKED_OFFSETS_ARM);
 		// Handle VK_ARM_explicit_host_updates and/or VK_ARM_trace_helpers
@@ -1779,20 +1785,43 @@ void trace_post_vkFlushMappedMemoryRanges(lava_file_writer& writer, VkResult res
 		{
 			for (auto& pair : memory_data->usage)
 			{
-				if (pair.first > v.offset + size) continue; // our beginning is later than its end
+				if (pair.first > mapped_end) continue; // our beginning is later than its end
 				trackedobject* object_data = pair.second;
 				assert(pair.first == object_data->offset);
-				if (pair.first + object_data->size <= v.offset) continue; // its beginning is later than our end
+				if (pair.first + object_data->size <= mapped_start) continue; // its beginning is later than our end
 				char* cloneptr = memory_data->clone + object_data->offset;
 				char* changedptr = memory_data->ptr + object_data->offset - memory_data->offset;
-				uint64_t start = std::max<uint64_t>(object_data->offset, v.offset) - object_data->offset;
-				uint64_t end = std::min<uint64_t>(object_data->offset + object_data->size, v.offset + size) - object_data->offset;
-				if (ar && v.offset != object_data->offset) // flush range has a different offset than the object, modify the offsets in ar->pOffsets to be relative to start of the object in memory
+				uint64_t start = std::max<uint64_t>(object_data->offset, mapped_start) - object_data->offset;
+				uint64_t end = std::min<uint64_t>(object_data->offset + object_data->size, mapped_end) - object_data->offset;
+				VkMarkedOffsetsARM adjusted = {};
+				VkMarkedOffsetsARM* ar_use = nullptr;
+				std::vector<VkDeviceSize> adjusted_offsets;
+				std::vector<VkMarkingTypeARM> adjusted_types;
+				std::vector<VkMarkingSubTypeARM> adjusted_subtypes;
+				if (ar && ar->count > 0 && ar->pOffsets && ar->pMarkingTypes)
 				{
-					// TBD
-					assert(false);
+					adjusted = *ar;
+					adjusted_offsets.reserve(ar->count);
+					adjusted_types.reserve(ar->count);
+					if (ar->pSubTypes) adjusted_subtypes.reserve(ar->count);
+					for (uint32_t mark_i = 0; mark_i < ar->count; mark_i++)
+					{
+						const uint64_t mark_abs = v.offset + ar->pOffsets[mark_i];
+						if (mark_abs < object_data->offset || mark_abs >= object_data->offset + object_data->size) continue;
+						adjusted_offsets.push_back(mark_abs - object_data->offset);
+						adjusted_types.push_back(ar->pMarkingTypes[mark_i]);
+						if (ar->pSubTypes) adjusted_subtypes.push_back(ar->pSubTypes[mark_i]);
+					}
+					if (!adjusted_offsets.empty())
+					{
+						adjusted.count = static_cast<uint32_t>(adjusted_offsets.size());
+						adjusted.pOffsets = adjusted_offsets.data();
+						adjusted.pMarkingTypes = adjusted_types.data();
+						adjusted.pSubTypes = ar->pSubTypes ? adjusted_subtypes.data() : nullptr;
+						ar_use = &adjusted;
+					}
 				}
-				else uint64_t written = write_out_object(writer, device_data, object_data, cloneptr, changedptr, start, end - start, ar);
+				uint64_t written = write_out_object(writer, device_data, object_data, cloneptr, changedptr, start, end - start, ar_use);
 				ILOG("vkFlushMappedMemoryRanges[%u] flushing %s[%u] obj(%lu to %lu) object memory offset=%lu object size=%lu flush(off=%u, size=%u)", i, pretty_print_VkObjectType(object_data->object_type),
 				     (unsigned)object_data->index, (unsigned long)start, (unsigned long)end, (unsigned long)object_data->offset, (unsigned long)object_data->size, (unsigned)v.offset, (unsigned)v.size);
 			}
