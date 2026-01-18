@@ -71,8 +71,8 @@ static void trace()
 
 		trace_alignments[index] = traced_req.alignment;
 		buffer_indices.push_back(index);
+		test_marker_mention(vulkan, std::to_string(i) + " : testing alignment " + std::to_string(raw_req.alignment), VK_OBJECT_TYPE_BUFFER, (uint64_t)buffer);
 		trace_vkDestroyBuffer(vulkan.device, buffer, nullptr);
-		ILOG("Trace %d align=%d buffer=%lu", (int)index, (int)raw_req.alignment, (unsigned long)buffer);
 	}
 	test_done(vulkan);
 }

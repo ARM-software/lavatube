@@ -3,6 +3,27 @@
 
 static VkPhysicalDeviceMemoryProperties memory_properties = {};
 
+void test_marker(const vulkan_setup_t& vulkan, const std::string& text)
+{
+	VkDebugUtilsMessengerCallbackDataEXT dumc = { VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CALLBACK_DATA_EXT, nullptr };
+	dumc.pMessage = text.c_str();
+	trace_vkSubmitDebugUtilsMessageEXT(vulkan.instance, VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT, VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT, &dumc);
+}
+
+void test_marker_mention(const vulkan_setup_t& vulkan, const std::string& text, VkObjectType type, uint64_t handle)
+{
+	assert(type != VK_OBJECT_TYPE_DEVICE_MEMORY); // don't do this
+	VkDebugUtilsMessengerCallbackDataEXT dumc = { VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CALLBACK_DATA_EXT, nullptr };
+	dumc.pMessage = text.c_str();
+	dumc.objectCount = 1;
+	VkDebugUtilsObjectNameInfoEXT duoni = { VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT, nullptr };
+	duoni.objectType = type;
+	duoni.objectHandle = handle;
+	duoni.pObjectName = nullptr; // we will not override the given name of the object
+	dumc.pObjects = &duoni;
+	trace_vkSubmitDebugUtilsMessageEXT(vulkan.instance, VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT, VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT, &dumc);
+}
+
 static VkBool32 report_callback(
     VkDebugReportFlagsEXT                       flags,
     VkDebugReportObjectTypeEXT                  objectType,
@@ -18,7 +39,7 @@ static VkBool32 report_callback(
 	return VK_TRUE;
 }
 
-void print_cmdbuf(vulkan_setup_t& vulkan, VkCommandBuffer cmdbuf)
+void print_cmdbuf(const vulkan_setup_t& vulkan, VkCommandBuffer cmdbuf)
 {
 	const unsigned index = trace_vkGetDeviceTracingObjectPropertyTRACETOOLTEST(vulkan.device, VK_OBJECT_TYPE_COMMAND_BUFFER, (uint64_t)cmdbuf, VK_TRACING_OBJECT_PROPERTY_INDEX_TRACETOOLTEST);
 	const unsigned objs = trace_vkGetDeviceTracingObjectPropertyTRACETOOLTEST(vulkan.device, VK_OBJECT_TYPE_COMMAND_BUFFER, (uint64_t)cmdbuf, VK_TRACING_OBJECT_PROPERTY_MARKED_OBJECTS_TRACETOOLTEST);
@@ -31,7 +52,7 @@ void print_cmdbuf(vulkan_setup_t& vulkan, VkCommandBuffer cmdbuf)
 	printf("cmdbuf[%u] touched(objs=%u ranges=%u bytes=%u) objects(updates=%u bytes=%u) pool=%u\n", index, objs, ranges, bytes, updates, written, poolindex);
 }
 
-void print_memory(vulkan_setup_t& vulkan, VkDeviceMemory memory, const char* name)
+void print_memory(const vulkan_setup_t& vulkan, VkDeviceMemory memory, const char* name)
 {
 	const unsigned index = trace_vkGetDeviceTracingObjectPropertyTRACETOOLTEST(vulkan.device, VK_OBJECT_TYPE_DEVICE_MEMORY, (uint64_t)memory, VK_TRACING_OBJECT_PROPERTY_INDEX_TRACETOOLTEST);
 	const unsigned ranges = trace_vkGetDeviceTracingObjectPropertyTRACETOOLTEST(vulkan.device, VK_OBJECT_TYPE_DEVICE_MEMORY, (uint64_t)memory, VK_TRACING_OBJECT_PROPERTY_MARKED_RANGES_TRACETOOLTEST);
@@ -40,7 +61,7 @@ void print_memory(vulkan_setup_t& vulkan, VkDeviceMemory memory, const char* nam
 	printf("%s : memory[%u] size=%u exposed(ranges=%u bytes=%u)\n", name, index, size, ranges, bytes);
 }
 
-void print_buffer(vulkan_setup_t& vulkan, VkBuffer buffer)
+void print_buffer(const vulkan_setup_t& vulkan, VkBuffer buffer)
 {
 	const unsigned index = trace_vkGetDeviceTracingObjectPropertyTRACETOOLTEST(vulkan.device, VK_OBJECT_TYPE_BUFFER, (uint64_t)buffer, VK_TRACING_OBJECT_PROPERTY_INDEX_TRACETOOLTEST);
 	const unsigned count = trace_vkGetDeviceTracingObjectPropertyTRACETOOLTEST(vulkan.device, VK_OBJECT_TYPE_BUFFER, (uint64_t)buffer, VK_TRACING_OBJECT_PROPERTY_UPDATES_COUNT_TRACETOOLTEST);

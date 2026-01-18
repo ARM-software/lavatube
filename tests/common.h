@@ -40,9 +40,12 @@ uint32_t get_device_memory_type(uint32_t type_filter, VkMemoryPropertyFlags prop
 void test_set_name(VkDevice device, VkObjectType type, uint64_t handle, const char* name);
 void testFlushMemory(const vulkan_setup_t& vulkan, VkDeviceMemory memory, VkDeviceSize offset, VkDeviceSize size, bool extra, VkMarkedOffsetsARM* markings);
 
-void print_cmdbuf(vulkan_setup_t& vulkan, VkCommandBuffer cmdbuf);
-void print_memory(vulkan_setup_t& vulkan, VkDeviceMemory memory, const char* name);
-void print_buffer(vulkan_setup_t& vulkan, VkBuffer buffer);
+void test_marker(const vulkan_setup_t& vulkan, const std::string& text);
+void test_marker_mention(const vulkan_setup_t& vulkan, const std::string& text, VkObjectType type, uint64_t handle);
+
+void print_cmdbuf(const vulkan_setup_t& vulkan, VkCommandBuffer cmdbuf);
+void print_memory(const vulkan_setup_t& vulkan, VkDeviceMemory memory, const char* name);
+void print_buffer(const vulkan_setup_t& vulkan, VkBuffer buffer);
 
 // Prior assumption: Memory is not already mapped.
 static inline void test_destroy_buffer(vulkan_setup_t& vulkan, unsigned value, VkDeviceMemory memory, VkBuffer buffer, VkDeviceSize offset, VkDeviceSize size)

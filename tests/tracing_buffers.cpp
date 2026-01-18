@@ -22,6 +22,7 @@ static void trace()
 	PFN_vkAssertBufferARM vkAssertBuffer = (PFN_vkAssertBufferARM)trace_vkGetDeviceProcAddr(vulkan.device, "vkAssertBufferARM");
 	assert(vkAssertBuffer != nullptr);
 
+	test_marker(vulkan, "Creating buffers");
 	VkBuffer buffer[3];
 	VkBufferCreateInfo bufferCreateInfo = { VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, nullptr };
 	bufferCreateInfo.size = 99;
@@ -60,6 +61,7 @@ static void trace()
 	check(result);
 	assert(memory != 0);
 
+	test_marker(vulkan, "Binding buffers");
 	trace_vkBindBufferMemory(vulkan.device, buffer[0], memory, 0);
 	ILOG("Binding to %d - alignment %d", (int)0, (int)req[0].alignment);
 	trace_vkBindBufferMemory(vulkan.device, buffer[1], memory, aligned_size[0]);
@@ -67,6 +69,7 @@ static void trace()
 	trace_vkBindBufferMemory(vulkan.device, buffer[2], memory, aligned_size[0] + aligned_size[1]);
 	ILOG("Binding to %d - alignment %d", (int)(aligned_size[0] + aligned_size[1]), (int)req[2].alignment);
 
+	test_marker(vulkan, "Filling buffers");
 	char* ptr = nullptr;
 	result = trace_vkMapMemory(vulkan.device, memory, 0, pAllocateMemInfo.allocationSize, 0, (void**)&ptr);
 	check(result);
@@ -81,6 +84,7 @@ static void trace()
 	trace_vkFlushMappedMemoryRanges(vulkan.device, 1, &flush);
 	trace_vkUnmapMemory(vulkan.device, memory);
 
+	test_marker(vulkan, "Asserting buffers");
 	uint32_t checksum = 0;
 	result = trace_vkAssertBufferARM(vulkan.device, buffer[0], 0, VK_WHOLE_SIZE, &checksum, nullptr);
 	check(result);

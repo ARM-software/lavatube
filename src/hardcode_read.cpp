@@ -201,6 +201,75 @@ static uint64_t object_lookup(VkObjectType type, uint32_t index)
 	return 0;
 }
 
+static trackable& object_trackable(VkObjectType type, uint64_t handle)
+{
+	static trackable dummy;
+	switch (type)
+	{
+	case VK_OBJECT_TYPE_INSTANCE: return VkInstance_index.at(index_to_VkInstance.index(stored_instance));
+	case VK_OBJECT_TYPE_PHYSICAL_DEVICE: return VkPhysicalDevice_index.at(index_to_VkPhysicalDevice.index(selected_physical_device));
+	case VK_OBJECT_TYPE_DEVICE: return VkDevice_index.at(index_to_VkDevice.index((VkDevice)handle));
+	case VK_OBJECT_TYPE_QUEUE: return VkQueue_index.at(index_to_VkQueue.index((VkQueue)handle));
+	case VK_OBJECT_TYPE_DEVICE_MEMORY: assert(false); return dummy;
+	case VK_OBJECT_TYPE_SEMAPHORE: return VkSemaphore_index.at(index_to_VkSemaphore.index((VkSemaphore)handle));
+	case VK_OBJECT_TYPE_COMMAND_BUFFER: return VkCommandBuffer_index.at(index_to_VkCommandBuffer.index((VkCommandBuffer)handle));
+	case VK_OBJECT_TYPE_FENCE: return VkFence_index.at(index_to_VkFence.index((VkFence)handle));
+	case VK_OBJECT_TYPE_BUFFER: return VkBuffer_index.at(index_to_VkBuffer.index((VkBuffer)handle));
+	case VK_OBJECT_TYPE_IMAGE: return VkImage_index.at(index_to_VkImage.index((VkImage)handle));
+	case VK_OBJECT_TYPE_EVENT: return VkEvent_index.at(index_to_VkEvent.index((VkEvent)handle));
+	case VK_OBJECT_TYPE_QUERY_POOL: return VkQueryPool_index.at(index_to_VkQueryPool.index((VkQueryPool)handle));
+	case VK_OBJECT_TYPE_BUFFER_VIEW: return VkBufferView_index.at(index_to_VkBufferView.index((VkBufferView)handle));
+	case VK_OBJECT_TYPE_IMAGE_VIEW: return VkImageView_index.at(index_to_VkImageView.index((VkImageView)handle));
+	case VK_OBJECT_TYPE_SHADER_MODULE: return VkShaderModule_index.at(index_to_VkShaderModule.index((VkShaderModule)handle));
+	case VK_OBJECT_TYPE_PIPELINE_CACHE: return VkPipelineCache_index.at(index_to_VkPipelineCache.index((VkPipelineCache)handle));
+	case VK_OBJECT_TYPE_PIPELINE_LAYOUT: return VkPipelineLayout_index.at(index_to_VkPipelineLayout.index((VkPipelineLayout)handle));
+	case VK_OBJECT_TYPE_RENDER_PASS: return VkRenderPass_index.at(index_to_VkRenderPass.index((VkRenderPass)handle));
+	case VK_OBJECT_TYPE_PIPELINE: return VkPipeline_index.at(index_to_VkPipeline.index((VkPipeline)handle));
+	case VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT: return VkDescriptorSetLayout_index.at(index_to_VkDescriptorSetLayout.index((VkDescriptorSetLayout)handle));
+	case VK_OBJECT_TYPE_SAMPLER: return VkSampler_index.at(index_to_VkSampler.index((VkSampler)handle));
+	case VK_OBJECT_TYPE_DESCRIPTOR_POOL: return VkDescriptorPool_index.at(index_to_VkDescriptorPool.index((VkDescriptorPool)handle));
+	case VK_OBJECT_TYPE_DESCRIPTOR_SET: return VkDescriptorSet_index.at(index_to_VkDescriptorSet.index((VkDescriptorSet)handle));
+	case VK_OBJECT_TYPE_FRAMEBUFFER: return VkFramebuffer_index.at(index_to_VkFramebuffer.index((VkFramebuffer)handle));
+	case VK_OBJECT_TYPE_COMMAND_POOL: return VkCommandPool_index.at(index_to_VkCommandPool.index((VkCommandPool)handle));
+	case VK_OBJECT_TYPE_SURFACE_KHR: return VkSurfaceKHR_index.at(index_to_VkSurfaceKHR.index((VkSurfaceKHR)handle));
+	case VK_OBJECT_TYPE_SWAPCHAIN_KHR: return VkSwapchainKHR_index.at(index_to_VkSwapchainKHR.index((VkSwapchainKHR)handle));
+	case VK_OBJECT_TYPE_DESCRIPTOR_UPDATE_TEMPLATE: return VkDescriptorUpdateTemplate_index.at(index_to_VkDescriptorUpdateTemplate.index((VkDescriptorUpdateTemplate)handle));
+	case VK_OBJECT_TYPE_PRIVATE_DATA_SLOT: return VkPrivateDataSlot_index.at(index_to_VkPrivateDataSlot.index((VkPrivateDataSlot)handle));
+	case VK_OBJECT_TYPE_DISPLAY_KHR: return VkDisplayKHR_index.at(index_to_VkDisplayKHR.index((VkDisplayKHR)handle));
+	case VK_OBJECT_TYPE_DISPLAY_MODE_KHR: return VkDisplayModeKHR_index.at(index_to_VkDisplayModeKHR.index((VkDisplayModeKHR)handle));
+	case VK_OBJECT_TYPE_ACCELERATION_STRUCTURE_KHR: return VkAccelerationStructureKHR_index.at(index_to_VkAccelerationStructureKHR.index((VkAccelerationStructureKHR)handle));
+	case VK_OBJECT_TYPE_VALIDATION_CACHE_EXT: return VkValidationCacheEXT_index.at(index_to_VkValidationCacheEXT.index((VkValidationCacheEXT)handle));
+	case VK_OBJECT_TYPE_DEFERRED_OPERATION_KHR: return VkDeferredOperationKHR_index.at(index_to_VkDeferredOperationKHR.index((VkDeferredOperationKHR)handle));
+	case VK_OBJECT_TYPE_MICROMAP_EXT: return VkMicromapEXT_index.at(index_to_VkMicromapEXT.index((VkMicromapEXT)handle));
+	case VK_OBJECT_TYPE_SAMPLER_YCBCR_CONVERSION_KHR: return VkSamplerYcbcrConversion_index.at(index_to_VkSamplerYcbcrConversion.index((VkSamplerYcbcrConversion)handle));
+	case VK_OBJECT_TYPE_VIDEO_SESSION_KHR: return VkVideoSessionKHR_index.at(index_to_VkVideoSessionKHR.index((VkVideoSessionKHR)handle));
+	case VK_OBJECT_TYPE_VIDEO_SESSION_PARAMETERS_KHR: return VkVideoSessionParametersKHR_index.at(index_to_VkVideoSessionParametersKHR.index((VkVideoSessionParametersKHR)handle));
+	case VK_OBJECT_TYPE_SHADER_EXT: return VkShaderEXT_index.at(index_to_VkShaderEXT.index((VkShaderEXT)handle));
+	case VK_OBJECT_TYPE_DEBUG_REPORT_CALLBACK_EXT: return VkDebugReportCallbackEXT_index.at(index_to_VkDebugReportCallbackEXT.index((VkDebugReportCallbackEXT)handle));
+	case VK_OBJECT_TYPE_DEBUG_UTILS_MESSENGER_EXT: return VkDebugUtilsMessengerEXT_index.at(index_to_VkDebugUtilsMessengerEXT.index((VkDebugUtilsMessengerEXT)handle));
+	case VK_OBJECT_TYPE_TENSOR_ARM: return VkTensorARM_index.at(index_to_VkTensorARM.index((VkTensorARM)handle));
+	case VK_OBJECT_TYPE_TENSOR_VIEW_ARM: return VkTensorViewARM_index.at(index_to_VkTensorViewARM.index((VkTensorViewARM)handle));
+	case VK_OBJECT_TYPE_DATA_GRAPH_PIPELINE_SESSION_ARM: return VkDataGraphPipelineSessionARM_index.at(index_to_VkDataGraphPipelineSessionARM.index((VkDataGraphPipelineSessionARM)handle));
+
+	// these are not supported:
+	case VK_OBJECT_TYPE_EXTERNAL_COMPUTE_QUEUE_NV:
+	case VK_OBJECT_TYPE_OPTICAL_FLOW_SESSION_NV:
+	case VK_OBJECT_TYPE_BUFFER_COLLECTION_FUCHSIA:
+	case VK_OBJECT_TYPE_INDIRECT_COMMANDS_LAYOUT_NV:
+	case VK_OBJECT_TYPE_PERFORMANCE_CONFIGURATION_INTEL:
+	case VK_OBJECT_TYPE_ACCELERATION_STRUCTURE_NV:
+	case VK_OBJECT_TYPE_CU_FUNCTION_NVX:
+	case VK_OBJECT_TYPE_CU_MODULE_NVX:
+	case VK_OBJECT_TYPE_PIPELINE_BINARY_KHR:
+	case VK_OBJECT_TYPE_INDIRECT_COMMANDS_LAYOUT_EXT:
+	case VK_OBJECT_TYPE_INDIRECT_EXECUTION_SET_EXT:
+	case VK_OBJECT_TYPE_UNKNOWN:
+	case VK_OBJECT_TYPE_MAX_ENUM: assert(false); return dummy;
+	}
+	assert(false);
+	return dummy;
+}
+
 void replay_pre_vkQueueSubmit2(lava_file_reader& reader, VkQueue queue, uint32_t submitCount, const VkSubmitInfo2* pSubmits, VkFence fence)
 {
 	for (uint32_t i = 0; i < submitCount; i++)
@@ -339,6 +408,24 @@ static void replay_pre_vkDestroySwapchainKHR(lava_file_reader& reader, VkDevice 
 	if (t.virtual_cmdpool != VK_NULL_HANDLE) wrap_vkFreeCommandBuffers(device, t.virtual_cmdpool, t.virtual_cmdbuffers.size(), t.virtual_cmdbuffers.data());
 	wrap_vkDestroyCommandPool(device, t.virtual_cmdpool, nullptr);
 	wrap_vkDestroySemaphore(device, t.virtual_semaphore, nullptr);
+}
+
+static void replay_post_vkSubmitDebugUtilsMessageEXT(lava_file_reader& reader,
+    VkInstance                                  instance,
+    VkDebugUtilsMessageSeverityFlagBitsEXT      messageSeverity,
+    VkDebugUtilsMessageTypeFlagsEXT             messageTypes,
+    const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData)
+{
+	if (!pCallbackData) return;
+	if (pCallbackData->pObjects && pCallbackData->objectCount > 0 && pCallbackData->pMessage)
+	{
+		trackable& t = object_trackable(pCallbackData->pObjects[0].objectType, pCallbackData->pObjects[0].objectHandle);
+		DLOG("Marker for %s[%d]: " MAKEBLUE("%s"), pretty_print_VkObjectType(pCallbackData->pObjects[0].objectType), (int)t.index, pCallbackData->pMessage);
+	}
+	else if (pCallbackData->pMessage)
+	{
+		DLOG("Marker:" MAKEBLUE("%s"), pCallbackData->pMessage);
+	}
 }
 
 static void replay_post_vkGetAccelerationStructureDeviceAddressKHR(lava_file_reader& reader, VkDeviceAddress result, VkDevice device, const VkAccelerationStructureDeviceAddressInfoKHR* pInfo)

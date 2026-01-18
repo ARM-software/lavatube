@@ -34,6 +34,20 @@
 #define DEBUGPARAM(x)
 #endif
 
+#define BLUE "\x1B[34m"
+#define RED "\x1B[31m"
+#define GREEN "\x1B[32m"
+#define YELLOW "\x1B[33m"
+#define MAGENTA "\x1B[35m"
+#define CYAN "\x1B[36m"
+#define RESET "\x1B[0m"
+#define MAKEBLUE(x) BLUE x RESET
+#define MAKERED(x) RED x RESET
+#define MAKEGREEN(x) GREEN x RESET
+#define MAKEYELLOW(x) YELLOW x RESET
+#define MAKEMAGENTA(x) MAGENTA x RESET
+#define MAKECYAN(x) CYAN x RESET
+
 #define likely(x)   __builtin_expect((x),1)
 #define unlikely(x) __builtin_expect((x),0)
 

@@ -145,7 +145,7 @@ replay_pre_calls = [ 'vkDestroyInstance', 'vkDestroyDevice', 'vkCreateDevice', '
 	'vkQueueSubmit', 'vkQueueSubmit2', 'vkQueueSubmit2KHR', 'vkDestroyPipelineCache', 'vkDestroySwapchainKHR', 'vkCreateInstance' ]
 validate_funcs(replay_pre_calls)
 replay_post_calls = [ 'vkCreateInstance', 'vkDestroyInstance', 'vkQueuePresentKHR', 'vkAcquireNextImageKHR', 'vkAcquireNextImage2KHR',
-	'vkGetBufferDeviceAddress', 'vkGetBufferDeviceAddressKHR', 'vkGetAccelerationStructureDeviceAddressKHR' ]
+	'vkGetBufferDeviceAddress', 'vkGetBufferDeviceAddressKHR', 'vkGetAccelerationStructureDeviceAddressKHR', 'vkSubmitDebugUtilsMessageEXT' ]
 validate_funcs(replay_post_calls)
 replay_postprocess_calls = [ 'vkCmdPushConstants', 'vkCmdPushConstants2KHR', 'vkCreateRayTracingPipelinesKHR', 'vkCreateGraphicsPipelines',
 	'vkCreateComputePipelines', 'vkCmdBindPipeline', 'vkQueueSubmit', 'vkQueueSubmit2', 'vkQueueSubmit2KHR', 'vkCmdBindDescriptorSets2KHR',
@@ -164,7 +164,7 @@ trace_post_calls = [ 'vkCreateInstance', 'vkCreateDevice', 'vkDestroyInstance', 
 		'vkGetDeviceImageMemoryRequirements', 'vkGetDeviceImageMemoryRequirementsKHR', 'vkGetPhysicalDeviceFeatures2', 'vkGetPhysicalDeviceFeatures2KHR',
 		'vkGetPhysicalDeviceMemoryProperties2', 'vkGetDeviceImageSparseMemoryRequirementsKHR', 'vkGetDeviceImageSparseMemoryRequirements',
 		'vkCreateShaderModule', 'vkGetBufferDeviceAddress', 'vkGetBufferDeviceAddressKHR', 'vkGetAccelerationStructureDeviceAddressKHR',
-		'vkCmdBindDescriptorSets2KHR', 'vkCmdBindDescriptorSets2', 'vkGetTensorMemoryRequirementsARM', 'vkBindTensorMemoryARM' ]
+		'vkCmdBindDescriptorSets2KHR', 'vkCmdBindDescriptorSets2', 'vkGetTensorMemoryRequirementsARM', 'vkBindTensorMemoryARM', 'vkSubmitDebugUtilsMessageEXT' ]
 validate_funcs(trace_post_calls)
 skip_post_calls = [ 'vkGetQueryPoolResults', 'vkGetPhysicalDeviceXcbPresentationSupportKHR' ]
 validate_funcs(skip_post_calls)
@@ -1043,9 +1043,9 @@ class parameter(spec.base_parameter):
 		if self.funcname == 'vkEndCommandBuffer':
 			z.do('commandbuffer_data->last_modified = writer.current;')
 		if self.funcname == 'VkDebugMarkerObjectNameInfoEXT' and self.name == 'pObjectName':
-			z.do('object_data->name = sptr->pObjectName;')
+			z.do('if (sptr->pObjectName) object_data->name = sptr->pObjectName;')
 		if self.funcname == 'VkDebugUtilsObjectNameInfoEXT' and self.name == 'pObjectName':
-			z.do('object_data->name = sptr->pObjectName;')
+			z.do('if (sptr->pObjectName) object_data->name = sptr->pObjectName;')
 		if self.type == 'VkDevice' and self.funcname[0] == 'v' and self.name == 'device':
 			z.do('writer.device = device;')
 			z.do('writer.physicalDevice = device_data->physicalDevice;')

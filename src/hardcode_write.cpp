@@ -144,6 +144,24 @@ static trackable* object_trackable(const trace_records& r, VkObjectType type, ui
 	return nullptr;
 }
 
+static void trace_post_vkSubmitDebugUtilsMessageEXT(lava_file_writer& writer,
+    VkInstance                                  instance,
+    VkDebugUtilsMessageSeverityFlagBitsEXT      messageSeverity,
+    VkDebugUtilsMessageTypeFlagsEXT             messageTypes,
+    const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData)
+{
+	if (!pCallbackData) return;
+	if (pCallbackData->pObjects && pCallbackData->objectCount > 0 && pCallbackData->pMessage)
+	{
+		trackable* t = object_trackable(writer.parent->records, pCallbackData->pObjects[0].objectType, pCallbackData->pObjects[0].objectHandle);
+		DLOG("Marker for %s[%d]: " MAKEBLUE("%s"), pretty_print_VkObjectType(pCallbackData->pObjects[0].objectType), (int)t->index, pCallbackData->pMessage);
+	}
+	else if (pCallbackData->pMessage)
+	{
+		DLOG("Marker: " MAKEBLUE("%s"), pCallbackData->pMessage);
+	}
+}
+
 static void trace_post_vkGetAccelerationStructureDeviceAddressKHR(lava_file_writer& writer, VkDeviceAddress result, VkDevice device, const VkAccelerationStructureDeviceAddressInfoKHR* pInfo)
 {
 	auto* data = writer.parent->records.VkAccelerationStructureKHR_index.at(pInfo->accelerationStructure);
