@@ -102,6 +102,7 @@ static void callback_vkSubmitDebugUtilsMessageEXT(VkInstance instance, VkDebugUt
 	if (pCallbackData->pObjects && pCallbackData->objectCount > 0 && pCallbackData->pMessage)
 	{
 		trackable& t = object_trackable(pCallbackData->pObjects[0].objectType, pCallbackData->pObjects[0].objectHandle);
+		(void)t;
 		DLOG("Marker for %s[%d]: " MAKEBLUE("%s"), pretty_print_VkObjectType(pCallbackData->pObjects[0].objectType), (int)t.index, pCallbackData->pMessage);
 	}
 	else if (pCallbackData->pMessage)
