@@ -45,7 +45,7 @@
 - Capture is often initiated from the script `scripts/lava-capture.py`
 
 ## Modifying replay functionality (lava-replay)
-- Capture is often also called `read` in the code.
+- Replay is often also called `read` in the code.
 - Replay file IO code is in `src/filereader.cpp` and higher-level code in `src/read.cpp`.
 - Manually implemented functions are found in `src/hardcode_read.cpp`
 - SPIRV simulation is handled in `src/execute_commands.cpp`
