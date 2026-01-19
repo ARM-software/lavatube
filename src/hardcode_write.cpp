@@ -637,6 +637,31 @@ static void handle_VkWriteDescriptorSets(lava_file_writer& writer, uint32_t desc
 	}
 }
 
+static void merge_descriptor_touched(trackeddescriptorset_trace* dst, const trackeddescriptorset_trace* src)
+{
+	for (const auto& pair : src->touched)
+	{
+		if (dst->touched.count(pair.first) > 0)
+		{
+			for (const auto& r : pair.second.list()) dst->touched[pair.first].add(r.first, r.last);
+		}
+		else dst->touched[pair.first] = pair.second;
+	}
+}
+
+static void handle_VkCopyDescriptorSets(lava_file_writer& writer, uint32_t descriptorCopyCount, const VkCopyDescriptorSet* pDescriptorCopies)
+{
+	if (descriptorCopyCount == 0 || !pDescriptorCopies) return;
+
+	for (unsigned i = 0; i < descriptorCopyCount; i++)
+	{
+		auto* src = writer.parent->records.VkDescriptorSet_index.at(pDescriptorCopies[i].srcSet);
+		auto* dst = writer.parent->records.VkDescriptorSet_index.at(pDescriptorCopies[i].dstSet);
+		merge_descriptor_touched(dst, src);
+		if (dst->dynamic_buffers.empty() && !src->dynamic_buffers.empty()) dst->dynamic_buffers = src->dynamic_buffers;
+	}
+}
+
 static void trace_post_vkCmdPushDescriptorSetKHR(lava_file_writer& writer, VkCommandBuffer commandBuffer, VkPipelineBindPoint pipelineBindPoint, VkPipelineLayout layout, uint32_t set, uint32_t descriptorWriteCount, const VkWriteDescriptorSet* pDescriptorWrites)
 {
 	handle_VkWriteDescriptorSets(writer, descriptorWriteCount, pDescriptorWrites, false, true);
@@ -650,9 +675,7 @@ static void trace_post_vkCmdPushDescriptorSet2KHR(lava_file_writer& writer, VkCo
 static void trace_post_vkUpdateDescriptorSets(lava_file_writer& writer, VkDevice device, uint32_t descriptorWriteCount, const VkWriteDescriptorSet* pDescriptorWrites, uint32_t descriptorCopyCount, const VkCopyDescriptorSet* pDescriptorCopies)
 {
 	handle_VkWriteDescriptorSets(writer, descriptorWriteCount, pDescriptorWrites, true, false);
-
-	// TBD handle copy
-	assert(descriptorCopyCount == 0);
+	handle_VkCopyDescriptorSets(writer, descriptorCopyCount, pDescriptorCopies);
 }
 
 // combine all updates for each memory into one update list for each device memory object, so we keep the number of map operations to a minimum

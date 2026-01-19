@@ -1313,6 +1313,21 @@ static void handle_VkWriteDescriptorSets(lava_file_reader& reader, uint32_t desc
 	}
 }
 
+static void handle_VkCopyDescriptorSets(lava_file_reader& reader, uint32_t descriptorCopyCount, const VkCopyDescriptorSet* pDescriptorCopies)
+{
+	if (descriptorCopyCount == 0 || !pDescriptorCopies) return;
+
+	for (unsigned i = 0; i < descriptorCopyCount; i++)
+	{
+		const uint32_t src_index = index_to_VkDescriptorSet.index(pDescriptorCopies[i].srcSet);
+		auto& src = VkDescriptorSet_index.at(src_index);
+		const uint32_t dst_index = index_to_VkDescriptorSet.index(pDescriptorCopies[i].dstSet);
+		auto& dst = VkDescriptorSet_index.at(dst_index);
+		for (const auto& pair : src.bound_buffers) dst.bound_buffers[pair.first] = pair.second;
+		for (const auto& pair : src.dynamic_buffers) dst.dynamic_buffers[pair.first] = pair.second;
+	}
+}
+
 void replay_postprocess_vkCmdPushDescriptorSetKHR(lava_file_reader& reader, VkCommandBuffer commandBuffer, VkPipelineBindPoint pipelineBindPoint, VkPipelineLayout layout, uint32_t set, uint32_t descriptorWriteCount, const VkWriteDescriptorSet* pDescriptorWrites)
 {
 	assert(false);
@@ -1332,9 +1347,7 @@ void replay_postprocess_vkCmdPushDescriptorSet2KHR(lava_file_reader& reader, VkC
 void replay_postprocess_vkUpdateDescriptorSets(lava_file_reader& reader, VkDevice device, uint32_t descriptorWriteCount, const VkWriteDescriptorSet* pDescriptorWrites, uint32_t descriptorCopyCount, const VkCopyDescriptorSet* pDescriptorCopies)
 {
 	handle_VkWriteDescriptorSets(reader, descriptorWriteCount, pDescriptorWrites, true);
-
-	// TBD handle copy
-	assert(descriptorCopyCount == 0);
+	handle_VkCopyDescriptorSets(reader, descriptorCopyCount, pDescriptorCopies);
 }
 
 void replay_postprocess_vkCmdBindDescriptorSets(lava_file_reader& reader, VkCommandBuffer commandBuffer, VkPipelineBindPoint pipelineBindPoint, VkPipelineLayout layout,
