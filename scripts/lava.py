@@ -7,6 +7,7 @@ import util
 import os
 import argparse
 import struct
+import vkconfig as vk
 
 # New functions that we implement
 fake_functions = [ 'vkAssertBufferARM', 'vkSyncBufferTRACETOOLTEST', 'vkGetDeviceTracingObjectPropertyTRACETOOLTEST',
@@ -100,14 +101,14 @@ out([wrh], '{')
 out([wrh], '\ttrace_records();')
 out([wrh])
 for name in spec.all_handles:
-	out([wrh], '\ttrace_remap<%s, %s> %s_index;' % (name, util.trackable_type_map_trace.get(name, 'trackable'), name))
+	out([wrh], '\ttrace_remap<%s, %s> %s_index;' % (name, vk.trackable_type_map_trace.get(name, 'trackable'), name))
 	if name != 'VkDeviceMemory':
 		out(targets_read, 'replay_remap<%s> index_to_%s;' % (name, name))
 		out(targets_read_headers, 'extern replay_remap<%s> index_to_%s;' % (name, name))
 for name in spec.all_handles:
 	if name != 'VkDeviceMemory':
-		out(targets_read, 'std::vector<%s> %s_index;' % (util.trackable_type_map_replay.get(name, 'trackable'), name))
-		out(targets_read_headers, 'extern std::vector<%s> %s_index;' % (util.trackable_type_map_replay.get(name, 'trackable'), name))
+		out(targets_read, 'std::vector<%s> %s_index;' % (vk.trackable_type_map_replay.get(name, 'trackable'), name))
+		out(targets_read_headers, 'extern std::vector<%s> %s_index;' % (vk.trackable_type_map_replay.get(name, 'trackable'), name))
 
 out([wrh, wr] + targets_read)
 out([wrh], '\tconst std::unordered_map<std::string, uint16_t> function_table;')
@@ -436,7 +437,7 @@ out(targets_read, '\tswitch(call)')
 out(targets_read, '\t{')
 idx = 0
 for f in spec.functions:
-	if f in util.functions_noop or f in spec.disabled_functions or spec.str_contains_vendor(f):
+	if f in vk.functions_noop or f in spec.disabled_functions or spec.str_contains_vendor(f):
 		out(targets_read, '\tcase %d:' % idx)
 		out(targets_read, '\t\tDLOG3("Attempt to use retrace_getcall on unimplemented function %s with index %d.");' % (f, idx))
 		out(targets_read, '\t\treturn nullptr;')
@@ -469,7 +470,7 @@ idx = 0
 for f in spec.functions:
 	if f in spec.protected_funcs:
 		out([wr], '#ifdef %s' % spec.protected_funcs[f])
-	if f in util.functions_noop or f in spec.disabled_functions or spec.str_contains_vendor(f):
+	if f in vk.functions_noop or f in spec.disabled_functions or spec.str_contains_vendor(f):
 		out([wr], '\tcase %d:' % idx)
 		out([wr], '\t\tDLOG("Attempt to use trace_getcall on unimplemented function %s with index %s.");' % (f, idx))
 		out([wr], '\t\treturn nullptr;')
@@ -510,9 +511,9 @@ for v in spec.root.findall('types/type'):
 		out(targets_write, '\tif (instance->records.%s_index.size())' % name)
 		out(targets_write, '\t{')
 		out(targets_write, '\t\tv["%s"] = Json::arrayValue;' % name)
-		out(targets_write, '\t\tfor (const %s* data : instance->records.%s_index.iterate())' % (util.trackable_type_map_trace.get(name, 'trackable'), name))
+		out(targets_write, '\t\tfor (const %s* data : instance->records.%s_index.iterate())' % (vk.trackable_type_map_trace.get(name, 'trackable'), name))
 		out(targets_write, '\t\t{')
-		out(targets_write, '\t\t\tJson::Value vv = %s_json(data);' % util.trackable_type_map_trace.get(name, 'trackable'))
+		out(targets_write, '\t\t\tJson::Value vv = %s_json(data);' % vk.trackable_type_map_trace.get(name, 'trackable'))
 		out(targets_write, '\t\t\tvv["index"] = data->index;')
 		out(targets_write, '\t\t\tv["%s"].append(vv);' % name)
 		out(targets_write, '\t\t}')
@@ -532,7 +533,7 @@ for v in spec.root.findall('types/type'):
 			continue
 		name = v.find('name').text
 		if spec.str_contains_vendor(name): continue
-		out(targets_read, '\tif (v.isMember("%s")) for (const auto& i : v["%s"]) %s_index.push_back(%s_json(i));' % (name, name, name, util.trackable_type_map_replay.get(name, 'trackable')))
+		out(targets_read, '\tif (v.isMember("%s")) for (const auto& i : v["%s"]) %s_index.push_back(%s_json(i));' % (name, name, name, vk.trackable_type_map_replay.get(name, 'trackable')))
 for e in extra_tracked_structs:
 	out(targets_read, '\tif (v.isMember("%s")) { has_%s = true; read%s(v["%s"], stored_%s); }' % (e, e, e, e, e))
 out(targets_read, '}')

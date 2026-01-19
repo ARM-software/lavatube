@@ -5,6 +5,7 @@ sys.path.append('external/tracetooltests/scripts')
 import spec
 import util
 import os
+import vkconfig as vk
 
 # Do not generate read/write functions for these
 skiplist = [ 'VkXlibSurfaceCreateInfoKHR', 'VkXcbSurfaceCreateInfoKHR', 'VkBaseOutStructure', 'VkBaseInStructure', 'VkAllocationCallbacks',
@@ -26,7 +27,7 @@ hardcoded_write = [ 'VkUpdateMemoryInfoARM', 'VkAddressRemapARM', 'VkPatchChunkT
 z = util.getspool()
 
 def skip(name, selected):
-	if not name in spec.structures or (selected and name != selected) or name in util.struct_noop:
+	if not name in spec.structures or (selected and name != selected) or name in vk.struct_noop:
 		return True
 	if name in skiplist:
 		return True
@@ -51,7 +52,7 @@ def struct_header_write(w, selected = None):
 		if name in spec.protected_types:
 			print('#ifdef %s' % spec.protected_types[name], file=w)
 		accessor = '%s* sptr' % name
-		modifier = 'const ' if not name in util.deconst_struct else ''
+		modifier = 'const ' if not name in vk.deconst_struct else ''
 		print('static void write_%s(lava_file_writer& writer, %s%s);' % (name, modifier, accessor), file=w)
 		if name in spec.protected_types:
 			print('#endif // %s' % spec.protected_types[name], file=w)
@@ -114,7 +115,7 @@ def struct_impl_write(w, selected = None):
 		if name == 'VkPipelineViewportStateCreateInfo': special = ', const VkPipelineDynamicStateCreateInfo* pDynamicState'
 		elif name == 'VkCommandBufferBeginInfo': special = ', trackedcmdbuffer_trace* tcmd'
 		elif name == 'VkWriteDescriptorSet': special = ', bool ignoreDstSet'
-		modifier = 'const ' if not name in util.deconst_struct else ''
+		modifier = 'const ' if not name in vk.deconst_struct else ''
 		print('static void write_%s(lava_file_writer& writer, %s%s%s)' % (name, modifier, accessor, special), file=w)
 		print('{', file=w)
 		if v.attrib.get('alias'):
