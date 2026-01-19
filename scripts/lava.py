@@ -379,6 +379,7 @@ out(targets_read_headers, 'void buffer_update(lava_file_reader& reader, uint32_t
 out(targets_read_headers, 'void tensor_update(lava_file_reader& reader, uint32_t device_index, uint32_t tensor_index, uint64_t size, const VkBaseOutStructure* sptr);')
 out(targets_read_headers, 'void terminate_all(lava_file_reader& reader, VkDevice device);')
 out(targets_read_headers, 'void reset_for_tools();')
+out(targets_read_headers, 'trackable& object_trackable(VkObjectType type, uint64_t handle);')
 out(targets_read_headers)
 
 out(targets_read, 'void retrace_init(lava_reader& replayer, const Json::Value& v, int heap_size, bool run)')

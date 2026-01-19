@@ -201,7 +201,7 @@ static uint64_t object_lookup(VkObjectType type, uint32_t index)
 	return 0;
 }
 
-static trackable& object_trackable(VkObjectType type, uint64_t handle)
+trackable& object_trackable(VkObjectType type, uint64_t handle)
 {
 	static trackable dummy;
 	switch (type)

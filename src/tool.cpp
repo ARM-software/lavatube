@@ -95,6 +95,21 @@ static void replay_thread(lava_reader* replayer, int thread_id)
 	}
 }
 
+static void callback_vkSubmitDebugUtilsMessageEXT(VkInstance instance, VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity, VkDebugUtilsMessageTypeFlagsEXT messageTypes,
+                                                  const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData)
+{
+	if (!pCallbackData) return;
+	if (pCallbackData->pObjects && pCallbackData->objectCount > 0 && pCallbackData->pMessage)
+	{
+		trackable& t = object_trackable(pCallbackData->pObjects[0].objectType, pCallbackData->pObjects[0].objectHandle);
+		DLOG("Marker for %s[%d]: " MAKEBLUE("%s"), pretty_print_VkObjectType(pCallbackData->pObjects[0].objectType), (int)t.index, pCallbackData->pMessage);
+	}
+	else if (pCallbackData->pMessage)
+	{
+		DLOG("Marker: " MAKEBLUE("%s"), pCallbackData->pMessage);
+	}
+}
+
 static void callback_vkCreateShaderModule(VkDevice device, const VkShaderModuleCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkShaderModule* pShaderModule)
 {
 	static int count = 0;
@@ -248,6 +263,7 @@ int main(int argc, char **argv)
 		// Add callbacks
 		vkCreateShaderModule_callbacks.push_back(callback_vkCreateShaderModule);
 		vkDestroyDevice_callbacks.push_back(callback_vkDestroyDevice);
+		vkSubmitDebugUtilsMessageEXT_callbacks.push_back(callback_vkSubmitDebugUtilsMessageEXT);
 
 		for (unsigned i = 0; i < replayer.threads.size(); i++)
 		{
