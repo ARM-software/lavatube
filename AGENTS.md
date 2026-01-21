@@ -47,8 +47,8 @@
 ## Modifying replay functionality (lava-replay)
 - Replay is often also called `read` in the code.
 - Replay file IO code is in `src/filereader.cpp` and higher-level code in `src/read.cpp`.
-- Manually implemented functions are found in `src/hardcode_read.cpp`
-- SPIRV simulation is handled in `src/execute_commands.cpp`
+- Manually implemented functions are found in `src/hardcode_read.cpp`. Replacement functions are called `retrace_<name>`.
+- Callbacks called before the function are called `replay_pre_<name>` and callbacks called after are called `replay_post_<name>`.
 - The memory suballocator is in `src/suballocator.cpp`
 - General window management (WSI) code is in `src/window.cpp`
 - The replay binary is built from `src/replay.cpp`
@@ -56,3 +56,6 @@
 ## Modifying post-processing functionality (lava-tool)
 - The post-processing tool uses both capture and replay functionality (as described above).
 - The post-process binary is built from `src/tool.cpp`
+- Post-process callback functions in the replay code are called `replay_postprocess_<name>` and are enabled from
+  the `replay_postprocess_calls` list in `scripts/vkconfig.py`
+- SPIRV simulation is handled in `src/execute_commands.cpp`
