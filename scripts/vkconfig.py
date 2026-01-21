@@ -135,14 +135,14 @@ replay_post_calls = [ 'vkCreateInstance', 'vkDestroyInstance', 'vkQueuePresentKH
 validate_funcs(replay_post_calls)
 replay_postprocess_calls = [ 'vkCmdPushConstants', 'vkCmdPushConstants2KHR', 'vkCreateRayTracingPipelinesKHR', 'vkCreateGraphicsPipelines',
 	'vkCreateComputePipelines', 'vkCmdBindPipeline', 'vkQueueSubmit', 'vkQueueSubmit2', 'vkQueueSubmit2KHR', 'vkCmdBindDescriptorSets2KHR',
-	'vkCmdBindDescriptorSets', 'vkCmdBindDescriptorSets2' ]
+	'vkCmdBindDescriptorSets', 'vkCmdBindDescriptorSets2', 'vkCmdPushDescriptorSet2KHR', 'vkCmdPushDescriptorSet2', 'vkCmdPushDescriptorSetKHR' ]
 validate_funcs(replay_postprocess_calls)
 trace_pre_calls = [ 'vkQueueSubmit', 'vkCreateInstance', 'vkCreateDevice', 'vkFreeMemory', 'vkQueueSubmit2', 'vkQueueSubmit2KHR' ]
 validate_funcs(trace_pre_calls)
 trace_post_calls = [ 'vkCreateInstance', 'vkCreateDevice', 'vkDestroyInstance', 'vkGetPhysicalDeviceFeatures', 'vkGetPhysicalDeviceProperties',
 		'vkGetPhysicalDeviceSurfaceCapabilitiesKHR', 'vkBindImageMemory', 'vkBindBufferMemory', 'vkBindImageMemory2', 'vkBindImageMemory2KHR',
 		'vkBindBufferMemory2', 'vkUpdateDescriptorSets', 'vkFlushMappedMemoryRanges', 'vkQueuePresentKHR', 'vkMapMemory2KHR', 'vkMapMemory2',
-		'vkMapMemory', 'vkCmdBindDescriptorSets', 'vkBindBufferMemory2KHR', 'vkCmdPushDescriptorSet2KHR',
+		'vkMapMemory', 'vkCmdBindDescriptorSets', 'vkBindBufferMemory2KHR', 'vkCmdPushDescriptorSet2KHR', 'vkCmdPushDescriptorSet2',
 		'vkGetImageMemoryRequirements', 'vkGetPipelineCacheData', 'vkAcquireNextImageKHR', 'vkAcquireNextImage2KHR',
 		'vkGetBufferMemoryRequirements', 'vkGetBufferMemoryRequirements2', 'vkGetImageMemoryRequirements2', 'vkGetPhysicalDeviceMemoryProperties',
 		'vkGetPhysicalDeviceFormatProperties', 'vkGetPhysicalDeviceFormatProperties2', 'vkCmdPushDescriptorSetKHR', 'vkCreateSwapchainKHR',

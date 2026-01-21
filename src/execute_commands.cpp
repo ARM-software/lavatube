@@ -145,6 +145,9 @@ static bool execute_commands(lava_file_reader& reader, VkCommandBuffer commandBu
 			else if (c.data.bind_pipeline.pipelineBindPoint == VK_PIPELINE_BIND_POINT_COMPUTE) compute_pipeline_bound = c.data.bind_pipeline.pipeline_index;
 			else if (c.data.bind_pipeline.pipelineBindPoint == VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR) raytracing_pipeline_bound = c.data.bind_pipeline.pipeline_index;
 			break;
+		case VKCMDPUSHDESCRIPTORSETKHR:
+			assert(false); // TBD
+			break;
 		case VKCMDDISPATCH: // proxy for all compute commands
 			{
 				const auto& pipeline_data = VkPipeline_index.at(compute_pipeline_bound);

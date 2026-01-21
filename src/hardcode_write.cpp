@@ -672,6 +672,11 @@ static void trace_post_vkCmdPushDescriptorSet2KHR(lava_file_writer& writer, VkCo
 	handle_VkWriteDescriptorSets(writer, pPushDescriptorSetInfo->descriptorWriteCount, pPushDescriptorSetInfo->pDescriptorWrites, false, true);
 }
 
+static void trace_post_vkCmdPushDescriptorSet2(lava_file_writer& writer, VkCommandBuffer commandBuffer, const VkPushDescriptorSetInfo* pPushDescriptorSetInfo)
+{
+	handle_VkWriteDescriptorSets(writer, pPushDescriptorSetInfo->descriptorWriteCount, pPushDescriptorSetInfo->pDescriptorWrites, false, true);
+}
+
 static void trace_post_vkUpdateDescriptorSets(lava_file_writer& writer, VkDevice device, uint32_t descriptorWriteCount, const VkWriteDescriptorSet* pDescriptorWrites, uint32_t descriptorCopyCount, const VkCopyDescriptorSet* pDescriptorCopies)
 {
 	handle_VkWriteDescriptorSets(writer, descriptorWriteCount, pDescriptorWrites, true, false);

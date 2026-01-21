@@ -512,6 +512,14 @@ struct trackedcommand // does _not_ inherit trackable
 			uint32_t dynamicOffsetCount;
 			uint32_t* pDynamicOffsets;
 		} bind_descriptorsets;
+		struct push_descriptorset
+		{
+			VkPipelineBindPoint pipelineBindPoint;
+			VkPipelineLayout layout;
+			uint32_t set;
+			uint32_t descriptorWriteCount;
+			// TBD pDescriptorWrites copy here
+		} push_descriptorset;
 		struct bind_pipeline
 		{
 			VkPipelineBindPoint pipelineBindPoint;

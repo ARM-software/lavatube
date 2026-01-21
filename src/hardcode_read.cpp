@@ -1330,18 +1330,51 @@ static void handle_VkCopyDescriptorSets(lava_file_reader& reader, uint32_t descr
 
 void replay_postprocess_vkCmdPushDescriptorSetKHR(lava_file_reader& reader, VkCommandBuffer commandBuffer, VkPipelineBindPoint pipelineBindPoint, VkPipelineLayout layout, uint32_t set, uint32_t descriptorWriteCount, const VkWriteDescriptorSet* pDescriptorWrites)
 {
-	assert(false);
-	//trackedcommand cmd { VKCMDPUSHDESCRIPTORSETKHR };
-	// TBD - need to delay
-	// handle_VkWriteDescriptorSets(writer, descriptorWriteCount, pDescriptorWrites, false);
+	const uint32_t cmdbuffer_index = index_to_VkCommandBuffer.index(commandBuffer);
+	auto& cmdbuffer_data = VkCommandBuffer_index.at(cmdbuffer_index);
+	trackedcommand cmd { VKCMDPUSHDESCRIPTORSETKHR };
+	cmd.data.push_descriptorset.pipelineBindPoint = pipelineBindPoint;
+	cmd.data.push_descriptorset.layout = layout;
+	cmd.data.push_descriptorset.set = set;
+	// TBD handle pDescriptorWrites here
+	cmdbuffer_data.commands.push_back(cmd);
 }
 
 void replay_postprocess_vkCmdPushDescriptorSet2KHR(lava_file_reader& reader, VkCommandBuffer commandBuffer, const VkPushDescriptorSetInfoKHR* pPushDescriptorSetInfo)
 {
-	assert(false);
-	//trackedcommand cmd { VKCMDPUSHDESCRIPTORSET2KHR };
-	// TBD - need to delay
-	//handle_VkWriteDescriptorSets(writer, pPushDescriptorSetInfo->descriptorWriteCount, pPushDescriptorSetInfo->pDescriptorWrites, false);
+	const uint32_t cmdbuffer_index = index_to_VkCommandBuffer.index(commandBuffer);
+	auto& cmdbuffer_data = VkCommandBuffer_index.at(cmdbuffer_index);
+
+	// "If stageFlags specifies a subset of all stages corresponding to one or more pipeline bind points, the binding operation still affects all stages corresponding to
+	// the given pipeline bind point(s) as if the equivalent original version of this command had been called with the same parameters. For example, specifying a
+	// stageFlags value of VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_COMPUTE_BIT is equivalent to calling the original version of this
+	// command once with VK_PIPELINE_BIND_POINT_GRAPHICS and once with VK_PIPELINE_BIND_POINT_COMPUTE."
+
+	if (pPushDescriptorSetInfo->stageFlags & (VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT))
+	{
+		trackedcommand cmd { VKCMDPUSHDESCRIPTORSETKHR };
+		cmd.data.push_descriptorset.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+		cmd.data.push_descriptorset.layout = pPushDescriptorSetInfo->layout;
+		cmd.data.push_descriptorset.set = pPushDescriptorSetInfo->set;
+		cmd.data.push_descriptorset.descriptorWriteCount = pPushDescriptorSetInfo->descriptorWriteCount;
+		// TBD handle pDescriptorWrites here
+		cmdbuffer_data.commands.push_back(cmd);
+	}
+	if (pPushDescriptorSetInfo->stageFlags & VK_SHADER_STAGE_COMPUTE_BIT)
+	{
+		trackedcommand cmd { VKCMDPUSHDESCRIPTORSETKHR };
+		cmd.data.push_descriptorset.pipelineBindPoint = VK_PIPELINE_BIND_POINT_COMPUTE;
+		cmd.data.push_descriptorset.layout = pPushDescriptorSetInfo->layout;
+		cmd.data.push_descriptorset.set = pPushDescriptorSetInfo->set;
+		cmd.data.push_descriptorset.descriptorWriteCount = pPushDescriptorSetInfo->descriptorWriteCount;
+		// TBD handle pDescriptorWrites here
+		cmdbuffer_data.commands.push_back(cmd);
+	}
+}
+
+void replay_postprocess_vkCmdPushDescriptorSet2(lava_file_reader& reader, VkCommandBuffer commandBuffer, const VkPushDescriptorSetInfo* pPushDescriptorSetInfo)
+{
+	replay_postprocess_vkCmdPushDescriptorSet2KHR(reader, commandBuffer, pPushDescriptorSetInfo);
 }
 
 void replay_postprocess_vkUpdateDescriptorSets(lava_file_reader& reader, VkDevice device, uint32_t descriptorWriteCount, const VkWriteDescriptorSet* pDescriptorWrites, uint32_t descriptorCopyCount, const VkCopyDescriptorSet* pDescriptorCopies)
