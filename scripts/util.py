@@ -309,6 +309,15 @@ class parameter(spec.base_parameter):
 			z.do('%s = reader.read_handle(DEBUGPARAM("%s"));' % (varname, self.type))
 		elif self.type in ['wl_display', 'wl_surface']:
 			z.do('(void)reader.read_uint64_t();') # ignore it, if we actually replay on wayland, we'll have to regenerate it
+		elif self.name == 'ppMaxPrimitiveCounts':
+			assert(self.funcname == 'vkCmdBuildAccelerationStructuresIndirectKHR')
+			z.decl(self.type + '**', self.name)
+			z.do('if (infoCount > 0)')
+			z.brace_begin()
+			z.do('%s = reader.pool.allocate<%s*>(infoCount);' % (varname, self.type))
+			z.do('reader.read_array(ppMaxPrimitiveCounts, infoCount);')
+			z.do('for (unsigned sidx = 0; sidx < infoCount; sidx++) { %s[sidx] = reader.pool.allocate<%s>(pInfos[sidx].geometryCount); reader.read_array(%s[sidx], pInfos[sidx].geometryCount); }' % (varname, self.type, varname))
+			z.brace_end()
 		elif self.type == 'VkAccelerationStructureBuildRangeInfoKHR':
 			assert(self.funcname == 'vkBuildAccelerationStructuresKHR' or self.funcname == 'vkCmdBuildAccelerationStructuresKHR')
 			z.decl(self.type + '**', self.name)
@@ -705,6 +714,13 @@ class parameter(spec.base_parameter):
 			z.do('writer.write_handle(object_data);')
 		elif self.name == 'pNext':
 			z.do('write_extension(writer, (VkBaseOutStructure*)%s);' % varname)
+		elif self.name == 'ppMaxPrimitiveCounts':
+			assert(self.funcname == 'vkCmdBuildAccelerationStructuresIndirectKHR')
+			z.do('if (infoCount > 0)')
+			z.brace_begin()
+			z.do('writer.write_array(reinterpret_cast<const char*>(%s), infoCount * sizeof(uint32_t*));' % varname)
+			z.do('for (unsigned sidx = 0; sidx < infoCount; sidx++) writer.write_array(reinterpret_cast<const char*>(%s[sidx]), pInfos[sidx].geometryCount * sizeof(uint32_t));' % varname)
+			z.brace_end()
 		elif self.type in ['wl_display', 'wl_surface']:
 			z.do('writer.write_uint64_t((uint64_t)%s);' % varname) # write pointer value so that we can distinguish between different instances of it on replay, if we want to
 		elif self.type == 'VkDeviceOrHostAddressKHR' or self.type == 'VkDeviceOrHostAddressConstKHR':

@@ -105,7 +105,7 @@ hardcoded = [ 'vkGetSwapchainImagesKHR', 'vkCreateAndroidSurfaceKHR', 'vkGetDevi
 validate_funcs(hardcoded)
 hardcoded_write = [ 'vkGetPhysicalDeviceToolPropertiesEXT', 'vkGetPhysicalDeviceToolProperties', 'vkGetPhysicalDeviceQueueFamilyProperties' ]
 validate_funcs(hardcoded_write)
-hardcoded_read = [ 'vkCmdBuildAccelerationStructuresIndirectKHR' ]
+hardcoded_read = []
 validate_funcs(hardcoded_read)
 # For these functions it is ok if the function pointer is missing, since we implement them ourselves
 layer_implemented = [ 'vkCreateDebugReportCallbackEXT', 'vkDestroyDebugReportCallbackEXT', 'vkDebugReportMessageEXT', 'vkDebugMarkerSetObjectTagEXT',
