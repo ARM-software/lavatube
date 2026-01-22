@@ -128,6 +128,48 @@ static const char* lavaxcb_strerror(int err)
 	else return "Unknown error";
 }
 
+static xcb_intern_atom_cookie_t lavaxcb_send_atom_request(xcb_connection_t* connection, const char* name, uint8_t only_if_exists)
+{
+	return xcb_intern_atom(connection, only_if_exists, strlen(name), name);
+}
+
+static xcb_atom_t lavaxcb_get_atom_reply(xcb_connection_t* connection, const char* name, xcb_intern_atom_cookie_t cookie)
+{
+	xcb_atom_t atom  = 0;
+	xcb_generic_error_t* error = nullptr;
+	xcb_intern_atom_reply_t* reply = xcb_intern_atom_reply(connection, cookie, &error);
+
+	if (reply != nullptr)
+	{
+		atom = reply->atom;
+		free(reply);
+	}
+	else
+	{
+		ELOG("Failed to retrieve internal XCB atom for %s with error %u", name, error->error_code);
+		free(error);
+	}
+
+	return atom;
+}
+
+// TBD fix race condition for multi-window; also message could be something we don't want to miss or for other window
+static bool lavaxcb_wait(xcb_connection_t* connection, uint32_t type)
+{
+	do
+	{
+		const xcb_generic_event_t* event = xcb_poll_for_event(connection);
+		if (event == nullptr) return false;
+		if (event->response_type == 0) return false;
+		const uint8_t event_code = event->response_type & 0x7f;
+		if (event_code == XCB_DESTROY_NOTIFY) return false;
+		if (event_code == type) return true;
+		usleep(1);
+	} while (true);
+	return false;
+}
+#endif
+
 void window_preallocate(uint32_t size)
 {
 	index_to_LWindow.resize(size);
@@ -195,48 +237,6 @@ const char* window_winsys()
 {
 	return context.winsys.c_str();
 }
-
-static xcb_intern_atom_cookie_t lavaxcb_send_atom_request(xcb_connection_t* connection, const char* name, uint8_t only_if_exists)
-{
-	return xcb_intern_atom(connection, only_if_exists, strlen(name), name);
-}
-
-static xcb_atom_t lavaxcb_get_atom_reply(xcb_connection_t* connection, const char* name, xcb_intern_atom_cookie_t cookie)
-{
-	xcb_atom_t atom  = 0;
-	xcb_generic_error_t* error = nullptr;
-	xcb_intern_atom_reply_t* reply = xcb_intern_atom_reply(connection, cookie, &error);
-
-	if (reply != nullptr)
-	{
-		atom = reply->atom;
-		free(reply);
-	}
-	else
-	{
-		ELOG("Failed to retrieve internal XCB atom for %s with error %u", name, error->error_code);
-		free(error);
-	}
-
-	return atom;
-}
-
-// TBD fix race condition for multi-window; also message could be something we don't want to miss or for other window
-static bool lavaxcb_wait(xcb_connection_t* connection, uint32_t type)
-{
-	do
-	{
-		const xcb_generic_event_t* event = xcb_poll_for_event(connection);
-		if (event == nullptr) return false;
-		if (event->response_type == 0) return false;
-		const uint8_t event_code = event->response_type & 0x7f;
-		if (event_code == XCB_DESTROY_NOTIFY) return false;
-		if (event_code == type) return true;
-		usleep(1);
-	} while (true);
-	return false;
-}
-#endif
 
 VkSurfaceKHR window_create(VkInstance instance, uint32_t index, int32_t x, int32_t y, int32_t width, int32_t height)
 {
