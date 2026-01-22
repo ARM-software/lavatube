@@ -1180,7 +1180,6 @@ def save_add_tracking(name):
 		type = 'VkDescriptorSetLayout'
 		z.do('if (writer.run) descriptorsetlayout_data->offsets[binding] = *pOffset;')
 
-
 # Run before execute
 def load_add_pre(name):
 	z = getspool()

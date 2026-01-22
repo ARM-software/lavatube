@@ -30,10 +30,9 @@
 - Favor GPU-independent checks; prefer noscreen/blackhole modes when possible to keep runs fast and deterministic.
 - Run `ctest` (or `make test`) before submitting; include any trace assets needed for reproducing issues but avoid committing large binaries.
 
-## Commit & Pull Request Guidelines
-- Use short, imperative commit subjects similar to existing history (“Add better logging for address translations”, “Handle vkWaitSemaphores replay properly”); keep the first line ≤72 chars.
-- PRs should summarize scope, risks, and reproduction steps; link issues when applicable.
-- Always note test coverage (commands and results)
+## Coding
+- Keep in mind that lavatube is multi-threaded. For more information on the multi-threaded design, see [Multithreading.md](doc/Multithreading.md).
+- For investigations into memory management, read [MemoryManagement.md](doc/MemoryManagement.md).
 
 ## Debugging
 - For troubleshooting, set `LAVATUBE_DEBUG` (value from 1 to 3) but keep default output quiet in commits.
@@ -45,7 +44,7 @@
 - Capture is often initiated from the script `scripts/lava-capture.py`
 
 ## Modifying replay functionality (lava-replay)
-- Replay is often also called `read` in the code.
+- Replay is often also called `read` or `retrace` in the code.
 - Replay file IO code is in `src/filereader.cpp` and higher-level code in `src/read.cpp`.
 - Manually implemented functions are found in `src/hardcode_read.cpp`. Replacement functions are called `retrace_<name>`.
 - Callbacks called before the function are called `replay_pre_<name>` and callbacks called after are called `replay_post_<name>`.
