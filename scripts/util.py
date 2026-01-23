@@ -999,6 +999,7 @@ def save_add_tracking(name):
 		z.brace_begin()
 		z.do('auto* add = writer.parent->records.%s_index.add(*%s, writer.current);' % (type, param))
 		if type == 'VkBuffer':
+			z.do('add->parent_device_index = device_data->index;')
 			z.do('add->size = pCreateInfo->size;')
 			z.do('add->flags = pCreateInfo->flags;')
 			z.do('add->usage = pCreateInfo->usage;')
@@ -1012,6 +1013,7 @@ def save_add_tracking(name):
 			z.do('add->layouts.reserve(pCreateInfo->setLayoutCount);')
 			z.do('for (uint32_t i = 0; i < pCreateInfo->setLayoutCount; i++) add->layouts.push_back(pCreateInfo->pSetLayouts[i]);')
 		elif type == 'VkImage':
+			z.do('add->parent_device_index = device_data->index;')
 			z.do('add->tiling = (lava_tiling)pCreateInfo->tiling;')
 			z.do('add->usage = pCreateInfo->usage;')
 			z.do('add->sharingMode = pCreateInfo->sharingMode;')
@@ -1090,6 +1092,7 @@ def save_add_tracking(name):
 			z.do('add->explicit_host_updates = explicit_host_updates;')
 			z.do('add->requested_device_extensions = requested_device_extensions;')
 		elif type == 'VkTensorARM':
+			z.do('add->parent_device_index = device_data->index;')
 			z.do('add->object_type = VK_OBJECT_TYPE_TENSOR_ARM;')
 			z.do('add->flags = pCreateInfo->flags;')
 			z.do('add->sharingMode = pCreateInfo->sharingMode;')
@@ -1101,6 +1104,7 @@ def save_add_tracking(name):
 			z.do('memcpy(add->dimensions.data(), pCreateInfo->pDescription->pDimensions, sizeof(int64_t) * pCreateInfo->pDescription->dimensionCount);')
 			z.do('if (pCreateInfo->pDescription->pStrides) memcpy(add->strides.data(), pCreateInfo->pDescription->pStrides, sizeof(int64_t) * pCreateInfo->pDescription->dimensionCount);')
 		elif type == 'VkAccelerationStructureKHR':
+			z.do('add->parent_device_index = device_data->index;')
 			z.do('add->flags = pCreateInfo->createFlags;')
 			z.do('add->type = pCreateInfo->type;')
 			z.do('add->offset = pCreateInfo->offset;')

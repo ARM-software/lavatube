@@ -178,6 +178,7 @@ struct trackedobject : trackable
 {
 	enum class states : uint8_t { uninitialized, initialized, created, destroyed, bound }; // must add new states at the end
 	using trackable::trackable; // inherit constructor
+	uint32_t parent_device_index = UINT32_MAX;
 	VkDeviceMemory backing = VK_NULL_HANDLE;
 	VkDeviceSize size = 0;
 	VkDeviceSize offset = 0; // our offset into our backing memory
@@ -216,6 +217,7 @@ struct trackedobject : trackable
 	{
 		static_assert(offsetof(trackedobject, magic) == 0, "ICD loader magic must be at offset zero!"); \
 		if (is_state(states::bound)) assert(backing != VK_NULL_HANDLE);
+		if (is_state(states::bound)) assert(parent_device_index != UINT32_MAX);
 		assert(object_type != VK_OBJECT_TYPE_UNKNOWN);
 		assert(size != VK_WHOLE_SIZE);
 		trackable::self_test();

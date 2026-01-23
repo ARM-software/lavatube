@@ -29,6 +29,7 @@ static Json::Value trackedobject_json(const trackedobject *t)
 {
 	Json::Value v = trackable_json(t);
 	v["size"] = (Json::Value::UInt64)t->size;
+	v["parent_device_index"] = t->parent_device_index;
 	if (t->device_address != 0)
 	{
 		v["device_address"] = (Json::Value::UInt64)t->device_address;
@@ -305,6 +306,10 @@ trackedaccelerationstructure trackedaccelerationstructure_json(const Json::Value
 		t.alias_type = (VkObjectType)v["alias_type"].asUInt();
 	}
 	if (v.isMember("memory_flags")) t.memory_flags = (VkMemoryPropertyFlags)v["memory_flags"].asUInt();
+
+	if (v.isMember("parent_device_index")) t.parent_device_index = v["parent_device_index"].asUInt();
+	else t.parent_device_index = 0; // use a default for old trace files, and pray we only have one VkDevice
+
 	t.enter_initialized();
 	return t;
 }
@@ -325,6 +330,10 @@ trackedbuffer trackedbuffer_json(const Json::Value& v)
 		t.alias_type = (VkObjectType)v["alias_type"].asUInt();
 	}
 	if (v.isMember("memory_flags")) t.memory_flags = (VkMemoryPropertyFlags)v["memory_flags"].asUInt();
+
+	if (v.isMember("parent_device_index")) t.parent_device_index = v["parent_device_index"].asUInt();
+	else t.parent_device_index = 0; // use a default for old trace files, and pray we only have one VkDevice
+
 	t.enter_initialized();
 	return t;
 }
@@ -357,6 +366,10 @@ trackedimage trackedimage_json(const Json::Value& v)
 	}
 	if (v.isMember("memory_flags")) t.memory_flags = (VkMemoryPropertyFlags)v["memory_flags"].asUInt();
 	t.object_type = VK_OBJECT_TYPE_IMAGE;
+
+	if (v.isMember("parent_device_index")) t.parent_device_index = v["parent_device_index"].asUInt();
+	else t.parent_device_index = 0; // use a default for old trace files, and pray we only have one VkDevice
+
 	t.enter_initialized();
 	return t;
 }
@@ -382,6 +395,10 @@ trackedtensor trackedtensor_json(const Json::Value& v)
 		t.alias_type = (VkObjectType)v["alias_type"].asUInt();
 	}
 	if (v.isMember("memory_flags")) t.memory_flags = (VkMemoryPropertyFlags)v["memory_flags"].asUInt();
+
+	if (v.isMember("parent_device_index")) t.parent_device_index = v["parent_device_index"].asUInt();
+	else t.parent_device_index = 0; // use a default for old trace files, and pray we only have one VkDevice
+
 	t.enter_initialized();
 	return t;
 }
