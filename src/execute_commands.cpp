@@ -1,7 +1,6 @@
-static bool run_spirv(lava_file_reader& reader, const trackedpipeline& pipeline_data, const shader_stage& stage, const std::vector<std::byte>& push_constants,
+static bool run_spirv(const trackeddevice& device_data, const trackedpipeline& pipeline_data, const shader_stage& stage, const std::vector<std::byte>& push_constants,
 	const std::unordered_map<uint32_t, std::unordered_map<uint32_t, buffer_access>>& descriptorsets)
 {
-	assert(!reader.run); // this code is only run when post-processing
 	assert(stage.module != VK_NULL_HANDLE);
 	const uint32_t shader_index = index_to_VkShaderModule.index(stage.module);
 	trackedshadermodule& shader_data = VkShaderModule_index.at(shader_index);
@@ -22,7 +21,7 @@ static bool run_spirv(lava_file_reader& reader, const trackedpipeline& pipeline_
 			const buffer_access& access = binding_pair.second;
 			if (!access.buffer_data) continue;
 			const uint32_t buffer_index = access.buffer_data->index;
-			suballoc_location loc = reader.parent->allocator.find_buffer_memory(buffer_index);
+			suballoc_location loc = device_data.allocator->find_buffer_memory(buffer_index);
 			std::byte* base = (std::byte*)loc.memory;
 			std::byte* binding_ptr = base + access.offset;
 			set_bindings[binding_pair.first] = binding_ptr;
@@ -73,8 +72,9 @@ static bool run_spirv(lava_file_reader& reader, const trackedpipeline& pipeline_
 	return true;
 }
 
-static bool execute_commands(lava_file_reader& reader, VkCommandBuffer commandBuffer)
+static bool execute_commands(lava_file_reader& reader, const trackeddevice& device_data, VkCommandBuffer commandBuffer)
 {
+	assert(!reader.run); // this code is only run when post-processing
 	std::vector<std::byte> push_constants; // current state of the push constants
 	uint32_t compute_pipeline_bound = CONTAINER_INVALID_INDEX; // currently bound pipeline
 	uint32_t graphics_pipeline_bound = CONTAINER_INVALID_INDEX; // currently bound pipeline
@@ -117,8 +117,8 @@ static bool execute_commands(lava_file_reader& reader, VkCommandBuffer commandBu
 			break;
 		case VKCMDCOPYBUFFER:
 			{
-				suballoc_location src = reader.parent->allocator.find_buffer_memory(c.data.copy_buffer.src_buffer_index);
-				suballoc_location dst = reader.parent->allocator.find_buffer_memory(c.data.copy_buffer.dst_buffer_index);
+				suballoc_location src = device_data.allocator->find_buffer_memory(c.data.copy_buffer.src_buffer_index);
+				suballoc_location dst = device_data.allocator->find_buffer_memory(c.data.copy_buffer.dst_buffer_index);
 				for (uint32_t i = 0; i < c.data.copy_buffer.regionCount; i++)
 				{
 					VkBufferCopy& r = c.data.copy_buffer.pRegions[i];
@@ -129,7 +129,7 @@ static bool execute_commands(lava_file_reader& reader, VkCommandBuffer commandBu
 			break;
 		case VKCMDUPDATEBUFFER:
 			{
-				suballoc_location sub = reader.parent->allocator.find_buffer_memory(c.data.update_buffer.buffer_index);
+				suballoc_location sub = device_data.allocator->find_buffer_memory(c.data.update_buffer.buffer_index);
 				memcpy((char*)sub.memory + c.data.update_buffer.offset, c.data.update_buffer.values, c.data.update_buffer.size);
 			}
 			free(c.data.update_buffer.values);
@@ -153,7 +153,7 @@ static bool execute_commands(lava_file_reader& reader, VkCommandBuffer commandBu
 				const auto& pipeline_data = VkPipeline_index.at(compute_pipeline_bound);
 				assert(pipeline_data.shader_stages.size() == 1);
 				assert(pipeline_data.shader_stages[0].stage == VK_SHADER_STAGE_COMPUTE_BIT);
-				run_spirv(reader, pipeline_data, pipeline_data.shader_stages[0], push_constants, descriptorsets);
+				run_spirv(device_data, pipeline_data, pipeline_data.shader_stages[0], push_constants, descriptorsets);
 			}
 			break;
 		case VKCMDDRAW: // proxy for all draw commands
@@ -161,7 +161,7 @@ static bool execute_commands(lava_file_reader& reader, VkCommandBuffer commandBu
 				const auto& pipeline_data = VkPipeline_index.at(graphics_pipeline_bound);
 				for (const auto& stage : pipeline_data.shader_stages)
 				{
-					run_spirv(reader, pipeline_data, stage, push_constants, descriptorsets);
+					run_spirv(device_data, pipeline_data, stage, push_constants, descriptorsets);
 				}
 			}
 			break;

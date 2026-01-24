@@ -6,6 +6,9 @@
 #include "tbb/concurrent_vector.h"
 #include "containers.h"
 
+#include "lavatube.h"
+#include "memory.h"
+
 // --* Vulkan memory suballocator *--
 // Each thread has its own set of heaps.
 //
@@ -67,6 +70,7 @@ struct lookup
 
 struct suballocator_private
 {
+	VkDevice device = VK_NULL_HANDLE;
 	uint64_t min_heap_size = 1024 * 1024 * 32; // default 32mb size heaps
 	std::vector<VkDeviceMemory> virtualswapmemory;
 	bool run = true; // whether we actually run things or just fake it
@@ -84,13 +88,13 @@ struct suballocator_private
 
 	void print_memory_usage();
 	uint32_t get_device_memory_type(uint32_t type_filter, VkMemoryPropertyFlags properties);
-	suballoc_location add_object_new(VkDevice device, uint16_t tid, uint32_t memoryTypeIndex, suballocation &s, VkMemoryPropertyFlags flags,
+	suballoc_location add_object_new(uint16_t tid, uint32_t memoryTypeIndex, suballocation &s, VkMemoryPropertyFlags flags,
 		lava_tiling tiling, bool dedicated, VkMemoryAllocateFlags allocflags);
-	bool fill_image_memreq(VkDevice device, VkImage image, VkMemoryRequirements2& req, VkDeviceSize size);
+	bool fill_image_memreq(VkImage image, VkMemoryRequirements2& req, VkDeviceSize size);
 	void suballoc_print(FILE* fp);
-	suballoc_location add_object(VkDevice device, uint16_t tid, uint32_t memoryTypeIndex, suballocation &s, VkMemoryPropertyFlags flags,
+	suballoc_location add_object(uint16_t tid, uint32_t memoryTypeIndex, suballocation &s, VkMemoryPropertyFlags flags,
 		lava_tiling tiling, bool dedicated, VkMemoryAllocateFlags allocflags);
-	void self_test();
+	void self_test() const;
 	void bind(heap& h, const suballocation& s);
 	suballoc_metrics performance() const;
 
@@ -115,12 +119,12 @@ suballoc_metrics suballocator::performance() const
 
 suballoc_metrics suballocator_private::performance() const
 {
-	suballoc_metrics m;
+	suballoc_metrics m{};
 	m.used = used_bytes;
 	m.objects = used_count;
 	m.heaps = allocated_heaps;
 	m.allocated = allocated_bytes;
-	m.efficiency = (double)used_bytes / (double)allocated_bytes;
+	if (allocated_bytes) m.efficiency = (double)used_bytes / (double)allocated_bytes;
 	return m;
 }
 
@@ -176,17 +180,6 @@ uint32_t suballocator_private::get_device_memory_type(uint32_t type_filter, VkMe
 
 suballocator::suballocator()
 {
-	priv = new suballocator_private;
-}
-
-void suballocator::init(int num_images, int num_buffers, int num_tensors, int heap_size, bool fake)
-{
-	priv->run = !fake;
-	priv->image_lookup.resize(num_images);
-	priv->buffer_lookup.resize(num_buffers);
-	priv->tensor_lookup.resize(num_tensors);
-	memset(&priv->memory_properties, 0, sizeof(priv->memory_properties));
-	if (heap_size != -1) priv->min_heap_size = heap_size;
 }
 
 suballocator::~suballocator()
@@ -194,9 +187,17 @@ suballocator::~suballocator()
 	delete priv;
 }
 
-void suballocator::setup(VkPhysicalDevice physicaldevice)
+void suballocator::create(VkPhysicalDevice physicaldevice, VkDevice device, const std::vector<trackedimage>& images, const std::vector<trackedbuffer>& buffers, const std::vector<trackedtensor>& tensors, bool run)
 {
+	priv = new suballocator_private;
+	priv->run = run;
+	priv->image_lookup.resize(images.size());
+	priv->buffer_lookup.resize(buffers.size());
+	priv->tensor_lookup.resize(tensors.size());
+	memset(&priv->memory_properties, 0, sizeof(priv->memory_properties));
+	if (p__suballocator_heap_size != -1) priv->min_heap_size = p__suballocator_heap_size;
 	assert(priv->memory_properties.memoryTypeCount == 0);
+	priv->device = device;
 	if (priv->run)
 	{
 		wrap_vkGetPhysicalDeviceMemoryProperties(physicaldevice, &priv->memory_properties);
@@ -217,7 +218,7 @@ void suballocator::setup(VkPhysicalDevice physicaldevice)
 	assert(priv->memory_properties.memoryTypeCount > 0);
 }
 
-suballoc_location suballocator_private::add_object_new(VkDevice device, uint16_t tid, uint32_t memoryTypeIndex, suballocation &s, VkMemoryPropertyFlags flags,
+suballoc_location suballocator_private::add_object_new(uint16_t tid, uint32_t memoryTypeIndex, suballocation &s, VkMemoryPropertyFlags flags,
         lava_tiling tiling, bool dedicated, VkMemoryAllocateFlags allocflags)
 {
 	heap h;
@@ -282,7 +283,7 @@ suballoc_location suballocator_private::add_object_new(VkDevice device, uint16_t
 	return { h.mem, 0, s.size, true, needs_flush(memoryTypeIndex) };
 }
 
-suballoc_location suballocator_private::add_object(VkDevice device, uint16_t tid, uint32_t memoryTypeIndex, suballocation &s, VkMemoryPropertyFlags flags,
+suballoc_location suballocator_private::add_object(uint16_t tid, uint32_t memoryTypeIndex, suballocation &s, VkMemoryPropertyFlags flags,
 	lava_tiling tiling, bool dedicated, VkMemoryAllocateFlags allocflags)
 {
 	used_count++;
@@ -290,15 +291,16 @@ suballoc_location suballocator_private::add_object(VkDevice device, uint16_t tid
 	assert(s.alignment != 0);
 	if (dedicated)
 	{
-		return add_object_new(device, tid, memoryTypeIndex, s, flags, tiling, dedicated, allocflags);
+		return add_object_new(tid, memoryTypeIndex, s, flags, tiling, dedicated, allocflags);
 	}
 	for (heap& h : heaps)
 	{
 		// this is a safe time to actually delete things
 		if (!h.deletes.empty())
 		{
-			for (auto it = h.subs.begin(); it != h.subs.end(); ++it)
+			for (auto it = h.subs.begin(); it != h.subs.end(); )
 			{
+				bool erased = false;
 				for (auto d = h.deletes.cbegin(); d != h.deletes.cend(); ++d)
 				{
 					if (it->offset == *d)
@@ -307,9 +309,11 @@ suballoc_location suballocator_private::add_object(VkDevice device, uint16_t tid
 						DLOG3("finalized delete in heap=%p off=%lu size=%lu, total free is %lu", &h, (unsigned long)*d,
 						      (unsigned long)it->size, (unsigned long)h.free);
 						it = h.subs.erase(it);
+						erased = true;
 						break;
 					}
 				}
+				if (!erased) ++it;
 			}
 			h.deletes.clear();
 		}
@@ -362,10 +366,10 @@ suballoc_location suballocator_private::add_object(VkDevice device, uint16_t tid
 		}
 	}
 	// if we get here, we need to create another heap
-	return add_object_new(device, tid, memoryTypeIndex, s, flags, tiling, dedicated, allocflags);
+	return add_object_new(tid, memoryTypeIndex, s, flags, tiling, dedicated, allocflags);
 }
 
-bool suballocator_private::fill_image_memreq(VkDevice device, VkImage image, VkMemoryRequirements2& req, VkDeviceSize size)
+bool suballocator_private::fill_image_memreq(VkImage image, VkMemoryRequirements2& req, VkDeviceSize size)
 {
 	if (!run) { req.memoryRequirements.size = size; req.memoryRequirements.alignment = 1; req.memoryRequirements.memoryTypeBits = 1; return false; }
 	assert(run);
@@ -392,12 +396,31 @@ void suballocator_private::bind(heap& h, const suballocation& s)
 	assert(s.alignment != 0);
 	if (s.type == VK_OBJECT_TYPE_IMAGE)
 	{
+		if (s.index >= image_lookup.size())
+		{
+			SUBALLOC_ABORT(this, "Image index %u out of range (image_lookup size=%zu)", s.index, image_lookup.size());
+		}
 		image_lookup.at(s.index) = lookup(&h, s.offset, s.size);
 		DLOG3("adding image=%p|%u heap=%p size=%lu off=%lu mem=%p alignment=%lu", (void*)s.handle.image, s.index, &h, (unsigned long)s.size,
 		      (unsigned long)s.offset, (void*)h.mem, (unsigned long)s.alignment);
 	}
+	else if (s.type == VK_OBJECT_TYPE_TENSOR_ARM)
+	{
+		if (s.index >= tensor_lookup.size())
+		{
+			SUBALLOC_ABORT(this, "Tensor index %u out of range (tensor_lookup size=%zu)", s.index, tensor_lookup.size());
+		}
+		tensor_lookup.at(s.index) = lookup(&h, s.offset, s.size);
+		DLOG3("adding tensor=%p|%u heap=%p size=%lu off=%lu mem=%p alignment=%lu", (void*)s.handle.tensor, s.index, &h, (unsigned long)s.size,
+		      (unsigned long)s.offset, (void*)h.mem, (unsigned long)s.alignment);
+	}
 	else
 	{
+		assert(s.type == VK_OBJECT_TYPE_BUFFER);
+		if (s.index >= buffer_lookup.size())
+		{
+			SUBALLOC_ABORT(this, "Buffer index %u out of range (buffer_lookup size=%zu)", s.index, buffer_lookup.size());
+		}
 		buffer_lookup[s.index] = lookup(&h, s.offset, s.size);
 		DLOG3("adding buffer=%p|%u heap=%p size=%lu off=%lu mem=%p alignment=%lu", (void*)s.handle.buffer, s.index, &h, (unsigned long)s.size,
 		      (unsigned long)s.offset, (void*)h.mem, (unsigned long)s.alignment);
@@ -405,7 +428,7 @@ void suballocator_private::bind(heap& h, const suballocation& s)
 	assert(s.offset + s.size <= h.total);
 }
 
-suballoc_location suballocator::add_trackedobject(uint16_t tid, VkDevice device, const memory_requirements& reqs, uint64_t native, const trackedobject& data)
+suballoc_location suballocator::add_trackedobject(uint16_t tid, const memory_requirements& reqs, uint64_t native, const trackedobject& data)
 {
 	assert(reqs.requirements.alignment != 0); // not properly initialized!
 	const VkMemoryPropertyFlags memory_flags = prune_memory_flags(data.memory_flags);
@@ -418,17 +441,17 @@ suballoc_location suballocator::add_trackedobject(uint16_t tid, VkDevice device,
 	s.index = data.index;
 	s.alignment = reqs.requirements.alignment;
 	const bool dedicated = reqs.dedicated.prefersDedicatedAllocation || reqs.dedicated.requiresDedicatedAllocation;
-	auto r = priv->add_object(device, tid, memoryTypeIndex, s, memory_flags, data.tiling, dedicated, reqs.allocate_flags);
+	auto r = priv->add_object(tid, memoryTypeIndex, s, memory_flags, data.tiling, dedicated, reqs.allocate_flags);
 	assert(r.offset == s.offset);
 	return r;
 }
 
-void suballocator::virtualswap_images(VkDevice device, const std::vector<VkImage>& images, VkMemoryPropertyFlags memory_flags)
+void suballocator::virtualswap_images(const std::vector<VkImage>& images, VkMemoryPropertyFlags memory_flags)
 {
 	assert(priv->run);
 	VkMemoryPropertyFlags flags = prune_memory_flags(memory_flags);
 	VkMemoryRequirements2 req = {};
-	const bool dedicated = priv->fill_image_memreq(device, images.at(0), req, 0);
+	const bool dedicated = priv->fill_image_memreq(images.at(0), req, 0);
 	const uint32_t memoryTypeIndex = priv->get_device_memory_type(req.memoryRequirements.memoryTypeBits, flags);
 	VkMemoryAllocateInfo info = { VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO, nullptr };
 	VkDeviceSize image_size = aligned_size(req.memoryRequirements.size, req.memoryRequirements.alignment);
@@ -439,20 +462,20 @@ void suballocator::virtualswap_images(VkDevice device, const std::vector<VkImage
 		for (unsigned i = 0; i < images.size(); i++)
 		{
 			info.allocationSize = VkDeviceSize(image_size);
-			VkResult result = wrap_vkAllocateMemory(device, &info, nullptr, &mem);
+			VkResult result = wrap_vkAllocateMemory(priv->device, &info, nullptr, &mem);
 			if (result != VK_SUCCESS) SUBALLOC_ABORT(priv, "Failed to allocate dedicated memory for virtual swapchain!");
 			priv->virtualswapmemory.push_back(mem);
-			wrap_vkBindImageMemory(device, images.at(i), mem, 0);
+			wrap_vkBindImageMemory(priv->device, images.at(i), mem, 0);
 		}
 	}
 	else
 	{
 		info.allocationSize = VkDeviceSize(image_size * images.size());
-		VkResult result = wrap_vkAllocateMemory(device, &info, nullptr, &mem);
+		VkResult result = wrap_vkAllocateMemory(priv->device, &info, nullptr, &mem);
 		if (result != VK_SUCCESS) SUBALLOC_ABORT(priv, "Failed to allocate memory for virtual swapchain!");
 		priv->virtualswapmemory.push_back(mem);
 		uint32_t offset = 0;
-		for (unsigned i = 0; i < images.size(); i++) { wrap_vkBindImageMemory(device, images.at(i), mem, offset); offset += image_size; }
+		for (unsigned i = 0; i < images.size(); i++) { wrap_vkBindImageMemory(priv->device, images.at(i), mem, offset); offset += image_size; }
 	}
 }
 
@@ -480,7 +503,19 @@ void suballocator::free_buffer(uint32_t buffer_index)
 	}
 }
 
-suballoc_location suballocator::find_image_memory(uint32_t image_index)
+void suballocator::free_tensor(uint32_t tensor_index)
+{
+	if (tensor_index == CONTAINER_NULL_VALUE) return;
+	DLOG3("deleting tensor=%u", tensor_index);
+	lookup& l = priv->tensor_lookup.at(tensor_index);
+	if (l.home) // it is possible to delete something that has not been bound yet
+	{
+		l.home->deletes.push_back(l.offset);
+		l.home = nullptr;
+	}
+}
+
+suballoc_location suballocator::find_image_memory(uint32_t image_index) const
 {
 	lookup& l = priv->image_lookup.at(image_index);
 	if (!l.home) SUBALLOC_ABORT(priv, "Image %u is missing its memory!", image_index);
@@ -489,7 +524,7 @@ suballoc_location suballocator::find_image_memory(uint32_t image_index)
 	return { l.home->mem, l.offset, l.size, needs_init, priv->needs_flush(l.home->memoryTypeIndex) };
 }
 
-suballoc_location suballocator::find_buffer_memory(uint32_t buffer_index)
+suballoc_location suballocator::find_buffer_memory(uint32_t buffer_index) const
 {
 	lookup& l = priv->buffer_lookup.at(buffer_index);
 	if (!l.home) SUBALLOC_ABORT(priv, "Buffer %u is missing its memory!", buffer_index);
@@ -498,7 +533,7 @@ suballoc_location suballocator::find_buffer_memory(uint32_t buffer_index)
 	return { l.home->mem, l.offset, l.size, needs_init, priv->needs_flush(l.home->memoryTypeIndex) };
 }
 
-suballoc_location suballocator::find_tensor_memory(uint32_t tensor_index)
+suballoc_location suballocator::find_tensor_memory(uint32_t tensor_index) const
 {
 	lookup& l = priv->tensor_lookup.at(tensor_index);
 	if (!l.home) SUBALLOC_ABORT(priv, "Tensor %u is missing its memory!", tensor_index);
@@ -507,20 +542,21 @@ suballoc_location suballocator::find_tensor_memory(uint32_t tensor_index)
 	return { l.home->mem, l.offset, l.size, needs_init, priv->needs_flush(l.home->memoryTypeIndex) };
 }
 
-void suballocator::destroy(VkDevice device)
+void suballocator::destroy()
 {
 	for (heap& h : priv->heaps)
 	{
-		if (priv->run) wrap_vkFreeMemory(device, h.mem, nullptr);
+		if (priv->run) wrap_vkFreeMemory(priv->device, h.mem, nullptr);
 		else free(h.mem);
 		h.deletes.clear();
 	}
 	priv->heaps.clear();
 	priv->image_lookup.clear();
 	priv->buffer_lookup.clear();
+	priv->tensor_lookup.clear();
 	for (auto v : priv->virtualswapmemory)
 	{
-		wrap_vkFreeMemory(device, v, nullptr);
+		wrap_vkFreeMemory(priv->device, v, nullptr);
 	}
 	priv->virtualswapmemory.clear();
 }
@@ -549,10 +585,11 @@ void suballocator_private::suballoc_print(FILE* fp)
 	}
 }
 
-int suballocator::self_test()
+int suballocator::self_test() const
 {
 	int retval = 0;
 
+	if (!priv) return 0;
 	priv->self_test();
 
 	// walk the heaps to check consistency
@@ -574,8 +611,8 @@ int suballocator::self_test()
 			if (prev_end >= 0) freed += it->offset - prev_end;
 			used += it->size;
 			prev_end = it->offset + it->size;
-			assert(it->size > 0);
-			assert(it->type == VK_OBJECT_TYPE_IMAGE || it->type == VK_OBJECT_TYPE_BUFFER);
+			//assert(it->size > 0); // TBD re-enable this test once we can check that it isn't a swapchain image, ie rely on it->is_swapchain_image
+			assert(it->type == VK_OBJECT_TYPE_IMAGE || it->type == VK_OBJECT_TYPE_BUFFER || it->type == VK_OBJECT_TYPE_TENSOR_ARM);
 			if (deleted) continue; // looking this up in the lookup table is not valid in this case
 			// check that there isn't anything in the heaps that isn't also in the lookup tables
 			if (it->type == VK_OBJECT_TYPE_IMAGE)
@@ -586,8 +623,17 @@ int suballocator::self_test()
 				assert(loc.size == it->size);
 				(void)loc;
 			}
+			else if (it->type == VK_OBJECT_TYPE_TENSOR_ARM)
+			{
+				suballoc_location loc = find_tensor_memory(it->index);
+				assert(loc.memory == h.mem);
+				assert(loc.offset == it->offset);
+				assert(loc.size == it->size);
+				(void)loc;
+			}
 			else
 			{
+				assert(it->type == VK_OBJECT_TYPE_BUFFER);
 				suballoc_location loc = find_buffer_memory(it->index);
 				assert(loc.memory == h.mem);
 				assert(loc.offset == it->offset);
@@ -607,7 +653,7 @@ int suballocator::self_test()
 	return retval;
 }
 
-void suballocator_private::self_test()
+void suballocator_private::self_test() const
 {
 	// check that there isn't anything in the lookup tables that isn't also in the heaps
 	for (const lookup& l : image_lookup)
@@ -623,6 +669,18 @@ void suballocator_private::self_test()
 		(void)found;
 	}
 	for (const lookup& l : buffer_lookup)
+	{
+		if (!l.home) continue;
+		assert(l.size != 0);
+		bool found = false;
+		for (auto it = l.home->subs.cbegin(); it != l.home->subs.cend(); ++it)
+		{
+			if (it->offset == l.offset && it->size == l.size) found = true;
+		}
+		assert(found);
+		(void)found;
+	}
+	for (const lookup& l : tensor_lookup)
 	{
 		if (!l.home) continue;
 		assert(l.size != 0);

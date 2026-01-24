@@ -148,7 +148,6 @@ int main(int argc, char **argv)
 {
 	int start = 0;
 	int end = -1;
-	int heap_size = -1;
 	int remaining = argc - 1; // zeroth is name of program
 	std::string filename_input;
 	std::string filename_output;
@@ -258,7 +257,7 @@ int main(int argc, char **argv)
 		lava_reader replayer;
 		replayer.run = false; // do not actually run anything
 		replayer.set_frames(start, end);
-		replayer.init(filename_input, heap_size);
+		replayer.init(filename_input);
 		replayer.remap_scan = validate_remap;
 
 		// Add callbacks
@@ -293,7 +292,7 @@ int main(int argc, char **argv)
 	{
 		lava_reader replayer;
 		replayer.run = false; // do not actually run anything
-		replayer.init(filename_input, heap_size);
+		replayer.init(filename_input);
 		replayer.set_frames(start, end);
 		replayer.remap_scan = false;
 

@@ -77,6 +77,7 @@ out(targets_read, '#include <algorithm>')
 out(targets_read, '#include "vulkan/vulkan.h"')
 out(targets_read, '#include "window.h"')
 out(targets_read, '#include "suballocator.h"')
+out(targets_read, '#include "memory.h"')
 out([uh,wrh], '#include <unordered_map>')
 out([uh,wrh], '#include "vulkan_feature_detect.h"')
 out([r], '#include "read_auto.h"')
@@ -383,11 +384,8 @@ out(targets_read_headers, 'void reset_for_tools();')
 out(targets_read_headers, 'trackable& object_trackable(VkObjectType type, uint64_t handle);')
 out(targets_read_headers)
 
-out(targets_read, 'void retrace_init(lava_reader& replayer, const Json::Value& v, int heap_size, bool run)')
+out(targets_read, 'void retrace_init(lava_reader& replayer, const Json::Value& v)')
 out(targets_read, '{')
-out(targets_read, '\tint images = 0;')
-out(targets_read, '\tint buffers = 0;')
-out(targets_read, '\tint tensors = 0;')
 out(targets_read, '\tfor (const auto& p : v.getMemberNames())')
 out(targets_read, '\t{')
 for v in spec.root.findall('types/type'):
@@ -403,17 +401,10 @@ for v in spec.root.findall('types/type'):
 			out(targets_read, '\t\t\tif (v[p].asInt() == 0) ELOG("No Vulkan instances recorded. Broken trace file!");')
 		if v.find('name').text == 'VkSurfaceKHR':
 			out(targets_read, '\t\t\twindow_preallocate(v[p].asInt());')
-		if v.find('name').text == 'VkImage':
-			out(targets_read, '\t\t\timages = v[p].asInt();')
-		if v.find('name').text == 'VkBuffer':
-			out(targets_read, '\t\t\tbuffers = v[p].asInt();')
-		if v.find('name').text == 'VkTensorARM':
-			out(targets_read, '\t\t\ttensors = v[p].asInt();')
 		out(targets_read, '\t\t}')
 out(targets_read, '\t}')
-out(targets_read, '\treplayer.allocator.init(images, buffers, tensors, heap_size, !run);')
 out(targets_read, '}')
-out(targets_read_headers, 'void retrace_init(lava_reader& replayer, const Json::Value& v, int heap_size = -1, bool run = true);')
+out(targets_read_headers, 'void retrace_init(lava_reader& replayer, const Json::Value& v);')
 
 out(targets_write)
 out(targets_write, 'Json::Value trace_limits(const lava_writer* instance)')

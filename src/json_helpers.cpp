@@ -106,6 +106,7 @@ Json::Value trackedimage_json(const trackedimage* t)
 	v["samples"] = (unsigned)t->samples;
 	v["mipLevels"] = (unsigned)t->mipLevels;
 	v["arrayLayers"] = (unsigned)t->arrayLayers;
+	if (t->is_swapchain_image) v["swapchain_image"] = true;
 	return v;
 }
 
@@ -154,6 +155,7 @@ Json::Value trackedqueue_json(const trackedqueue* t)
 	v["queueFamily"] = (unsigned)t->queueFamily;
 	v["queueIndex"] = (unsigned)t->queueIndex;
 	v["queueFlags"] = (unsigned)t->queueFlags;
+	v["parent_device_index"] = (unsigned)t->device_index;
 	return v;
 }
 
@@ -351,7 +353,7 @@ trackedimage trackedimage_json(const Json::Value& v)
 	t.currentLayout = t.initialLayout;
 	t.samples = (VkSampleCountFlagBits)(v.get("samples", 0).asUInt());
 	t.mipLevels = (unsigned)v.get("mipLevels", 0).asUInt();
-	t.arrayLayers = (unsigned)v.get("arrayLevels", 0).asUInt();
+	t.arrayLayers = (unsigned)v.get("arrayLayers", 0).asUInt();
 	t.format = (VkFormat)v.get("format", VK_FORMAT_MAX_ENUM).asUInt();
 	if (v.isMember("extent"))
 	{
@@ -365,6 +367,7 @@ trackedimage trackedimage_json(const Json::Value& v)
 		t.alias_type = (VkObjectType)v["alias_type"].asUInt();
 	}
 	if (v.isMember("memory_flags")) t.memory_flags = (VkMemoryPropertyFlags)v["memory_flags"].asUInt();
+	if (v.isMember("swapchain_image")) t.is_swapchain_image = v["swapchain_image"].asBool();
 	t.object_type = VK_OBJECT_TYPE_IMAGE;
 
 	if (v.isMember("parent_device_index")) t.parent_device_index = v["parent_device_index"].asUInt();
@@ -456,6 +459,7 @@ trackedqueue trackedqueue_json(const Json::Value& v)
 {
 	trackedqueue t;
 	trackable_helper(t, v);
+	t.device_index = v["parent_device_index"].asUInt();
 	t.enter_initialized();
 	return t;
 }

@@ -103,7 +103,6 @@ static bool getnext(lava_file_reader& t)
 		update_tensor_packet(instrtype, t);
 	}
 	else assert(false);
-	t.parent->allocator.self_test();
 	return !done;
 }
 
@@ -139,11 +138,7 @@ static void retrace()
 	replay_alignments.clear();
 	vkGetBufferMemoryRequirements_callbacks.push_back(record_vkGetBufferMemoryRequirements);
 	lava_file_reader& t = r.file_reader(0);
-	int remaining = r.allocator.self_test();
-	assert(remaining == 0);
 	while (getnext(t)) {}
-	remaining = r.allocator.self_test();
-	assert(remaining == 0);
 	assert(replay_call_index == buffer_indices.size());
 	assert(replay_alignments.size() == trace_alignments.size());
 

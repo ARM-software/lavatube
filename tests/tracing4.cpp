@@ -8,7 +8,6 @@
 #pragma GCC diagnostic ignored "-Wunused-but-set-variable"
 
 static int spurious_checks = 0;
-static int heap_size = -1;
 static int queue_variant = 0;
 static int map_variant = 0;
 static int fence_variant = 0;
@@ -123,8 +122,7 @@ static void trace_4()
 	const uint32_t align_mod = memory_requirements.size % memory_requirements.alignment;
 	const uint32_t aligned_size = (align_mod == 0) ? memory_requirements.size : (memory_requirements.size + memory_requirements.alignment - align_mod);
 
-	VkMemoryAllocateInfo pAllocateMemInfo = {};
-	pAllocateMemInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+	VkMemoryAllocateInfo pAllocateMemInfo = { VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO, nullptr };
 	pAllocateMemInfo.memoryTypeIndex = memoryTypeIndex;
 	pAllocateMemInfo.allocationSize = aligned_size * num_buffers;
 	VkDeviceMemory origin_memory = VK_NULL_HANDLE;
@@ -165,8 +163,7 @@ static void trace_4()
 	result = trace_vkCreateCommandPool(vulkan.device, &command_pool_create_info, NULL, &command_pool);
 	check(result);
 
-	VkCommandBufferAllocateInfo command_buffer_allocate_info = {};
-	command_buffer_allocate_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+	VkCommandBufferAllocateInfo command_buffer_allocate_info = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO, nullptr };
 	command_buffer_allocate_info.commandPool = command_pool;
 	command_buffer_allocate_info.commandBufferCount = num_buffers + 1;
 	std::vector<VkCommandBuffer> command_buffers(num_buffers + 1);
@@ -439,9 +436,10 @@ static void trace_4()
 
 static void test_buffer(lava_file_reader& t, uint32_t device_index, uint32_t buffer_index)
 {
+	const trackeddevice& device_data = VkDevice_index.at(device_index);
 	VkDevice device = index_to_VkDevice.at(device_index);
 	assert(buffer_index % 2 == 0); // every second buffer is target, which is off-limits
-	suballoc_location loc = t.parent->allocator.find_buffer_memory(buffer_index);
+	suballoc_location loc = device_data.allocator->find_buffer_memory(buffer_index);
 	assert(loc.size >= buffer_size);
 	char* ptr = nullptr;
 	VkResult result = wrap_vkMapMemory(device, loc.memory, loc.offset, loc.size, 0, (void**)&ptr);
@@ -458,8 +456,7 @@ static bool getnext(lava_file_reader& t)
 	if (instrtype == PACKET_VULKAN_API_CALL)
 	{
 		const uint16_t apicall = t.read_apicall();
-		t.parent->allocator.self_test();
-		if (apicall == 12) // vkDestroyDevice
+		if (apicall == VKDESTROYDEVICE) // vkDestroyDevice
 		{
 			assert(index_to_VkCommandBuffer.size() == num_buffers + 1);
 			assert(index_to_VkCommandPool.size() == 1);
@@ -496,15 +493,31 @@ static bool getnext(lava_file_reader& t)
 	return true;
 }
 
+static void vkCreateDevice_callback(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkDevice* pDevice)
+{
+	const uint32_t device_index = index_to_VkDevice.index(*pDevice);
+	assert(device_index != UINT32_MAX);
+	const trackeddevice& device_data = VkDevice_index.at(device_index);
+	device_data.self_test();
+	device_data.allocator->self_test();
+}
+
+static void vkDestroyDevice_callback(VkDevice device, const VkAllocationCallbacks* pAllocator)
+{
+	const uint32_t device_index = index_to_VkDevice.index(device);
+	const trackeddevice& device_data = VkDevice_index.at(device_index);
+	device_data.self_test();
+}
+
 static void retrace_4()
 {
 	std::string name = filename() + ".vk";
 	printf("Running %s\n", name.c_str());
-	lava_reader r(name, heap_size);
+	lava_reader r(name);
 	lava_file_reader& t = r.file_reader(0);
+	vkCreateDevice_callbacks.push_back(vkCreateDevice_callback);
+	vkDestroyDevice_callbacks.push_back(vkDestroyDevice_callback);
 	while (getnext(t)) {}
-	int remaining = r.allocator.self_test();
-	assert(remaining == 0); // everything should be destroyed now
 }
 
 int main(int argc, char** argv)
@@ -530,7 +543,7 @@ int main(int argc, char** argv)
 		}
 		else if (match(argv[i], "-H", "--heap-size", remaining))
 		{
-			heap_size = get_int(argv[++i], remaining);
+			p__suballocator_heap_size = get_int(argv[++i], remaining);
 		}
 		else if (match(argv[i], "-q", "--queue-variant", remaining))
 		{

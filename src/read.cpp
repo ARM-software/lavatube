@@ -8,6 +8,7 @@
 #include "json_helpers.h"
 #include "read_auto.h"
 #include "util_auto.h"
+#include "suballocator.h"
 
 /// Mutex to enforce additional external synchronization
 lava::mutex sync_mutex;
@@ -136,13 +137,6 @@ void lava_reader::finalize(bool terminate)
 	out["readahead_workers_time"] = worker;
 	out["api_runners_time"] = runner;
 	out["process_time"] = process_time;
-	suballoc_metrics sm = allocator.performance();
-	out["suballocator_used"] = sm.used;
-	out["suballocator_allocated"] = sm.allocated;
-	out["suballocator_heaps"] = sm.heaps;
-	out["suballocator_objects"] = sm.objects;
-	out["suballocator_efficiency"] = sm.efficiency;
-	ILOG("Suballocator used=%lu allocated=%lu heaps=%u objects=%u efficiency=%g", (unsigned long)sm.used, (unsigned long)sm.allocated, (unsigned)sm.heaps, (unsigned)sm.objects, sm.efficiency);
 	if (terminate)
 	{
 		for (auto& v : *thread_call_numbers) v = 0; // stop waiting threads from progressing
@@ -160,7 +154,7 @@ lava_file_reader& lava_reader::file_reader(uint16_t thread_id)
 	return *thread_streams.at(thread_id);
 }
 
-void lava_reader::init(const std::string& path, int heap_size)
+void lava_reader::init(const std::string& path)
 {
 	// read dictionary
 	mPackedFile = path;
@@ -174,7 +168,7 @@ void lava_reader::init(const std::string& path, int heap_size)
 	}
 
 	// read limits and allocate the global remapping structures
-	retrace_init(*this, packed_json("limits.json", mPackedFile), heap_size, run);
+	retrace_init(*this, packed_json("limits.json", mPackedFile));
 	Json::Value trackable = packed_json("tracking.json", mPackedFile);
 	trackable_read(trackable);
 

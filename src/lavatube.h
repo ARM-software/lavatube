@@ -27,6 +27,7 @@
 
 class lava_file_reader;
 class lava_file_writer;
+struct suballocator;
 
 using lava_trace_func = PFN_vkVoidFunction;
 
@@ -168,6 +169,9 @@ struct trackeddevice : trackable
 
 	/// capture only: Trust host to notify us about memory updates?
 	bool explicit_host_updates = false;
+
+	/// Only used on replay
+	suballocator* allocator = nullptr;
 
 	std::unordered_set<std::string> requested_device_extensions; // from app to tool
 	std::unordered_set<std::string> enabled_device_extensions; // from replay tool to driver
@@ -688,6 +692,7 @@ struct trackedqueue : trackable
 {
 	using trackable::trackable; // inherit constructor
 	VkDevice device = VK_NULL_HANDLE;
+	uint32_t device_index = UINT32_MAX;
 	VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
 	uint32_t queueIndex = UINT32_MAX;
 	uint32_t queueFamily = UINT32_MAX;
@@ -703,6 +708,7 @@ struct trackedqueue : trackable
 	{
 		static_assert(offsetof(trackedqueue, magic) == 0, "ICD loader magic must be at offset zero!");
 		assert(device != VK_NULL_HANDLE);
+		assert(device_index != UINT32_MAX);
 		assert(physicalDevice != VK_NULL_HANDLE);
 		assert(queueFlags != VK_QUEUE_FLAG_BITS_MAX_ENUM);
 		assert(realQueue != VK_NULL_HANDLE);

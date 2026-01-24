@@ -1138,6 +1138,7 @@ void retrace_vkSyncBufferTRACETOOLTEST(lava_file_reader& reader)
 void retrace_vkAssertBufferARM(lava_file_reader& reader)
 {
 	const uint32_t device_index = reader.read_handle(DEBUGPARAM("VkDevice"));
+	const auto& device_data = VkDevice_index.at(device_index);
 	const uint32_t buffer_index = reader.read_handle(DEBUGPARAM("VkBuffer"));
 	const VkDeviceSize offset = reader.read_uint64_t();
 	VkDeviceSize size = reader.read_uint64_t();
@@ -1145,7 +1146,7 @@ void retrace_vkAssertBufferARM(lava_file_reader& reader)
 	const uint32_t checksum = reader.read_uint32_t();
 	trackedobject& tbuf = VkBuffer_index.at(buffer_index);
 	VkDevice device = index_to_VkDevice.at(device_index);
-	suballoc_location loc = reader.parent->allocator.find_buffer_memory(buffer_index);
+	suballoc_location loc = device_data.allocator->find_buffer_memory(buffer_index);
 	if (size == VK_WHOLE_SIZE)
 	{
 		size = tbuf.size - offset; // set to remaining size
@@ -1436,11 +1437,16 @@ void replay_postprocess_vkCmdBindDescriptorSets2(lava_file_reader& reader, VkCom
 
 void replay_postprocess_vkQueueSubmit2(lava_file_reader& reader, VkResult result, VkQueue queue, uint32_t submitCount, const VkSubmitInfo2* pSubmits, VkFence fence)
 {
+	const uint32_t queue_index = index_to_VkQueue.index(queue);
+	auto& queue_data = VkQueue_index.at(queue_index);
+	const uint32_t device_index = queue_data.device_index;
+	assert(device_index != UINT32_MAX);
+	auto& device_data = VkDevice_index.at(device_index);
 	for (uint32_t i = 0; i < submitCount; i++)
 	{
 		for (uint32_t j = 0; j < pSubmits[i].commandBufferInfoCount; j++)
 		{
-			execute_commands(reader, pSubmits[i].pCommandBufferInfos[j].commandBuffer);
+			execute_commands(reader, device_data, pSubmits[i].pCommandBufferInfos[j].commandBuffer);
 		}
 	}
 }
@@ -1452,11 +1458,16 @@ void replay_postprocess_vkQueueSubmit2KHR(lava_file_reader& reader, VkResult res
 
 void replay_postprocess_vkQueueSubmit(lava_file_reader& reader, VkResult result, VkQueue queue, uint32_t submitCount, const VkSubmitInfo* pSubmits, VkFence fence)
 {
+	const uint32_t queue_index = index_to_VkQueue.index(queue);
+	auto& queue_data = VkQueue_index.at(queue_index);
+	const uint32_t device_index = queue_data.device_index;
+	assert(device_index != UINT32_MAX);
+	auto& device_data = VkDevice_index.at(device_index);
 	for (uint32_t i = 0; i < submitCount; i++)
 	{
 		for (uint32_t j = 0; j < pSubmits[i].commandBufferCount; j++)
 		{
-			execute_commands(reader, pSubmits[i].pCommandBuffers[j]);
+			execute_commands(reader, device_data, pSubmits[i].pCommandBuffers[j]);
 		}
 	}
 }
@@ -1908,6 +1919,7 @@ void retrace_vkGetSwapchainImagesKHR(lava_file_reader& reader)
 	const uint32_t device_index = reader.read_handle(DEBUGPARAM("VkDevice"));
 	const uint32_t swapchain_index = reader.read_handle(DEBUGPARAM("VkSwapchainKHR"));
 	VkDevice device = index_to_VkDevice.at(device_index);
+	auto& device_data = VkDevice_index.at(device_index);
 	const uint8_t do_call = reader.read_uint8_t();
 	const VkResult stored_retval = (VkResult)reader.read_uint32_t();
 	const uint32_t stored_image_count = reader.read_uint32_t();
@@ -1953,7 +1965,7 @@ void retrace_vkGetSwapchainImagesKHR(lava_file_reader& reader)
 			result = wrap_vkCreateImage(device, &pinfo, nullptr, &data.virtual_images[i]);
 			assert(result == VK_SUCCESS);
 		}
-		reader.parent->allocator.virtualswap_images(device, data.virtual_images);
+		device_data.allocator->virtualswap_images(data.virtual_images);
 
 		if (is_noscreen())
 		{
@@ -2458,10 +2470,11 @@ void retrace_vkGetPhysicalDeviceXlibPresentationSupportKHR(lava_file_reader& rea
 
 void image_update(lava_file_reader& reader, uint32_t device_index, uint32_t image_index, uint64_t size, const VkBaseOutStructure* sptr)
 {
-	suballoc_location loc = reader.parent->allocator.find_image_memory(image_index);
+	VkDevice device = index_to_VkDevice.at(device_index);
+	const auto& device_data = VkDevice_index.at(device_index);
+	suballoc_location loc = device_data.allocator->find_image_memory(image_index);
 	DLOG2("image update idx=%u flush=%s init=%s size=%lu", image_index, loc.needs_flush ? "yes" : "no", loc.needs_init ? "yes" : "no", (unsigned long)loc.size);
 	assert(sptr == nullptr);
-	VkDevice device = index_to_VkDevice.at(device_index);
 	char* ptr = mem_map(reader, device, loc);
 	int32_t changed = reader.read_patch(ptr, loc.size);
 	mem_unmap(reader, device, loc, nullptr, ptr);
@@ -2469,7 +2482,8 @@ void image_update(lava_file_reader& reader, uint32_t device_index, uint32_t imag
 
 void buffer_update(lava_file_reader& reader, uint32_t device_index, uint32_t buffer_index, uint64_t size, const VkBaseOutStructure* sptr)
 {
-	suballoc_location loc = reader.parent->allocator.find_buffer_memory(buffer_index);
+	const auto& device_data = VkDevice_index.at(device_index);
+	suballoc_location loc = device_data.allocator->find_buffer_memory(buffer_index);
 	DLOG2("buffer update idx=%u flush=%s init=%s size=%lu", buffer_index, loc.needs_flush ? "yes" : "no", loc.needs_init ? "yes" : "no", (unsigned long)loc.size);
 	assert(sptr == nullptr || sptr->sType == VK_STRUCTURE_TYPE_MARKED_OFFSETS_ARM);
 	VkDevice device = index_to_VkDevice.at(device_index);
@@ -2486,7 +2500,8 @@ void buffer_update(lava_file_reader& reader, uint32_t device_index, uint32_t buf
 
 void tensor_update(lava_file_reader& reader, uint32_t device_index, uint32_t tensor_index, uint64_t size, const VkBaseOutStructure* sptr)
 {
-	suballoc_location loc = reader.parent->allocator.find_tensor_memory(tensor_index);
+	const auto& device_data = VkDevice_index.at(device_index);
+	suballoc_location loc = device_data.allocator->find_tensor_memory(tensor_index);
 	DLOG2("tensor update idx=%u flush=%s init=%s size=%lu", tensor_index, loc.needs_flush ? "yes" : "no", loc.needs_init ? "yes" : "no", (unsigned long)loc.size);
 	assert(sptr == nullptr);
 	VkDevice device = index_to_VkDevice.at(device_index);

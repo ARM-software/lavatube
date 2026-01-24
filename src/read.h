@@ -19,7 +19,6 @@
 #include "containers.h"
 #include "lavatube.h"
 #include "filereader.h"
-#include "suballocator.h"
 #include "jsoncpp/json/value.h"
 
 using lava_replay_func = std::function<void(lava_file_reader&)>;
@@ -43,8 +42,8 @@ class lava_reader
 
 public:
 	lava_reader() {}
-	lava_reader(const std::string& path, int heap_size = -1) { init(path, heap_size); }
-	void init(const std::string& path, int heap_size = -1);
+	lava_reader(const std::string& path) { init(path); }
+	void init(const std::string& path);
 	~lava_reader();
 
 	lava_file_reader& file_reader(uint16_t thread_id);
@@ -92,9 +91,6 @@ public:
 	/// Whether we should actually call into Vulkan or if we are just processing the data.
 	/// Duplicated into the file reader.
 	bool run = true;
-
-	// TBD - should be in a replay-only copy of trackeddevice
-	suballocator allocator;
 
 	// Version numbers are never reset but just keep increasing
 	int stored_version_major = 0;

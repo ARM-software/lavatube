@@ -110,7 +110,6 @@ int main(int argc, char **argv)
 {
 	int start = 0;
 	int end = -1;
-	int heap_size = -1;
 	int remaining = argc - 1; // zeroth is name of program
 	std::string filename;
 	bool infodump = false;
@@ -205,7 +204,7 @@ int main(int argc, char **argv)
 		}
 		else if (match(argv[i], nullptr, "--heap", remaining))
 		{
-			heap_size = get_int(argv[++i], remaining);
+			p__suballocator_heap_size = get_int(argv[++i], remaining);
 		}
 		else if (match(argv[i], "-S", "--save-cache", remaining))
 		{
@@ -285,7 +284,7 @@ int main(int argc, char **argv)
 
 	VkuVulkanLibrary library = vkuCreateWrapper();
 	replayer.set_frames(start, end);
-	replayer.init(filename, heap_size);
+	replayer.init(filename);
 	if (infodump)
 	{
 		replayer.dump_info();

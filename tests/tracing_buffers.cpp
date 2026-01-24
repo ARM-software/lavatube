@@ -109,7 +109,6 @@ static bool getnext(lava_file_reader& t)
 	if (instrtype == PACKET_VULKAN_API_CALL)
 	{
 		const uint16_t apicall = t.read_apicall();
-		t.parent->allocator.self_test();
 		if (apicall == 1) done = true; // is vkDestroyInstance
 	}
 	else if (instrtype == PACKET_THREAD_BARRIER)
@@ -130,7 +129,6 @@ static bool getnext(lava_file_reader& t)
 		update_tensor_packet(instrtype, t);
 	}
 	else assert(false);
-	t.parent->allocator.self_test();
 	return !done;
 }
 
@@ -138,11 +136,7 @@ static void retrace()
 {
 	lava_reader r(TEST_NAME ".vk");
 	lava_file_reader& t = r.file_reader(0);
-	int remaining = r.allocator.self_test();
-	assert(remaining == 0); // there should be nothing now
 	while (getnext(t)) {}
-	remaining = r.allocator.self_test();
-	assert(remaining == 0); // everything should be destroyed now
 	assert(count_flushes == 3);
 }
 

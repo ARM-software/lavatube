@@ -2187,6 +2187,7 @@ VKAPI_ATTR void VKAPI_CALL trace_vkGetDeviceQueue2(VkDevice device, const VkDevi
 		queue_data->queueFamily = pQueueInfo->queueFamilyIndex;
 		queue_data->queueFlags = pQueueInfo->flags;
 		queue_data->device = device;
+		queue_data->device_index = device_data->index;
 		queue_data->realIndex = realIndex;
 		queue_data->realFamily = realFamily;
 		queue_data->realQueue = *pQueue;
@@ -2236,6 +2237,7 @@ VKAPI_ATTR void VKAPI_CALL trace_vkGetDeviceQueue(VkDevice device, uint32_t queu
 		queue_data->queueFamily = queueFamilyIndex;
 		queue_data->queueFlags = physicaldevice_data->queueFamilyProperties.at(queueFamilyIndex).queueFlags;
 		queue_data->device = device;
+		queue_data->device_index = device_data->index;
 		queue_data->realIndex = realIndex;
 		queue_data->realFamily = realFamily;
 		queue_data->realQueue = *pQueue;

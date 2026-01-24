@@ -158,6 +158,7 @@ uint_fast8_t p__compression_type = get_env_int("LAVATUBE_COMPRESSION_TYPE", LAVA
 uint_fast16_t p__compression_level = get_env_int("LAVATUBE_COMPRESSION_LEVEL", 0); // zero means default
 uint_fast8_t p__sandbox_level = get_env_int("LAVATUBE_SANDBOX_LEVEL", 1);
 uint_fast8_t p__trust_host_flushes = get_env_int("LAVATUBE_TRUST_HOST_FLUSHING", 0); // disable active tracking
+int_fast32_t p__suballocator_heap_size = get_env_int("LAVATUBE_SUBALLOCATOR_HEAP_SIZE", -1);
 
 const char* errorString(const VkResult errorCode)
 {

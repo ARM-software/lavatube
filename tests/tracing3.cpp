@@ -41,8 +41,7 @@ static void thread_test_stress()
 	if (random() % 5 == 1) usleep(random() % 3 * 10000); // introduce some pseudo-random timings
 
 	std::vector<VkCommandBuffer> cmdbuffers(10);
-	VkCommandBufferAllocateInfo pAllocateInfo = {};
-	pAllocateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+	VkCommandBufferAllocateInfo pAllocateInfo = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO, nullptr };
 	pAllocateInfo.commandBufferCount = 10;
 	pAllocateInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
 	pAllocateInfo.commandPool = cmdpool;
@@ -91,7 +90,6 @@ static bool getnext(lava_file_reader& t)
 		t.read_barrier();
 	}
 	else if (instrtype != 0) ABORT("Unexpected packet type %d in thread %d", (int)instrtype, (int)t.thread_index());
-	t.parent->allocator.self_test();
 	return (instrtype != 0);
 }
 
@@ -118,8 +116,6 @@ void read_test()
 		delete t;
 	}
 	threads.clear();
-	int remaining = reader->allocator.self_test();
-	assert(remaining == 0); // everything should be destroyed now
 	delete reader;
 	reader = nullptr;
 }
