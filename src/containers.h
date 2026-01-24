@@ -12,6 +12,7 @@
 #include <atomic>
 #include <stdint.h>
 #include <memory>
+#include <cstddef>
 #include <mutex>
 #include <map>
 
@@ -167,6 +168,21 @@ public:
 	{
 		if (_count == 0) return nullptr;
 		const size_t alignment = std::max<size_t>(alignof(T), 2);
+		const uint_fast32_t allocsize = _count * sizeof(T);
+		size_t space = pool.size() - (index + allocsize);
+		void* retval = pool.data() + index;
+		if (!std::align(alignment, allocsize, retval, space))
+		{
+			return nullptr;
+		}
+		index = pool.size() - space;
+		return (T*)retval;
+	}
+
+	template<typename T> __attribute__((alloc_size(2, 4)))
+	inline T* allocate_aligned(uint32_t _count, size_t alignment, const uint32_t _size = sizeof(T))
+	{
+		if (_count == 0) return nullptr;
 		const uint_fast32_t allocsize = _count * sizeof(T);
 		size_t space = pool.size() - (index + allocsize);
 		void* retval = pool.data() + index;

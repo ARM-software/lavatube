@@ -347,6 +347,18 @@ class parameter(spec.base_parameter):
 				z.do('else %s = nullptr;' % varname)
 			else:
 				z.decl('%s%s%s' % (self.mod, self.type, self.param_ptrstr), self.name)
+		elif self.name == 'pData' and self.funcname in ['vkUpdateDescriptorSetWithTemplate', 'vkUpdateDescriptorSetWithTemplateKHR', 'vkCmdPushDescriptorSetWithTemplate', 'vkCmdPushDescriptorSetWithTemplateKHR']:
+			z.decl('%s%s%s' % (self.mod, self.type, self.param_ptrstr), self.name)
+			z.decl('uint64_t', 'pData_size')
+			z.do('pData_size = reader.read_uint64_t();')
+			z.do('if (pData_size > 0)')
+			z.brace_begin()
+			z.do('uint8_t* pData_backing = reader.pool.allocate_aligned<uint8_t>(pData_size, alignof(std::max_align_t));')
+			z.do('memset(pData_backing, 0, pData_size);')
+			z.do('reader.read_array(pData_backing, pData_size);')
+			z.do('%s = pData_backing;' % varname)
+			z.brace_end()
+			z.do('else %s = nullptr;' % varname)
 		elif (self.name == 'ppData' and self.funcname in ['vkMapMemory', 'vkMapMemory2KHR', 'vkMapMemory2']):
 			z.decl('%s%s%s' % (self.mod, self.type, self.param_ptrstr), self.name)
 		elif self.name == 'pfnUserCallback' and self.funcname == 'VkDebugUtilsMessengerCreateInfoEXT':
@@ -696,6 +708,11 @@ class parameter(spec.base_parameter):
 				pass
 		elif (self.name == 'ppData' and self.funcname in ['vkMapMemory', 'vkMapMemory2KHR', 'vkMapMemory2']):
 			pass
+		elif self.name == 'pData' and self.funcname in ['vkUpdateDescriptorSetWithTemplate', 'vkUpdateDescriptorSetWithTemplateKHR', 'vkCmdPushDescriptorSetWithTemplate', 'vkCmdPushDescriptorSetWithTemplateKHR']:
+			z.decl('uint64_t', 'pData_size')
+			z.do('pData_size = descriptorupdatetemplate_data->data_size;')
+			z.do('writer.write_uint64_t(pData_size);')
+			z.do('if (pData_size > 0 && pData) writer.write_array(reinterpret_cast<const char*>(pData), pData_size);')
 		elif self.structure:
 			if self.name == 'pRegions' and self.type in ['VkMemoryToImageCopy', 'VkImageToMemoryCopy'] and self.funcname in ['VkCopyMemoryToImageInfo', 'VkCopyImageToMemoryInfo']:
 				z.decl('VkFormat', 'prev_host_copy_format', custom='writer.host_copy_format')
@@ -1060,6 +1077,10 @@ def save_add_tracking(name):
 			z.do('add->flags = pCreateInfo->flags;')
 			z.do('add->layouts.reserve(pCreateInfo->setLayoutCount);')
 			z.do('for (uint32_t i = 0; i < pCreateInfo->setLayoutCount; i++) add->layouts.push_back(pCreateInfo->pSetLayouts[i]);')
+		elif type == 'VkDescriptorUpdateTemplate':
+			z.do('add->data_size = descriptor_update_template_data_size(pCreateInfo);')
+			z.do('add->flags = pCreateInfo->flags;')
+			z.do('add->type = pCreateInfo->templateType;')
 		elif type == 'VkImage':
 			z.do('add->parent_device_index = device_data->index;')
 			z.do('add->tiling = (lava_tiling)pCreateInfo->tiling;')

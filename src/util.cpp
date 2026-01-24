@@ -446,3 +446,52 @@ const char* pretty_print_VkObjectType(VkObjectType val)
 	}
 	return "Error";
 }
+
+uint64_t descriptor_update_template_entry_size(VkDescriptorType type)
+{
+	switch (type)
+	{
+	case VK_DESCRIPTOR_TYPE_SAMPLER:
+	case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
+	case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:
+	case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:
+	case VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT:
+	case VK_DESCRIPTOR_TYPE_BLOCK_MATCH_IMAGE_QCOM:
+	case VK_DESCRIPTOR_TYPE_SAMPLE_WEIGHT_IMAGE_QCOM:
+		return sizeof(VkDescriptorImageInfo);
+	case VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER:
+	case VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER:
+		return sizeof(VkBufferView);
+	case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
+	case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
+	case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC:
+	case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC:
+		return sizeof(VkDescriptorBufferInfo);
+	case VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK:
+		return 1;
+	case VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR:
+		return sizeof(VkAccelerationStructureKHR);
+	case VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_NV:
+		return sizeof(VkAccelerationStructureNV);
+	default:
+		assert(false); // fail here so we can fix it
+		break;
+	}
+	return 0;
+}
+
+uint64_t descriptor_update_template_data_size(const VkDescriptorUpdateTemplateCreateInfo* info)
+{
+	if (!info || info->descriptorUpdateEntryCount == 0 || !info->pDescriptorUpdateEntries) return 0;
+	uint64_t max_size = 0;
+	for (uint32_t i = 0; i < info->descriptorUpdateEntryCount; i++)
+	{
+		const VkDescriptorUpdateTemplateEntry& entry = info->pDescriptorUpdateEntries[i];
+		const uint64_t element_size = descriptor_update_template_entry_size(entry.descriptorType);
+		if (element_size == 0 || entry.descriptorCount == 0) continue;
+		const uint64_t stride = entry.stride ? entry.stride : element_size;
+		const uint64_t total = entry.offset + stride * (entry.descriptorCount - 1) + element_size;
+		if (total > max_size) max_size = total;
+	}
+	return max_size;
+}

@@ -247,6 +247,15 @@ Json::Value trackeddescriptorsetlayout_json(const trackeddescriptorsetlayout* t)
 	return v;
 }
 
+Json::Value trackeddescriptorupdatetemplate_json(const trackeddescriptorupdatetemplate* t)
+{
+	Json::Value v = trackable_json(t);
+	v["template_type"] = t->type;
+	v["create_flags"] = t->flags;
+	v["data_size"] = t->data_size;
+	return v;
+}
+
 // --- JSON read helpers ---
 
 static void trackable_helper(trackable& t, const Json::Value& v)
@@ -521,6 +530,17 @@ trackeddescriptorsetlayout trackeddescriptorsetlayout_json(const Json::Value& v)
 {
 	trackeddescriptorsetlayout t;
 	trackable_helper(t, v);
+	t.enter_initialized();
+	return t;
+}
+
+trackeddescriptorupdatetemplate trackeddescriptorupdatetemplate_json(const Json::Value& v)
+{
+	trackeddescriptorupdatetemplate t;
+	trackable_helper(t, v);
+	t.type = (VkDescriptorUpdateTemplateType)v["template_type"].asUInt();
+	t.flags = v["create_flags"].asUInt();
+	t.data_size = v.get("data_size", 0).asUInt64();
 	t.enter_initialized();
 	return t;
 }

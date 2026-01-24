@@ -29,6 +29,7 @@ Json::Value trackedframebuffer_json(const trackedframebuffer* t);
 Json::Value trackedrenderpass_json(const trackedrenderpass* t);
 Json::Value trackedpipelinelayout_json(const trackedpipelinelayout* t);
 Json::Value trackeddescriptorsetlayout_json(const trackeddescriptorsetlayout* t);
+Json::Value trackeddescriptorupdatetemplate_json(const trackeddescriptorupdatetemplate* t);
 
 void write_json(const std::string& path, const Json::Value& v);
 void write_json(FILE* fp, const Json::Value& v);
@@ -55,3 +56,4 @@ trackedshadermodule trackedshadermodule_json(const Json::Value& v);
 trackedrenderpass trackedrenderpass_json(const Json::Value& v);
 trackedpipelinelayout trackedpipelinelayout_json(const Json::Value& v);
 trackeddescriptorsetlayout trackeddescriptorsetlayout_json(const Json::Value& v);
+trackeddescriptorupdatetemplate trackeddescriptorupdatetemplate_json(const Json::Value& v);

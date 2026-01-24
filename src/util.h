@@ -269,3 +269,6 @@ typedef uint64_t (VKAPI_PTR *PFN_vkGetDeviceTracingObjectPropertyTRACETOOLTEST)(
 int get_env_int(const char* name, int v);
 int get_env_bool(const char* name, int v);
 FILE* get_env_file(const char* name, FILE* fallback);
+
+uint64_t descriptor_update_template_data_size(const VkDescriptorUpdateTemplateCreateInfo* info);
+uint64_t descriptor_update_template_entry_size(VkDescriptorType type);

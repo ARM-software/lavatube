@@ -781,6 +781,14 @@ struct trackedframebuffer : trackable
 	}
 };
 
+struct trackeddescriptorupdatetemplate : trackable
+{
+	using trackable::trackable; // inherit constructor
+	VkDescriptorUpdateTemplateType type = VK_DESCRIPTOR_UPDATE_TEMPLATE_TYPE_MAX_ENUM;
+	VkDescriptorUpdateTemplateCreateFlags flags = 0; // reserved
+	uint64_t data_size = 0;
+};
+
 /// Only called for capture, for replay we read this info off the metadata
 inline void trackedmemory::bind(trackedobject* obj)
 {
