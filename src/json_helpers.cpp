@@ -215,6 +215,7 @@ Json::Value trackedshadermodule_json(const trackedshadermodule* t)
 Json::Value trackedphysicaldevice_json(const trackedphysicaldevice* t)
 {
 	Json::Value v = trackable_json(t);
+	v["deviceType"] = (unsigned)t->deviceType;
 	return v;
 }
 
@@ -476,6 +477,7 @@ trackedphysicaldevice trackedphysicaldevice_json(const Json::Value& v)
 {
 	trackedphysicaldevice t;
 	trackable_helper(t, v);
+	if (v.isMember("deviceType")) t.deviceType = (VkPhysicalDeviceType)v["deviceType"].asUInt();
 	t.enter_initialized();
 	return t;
 }

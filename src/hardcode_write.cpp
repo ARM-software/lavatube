@@ -245,8 +245,18 @@ static void trace_post_vkGetPhysicalDeviceFeatures2KHR(lava_file_writer& writer,
 static void trace_post_vkGetPhysicalDeviceProperties(lava_file_writer& writer, VkPhysicalDevice physicalDevice, VkPhysicalDeviceProperties* pProperties)
 {
 	memcpy(pProperties->pipelineCacheUUID, writer.parent->fakeUUID, VK_UUID_SIZE);
-
 	// TBD implement property compatibility screening here
+}
+
+static void trace_post_vkGetPhysicalDeviceProperties2(lava_file_writer& writer, VkPhysicalDevice physicalDevice, VkPhysicalDeviceProperties2* pProperties)
+{
+	memcpy(pProperties->properties.pipelineCacheUUID, writer.parent->fakeUUID, VK_UUID_SIZE);
+	// TBD implement property compatibility screening here
+}
+
+static void trace_post_vkGetPhysicalDeviceProperties2KHR(lava_file_writer& writer, VkPhysicalDevice physicalDevice, VkPhysicalDeviceProperties2KHR* pProperties)
+{
+	trace_post_vkGetPhysicalDeviceProperties2(writer, physicalDevice, pProperties);
 }
 
 static void trace_post_vkGetPhysicalDeviceSurfaceCapabilitiesKHR(lava_file_writer& writer, VkResult result, VkPhysicalDevice physicalDevice, VkSurfaceKHR surface, VkSurfaceCapabilitiesKHR* pSurfaceCapabilities)
@@ -1353,6 +1363,11 @@ static void trace_post_vkCreateInstance(lava_file_writer& writer, VkResult resul
 	for (unsigned cur_dev = 0; cur_dev < num_phys_devices; cur_dev++)
 	{
 		auto* add = writer.parent->records.VkPhysicalDevice_index.add(physical_devices[cur_dev], writer.current);
+
+		VkPhysicalDeviceProperties props{};
+		wrap_vkGetPhysicalDeviceProperties(physical_devices[cur_dev], &props);
+		add->deviceType = props.deviceType;
+
 		uint32_t count = 0;
 		wrap_vkGetPhysicalDeviceQueueFamilyProperties(physical_devices[cur_dev], &count, nullptr);
 		add->queueFamilyProperties.resize(count);
