@@ -27,7 +27,9 @@ static void usage()
 	printf("-d/--debug level       Set debug level [0,1,2,3]\n");
 #endif
 	printf("-o/--logfile FILE      Output log output to the given file\n");
-	printf("-g/--gpu gpu           Select physical device to use (by index value)\n");
+	printf("-D/--device #          Select physical device to use (by index value)\n");
+	printf("-G/--gpu               Use the GPU, fails if not available\n");
+	printf("-C/--cpu               Use a CPU software rasterizer as your GPU, fails if not available\n");
 	printf("-V/--validate          Enable validation layers\n");
 	printf("-f/--frames start end  Select a measurement frame range\n");
 	printf("-w/--wsi wsi           Use the given windowing system [xcb, wayland, headless, none]\n");
@@ -169,10 +171,18 @@ int main(int argc, char **argv)
 			if (remaining < 1) usage();
 			p__realimages = get_int(argv[++i], remaining);
 		}
-		else if (match(argv[i], "-g", "--gpu", remaining))
+		else if (match(argv[i], "-D", "--device", remaining))
 		{
 			if (remaining < 1) usage();
-			p__gpu = get_int(argv[++i], remaining);
+			p__device = get_int(argv[++i], remaining);
+		}
+		else if (match(argv[i], "-C", "--cpu", remaining))
+		{
+			p__cpu = true;
+		}
+		else if (match(argv[i], "-G", "--gpu", remaining))
+		{
+			p__gpu = true;
 		}
 		else if (match(argv[i], "-f", "--frames", remaining))
 		{
@@ -270,6 +280,7 @@ int main(int argc, char **argv)
 	if (p__noscreen && !p__virtualswap) DIE("The \"none\" WSI can only be used with a virtual swapchain!");
 	if (p__realimages > 0 && !p__virtualswap) DIE("Setting the number of virtual images can only be done with a virtual swapchain!");
 	if (p__realpresentmode != VK_PRESENT_MODE_MAX_ENUM_KHR && !p__virtualswap) DIE("Changing present mode can only be used with a virtual swapchain!");
+	if (p__cpu && p__gpu) DIE("Cannot use both --cpu/-C and --gpu/-G at the same time!");
 
 	if (wsi.empty()) wsi_initialize(nullptr);
 	else wsi_initialize(wsi.c_str());

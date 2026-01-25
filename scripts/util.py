@@ -440,6 +440,7 @@ class parameter(spec.base_parameter):
 				z.decl('uint32_t', tmpname)
 				z.do('%s = reader.read_handle(DEBUGPARAM("%s"));' % (tmpname, self.type))
 				if self.type == 'VkPhysicalDevice':
+					if self.funcname == 'vkCreateDevice': z.do('if (reader.run) replay_initialize_vkCreateDevice(reader, physicaldevice_index);')
 					z.do('%s = selected_physical_device;' % varname)
 				elif self.type != 'VkDeviceMemory' and not self.funcname in vk.ignore_on_read:
 					z.do('%s = index_to_%s.at(%s);' % (varname, self.type, tmpname))

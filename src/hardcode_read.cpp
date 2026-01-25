@@ -681,6 +681,52 @@ void replay_pre_vkCreateSwapchainKHR(lava_file_reader& reader, VkDevice device, 
 	}
 }
 
+/// Special function to initialize the physical devices absolutely first.
+void replay_initialize_vkCreateDevice(lava_file_reader& reader, uint32_t physicaldevice_index)
+{
+	(void)physicaldevice_index; // TBD use this later for multi-GPU support
+
+	// Find the physical device we want to create, and point all physical device references to it
+	uint32_t num_phys_devices = 0;
+	VkResult result = wrap_vkEnumeratePhysicalDevices(stored_instance, &num_phys_devices, nullptr);
+	assert(result == VK_SUCCESS);
+	assert(p__device < (int)num_phys_devices);
+	std::vector<VkPhysicalDevice> physical_devices(num_phys_devices);
+	result = wrap_vkEnumeratePhysicalDevices(stored_instance, &num_phys_devices, physical_devices.data());
+	assert(result == VK_SUCCESS);
+	assert(num_phys_devices == physical_devices.size());
+	ILOG("Found %d physical devices - picking:", (int)num_phys_devices);
+	assert(selected_physical_device != VK_NULL_HANDLE); // we would have needed a temporary one before we got here
+	selected_physical_device = VK_NULL_HANDLE; // now pick the correct one
+	for (unsigned i = 0; i < physical_devices.size(); i++)
+	{
+		VkPhysicalDeviceProperties devprops;
+		wrap_vkGetPhysicalDeviceProperties(physical_devices[i], &devprops);
+		bool is_cpu = (devprops.deviceType == VK_PHYSICAL_DEVICE_TYPE_CPU || devprops.deviceType == VK_PHYSICAL_DEVICE_TYPE_VIRTUAL_GPU);
+
+		if (is_cpu && p__gpu) continue; // not a GPU and we wanted this, skip it
+		else if (!is_cpu && p__cpu) continue; // not a GPU simulation on CPU and we wanted this, skip it
+		else if (p__device != -1 && (int)i != (int)p__device) continue; // not the physical device we specified, skip it
+
+		selected_physical_device = physical_devices[i]; // select this one
+		ILOG("\t%u : %s (API %u.%u)", i, devprops.deviceName, VK_VERSION_MAJOR(devprops.apiVersion), VK_VERSION_MINOR(devprops.apiVersion));
+		break;
+	}
+	if (selected_physical_device == VK_NULL_HANDLE) DIE("No valid physical device of the requested type found!");
+
+	uint32_t families = 0;
+	wrap_vkGetPhysicalDeviceQueueFamilyProperties(selected_physical_device, &families, nullptr);
+	device_VkQueueFamilyProperties.resize(families);
+	wrap_vkGetPhysicalDeviceQueueFamilyProperties(selected_physical_device, &families, device_VkQueueFamilyProperties.data());
+	for (unsigned i = 0; i < device_VkQueueFamilyProperties.size(); i++)
+	{
+		const VkQueueFamilyProperties& p = device_VkQueueFamilyProperties.at(i);
+		if ((p.queueFlags & VK_QUEUE_GRAPHICS_BIT) && (p.queueFlags & VK_QUEUE_COMPUTE_BIT) && (p.queueFlags & VK_QUEUE_TRANSFER_BIT)) selected_queue_family_index = i;
+		DLOG("Selected queue family: %d", selected_queue_family_index);
+	}
+	if (selected_queue_family_index == 0xdeadbeef) ABORT("No valid queue family found!");
+}
+
 void replay_pre_vkCreateDevice(lava_file_reader& reader, VkPhysicalDevice physicalDevice, VkDeviceCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkDevice* pDevice)
 {
 	pCreateInfo->enabledLayerCount = 0; // even though implementation should ignore it as per the spec, that is not always the case, so help it along
@@ -758,35 +804,15 @@ void replay_post_vkCreateInstance(lava_file_reader& reader, VkResult result, con
 	}
 	stored_instance = *pInstance;
 
-	// Find the physical device we want to create, and point all physical device references to it
 	uint32_t num_phys_devices = 0;
 	result = wrap_vkEnumeratePhysicalDevices(*pInstance, &num_phys_devices, nullptr);
 	assert(result == VK_SUCCESS);
+	assert(num_phys_devices > 0);
 	std::vector<VkPhysicalDevice> physical_devices(num_phys_devices);
 	result = wrap_vkEnumeratePhysicalDevices(*pInstance, &num_phys_devices, physical_devices.data());
 	assert(result == VK_SUCCESS);
 	assert(num_phys_devices == physical_devices.size());
-	assert(selected_gpu() < (int)num_phys_devices);
-	selected_physical_device = physical_devices[selected_gpu()];
-	ILOG("Found %d physical devices (selecting %d):", (int)num_phys_devices, selected_gpu());
-	for (unsigned i = 0; i < num_phys_devices; i++)
-	{
-		VkPhysicalDeviceProperties devprops;
-		wrap_vkGetPhysicalDeviceProperties(physical_devices[i], &devprops);
-		ILOG("\t%u : %s (API %u.%u)", i, devprops.deviceName, VK_VERSION_MAJOR(devprops.apiVersion), VK_VERSION_MINOR(devprops.apiVersion));
-	}
-
-	uint32_t families = 0;
-	wrap_vkGetPhysicalDeviceQueueFamilyProperties(selected_physical_device, &families, nullptr);
-	device_VkQueueFamilyProperties.resize(families);
-	wrap_vkGetPhysicalDeviceQueueFamilyProperties(selected_physical_device, &families, device_VkQueueFamilyProperties.data());
-	for (unsigned i = 0; i < device_VkQueueFamilyProperties.size(); i++)
-	{
-		const VkQueueFamilyProperties& p = device_VkQueueFamilyProperties.at(i);
-		if ((p.queueFlags & VK_QUEUE_GRAPHICS_BIT) && (p.queueFlags & VK_QUEUE_COMPUTE_BIT) && (p.queueFlags & VK_QUEUE_TRANSFER_BIT)) selected_queue_family_index = i;
-		DLOG("Selected queue family: %d", selected_queue_family_index);
-	}
-	if (selected_queue_family_index == 0xdeadbeef) ABORT("No valid queue family found!");
+	selected_physical_device = physical_devices[0]; // temporary assignment to make commands using physical devices work until we actually pick one
 
 	if (!callback_initialized && wrap_vkCreateDebugReportCallbackEXT && has_debug_report)
 	{

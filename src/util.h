@@ -73,7 +73,9 @@ extern uint_fast8_t p__virtualqueues;
 extern uint_fast8_t p__blackhole;
 extern uint_fast8_t p__dedicated_buffer;
 extern uint_fast8_t p__dedicated_image;
+extern uint_fast8_t p__cpu;
 extern uint_fast8_t p__gpu;
+extern int_fast8_t p__device;
 extern uint_fast8_t p__debug_level;
 extern uint_fast8_t p__validation;
 extern uint_fast8_t p__swapchains;
@@ -173,7 +175,6 @@ void check_retval(VkResult stored_retval, VkResult retval);
 uint64_t host_image_copy_size(VkFormat format, const VkImageSubresourceLayers* subresource, const VkExtent3D* extent, uint32_t memory_row_length, uint32_t memory_image_height);
 
 static inline bool is_blackhole_mode() { return p__blackhole; }
-static inline int selected_gpu() { return p__gpu; }
 static inline bool is_debug() { return p__debug_level; }
 static inline bool is_validation() { return p__validation; }
 static inline unsigned num_swapchains() { return p__swapchains; } // tracing only
