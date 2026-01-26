@@ -139,6 +139,7 @@ void lava_reader::finalize(bool terminate)
 	out["process_time"] = process_time;
 	if (terminate)
 	{
+		if (p__debug_destination) fflush(p__debug_destination);
 		for (auto& v : *thread_call_numbers) v = 0; // stop waiting threads from progressing
 		for (unsigned i = 0; i < threads.size(); i++)
 		{

@@ -214,6 +214,7 @@ def print_wrapper_cpp(name):
 	print('\tVkResult retval = wrap_vkCreateDevice(physicalDevice, pCreateInfo, pAllocator, pDevice);', file=w)
 	print('\tif (retval == VK_ERROR_FEATURE_NOT_PRESENT) print_feature_mismatch(physicalDevice, pCreateInfo);', file=w)
 	print('\telse if (retval == VK_ERROR_EXTENSION_NOT_PRESENT) print_extension_mismatch(physicalDevice, pCreateInfo);', file=w)
+	print('\tif (retval == VK_ERROR_FEATURE_NOT_PRESENT || retval == VK_ERROR_EXTENSION_NOT_PRESENT) { return retval; }', file=w) # handle properly later
 	print('\tif (retval != VK_SUCCESS) ABORT("Failed to create device: %s", errorString(retval));', file=w)
 	print('\tassert(*pDevice);', file=w)
 	print('\tPFN_vkGetDeviceProcAddr gdpa = wrap_vkGetDeviceProcAddr;', file=w)

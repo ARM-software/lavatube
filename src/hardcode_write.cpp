@@ -31,7 +31,9 @@ static trackable* debug_object_trackable(trace_records& r, VkDebugReportObjectTy
 	switch (type)
 	{
 	case VK_DEBUG_REPORT_OBJECT_TYPE_INSTANCE_EXT: return r.VkInstance_index.at((const VkInstance)object);
-	case VK_DEBUG_REPORT_OBJECT_TYPE_PHYSICAL_DEVICE_EXT: return r.VkPhysicalDevice_index.at((VkPhysicalDevice)object);
+	case VK_DEBUG_REPORT_OBJECT_TYPE_PHYSICAL_DEVICE_EXT:
+		if (r.VkPhysicalDevice_index.contains((VkPhysicalDevice)object)) return r.VkPhysicalDevice_index.at((VkPhysicalDevice)object);
+		else return nullptr;
 	case VK_DEBUG_REPORT_OBJECT_TYPE_DEVICE_EXT: return r.VkDevice_index.at((VkDevice)object);
 	case VK_DEBUG_REPORT_OBJECT_TYPE_QUEUE_EXT: return (p__virtualqueues) ? (trackable*)object : r.VkQueue_index.at((const VkQueue)object);
 	case VK_DEBUG_REPORT_OBJECT_TYPE_DEVICE_MEMORY_EXT: return r.VkDeviceMemory_index.at((const VkDeviceMemory)object);

@@ -1469,6 +1469,11 @@ def loadfunc(name, node, target, header):
 		z.do('if (reader.run)')
 		z.brace_begin()
 		z.do('retval = vkuSetupDevice(%s);' % (', '.join(call_list)))
+		z.do('if (retval == VK_ERROR_FEATURE_NOT_PRESENT || retval == VK_ERROR_EXTENSION_NOT_PRESENT)')
+		z.brace_begin()
+		z.do('reader.parent->exit_status = 77;')
+		z.do('reader.parent->finalize(true);') # this actually exits now, since we cancel our own thread
+		z.brace_end()
 		z.do('check_retval(stored_retval, retval);')
 		z.brace_end()
 	elif name == "vkGetFenceStatus": # wait for success to restore original synchronization when call was originally successful

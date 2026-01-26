@@ -4,7 +4,6 @@
 
 #include <assert.h>
 #include <atomic>
-#include <thread>
 #include <cstdint>
 #include <thread>
 #include <list>
@@ -96,6 +95,9 @@ public:
 	int stored_version_major = 0;
 	int stored_version_minor = 0;
 	int stored_version_patch = 0;
+
+	/// Set our exit status here if we want to signal something special (eg a skip test value)
+	std::atomic_int exit_status { 0 };
 
 private:
 	/// Start time of frame range

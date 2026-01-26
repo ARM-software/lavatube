@@ -154,5 +154,4 @@ void print_feature_mismatch(VkPhysicalDevice physicalDevice, const VkDeviceCreat
 	if (pEnabledFeatures->inheritedQueries == true && device_features.inheritedQueries == false) ILOG("\tinheritedQueries");
 	// Check pNext feature structs
 	print_pnext_feature_mismatches(physicalDevice, pCreateInfo);
-	ABORT("Mismatched feature sets!");
 }

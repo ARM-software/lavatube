@@ -307,5 +307,5 @@ int main(int argc, char **argv)
 	wsi_shutdown();
 	vkuDestroyWrapper(library);
 	if (p__debug_destination) fclose(p__debug_destination);
-	return 0;
+	return replayer.exit_status;
 }
