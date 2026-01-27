@@ -62,7 +62,7 @@ validate_funcs(extra_sync)
 skip_opt_check = ['pAllocator', 'pUserData', 'pfnCallback', 'pfnUserCallback', 'pNext' ]
 # for these, thread barrier goes before the function call to sync us up to other threads:
 thread_barrier_funcs = [ 'vkQueueSubmit', 'vkResetDescriptorPool', 'vkResetCommandPool', 'vkUnmapMemory', 'vkFlushMappedMemoryRanges', 'vkResetQueryPool',
-	'vkResetQueryPoolEXT', 'vkQueueSubmit2', 'vkQueueSubmit2KHR', 'vkQueuePresentKHR', 'vkUnmapMemory2KHR' ]
+	'vkResetQueryPoolEXT', 'vkQueueSubmit2', 'vkQueueSubmit2KHR', 'vkQueuePresentKHR', 'vkUnmapMemory2KHR', 'vkUnmapMemory2' ]
 validate_funcs(thread_barrier_funcs)
 # for these, thread barrier goes after the function call to sync other threads up to us:
 push_thread_barrier_funcs = [ 'vkQueueWaitIdle', 'vkDeviceWaitIdle', 'vkResetDescriptorPool', 'vkResetQueryPool', 'vkResetQueryPoolEXT', 'vkResetCommandPool',
@@ -76,7 +76,7 @@ functions_noop = [
 	'vkGetPipelinePropertiesEXT', 'vkGetBufferOpaqueCaptureDescriptorDataEXT', 'vkGetTensorOpaqueCaptureDescriptorDataARM', 'vkGetTensorViewOpaqueCaptureDescriptorDataARM',
 	'vkCmdBuildMicromapsEXT', 'vkBuildMicromapsEXT', 'vkGetMicromapBuildSizesEXT', 'vkGetImageOpaqueCaptureDescriptorDataEXT', 'vkGetSamplerOpaqueCaptureDescriptorDataEXT',
 	'vkGetDeviceFaultInfoEXT', # we never want to trace this, but rather inject it during tracing if device loss happens, print the info, then abort
-	'vkGetAccelerationStructureOpaqueCaptureDescriptorDataEXT', 'vkCmdSetRenderingInputAttachmentIndicesKHR',
+	'vkGetAccelerationStructureOpaqueCaptureDescriptorDataEXT', 'vkCmdSetRenderingInputAttachmentIndicesKHR', 'vkCmdSetRenderingInputAttachmentIndices',
 	'vkGetEncodedVideoSessionParametersKHR',
 	'vkCreatePipelineBinariesKHR', 'vkCreateIndirectCommandsLayoutEXT', 'vkCreateIndirectExecutionSetEXT', 'vkGetPipelineBinaryDataKHR',
 ]
@@ -120,7 +120,7 @@ ignore_on_read = [ 'vkGetMemoryHostPointerPropertiesEXT', 'vkCreateDebugUtilsMes
 	'vkInvalidateMappedMemoryRanges', 'vkFreeMemory', 'vkGetPhysicalDeviceXcbPresentationSupportKHR', 'vkMapMemory2KHR', 'vkUnmapMemory2KHR',
 	'vkGetImageMemoryRequirements2KHR', 'vkGetBufferMemoryRequirements2KHR', 'vkGetImageSparseMemoryRequirements2KHR', 'vkGetImageMemoryRequirements',
 	'vkGetBufferMemoryRequirements', 'vkGetImageSparseMemoryRequirements', 'vkGetImageMemoryRequirements2', 'vkGetBufferMemoryRequirements2',
-	'vkGetImageSparseMemoryRequirements2', 'vkMapMemory2', 'vkGetPhysicalDeviceWaylandPresentationSupportKHR' ]
+	'vkGetImageSparseMemoryRequirements2', 'vkMapMemory2', 'vkUnmapMemory2', 'vkGetPhysicalDeviceWaylandPresentationSupportKHR' ]
 validate_funcs(ignore_on_read)
 # functions we should not call natively when tracing - let pre or post calls handle it
 ignore_on_trace = []
@@ -128,14 +128,15 @@ validate_funcs(ignore_on_trace)
 # these functions have hard-coded post-execute callbacks
 replay_pre_calls = [ 'vkDestroyInstance', 'vkDestroyDevice', 'vkCreateDevice', 'vkCreateSampler', 'vkQueuePresentKHR', 'vkCreateSwapchainKHR',
 	'vkCreateSharedSwapchainsKHR', 'vkCreateGraphicsPipelines', 'vkCreateComputePipelines', 'vkCreateRayTracingPipelinesKHR', 'vkCmdPushConstants2KHR',
-	'vkQueueSubmit', 'vkQueueSubmit2', 'vkQueueSubmit2KHR', 'vkDestroyPipelineCache', 'vkDestroySwapchainKHR', 'vkCreateInstance' ]
+	'vkCmdPushConstants2', 'vkQueueSubmit', 'vkQueueSubmit2', 'vkQueueSubmit2KHR', 'vkDestroyPipelineCache', 'vkDestroySwapchainKHR', 'vkCreateInstance' ]
 validate_funcs(replay_pre_calls)
 replay_post_calls = [ 'vkCreateInstance', 'vkDestroyInstance', 'vkQueuePresentKHR', 'vkAcquireNextImageKHR', 'vkAcquireNextImage2KHR',
 	'vkGetBufferDeviceAddress', 'vkGetBufferDeviceAddressKHR', 'vkGetAccelerationStructureDeviceAddressKHR', 'vkSubmitDebugUtilsMessageEXT' ]
 validate_funcs(replay_post_calls)
-replay_postprocess_calls = [ 'vkCmdPushConstants', 'vkCmdPushConstants2KHR', 'vkCreateRayTracingPipelinesKHR', 'vkCreateGraphicsPipelines',
+replay_postprocess_calls = [ 'vkCmdPushConstants', 'vkCmdPushConstants2KHR', 'vkCmdPushConstants2', 'vkCreateRayTracingPipelinesKHR', 'vkCreateGraphicsPipelines',
 	'vkCreateComputePipelines', 'vkCmdBindPipeline', 'vkQueueSubmit', 'vkQueueSubmit2', 'vkQueueSubmit2KHR', 'vkCmdBindDescriptorSets2KHR',
-	'vkCmdBindDescriptorSets', 'vkCmdBindDescriptorSets2', 'vkCmdPushDescriptorSet2KHR', 'vkCmdPushDescriptorSet2', 'vkCmdPushDescriptorSetKHR' ]
+	'vkCmdBindDescriptorSets', 'vkCmdBindDescriptorSets2', 'vkCmdPushDescriptorSet2KHR', 'vkCmdPushDescriptorSet2', 'vkCmdPushDescriptorSetKHR',
+	'vkCmdPushDescriptorSet' ]
 validate_funcs(replay_postprocess_calls)
 trace_pre_calls = [ 'vkQueueSubmit', 'vkCreateInstance', 'vkCreateDevice', 'vkFreeMemory', 'vkQueueSubmit2', 'vkQueueSubmit2KHR' ]
 validate_funcs(trace_pre_calls)
@@ -145,7 +146,7 @@ trace_post_calls = [ 'vkCreateInstance', 'vkCreateDevice', 'vkDestroyInstance', 
 		'vkMapMemory', 'vkCmdBindDescriptorSets', 'vkBindBufferMemory2KHR', 'vkCmdPushDescriptorSet2KHR', 'vkCmdPushDescriptorSet2',
 		'vkGetImageMemoryRequirements', 'vkGetPipelineCacheData', 'vkAcquireNextImageKHR', 'vkAcquireNextImage2KHR',
 		'vkGetBufferMemoryRequirements', 'vkGetBufferMemoryRequirements2', 'vkGetImageMemoryRequirements2', 'vkGetPhysicalDeviceMemoryProperties',
-		'vkGetPhysicalDeviceFormatProperties', 'vkGetPhysicalDeviceFormatProperties2', 'vkCmdPushDescriptorSetKHR', 'vkCreateSwapchainKHR',
+		'vkGetPhysicalDeviceFormatProperties', 'vkGetPhysicalDeviceFormatProperties2', 'vkCmdPushDescriptorSetKHR', 'vkCmdPushDescriptorSet', 'vkCreateSwapchainKHR',
 		'vkGetBufferMemoryRequirements2KHR', 'vkGetDeviceBufferMemoryRequirements', 'vkGetDeviceBufferMemoryRequirementsKHR',
 		'vkGetDeviceImageMemoryRequirements', 'vkGetDeviceImageMemoryRequirementsKHR', 'vkGetPhysicalDeviceFeatures2', 'vkGetPhysicalDeviceFeatures2KHR',
 		'vkGetPhysicalDeviceMemoryProperties2', 'vkGetDeviceImageSparseMemoryRequirementsKHR', 'vkGetDeviceImageSparseMemoryRequirements',

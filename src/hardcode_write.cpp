@@ -540,7 +540,7 @@ static void trace_post_vkCmdBindDescriptorSets2KHR(lava_file_writer& writer, VkC
 	}
 }
 
-static void trace_post_vkCmdBindDescriptorSets2(lava_file_writer& writer, VkCommandBuffer commandBuffer, const VkBindDescriptorSetsInfoKHR* pBindDescriptorSetsInfo)
+static void trace_post_vkCmdBindDescriptorSets2(lava_file_writer& writer, VkCommandBuffer commandBuffer, const VkBindDescriptorSetsInfo* pBindDescriptorSetsInfo)
 {
 	trace_post_vkCmdBindDescriptorSets2KHR(writer, commandBuffer, pBindDescriptorSetsInfo);
 }
@@ -675,6 +675,11 @@ static void handle_VkCopyDescriptorSets(lava_file_writer& writer, uint32_t descr
 }
 
 static void trace_post_vkCmdPushDescriptorSetKHR(lava_file_writer& writer, VkCommandBuffer commandBuffer, VkPipelineBindPoint pipelineBindPoint, VkPipelineLayout layout, uint32_t set, uint32_t descriptorWriteCount, const VkWriteDescriptorSet* pDescriptorWrites)
+{
+	handle_VkWriteDescriptorSets(writer, descriptorWriteCount, pDescriptorWrites, false, true);
+}
+
+static void trace_post_vkCmdPushDescriptorSet(lava_file_writer& writer, VkCommandBuffer commandBuffer, VkPipelineBindPoint pipelineBindPoint, VkPipelineLayout layout, uint32_t set, uint32_t descriptorWriteCount, const VkWriteDescriptorSet* pDescriptorWrites)
 {
 	handle_VkWriteDescriptorSets(writer, descriptorWriteCount, pDescriptorWrites, false, true);
 }
@@ -1795,7 +1800,7 @@ void trace_post_vkMapMemory2KHR(lava_file_writer& writer, VkResult result, VkDev
 	trace_post_vkMapMemory(writer, result, device, pMemoryMapInfo->memory, pMemoryMapInfo->offset, pMemoryMapInfo->size, pMemoryMapInfo->flags, ppData);
 }
 
-void trace_post_vkMapMemory2(lava_file_writer& writer, VkResult result, VkDevice device, const VkMemoryMapInfoKHR* pMemoryMapInfo, void** ppData)
+void trace_post_vkMapMemory2(lava_file_writer& writer, VkResult result, VkDevice device, const VkMemoryMapInfo* pMemoryMapInfo, void** ppData)
 {
 	trace_post_vkMapMemory(writer, result, device, pMemoryMapInfo->memory, pMemoryMapInfo->offset, pMemoryMapInfo->size, pMemoryMapInfo->flags, ppData);
 }

@@ -1367,6 +1367,11 @@ void replay_postprocess_vkCmdPushDescriptorSetKHR(lava_file_reader& reader, VkCo
 	cmdbuffer_data.commands.push_back(cmd);
 }
 
+void replay_postprocess_vkCmdPushDescriptorSet(lava_file_reader& reader, VkCommandBuffer commandBuffer, VkPipelineBindPoint pipelineBindPoint, VkPipelineLayout layout, uint32_t set, uint32_t descriptorWriteCount, const VkWriteDescriptorSet* pDescriptorWrites)
+{
+	replay_postprocess_vkCmdPushDescriptorSetKHR(reader, commandBuffer, pipelineBindPoint, layout, set, descriptorWriteCount, pDescriptorWrites);
+}
+
 void replay_postprocess_vkCmdPushDescriptorSet2KHR(lava_file_reader& reader, VkCommandBuffer commandBuffer, const VkPushDescriptorSetInfoKHR* pPushDescriptorSetInfo)
 {
 	const uint32_t cmdbuffer_index = index_to_VkCommandBuffer.index(commandBuffer);
@@ -1456,7 +1461,7 @@ void replay_postprocess_vkCmdBindDescriptorSets2KHR(lava_file_reader& reader, Vk
 	}
 }
 
-void replay_postprocess_vkCmdBindDescriptorSets2(lava_file_reader& reader, VkCommandBuffer commandBuffer, const VkBindDescriptorSetsInfoKHR* pBindDescriptorSetsInfo)
+void replay_postprocess_vkCmdBindDescriptorSets2(lava_file_reader& reader, VkCommandBuffer commandBuffer, const VkBindDescriptorSetsInfo* pBindDescriptorSetsInfo)
 {
 	replay_postprocess_vkCmdBindDescriptorSets2KHR(reader, commandBuffer, pBindDescriptorSetsInfo);
 }
@@ -1588,7 +1593,7 @@ void replay_postprocess_vkCmdPushConstants2KHR(lava_file_reader& reader, VkComma
 	postprocess_push_constants(reader, commandBuffer, pPushConstantsInfo->offset, pPushConstantsInfo->size, pPushConstantsInfo->pValues);
 }
 
-void replay_postprocess_vkCmdPushConstants2(lava_file_reader& reader, VkCommandBuffer commandBuffer, const VkPushConstantsInfoKHR* pPushConstantsInfo)
+void replay_postprocess_vkCmdPushConstants2(lava_file_reader& reader, VkCommandBuffer commandBuffer, const VkPushConstantsInfo* pPushConstantsInfo)
 {
 	replay_postprocess_vkCmdPushConstants2KHR(reader, commandBuffer, pPushConstantsInfo);
 }
