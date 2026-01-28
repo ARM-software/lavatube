@@ -90,7 +90,14 @@ def struct_impl_read(r, selected = None):
 			z.read = True
 			params = []
 			z.struct_begin(name)
+			misordered = []
+			regular = []
 			for p in v.findall('member'):
+				if name in spec.misordered_counts and p.find('name').text in spec.misordered_counts[name]:
+					misordered.append(p)
+				else:
+					regular.append(p)
+			for p in misordered + regular:
 				api = p.attrib.get('api')
 				if api and api == 'vulkansc': continue
 				param = util.parameter(p, read=True, funcname=name)
@@ -136,7 +143,14 @@ def struct_impl_write(w, selected = None):
 				z.do('if (pDynamicState->pDynamicStates[df] == VK_DYNAMIC_STATE_VIEWPORT /*|| pDynamicState->pDynamicStates[df] == VK_DYNAMIC_STATE_VIEWPORT_WITH_COUNT*/) isDynamicViewports = true;')
 				z.do('if (pDynamicState->pDynamicStates[df] == VK_DYNAMIC_STATE_SCISSOR /*|| pDynamicState->pDynamicStates[df] == VK_DYNAMIC_STATE_SCISSOR_WITH_COUNT*/) isDynamicScissors = true;')
 				z.loop_end()
+			misordered = []
+			regular = []
 			for p in v.findall('member'):
+				if name in spec.misordered_counts and p.find('name').text in spec.misordered_counts[name]:
+					misordered.append(p)
+				else:
+					regular.append(p)
+			for p in misordered + regular:
 				api = p.attrib.get('api')
 				if api and api == 'vulkansc': continue
 				param = util.parameter(p, read=False, funcname=name, transitiveConst=True)

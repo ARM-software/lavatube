@@ -348,40 +348,18 @@ class parameter(spec.base_parameter):
 			z.do('%s = debug_report_callback; // hijacking this pointer with our own callback function' % varname)
 		elif self.name == 'pNext':
 			z.do('read_extension(reader, (VkBaseOutStructure**)&%s);' % varname)
-		elif self.type == 'VkDescriptorDataEXT':
-			z.decl('uint8_t', 'opt')
-			z.do('switch (sptr->type)')
-			z.brace_begin()
-			z.do('case VK_DESCRIPTOR_TYPE_SAMPLER: { VkSampler* tmp = reader.pool.allocate<VkSampler>(1); uint32_t index = reader.read_handle(DEBUGPARAM("%s")); *tmp = index_to_VkSampler.at(index); sptr->data.pSampler = tmp; } break;' % self.type)
-			z.do('case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER: opt = reader.read_uint8_t(); if (opt) { auto* tmp = reader.pool.allocate<VkDescriptorImageInfo>(1); sptr->data.pCombinedImageSampler = tmp; read_VkDescriptorImageInfo(reader, tmp); } else { sptr->data.pCombinedImageSampler = nullptr; } break;')
-			z.do('case VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT: opt = reader.read_uint8_t(); if (opt) { auto* tmp = reader.pool.allocate<VkDescriptorImageInfo>(1); sptr->data.pInputAttachmentImage = tmp; read_VkDescriptorImageInfo(reader, tmp); } else { sptr->data.pInputAttachmentImage = nullptr; } break;')
-			z.do('case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE: opt = reader.read_uint8_t(); if (opt) { auto* tmp = reader.pool.allocate<VkDescriptorImageInfo>(1); sptr->data.pSampledImage = tmp; read_VkDescriptorImageInfo(reader, tmp); } else { sptr->data.pSampledImage = nullptr; } break;')
-			z.do('case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE: opt = reader.read_uint8_t(); if (opt) { auto* tmp = reader.pool.allocate<VkDescriptorImageInfo>(1); sptr->data.pStorageImage = tmp; read_VkDescriptorImageInfo(reader, tmp); } else { sptr->data.pStorageImage = nullptr; } break;')
-			z.do('case VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER: opt = reader.read_uint8_t(); if (opt) { auto* tmp = reader.pool.allocate<VkDescriptorAddressInfoEXT>(1); sptr->data.pUniformTexelBuffer = tmp; read_VkDescriptorAddressInfoEXT(reader, tmp); } else { sptr->data.pUniformTexelBuffer = nullptr; } break;')
-			z.do('case VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER: opt = reader.read_uint8_t(); if (opt) { auto* tmp = reader.pool.allocate<VkDescriptorAddressInfoEXT>(1); sptr->data.pStorageTexelBuffer = tmp; read_VkDescriptorAddressInfoEXT(reader, tmp); } else { sptr->data.pStorageTexelBuffer = nullptr; } break;')
-			z.do('case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER: opt = reader.read_uint8_t(); if (opt) { auto* tmp = reader.pool.allocate<VkDescriptorAddressInfoEXT>(1); sptr->data.pUniformBuffer = tmp; read_VkDescriptorAddressInfoEXT(reader, tmp); } else { sptr->data.pUniformBuffer = nullptr; } break;')
-			z.do('case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER: opt = reader.read_uint8_t(); if (opt) { auto* tmp = reader.pool.allocate<VkDescriptorAddressInfoEXT>(1); sptr->data.pStorageBuffer = tmp; read_VkDescriptorAddressInfoEXT(reader, tmp); } else { sptr->data.pStorageBuffer = nullptr; } break;')
-			z.do('case VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR:')
-			z.brace_begin()
-			z.do('uint64_t stored_address = reader.read_uint64_t();')
-			z.do('sptr->data.accelerationStructure = reader.parent->device_address_remapping.translate_address(stored_address);')
-			z.do('ILOG("%s changing device address from %%lu to %%lu", (unsigned long)stored_address, (unsigned long)%s.accelerationStructure);' % (self.funcname, varname))
-			z.brace_end()
-			z.do('break;')
-			z.do('default: ABORT("Unsupported descriptor type for VkDescriptorDataEXT"); break;')
-			z.brace_end()
 		elif self.string_array:
-			len = self.length.split(',')[0]
+			strlen = self.length.split(',')[0]
 			if self.funcname == 'VkInstanceCreateInfo' and self.name == 'ppEnabledExtensionNames':
-				z.do('%s = instance_extensions(reader, sptr->%s);' % (varname, len))
+				z.do('%s = instance_extensions(reader, sptr->%s);' % (varname, strlen))
 			elif self.funcname == 'VkInstanceCreateInfo' and self.name == 'ppEnabledLayerNames':
-				z.do('%s = instance_layers(reader, sptr->%s);' % (varname, len))
+				z.do('%s = instance_layers(reader, sptr->%s);' % (varname, strlen))
 			elif self.funcname == 'VkDeviceCreateInfo' and self.name == 'ppEnabledExtensionNames':
-				z.do('%s = device_extensions(sptr, reader, physicalDevice, sptr->%s);' % (varname, len))
+				z.do('%s = device_extensions(sptr, reader, physicalDevice, sptr->%s);' % (varname, strlen))
 			elif self.funcname == 'VkDeviceCreateInfo' and self.name == 'ppEnabledLayerNames':
-				z.do('%s = device_layers(reader, sptr->%s);' % (varname, len))
+				z.do('%s = device_layers(reader, sptr->%s);' % (varname, strlen))
 			else:
-				z.do('%s = reader.read_string_array(%s);' % (varname, len))
+				z.do('%s = reader.read_string_array(%s);' % (varname, strlen))
 		elif self.string:
 			if not isptr(varname):
 				z.decl('const char*', self.name)
@@ -449,17 +427,50 @@ class parameter(spec.base_parameter):
 			z.do('stored_address = reader.read_uint64_t();')
 			z.do('%s.deviceAddress = reader.parent->device_address_remapping.translate_address(stored_address); // assume device address since we do not support host addresses' % varname)
 			z.do('ILOG("%s changing device address from %%lu to %%lu", (unsigned long)stored_address, (unsigned long)%s.deviceAddress);' % (self.funcname, varname))
-		elif self.type == 'VkAccelerationStructureGeometryDataKHR': # union, requires special handling
-			z.do('if (%sgeometryType == VK_GEOMETRY_TYPE_TRIANGLES_KHR) read_VkAccelerationStructureGeometryTrianglesDataKHR(reader, &%s.triangles);' % (owner, varname))
-			z.do('else if (%sgeometryType == VK_GEOMETRY_TYPE_AABBS_KHR) read_VkAccelerationStructureGeometryAabbsDataKHR(reader, &%s.aabbs);' % (owner, varname))
-			z.do('else if (%sgeometryType == VK_GEOMETRY_TYPE_INSTANCES_KHR) read_VkAccelerationStructureGeometryInstancesDataKHR(reader, &%s.instances);' % (owner, varname))
-			z.do('else assert(false);') # if geometryType is defined after VkAccelerationStructureGeometryDataKHR we have a problem
-		elif self.type == 'VkPipelineExecutableStatisticValueKHR': # union, requires special handling
-			z.do('if (%sformat == VK_PIPELINE_EXECUTABLE_STATISTIC_FORMAT_BOOL32_KHR) %s.b32 = reader.read_uint32_t();' % (owner, varname))
-			z.do('else if (%sformat == VK_PIPELINE_EXECUTABLE_STATISTIC_FORMAT_INT64_KHR) %s.i64 = reader.read_int64_t();' % (owner, varname))
-			z.do('else if (%sformat == VK_PIPELINE_EXECUTABLE_STATISTIC_FORMAT_UINT64_KHR) %s.u64 = reader.read_uint64_t();' % (owner, varname))
-			z.do('else if (%sformat == VK_PIPELINE_EXECUTABLE_STATISTIC_FORMAT_FLOAT64_KHR) %s.f64 = reader.read_double();' % (owner, varname))
-			z.do('else assert(false);')
+		elif self.selector: # well-defined union
+			assert self.type in spec.unions, '%s used by %s with %s as selector is not in spec.unions!' % (self.type, self.name, self.selector)
+			z.do('switch (%s)' % (owner + self.selector))
+			z.brace_begin()
+			for val in spec.unions[self.type]:
+				lst, ttype, tname = val
+				for subval in lst:
+					z.do('case %s:' % subval)
+					z.brace_begin()
+					if ttype in spec.structures and tname[0] == 'p' and len(tname) > 1 and tname[1].isupper():
+						z.decl('uint8_t', 'opt')
+						z.do('opt = reader.read_uint8_t();')
+						z.do('if (opt)')
+						z.brace_begin()
+						z.do('%s* tmp = reader.pool.allocate<%s>(1);' % (ttype, ttype))
+						z.do('read_%s(reader, tmp);' % (ttype))
+						z.do('%s.%s = tmp;' % (varname, tname))
+						z.brace_end()
+						z.do('else %s.%s = nullptr;' % (varname, tname))
+					elif ttype in spec.disp_handles or ttype in spec.nondisp_handles:
+						tmpname = toindex(ttype)
+						z.do('uint32_t %s = reader.read_handle(DEBUGPARAM("%s"));' % (tmpname, ttype))
+						if tname[0] == 'p' and len(tname) > 1 and tname[1].isupper():
+							z.do('%s* tmp = reader.pool.allocate<%s>(1);' % (ttype, ttype))
+							z.do('*tmp = index_to_%s.at(%s);' % (ttype, tmpname))
+							z.do('%s.%s = tmp;' % (varname, tname))
+						else:
+							z.do('%s.%s = index_to_%s.at(%s);' % (varname, tname, ttype, tmpname))
+					elif ttype in spec.structures:
+						z.do('read_%s(reader, &%s.%s);' % (ttype, varname, tname))
+					elif ttype == 'VkDeviceAddress':
+						z.decl('uint64_t', 'stored_address')
+						z.do('stored_address = reader.read_uint64_t();')
+						z.do('%s.%s = reader.parent->device_address_remapping.translate_address(stored_address);' % (varname, tname))
+						z.do('ILOG("%s %s.%s changing device address from %%lu to %%lu inside union", (unsigned long)stored_address, (unsigned long)%s.%s);' % (self.funcname, varname, tname, varname, tname))
+					elif ttype in spec.type_mappings:
+						storedtype = spec.type_mappings[ttype]
+						z.do('%s.%s = reader.read_%s();' % (varname, tname, storedtype))
+					else:
+						z.do('%s.%s = reader.read_%s();' % (varname, tname, ttype))
+					z.brace_end()
+					z.do('break;')
+			z.do('default: assert(false);')
+			z.brace_end()
 		elif self.type == 'VkClearColorValue': # union, requires special handling
 			if not isptr(varname):
 				z.decl(self.type, self.name)
@@ -483,17 +494,17 @@ class parameter(spec.base_parameter):
 			storedtype = spec.type_mappings[self.type]
 			nativetype = self.type if self.type != 'void' else 'char'
 			if self.length and self.ptr:
-				len = z.tmp('uint32_t')
-				z.do('%s = %s;' % (len, self.length))
-				z.do('if (%s > 0)' % len)
+				vlen = z.tmp('uint32_t')
+				z.do('%s = %s;' % (vlen, self.length))
+				z.do('if (%s > 0)' % vlen)
 				z.brace_begin()
 				if not isptr(varname):
 					z.decl('%s%s' % (self.type, self.inline_ptrstr), self.name)
 					z.access(self.name, self.name)
-				storedname = z.tmpmem(storedtype, len)
-				nativename = z.backing(nativetype, self.name, size=len)
-				z.do('reader.read_array(%s, %s);' % (storedname, len))
-				z.do('for (size_t k1 = 0; k1 < %s; k1++) %s[k1] = static_cast<%s>(%s[k1]);' % (len, nativename, nativetype, storedname))
+				storedname = z.tmpmem(storedtype, vlen)
+				nativename = z.backing(nativetype, self.name, size=vlen)
+				z.do('reader.read_array(%s, %s);' % (storedname, vlen))
+				z.do('for (size_t k1 = 0; k1 < %s; k1++) %s[k1] = static_cast<%s>(%s[k1]);' % (vlen, nativename, nativetype, storedname))
 				z.do('%s = %s;' % (varname, nativename))
 				z.brace_end()
 				z.do('else %s = nullptr;' % varname)
@@ -519,8 +530,9 @@ class parameter(spec.base_parameter):
 					if isptr(varname):
 						z.do('%s = *%s;' % (varname, self.name))
 				elif self.ptr: # but not root
-					z.do('%s = reader.pool.allocate<%s>(1);' % (varname, self.type))
-					z.do('*%s = static_cast<%s>(reader.read_%s());' % (varname, self.type, storedtype))
+					z.do('%s* tmp = reader.pool.allocate<%s>(1);' % (self.type, self.type)) # works around const
+					z.do('*tmp = static_cast<%s>(reader.read_%s());' % (self.type, storedtype))
+					z.do('%s = tmp;' % varname)
 				elif iscount(self): # need to store in temporary in case used by other variables as size
 					storedname = z.tmp(storedtype)
 					z.do('%s = reader.read_%s(); // for %s' % (storedname, storedtype, varname))
@@ -644,8 +656,12 @@ class parameter(spec.base_parameter):
 
 		if self.optional and not self.name in vk.skip_opt_check:
 			z.decl('uint8_t', '%s_opt' % self.name)
-			if self.funcname in vk.extra_optionals and self.name in vk.extra_optionals[self.funcname]:
+			if self.funcname == 'VkPipelineCacheCreateInfo' and self.name == 'pInitialData':
+				z.do('%s_opt = 0; // pipeline cache data is intentionally not captured' % self.name)
+			elif self.funcname in vk.extra_optionals and self.name in vk.extra_optionals[self.funcname]:
 				z.do('%s_opt = %s && %s;' % (self.name, vk.extra_optionals[self.funcname][self.name], varname))
+			elif self.length and self.length.isalpha():
+				z.do('%s_opt = (%s != 0 && %s > 0); // whether we should save %s' % (self.name, varname, owner + self.length, self.name))
 			elif self.length:
 				z.do('%s_opt = (%s != 0 && %s > 0); // whether we should save %s' % (self.name, varname, self.length, self.name))
 			else:
@@ -682,21 +698,6 @@ class parameter(spec.base_parameter):
 		elif self.funcname in ['VkDebugMarkerObjectNameInfoEXT', 'VkDebugMarkerObjectTagInfoEXT', 'vkDebugReportMessageEXT'] and self.name == 'object':
 			z.do('auto* object_data = debug_object_trackable(writer.parent->records, %sobjectType, %s);' % (owner, varname))
 			z.do('writer.write_handle(object_data);')
-		elif self.type == 'VkDescriptorDataEXT':
-			z.do('switch (sptr->type)')
-			z.brace_begin()
-			z.do('case VK_DESCRIPTOR_TYPE_SAMPLER: { auto* sampler_data = writer.parent->records.VkSampler_index.at(*sptr->data.pSampler); writer.write_handle(sampler_data); } break;')
-			z.do('case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER: writer.write_uint8_t(sptr->data.pCombinedImageSampler != nullptr); if (sptr->data.pCombinedImageSampler) write_VkDescriptorImageInfo(writer, sptr->data.pCombinedImageSampler); break;')
-			z.do('case VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT: writer.write_uint8_t(sptr->data.pInputAttachmentImage != nullptr); if (sptr->data.pInputAttachmentImage) write_VkDescriptorImageInfo(writer, sptr->data.pInputAttachmentImage); break;')
-			z.do('case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE: writer.write_uint8_t(sptr->data.pSampledImage != nullptr); if (sptr->data.pSampledImage) write_VkDescriptorImageInfo(writer, sptr->data.pSampledImage); break;')
-			z.do('case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE: writer.write_uint8_t(sptr->data.pStorageImage != nullptr); if (sptr->data.pStorageImage) write_VkDescriptorImageInfo(writer, sptr->data.pStorageImage); break;')
-			z.do('case VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER: writer.write_uint8_t(sptr->data.pUniformTexelBuffer != nullptr); if (sptr->data.pUniformTexelBuffer) write_VkDescriptorAddressInfoEXT(writer, sptr->data.pUniformTexelBuffer); break;')
-			z.do('case VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER: writer.write_uint8_t(sptr->data.pStorageTexelBuffer != nullptr); if (sptr->data.pStorageTexelBuffer) write_VkDescriptorAddressInfoEXT(writer, sptr->data.pStorageTexelBuffer); break;')
-			z.do('case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER: writer.write_uint8_t(sptr->data.pUniformBuffer != nullptr); if (sptr->data.pUniformBuffer) write_VkDescriptorAddressInfoEXT(writer, sptr->data.pUniformBuffer); break;')
-			z.do('case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER: writer.write_uint8_t(sptr->data.pStorageBuffer != nullptr); if (sptr->data.pStorageBuffer) write_VkDescriptorAddressInfoEXT(writer, sptr->data.pStorageBuffer); break;')
-			z.do('case VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR: writer.write_uint64_t(sptr->data.accelerationStructure); break;')
-			z.do('default: ABORT("Unsupported descriptor type for VkDescriptorDataEXT"); break;')
-			z.brace_end()
 		elif 'CaptureReplayHandle' in self.name:
 			z.do('writer.write_uint64_t((uint64_t)%s);' % varname)
 		elif self.funcname in ['VkDebugUtilsObjectNameInfoEXT', 'VkDebugUtilsObjectTagInfoEXT', 'vkSetPrivateData', 'vkSetPrivateDataEXT', 'vkGetPrivateData', 'vkGetPrivateDataEXT'] and self.name == 'objectHandle':
@@ -708,17 +709,33 @@ class parameter(spec.base_parameter):
 			z.do('writer.write_uint64_t((uint64_t)%s);' % varname) # write pointer value so that we can distinguish between different instances of it on replay, if we want to
 		elif self.type == 'VkDeviceOrHostAddressKHR' or self.type == 'VkDeviceOrHostAddressConstKHR':
 			z.do('writer.write_uint64_t(%s.deviceAddress);' % (varname))
-		elif self.type == 'VkAccelerationStructureGeometryDataKHR': # union, requires special handling
-			z.do('if (%sgeometryType == VK_GEOMETRY_TYPE_TRIANGLES_KHR) write_VkAccelerationStructureGeometryTrianglesDataKHR(writer, &%s.triangles);' % (owner, varname))
-			z.do('else if (%sgeometryType == VK_GEOMETRY_TYPE_AABBS_KHR) write_VkAccelerationStructureGeometryAabbsDataKHR(writer, &%s.aabbs);' % (owner, varname))
-			z.do('else if (%sgeometryType == VK_GEOMETRY_TYPE_INSTANCES_KHR) write_VkAccelerationStructureGeometryInstancesDataKHR(writer, &%s.instances);' % (owner, varname))
-			z.do('else assert(false);')
-		elif self.type == 'VkPipelineExecutableStatisticValueKHR': # union, requires special handling
-			z.do('if (%sformat == VK_PIPELINE_EXECUTABLE_STATISTIC_FORMAT_BOOL32_KHR) writer.write_uint32_t(%s.b32);' % (owner, varname))
-			z.do('else if (%sformat == VK_PIPELINE_EXECUTABLE_STATISTIC_FORMAT_INT64_KHR) writer.write_int64_t(%s.i64);' % (owner, varname))
-			z.do('else if (%sformat == VK_PIPELINE_EXECUTABLE_STATISTIC_FORMAT_UINT64_KHR) writer.write_uint64_t(%s.u64);' % (owner, varname))
-			z.do('else if (%sformat == VK_PIPELINE_EXECUTABLE_STATISTIC_FORMAT_FLOAT64_KHR) writer.write_double(%s.f64);' % (owner, varname))
-			z.do('else assert(false);')
+		elif self.selector: # well-defined union
+			assert self.type in spec.unions, '%s used by %s with %s as selector is not in spec.unions!' % (self.type, self.name, self.selector)
+			z.do('switch (%s)' % (owner + self.selector))
+			z.brace_begin()
+			for val in spec.unions[self.type]:
+				lst, ttype, tname = val
+				for subval in lst:
+					z.do('case %s:' % subval)
+					z.brace_begin()
+					if ttype in spec.structures and tname[0] == 'p' and len(tname) > 1 and tname[1].isupper():
+						z.do('writer.write_uint8_t((uint8_t)(%s.%s != nullptr));' % (varname, tname))
+						z.do('if (%s.%s != nullptr) write_%s(writer, %s.%s);' % (varname, tname, ttype, varname, tname))
+					elif ttype in spec.structures: # full structure unionization, yikes
+						z.do('write_%s(writer, &%s.%s);' % (ttype, varname, tname))
+					elif ttype in spec.disp_handles or ttype in spec.nondisp_handles:
+						deref = '*' if tname[0] == 'p' and len(tname) > 1 and tname[1].isupper() else ''
+						z.do('%s* %s = writer.parent->records.%s_index.at(%s%s.%s);' % (vk.trackable_type_map_trace.get(ttype, 'trackable'), totrackable(ttype), ttype, deref, varname, tname))
+						z.do('writer.write_handle(%s);' % totrackable(ttype))
+					elif ttype in spec.type_mappings:
+						storedtype = spec.type_mappings[ttype]
+						z.do('writer.write_%s(%s.%s);' % (storedtype, varname, tname))
+					else:
+						z.do('writer.write_%s(%s.%s);' % (ttype, varname, tname))
+					z.brace_end()
+					z.do('break;')
+			z.do('default: assert(false);')
+			z.brace_end()
 		elif self.type == 'VkClearColorValue': # union, requires special handling
 			if self.ptr: z.do('writer.write_array(%s->uint32, 4);' % varname)
 			else: z.do('writer.write_array(%s.uint32, 4);' % varname)
@@ -849,7 +866,9 @@ class parameter(spec.base_parameter):
 		elif self.ptr and self.length:
 			if self.type != 'void' and self.type in spec.type_mappings: # do we need to convert it?
 				z.do('for (unsigned s = 0; s < (unsigned)(%s); s++) writer.write_%s(%s[s]);' % (self.length, spec.type_mappings[self.type], varname))
-			else: # no, just write out as is
+			elif self.length.isalpha(): # no, just write out as is
+				z.do('writer.write_array(reinterpret_cast<const char*>(%s), %s * sizeof(%s));' % (varname, owner + self.length, self.type if self.type != 'void' else 'char'))
+			else: # might be an algorithm
 				z.do('writer.write_array(reinterpret_cast<const char*>(%s), %s * sizeof(%s));' % (varname, self.length, self.type if self.type != 'void' else 'char'))
 		elif self.type in spec.packed_bitfields:
 			storedtype = spec.type_mappings[self.type]
@@ -858,6 +877,8 @@ class parameter(spec.base_parameter):
 			z.do('writer.write_%s(*%s);' % (spec.type_mappings[self.type], varname))
 		elif self.ptr:
 			z.do('writer.write_%s(*%s);' % (self.type, varname))
+		elif self.type in spec.type_mappings and self.length and self.length.isalpha(): # type mapped array
+			z.do('writer.write_array(reinterpret_cast<%s%s*>(%s), %s);' % (self.mod, spec.type_mappings[self.type], varname, owner + self.length))
 		elif self.type in spec.type_mappings and self.length: # type mapped array
 			z.do('writer.write_array(reinterpret_cast<%s%s*>(%s), %s);' % (self.mod, spec.type_mappings[self.type], varname, self.length))
 		elif self.name == 'queueFamilyIndex':
@@ -866,6 +887,8 @@ class parameter(spec.base_parameter):
 			z.do('writer.write_uint32_t(virtual_family ? LAVATUBE_VIRTUAL_QUEUE : %s);' % varname)
 		elif self.type in spec.type_mappings:
 			z.do('writer.write_%s(%s);' % (spec.type_mappings[self.type], varname))
+		elif self.ptr and self.length and self.length.isalpha(): # arrays
+			z.do('writer.write_array(%s, %s);' % (varname, owner + self.length))
 		elif self.ptr and self.length: # arrays
 			z.do('writer.write_array(%s, %s);' % (varname, self.length))
 		elif not self.ptr and self.length: # specific size arrays

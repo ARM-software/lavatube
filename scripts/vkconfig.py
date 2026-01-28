@@ -90,7 +90,8 @@ noscreen_calls = [ 'vkDestroySurfaceKHR', 'vkAcquireNextImageKHR', 'vkCreateSwap
 	'vkGetSwapchainStatusKHR', 'vkGetSwapchainCounterEXT', 'vkGetRefreshCycleDurationGOOGLE', 'vkGetPastPresentationTimingGOOGLE', 'vkSetHdrMetadataEXT',
 	'vkSetLocalDimmingAMD', 'vkGetPhysicalDeviceSurfaceCapabilities2EXT', 'vkGetPhysicalDeviceSurfaceFormats2KHR',
 	'vkGetPhysicalDeviceSurfaceCapabilities2KHR', 'vkCreateDisplayPlaneSurfaceKHR', 'vkGetPhysicalDeviceSurfaceSupportKHR', 'vkGetPhysicalDeviceSurfaceFormatsKHR',
-	'VkSwapchainCreateInfoKHR', 'vkAcquireFullScreenExclusiveModeEXT', 'vkReleaseFullScreenExclusiveModeEXT', 'vkWaitForPresentKHR', 'vkWaitForPresent2KHR' ]
+	'VkSwapchainCreateInfoKHR', 'vkAcquireFullScreenExclusiveModeEXT', 'vkReleaseFullScreenExclusiveModeEXT', 'vkWaitForPresentKHR', 'vkWaitForPresent2KHR',
+	'vkSetSwapchainPresentTimingQueueSizeEXT', 'vkGetSwapchainTimingPropertiesEXT', 'vkGetSwapchainTimeDomainPropertiesEXT' ]
 
 # make sure we've thought about all the ways virtual swapchains interact with everything else
 virtualswap_calls = [ 'vkCreateSwapchainKHR', 'vkDestroySwapchainKHR', 'vkCreateSharedSwapchainsKHR', 'vkGetSwapchainStatusKHR', 'vkGetSwapchainCounterEXT' ]
