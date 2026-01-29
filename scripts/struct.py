@@ -18,7 +18,6 @@ skiplist = [ 'VkXlibSurfaceCreateInfoKHR', 'VkXcbSurfaceCreateInfoKHR', 'VkBaseO
 	'VkMemoryMapPlacedInfoEXT',
 	'VkBindMemoryStatusKHR',
 	'VkRenderingInputAttachmentIndexInfoKHR',
-	'VkIndirectCommandsLayoutCreateInfoEXT', 'VkIndirectExecutionSetCreateInfoEXT', 'VkIndirectCommandsLayoutTokenEXT', # TBD
 ]
 
 hardcoded_read = [ 'VkAccelerationStructureBuildGeometryInfoKHR', 'VkDataGraphPipelineConstantARM' ]

@@ -77,8 +77,7 @@ functions_noop = [
 	'vkCmdBuildMicromapsEXT', 'vkBuildMicromapsEXT', 'vkGetMicromapBuildSizesEXT', 'vkGetImageOpaqueCaptureDescriptorDataEXT', 'vkGetSamplerOpaqueCaptureDescriptorDataEXT',
 	'vkGetDeviceFaultInfoEXT', # we never want to trace this, but rather inject it during tracing if device loss happens, print the info, then abort
 	'vkGetAccelerationStructureOpaqueCaptureDescriptorDataEXT', 'vkCmdSetRenderingInputAttachmentIndicesKHR', 'vkCmdSetRenderingInputAttachmentIndices',
-	'vkGetEncodedVideoSessionParametersKHR',
-	'vkCreatePipelineBinariesKHR', 'vkCreateIndirectCommandsLayoutEXT', 'vkCreateIndirectExecutionSetEXT', 'vkGetPipelineBinaryDataKHR',
+	'vkGetEncodedVideoSessionParametersKHR', 'vkCreatePipelineBinariesKHR', 'vkGetPipelineBinaryDataKHR',
 ]
 validate_funcs(functions_noop)
 struct_noop = []

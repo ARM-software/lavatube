@@ -24,6 +24,9 @@
 - Names are generally lower_snake_case for functions/files; macros and constants stay uppercase.
 - Keep headers and implementations paired in `src/`; avoid introducing extra dependencies without CMake updates.
 - Do not modify generated files in `generated/` directly. First line in a generated file says which script generated it.
+- If there is an error in the app that we capture, we should be resistant to this and keep running if possible; but
+  if there are problems caused by our capturing code, we should fail as early as possible with a clear error message so we
+  can fix them, not try to work around them with defensive code.
 
 ## Testing Guidelines
 - Add new tests under `tests/` (see `container_test.cpp`, `tracing*.cpp` for patterns) and reuse helpers in `tests/common.*`.
