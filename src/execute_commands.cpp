@@ -1,3 +1,14 @@
+#define SPV_ENABLE_UTILITY_CODE 1
+#include <spirv/unified1/spirv.h>
+#include "spirv-simulator/framework/spirv_simulator.hpp"
+
+#include "execute_commands.h"
+
+#include "read_auto.h"
+#include "read.h"
+#include "util_auto.h"
+#include "suballocator.h"
+
 static bool run_spirv(const trackeddevice& device_data, const trackedpipeline& pipeline_data, const shader_stage& stage, const std::vector<std::byte>& push_constants,
 	const std::unordered_map<uint32_t, std::unordered_map<uint32_t, buffer_access>>& descriptorsets)
 {
@@ -72,9 +83,8 @@ static bool run_spirv(const trackeddevice& device_data, const trackedpipeline& p
 	return true;
 }
 
-static bool execute_commands(lava_file_reader& reader, const trackeddevice& device_data, VkCommandBuffer commandBuffer)
+bool execute_commands(const trackeddevice& device_data, VkCommandBuffer commandBuffer)
 {
-	assert(!reader.run); // this code is only run when post-processing
 	std::vector<std::byte> push_constants; // current state of the push constants
 	uint32_t compute_pipeline_bound = CONTAINER_INVALID_INDEX; // currently bound pipeline
 	uint32_t graphics_pipeline_bound = CONTAINER_INVALID_INDEX; // currently bound pipeline
@@ -89,7 +99,6 @@ static bool execute_commands(lava_file_reader& reader, const trackeddevice& devi
 		case VKCMDBINDDESCRIPTORSETS:
 			for (uint32_t i = 0; i < c.data.bind_descriptorsets.descriptorSetCount; i++)
 			{
-				const uint32_t pipeline_index = c.data.bind_descriptorsets.pipelineBindPoint;
 				uint32_t set = c.data.bind_descriptorsets.firstSet + i;
 				auto& tds = VkDescriptorSet_index.at(c.data.bind_descriptorsets.pDescriptorSets[i]); // is index now
 				for (auto pair : tds.bound_buffers)
@@ -168,6 +177,7 @@ static bool execute_commands(lava_file_reader& reader, const trackeddevice& devi
 		case VKCMDTRACERAYSKHR: // proxy for all raytracing commands
 			//auto& pipeline_data = VkPipeline_index.at(raytracing_pipeline_bound);
 			//TBD
+			(void)raytracing_pipeline_bound;
 			break;
 		default:
 			break;

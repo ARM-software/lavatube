@@ -248,7 +248,6 @@ enum lavatube_compression_type
 	LAVATUBE_COMPRESSION_UNCOMPRESSED,
 	LAVATUBE_COMPRESSION_DENSITY,
 	LAVATUBE_COMPRESSION_LZ4,
-	LAVATUBE_COMPRESSION_LZ4F, // lz4 with frame
 };
 
 // Hackish Vulkan extension-like function for testing lavatube internals (no longer hosted in tracetooltests)

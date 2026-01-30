@@ -14,12 +14,15 @@
 #include "packfile.h"
 #include "util_auto.h"
 #include "sandbox.h"
+#include "postprocess.h"
 
 static bool validate = false;
 static bool verbose = false;
 static bool report_unused = false;
 static bool dump_shaders = false;
 static int invokation_count = 0;
+
+// Utility funcs
 
 static void usage()
 {
@@ -95,23 +98,9 @@ static void replay_thread(lava_reader* replayer, int thread_id)
 	}
 }
 
-static void callback_vkSubmitDebugUtilsMessageEXT(VkInstance instance, VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity, VkDebugUtilsMessageTypeFlagsEXT messageTypes,
-                                                  const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData)
-{
-	if (!pCallbackData) return;
-	if (pCallbackData->pObjects && pCallbackData->objectCount > 0 && pCallbackData->pMessage)
-	{
-		trackable& t = object_trackable(pCallbackData->pObjects[0].objectType, pCallbackData->pObjects[0].objectHandle);
-		(void)t;
-		DLOG("Marker for %s[%d]: " MAKEBLUE("%s"), pretty_print_VkObjectType(pCallbackData->pObjects[0].objectType), (int)t.index, pCallbackData->pMessage);
-	}
-	else if (pCallbackData->pMessage)
-	{
-		DLOG("Marker: " MAKEBLUE("%s"), pCallbackData->pMessage);
-	}
-}
+// We implement these here since we need info from rest of tool code
 
-static void callback_vkCreateShaderModule(VkDevice device, const VkShaderModuleCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkShaderModule* pShaderModule)
+void postprocess_vkCreateShaderModule(callback_context& cb, VkDevice device, const VkShaderModuleCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkShaderModule* pShaderModule)
 {
 	static int count = 0;
 
@@ -132,7 +121,7 @@ static void callback_vkCreateShaderModule(VkDevice device, const VkShaderModuleC
 	count++;
 }
 
-static void callback_vkDestroyDevice(VkDevice device, const VkAllocationCallbacks* pAllocator)
+void postprocess_vkDestroyDevice(callback_context& cb, VkDevice device, const VkAllocationCallbacks* pAllocator)
 {
 	uint32_t device_index = index_to_VkDevice.index(device);
 	const auto& device_data = VkDevice_index.at(device_index);
@@ -142,6 +131,38 @@ static void callback_vkDestroyDevice(VkDevice device, const VkAllocationCallback
 		const auto& shadermodule_data = VkShaderModule_index.at(i);
 		if (shadermodule_data.device_index == device_data.index) invokation_count += shadermodule_data.calls;
 	}
+}
+
+// Main
+
+static void add_callbacks_for_first_round()
+{
+#define CALLBACK(x) x ## _callbacks.push_back(postprocess_ ## x);
+	CALLBACK(vkCreateShaderModule);
+	CALLBACK(vkDestroyDevice);
+	CALLBACK(vkSubmitDebugUtilsMessageEXT);
+	CALLBACK(vkCmdPushConstants);
+	CALLBACK(vkCmdPushConstants2KHR);
+	CALLBACK(vkCmdPushConstants2);
+	CALLBACK(vkCreateRayTracingPipelinesKHR);
+	CALLBACK(vkCreateGraphicsPipelines);
+	CALLBACK(vkCreateComputePipelines);
+	CALLBACK(vkCmdBindPipeline);
+	CALLBACK(vkQueueSubmit);
+	CALLBACK(vkQueueSubmit2);
+	CALLBACK(vkQueueSubmit2KHR);
+	CALLBACK(vkCmdBindDescriptorSets2KHR);
+	CALLBACK(vkCmdBindDescriptorSets);
+	CALLBACK(vkCmdBindDescriptorSets2);
+	CALLBACK(vkCmdPushDescriptorSet2KHR);
+	CALLBACK(vkCmdPushDescriptorSet2);
+	CALLBACK(vkCmdPushDescriptorSetKHR);
+	CALLBACK(vkCmdPushDescriptorSet);
+	CALLBACK(vkUpdateDescriptorSets);
+	CALLBACK(vkCmdUpdateBuffer);
+	CALLBACK(vkCmdCopyBuffer);
+	CALLBACK(vkCmdCopyBuffer2);
+#undef CALLBACK
 }
 
 int main(int argc, char **argv)
@@ -177,12 +198,10 @@ int main(int argc, char **argv)
 		else if (match(argv[i], "-u", "--report-unused", remaining))
 		{
 			report_unused = true;
-			(void)report_unused; // TBD
 		}
 		else if (match(argv[i], "-DS", "--dump-shaders", remaining))
 		{
 			dump_shaders = true;
-			(void)dump_shaders; // TBD
 		}
 		else if (match(argv[i], "-o", "--debugfile", remaining))
 		{
@@ -261,9 +280,7 @@ int main(int argc, char **argv)
 		replayer.remap_scan = validate_remap;
 
 		// Add callbacks
-		vkCreateShaderModule_callbacks.push_back(callback_vkCreateShaderModule);
-		vkDestroyDevice_callbacks.push_back(callback_vkDestroyDevice);
-		vkSubmitDebugUtilsMessageEXT_callbacks.push_back(callback_vkSubmitDebugUtilsMessageEXT);
+		add_callbacks_for_first_round();
 
 		for (unsigned i = 0; i < replayer.threads.size(); i++)
 		{
@@ -295,6 +312,9 @@ int main(int argc, char **argv)
 		replayer.init(filename_input);
 		replayer.set_frames(start, end);
 		replayer.remap_scan = false;
+
+		// We can probably skip most of the callbacks now. Trying to skip all for now.
+		assert(vkCreateShaderModule_callbacks.size() == 0); // Verify that they were cleared
 
 		// Add in the rewrite queue from the previous run
 		replayer.rewrite_queue = rewrite_queue_copy;

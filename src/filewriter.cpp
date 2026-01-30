@@ -99,7 +99,7 @@ void file_writer::set(const std::string& filename)
 	{
 		p__compression_level = DENSITY_ALGORITHM_CHEETAH; // this is our default
 	}
-	if (p__compression_type >= LAVATUBE_COMPRESSION_LZ4F) ABORT("Bad compression algorithm selected!");
+	if (p__compression_type > LAVATUBE_COMPRESSION_LZ4) ABORT("Bad compression algorithm selected!");
 
 	// launch serialization threads
 	if (!compressor_thread.joinable()) compressor_thread = std::thread(&file_writer::compressor, this);

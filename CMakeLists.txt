@@ -177,6 +177,11 @@ set(LAVATUBE_SRC
     ${PROJECT_SOURCE_DIR}/src/memory.cpp
     ${PROJECT_SOURCE_DIR}/src/memory.h
 
+    ${PROJECT_SOURCE_DIR}/src/postprocess.cpp
+    ${PROJECT_SOURCE_DIR}/src/postprocess.h
+    ${PROJECT_SOURCE_DIR}/src/execute_commands.cpp
+    ${PROJECT_SOURCE_DIR}/src/execute_commands.h
+
     ${PROJECT_SOURCE_DIR}/generated/read_auto.cpp
     ${PROJECT_SOURCE_DIR}/generated/read_auto.h
 )

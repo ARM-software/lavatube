@@ -106,7 +106,7 @@ static bool getnext(lava_file_reader& t)
 	return !done;
 }
 
-static void record_vkGetBufferMemoryRequirements(VkDevice device, VkBuffer buffer, VkMemoryRequirements* pMemoryRequirements)
+static void record_vkGetBufferMemoryRequirements(callback_context& cb, VkDevice device, VkBuffer buffer, VkMemoryRequirements* pMemoryRequirements)
 {
 	(void)device;
 	(void)buffer;

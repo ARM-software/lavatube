@@ -133,11 +133,6 @@ validate_funcs(replay_pre_calls)
 replay_post_calls = [ 'vkCreateInstance', 'vkDestroyInstance', 'vkQueuePresentKHR', 'vkAcquireNextImageKHR', 'vkAcquireNextImage2KHR',
 	'vkGetBufferDeviceAddress', 'vkGetBufferDeviceAddressKHR', 'vkGetAccelerationStructureDeviceAddressKHR', 'vkSubmitDebugUtilsMessageEXT' ]
 validate_funcs(replay_post_calls)
-replay_postprocess_calls = [ 'vkCmdPushConstants', 'vkCmdPushConstants2KHR', 'vkCmdPushConstants2', 'vkCreateRayTracingPipelinesKHR', 'vkCreateGraphicsPipelines',
-	'vkCreateComputePipelines', 'vkCmdBindPipeline', 'vkQueueSubmit', 'vkQueueSubmit2', 'vkQueueSubmit2KHR', 'vkCmdBindDescriptorSets2KHR',
-	'vkCmdBindDescriptorSets', 'vkCmdBindDescriptorSets2', 'vkCmdPushDescriptorSet2KHR', 'vkCmdPushDescriptorSet2', 'vkCmdPushDescriptorSetKHR',
-	'vkCmdPushDescriptorSet' ]
-validate_funcs(replay_postprocess_calls)
 trace_pre_calls = [ 'vkQueueSubmit', 'vkCreateInstance', 'vkCreateDevice', 'vkFreeMemory', 'vkQueueSubmit2', 'vkQueueSubmit2KHR' ]
 validate_funcs(trace_pre_calls)
 trace_post_calls = [ 'vkCreateInstance', 'vkCreateDevice', 'vkDestroyInstance', 'vkGetPhysicalDeviceFeatures', 'vkGetPhysicalDeviceProperties',

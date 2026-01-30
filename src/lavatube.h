@@ -57,6 +57,19 @@ enum lava_tiling // generalize memory tiling
 	TILING_DRM = VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT,
 };
 
+struct callback_context
+{
+	union
+	{
+		VkResult vkresult;
+		uint32_t u32;
+		uint64_t u64;
+		VkDeviceAddress address;
+		VkDeviceSize size;
+		VkBool32 vkbool;
+	} result;
+};
+
 struct trackable
 {
 	uintptr_t magic = ICD_LOADER_MAGIC; // in case we want to pass this around as a vulkan object; must be first

@@ -57,7 +57,8 @@
 
 ## Modifying post-processing functionality (lava-tool)
 - The post-processing tool uses both capture and replay functionality (as described above).
-- The post-process binary is built from `src/tool.cpp`
-- Post-process callback functions in the replay code are called `replay_postprocess_<name>` and are enabled from
-  the `replay_postprocess_calls` list in `scripts/vkconfig.py`
+- The post-process binary is built from `src/tool.cpp` and most of its code is in callbacks called `postprocess_<name>`.
+  The `CALLBACK` macro is used to register callbacks.
+- Most post-process callback functions are in `src/postprocess.cpp`, but if they require tool context, they are in `src/tool`.
+  Some special callbacks eg for draw calls have hardcoded calls created in `scripts/util.py`.
 - SPIRV simulation is handled in `src/execute_commands.cpp`

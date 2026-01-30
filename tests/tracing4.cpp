@@ -493,8 +493,9 @@ static bool getnext(lava_file_reader& t)
 	return true;
 }
 
-static void vkCreateDevice_callback(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkDevice* pDevice)
+static void vkCreateDevice_callback(callback_context& cb, VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkDevice* pDevice)
 {
+	assert(cb.result.vkresult == VK_SUCCESS);
 	const uint32_t device_index = index_to_VkDevice.index(*pDevice);
 	assert(device_index != UINT32_MAX);
 	const trackeddevice& device_data = VkDevice_index.at(device_index);
@@ -502,7 +503,7 @@ static void vkCreateDevice_callback(VkPhysicalDevice physicalDevice, const VkDev
 	device_data.allocator->self_test();
 }
 
-static void vkDestroyDevice_callback(VkDevice device, const VkAllocationCallbacks* pAllocator)
+static void vkDestroyDevice_callback(callback_context& cb, VkDevice device, const VkAllocationCallbacks* pAllocator)
 {
 	const uint32_t device_index = index_to_VkDevice.index(device);
 	const trackeddevice& device_data = VkDevice_index.at(device_index);
