@@ -10,7 +10,8 @@
 #include "suballocator.h"
 
 static bool run_spirv(const trackeddevice& device_data, const trackedpipeline& pipeline_data, const shader_stage& stage, const std::vector<std::byte>& push_constants,
-	const std::unordered_map<uint32_t, std::unordered_map<uint32_t, buffer_access>>& descriptorsets)
+	const std::unordered_map<uint32_t, std::unordered_map<uint32_t, buffer_access>>& descriptorsets,
+	const std::unordered_map<uint32_t, std::unordered_map<uint32_t, image_access>>& imagesets)
 {
 	assert(stage.module != VK_NULL_HANDLE);
 	const uint32_t shader_index = index_to_VkShaderModule.index(stage.module);
@@ -55,8 +56,30 @@ static bool run_spirv(const trackeddevice& device_data, const trackedpipeline& p
 			}
 		}
 	}
+	for (const auto& set_pair : imagesets)
+	{
+		auto& set_bindings = inputs.bindings[set_pair.first];
+		for (const auto& binding_pair : set_pair.second)
+		{
+			if (set_bindings.count(binding_pair.first) > 0) continue;
+			const image_access& access = binding_pair.second;
+			void* binding_ptr = nullptr;
+			if (access.image_data)
+			{
+				suballoc_location loc = device_data.allocator->find_image_memory(access.image_data->index);
+				std::byte* base = (std::byte*)loc.memory;
+				binding_ptr = base + loc.offset;
+			}
+			else
+			{
+				static uint64_t dummy_descriptor = 0;
+				binding_ptr = &dummy_descriptor;
+			}
+			set_bindings[binding_pair.first] = binding_ptr;
+		}
+	}
 	shader_data.calls++;
-	SPIRVSimulator::SPIRVSimulator sim(shader_data.code, inputs, false);
+	SPIRVSimulator::SPIRVSimulator sim(shader_data.code, inputs, false, ERROR_RAISE_ON_BUFFERS_INCOMPLETE);
 	sim.Run();
 
 	for (const auto& candidates : inputs.candidates)
@@ -92,6 +115,7 @@ bool execute_commands(const trackeddevice& device_data, VkCommandBuffer commandB
 	uint32_t cmdbuffer_index = index_to_VkCommandBuffer.index(commandBuffer);
 	auto& cmdbuffer_data = VkCommandBuffer_index.at(cmdbuffer_index);
 	std::unordered_map<uint32_t, std::unordered_map<uint32_t, buffer_access>> descriptorsets; // descriptorset binding : set internal binding point : buffer
+	std::unordered_map<uint32_t, std::unordered_map<uint32_t, image_access>> imagesets; // descriptorset binding : set internal binding point : image
 	for (const auto& c : cmdbuffer_data.commands)
 	{
 		switch (c.id)
@@ -104,6 +128,10 @@ bool execute_commands(const trackeddevice& device_data, VkCommandBuffer commandB
 				for (auto pair : tds.bound_buffers)
 				{
 					descriptorsets[set][pair.first] = pair.second;
+				}
+				for (auto pair : tds.bound_images)
+				{
+					imagesets[set][pair.first] = pair.second;
 				}
 				uint32_t binding = 0;
 				for (auto pair : tds.dynamic_buffers)
@@ -162,7 +190,7 @@ bool execute_commands(const trackeddevice& device_data, VkCommandBuffer commandB
 				const auto& pipeline_data = VkPipeline_index.at(compute_pipeline_bound);
 				assert(pipeline_data.shader_stages.size() == 1);
 				assert(pipeline_data.shader_stages[0].stage == VK_SHADER_STAGE_COMPUTE_BIT);
-				run_spirv(device_data, pipeline_data, pipeline_data.shader_stages[0], push_constants, descriptorsets);
+				run_spirv(device_data, pipeline_data, pipeline_data.shader_stages[0], push_constants, descriptorsets, imagesets);
 			}
 			break;
 		case VKCMDDRAW: // proxy for all draw commands
@@ -170,7 +198,7 @@ bool execute_commands(const trackeddevice& device_data, VkCommandBuffer commandB
 				const auto& pipeline_data = VkPipeline_index.at(graphics_pipeline_bound);
 				for (const auto& stage : pipeline_data.shader_stages)
 				{
-					run_spirv(device_data, pipeline_data, stage, push_constants, descriptorsets);
+					run_spirv(device_data, pipeline_data, stage, push_constants, descriptorsets, imagesets);
 				}
 			}
 			break;

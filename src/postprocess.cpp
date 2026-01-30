@@ -12,23 +12,36 @@
 
 static void handle_VkWriteDescriptorSets(uint32_t descriptorWriteCount, const VkWriteDescriptorSet* pDescriptorWrites, bool clear)
 {
+	(void)clear;
 	for (unsigned i = 0; i < descriptorWriteCount; i++)
 	{
 		const VkDescriptorType type = pDescriptorWrites[i].descriptorType;
 		const uint32_t descriptorset_index = index_to_VkDescriptorSet.index(pDescriptorWrites[i].dstSet);
 		auto& tds = VkDescriptorSet_index.at(descriptorset_index);
-		// TBD I do not think this is correct. We are allowed to keep descriptor state for bindings not touched here from a previous call.
-		// Not sure how to handle this well, and not seen any content where this breaks anything, but should fix it...
-		if (clear) { tds.bound_buffers.clear(); tds.dynamic_buffers.clear(); }
-	}
-	for (unsigned i = 0; i < descriptorWriteCount; i++)
-	{
-		const VkDescriptorType type = pDescriptorWrites[i].descriptorType;
-		const uint32_t descriptorset_index = index_to_VkDescriptorSet.index(pDescriptorWrites[i].dstSet);
-		auto& tds = VkDescriptorSet_index.at(descriptorset_index);
+		const uint32_t binding = pDescriptorWrites[i].dstBinding;
 
 		switch (type)
 		{
+		case VK_DESCRIPTOR_TYPE_SAMPLER:
+		case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
+		case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:
+		case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:
+		case VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT:
+			for (unsigned j = 0; j < pDescriptorWrites[i].descriptorCount; j++)
+			{
+				const VkDescriptorImageInfo& info = pDescriptorWrites[i].pImageInfo[j];
+				if (info.imageView == VK_NULL_HANDLE && info.sampler == VK_NULL_HANDLE) continue;
+				image_access access { nullptr, info.imageLayout };
+				if (info.imageView != VK_NULL_HANDLE)
+				{
+					const uint32_t view_index = index_to_VkImageView.index(info.imageView);
+					auto& view_data = VkImageView_index.at(view_index);
+					auto& image_data = VkImage_index.at(view_data.image_index);
+					access.image_data = &image_data;
+				}
+				tds.bound_images[binding] = access;
+			}
+			break;
 		case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
 		case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
 			for (unsigned j = 0; j < pDescriptorWrites[i].descriptorCount; j++)
@@ -38,14 +51,27 @@ static void handle_VkWriteDescriptorSets(uint32_t descriptorWriteCount, const Vk
 				auto& buffer_data = VkBuffer_index.at(buffer_index);
 				VkDeviceSize size = pDescriptorWrites[i].pBufferInfo[j].range;
 				if (size == VK_WHOLE_SIZE) size = buffer_data.size - pDescriptorWrites[i].pBufferInfo[j].offset;
-				tds.bound_buffers[j] = buffer_access { &buffer_data, pDescriptorWrites[i].pBufferInfo[j].offset, size };
+				tds.bound_buffers[binding] = buffer_access { &buffer_data, pDescriptorWrites[i].pBufferInfo[j].offset, size };
 			}
 			break;
 		case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC:
 		case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC:
 			for (unsigned j = 0; j < pDescriptorWrites[i].descriptorCount; j++)
 			{
-				tds.dynamic_buffers[j] = pDescriptorWrites[i].pBufferInfo[j];
+				tds.dynamic_buffers[binding] = pDescriptorWrites[i].pBufferInfo[j];
+			}
+			break;
+		case VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER:
+		case VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER:
+			for (unsigned j = 0; j < pDescriptorWrites[i].descriptorCount; j++)
+			{
+				if (pDescriptorWrites[i].pTexelBufferView[j] == VK_NULL_HANDLE) continue;
+				const uint32_t bufferview_index = index_to_VkBufferView.index(pDescriptorWrites[i].pTexelBufferView[j]);
+				auto& bufferview_data = VkBufferView_index.at(bufferview_index);
+				auto& buffer_data = VkBuffer_index.at(bufferview_data.buffer_index);
+				VkDeviceSize size = bufferview_data.range;
+				if (size == VK_WHOLE_SIZE) size = buffer_data.size - bufferview_data.offset;
+				tds.bound_buffers[binding] = buffer_access { &buffer_data, bufferview_data.offset, size };
 			}
 			break;
 		case VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK: // Provided by VK_VERSION_1_3
@@ -95,6 +121,7 @@ static void handle_VkCopyDescriptorSets(uint32_t descriptorCopyCount, const VkCo
 		const uint32_t dst_index = index_to_VkDescriptorSet.index(pDescriptorCopies[i].dstSet);
 		auto& dst = VkDescriptorSet_index.at(dst_index);
 		for (const auto& pair : src.bound_buffers) dst.bound_buffers[pair.first] = pair.second;
+		for (const auto& pair : src.bound_images) dst.bound_images[pair.first] = pair.second;
 		for (const auto& pair : src.dynamic_buffers) dst.dynamic_buffers[pair.first] = pair.second;
 	}
 }

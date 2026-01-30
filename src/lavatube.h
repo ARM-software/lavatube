@@ -653,6 +653,12 @@ struct buffer_access
 	VkDeviceSize size; // not sure if we need this
 };
 
+struct image_access
+{
+	trackedimage* image_data;
+	VkImageLayout layout;
+};
+
 struct trackeddescriptorsetlayout : trackable
 {
 	using trackable::trackable; // inherit constructor
@@ -668,6 +674,7 @@ struct trackeddescriptorset : trackable
 
 	// postprocess only
 	std::unordered_map<uint32_t, buffer_access> bound_buffers; // binding point to buffer access
+	std::unordered_map<uint32_t, image_access> bound_images; // binding point to image access
 	std::unordered_map<uint32_t, VkDescriptorBufferInfo> dynamic_buffers; // must be resolved on bind
 
 	void self_test() const
