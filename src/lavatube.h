@@ -59,6 +59,7 @@ enum lava_tiling // generalize memory tiling
 
 struct callback_context
 {
+	lava_file_reader& reader;
 	union
 	{
 		VkResult vkresult;
@@ -572,6 +573,7 @@ struct trackedcmdbuffer : trackable
 {
 	using trackable::trackable; // inherit constructor
 	VkDevice device = VK_NULL_HANDLE;
+	uint32_t device_index = CONTAINER_INVALID_INDEX;
 	VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
 	uint32_t pool_index = CONTAINER_INVALID_INDEX;
 	std::list<trackedcommand> commands; // track select commands for later processing
@@ -582,6 +584,7 @@ struct trackedcmdbuffer : trackable
 		assert(device != VK_NULL_HANDLE);
 		assert(physicalDevice != VK_NULL_HANDLE);
 		assert(pool_index != CONTAINER_INVALID_INDEX);
+		assert(device_index != CONTAINER_INVALID_INDEX);
 		trackable::self_test();
 	}
 };

@@ -24,7 +24,6 @@ using lava_replay_func = std::function<void(lava_file_reader&)>;
 class lava_file_reader;
 
 extern lava::mutex sync_mutex;
-extern thread_local lava_file_reader* local_reader_ptr;
 
 struct address_rewrite
 {
@@ -32,8 +31,6 @@ struct address_rewrite
 	VkDeviceSize size;
 	change_source source;
 };
-
-static inline lava_file_reader* get_file_reader() { return local_reader_ptr; }
 
 class lava_reader
 {

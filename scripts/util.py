@@ -1204,6 +1204,7 @@ def save_add_tracking(name):
 		if type == 'VkCommandBuffer':
 			z.do('add->pool = pAllocateInfo->commandPool;')
 			z.do('add->device = device;')
+			z.do('add->device_index = device_data->index;')
 			z.do('add->physicalDevice = writer.parent->records.VkDevice_index.at(device)->physicalDevice;')
 			z.do('auto* commandpool_data = writer.parent->records.VkCommandPool_index.at(pAllocateInfo->commandPool);')
 			z.do('add->pool_index = commandpool_data->index;')
@@ -1356,6 +1357,7 @@ def load_add_tracking(name):
 				z.do('if (is_noscreen() || !reader.run) pSwapchains[i] = fake_handle<VkSwapchainKHR>(indices[i]);')
 			elif type == 'VkCommandBuffer':
 				z.do('data.device = device;')
+				z.do('data.device_index = device_index;')
 				z.do('data.physicalDevice = VkDevice_index.at(device_index).physicalDevice;')
 				z.do('if (!reader.run) %s[i] = fake_handle<%s>(indices[i]);' % (param, type))
 			elif type == 'VkPipeline':
@@ -1688,7 +1690,7 @@ def loadfunc(name, node, target, header):
 		z.do('if (reader.run) replay_post_%s(reader, %s%s);' % (name, 'retval, ' if retval != 'void' else '', ', '.join(call_list)))
 	# Flexible post-handling
 	if not name in spec.special_count_funcs and not name in vk.skip_post_calls and name != 'vkGetPhysicalDeviceWaylandPresentationSupportKHR':
-		z.do('callback_context cb_context{};')
+		z.do('callback_context cb_context{ reader };')
 		if retval == 'void' or name in vk.ignore_on_read: pass
 		elif retval == 'VkResult': z.do('cb_context.result.vkresult = retval;')
 		elif retval == 'VkBool32': z.do('cb_context.result.vkbool = retval;')

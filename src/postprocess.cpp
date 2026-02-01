@@ -248,7 +248,7 @@ void postprocess_vkQueueSubmit2(callback_context& cb, VkQueue queue, uint32_t su
 	{
 		for (uint32_t j = 0; j < pSubmits[i].commandBufferInfoCount; j++)
 		{
-			execute_commands(device_data, pSubmits[i].pCommandBufferInfos[j].commandBuffer);
+			execute_commands(cb.reader, device_data, pSubmits[i].pCommandBufferInfos[j].commandBuffer);
 		}
 	}
 }
@@ -269,7 +269,7 @@ void postprocess_vkQueueSubmit(callback_context& cb, VkQueue queue, uint32_t sub
 	{
 		for (uint32_t j = 0; j < pSubmits[i].commandBufferCount; j++)
 		{
-			execute_commands(device_data, pSubmits[i].pCommandBuffers[j]);
+			execute_commands(cb.reader, device_data, pSubmits[i].pCommandBuffers[j]);
 		}
 	}
 }

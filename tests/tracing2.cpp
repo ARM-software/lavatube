@@ -212,7 +212,6 @@ static std::atomic_bool triggered_VkCreateInstance_callback { false };
 static void my_VkCreateInstance_callback(callback_context& cb, const VkInstanceCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkInstance* pInstance)
 {
 	assert(cb.result.vkresult == VK_SUCCESS);
-	assert(get_file_reader() != nullptr);
 	assert(triggered_VkCreateInstance_callback.load() == false);
 	triggered_VkCreateInstance_callback.store(true);
 }

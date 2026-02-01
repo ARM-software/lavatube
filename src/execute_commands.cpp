@@ -106,7 +106,7 @@ static bool run_spirv(const trackeddevice& device_data, const trackedpipeline& p
 	return true;
 }
 
-bool execute_commands(const trackeddevice& device_data, VkCommandBuffer commandBuffer)
+bool execute_commands(lava_file_reader& reader, const trackeddevice& device_data, VkCommandBuffer commandBuffer)
 {
 	std::vector<std::byte> push_constants; // current state of the push constants
 	uint32_t compute_pipeline_bound = CONTAINER_INVALID_INDEX; // currently bound pipeline

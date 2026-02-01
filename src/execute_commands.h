@@ -2,4 +2,4 @@
 
 #include "lavatube.h"
 
-bool execute_commands(const trackeddevice& device_data, VkCommandBuffer commandBuffer);
+bool execute_commands(lava_file_reader& reader, const trackeddevice& device_data, VkCommandBuffer commandBuffer);
