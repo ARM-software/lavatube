@@ -120,7 +120,8 @@ ignore_on_read = [ 'vkGetMemoryHostPointerPropertiesEXT', 'vkCreateDebugUtilsMes
 	'vkInvalidateMappedMemoryRanges', 'vkFreeMemory', 'vkGetPhysicalDeviceXcbPresentationSupportKHR', 'vkMapMemory2KHR', 'vkUnmapMemory2KHR',
 	'vkGetImageMemoryRequirements2KHR', 'vkGetBufferMemoryRequirements2KHR', 'vkGetImageSparseMemoryRequirements2KHR', 'vkGetImageMemoryRequirements',
 	'vkGetBufferMemoryRequirements', 'vkGetImageSparseMemoryRequirements', 'vkGetImageMemoryRequirements2', 'vkGetBufferMemoryRequirements2',
-	'vkGetImageSparseMemoryRequirements2', 'vkMapMemory2', 'vkUnmapMemory2', 'vkGetPhysicalDeviceWaylandPresentationSupportKHR' ]
+	'vkGetImageSparseMemoryRequirements2', 'vkMapMemory2', 'vkUnmapMemory2', 'vkGetPhysicalDeviceWaylandPresentationSupportKHR',
+	'vkGetDescriptorEXT' ]
 validate_funcs(ignore_on_read)
 # functions we should not call natively when tracing - let pre or post calls handle it
 ignore_on_trace = []

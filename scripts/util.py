@@ -329,6 +329,11 @@ class parameter(spec.base_parameter):
 			z.do('stored_address = reader.read_uint64_t();')
 			z.do('%s = reader.parent->device_address_remapping.translate_address(stored_address);' % varname)
 			z.do('ILOG("%s changing device address from %%lu to %%lu", (unsigned long)stored_address, (unsigned long)%s);' % (self.funcname, varname))
+		elif self.name == 'address' and self.type == 'VkDeviceAddress' and self.funcname in ['VkDescriptorBufferBindingInfoEXT', 'VkDescriptorAddressInfoEXT']:
+			z.decl('uint64_t', 'stored_address')
+			z.do('stored_address = reader.read_uint64_t();')
+			z.do('%s = reader.parent->device_address_remapping.translate_address(stored_address);' % varname)
+			z.do('ILOG("%s changing device address from %%lu to %%lu", (unsigned long)stored_address, (unsigned long)%s);' % (self.funcname, varname))
 		elif self.name == 'queueFamilyIndex':
 			z.decl('uint32_t', self.name)
 			z.do('%s = reader.read_uint32_t();' % self.name)
@@ -1477,6 +1482,14 @@ def loadfunc(name, node, target, header):
 		if not param.inparam and param.ptr and param.type != 'void' and not name in vk.ignore_on_read and not name in spec.special_count_funcs and not name in spec.functions_create:
 			vname = z.backing(param.type, param.name, size=param.length, struct=param.structure)
 			z.do('%s = %s;' % (param.name, vname))
+	if name == 'vkGetDescriptorEXT':
+		z.do('if (dataSize > 0)')
+		z.brace_begin()
+		z.do('pDescriptor_backing = reader.pool.allocate<char>(static_cast<uint32_t>(dataSize));')
+		z.do('memset(pDescriptor_backing, 0, static_cast<uint32_t>(dataSize) * sizeof(char));')
+		z.do('pDescriptor = pDescriptor_backing;')
+		z.brace_end()
+		z.do('else pDescriptor = nullptr;')
 	load_add_pre(name)
 	call_list = [ x.retrace_exec_param(name) for x in params ]
 	if name in vk.replay_pre_calls:
