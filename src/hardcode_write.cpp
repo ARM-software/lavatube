@@ -192,6 +192,25 @@ static void trace_post_vkCreateShaderModule(lava_file_writer& writer, VkResult r
 	}
 }
 
+static void trace_post_vkCreateDescriptorUpdateTemplate(lava_file_writer& writer, VkResult result, VkDevice device, const VkDescriptorUpdateTemplateCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkDescriptorUpdateTemplate* pDescriptorUpdateTemplate)
+{
+	if (result != VK_SUCCESS || !pCreateInfo || !pDescriptorUpdateTemplate) return;
+	auto* template_data = writer.parent->records.VkDescriptorUpdateTemplate_index.at(*pDescriptorUpdateTemplate);
+	if (!template_data) return;
+	template_data->entries.clear();
+	if (pCreateInfo->descriptorUpdateEntryCount == 0 || !pCreateInfo->pDescriptorUpdateEntries) return;
+	template_data->entries.reserve(pCreateInfo->descriptorUpdateEntryCount);
+	for (uint32_t i = 0; i < pCreateInfo->descriptorUpdateEntryCount; i++)
+	{
+		template_data->entries.push_back(pCreateInfo->pDescriptorUpdateEntries[i]);
+	}
+}
+
+static void trace_post_vkCreateDescriptorUpdateTemplateKHR(lava_file_writer& writer, VkResult result, VkDevice device, const VkDescriptorUpdateTemplateCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkDescriptorUpdateTemplate* pDescriptorUpdateTemplate)
+{
+	trace_post_vkCreateDescriptorUpdateTemplate(writer, result, device, pCreateInfo, pAllocator, pDescriptorUpdateTemplate);
+}
+
 static void trace_post_vkAcquireNextImageKHR(lava_file_writer& writer, VkResult result, VkDevice device, VkSwapchainKHR swapchain, uint64_t timeout, VkSemaphore semaphore, VkFence fence, uint32_t* pImageIndex)
 {
 	DLOG("Acquired swapchain image index=%u", *pImageIndex);
@@ -649,6 +668,136 @@ static void handle_VkWriteDescriptorSets(lava_file_writer& writer, uint32_t desc
 	}
 }
 
+template<typename T>
+static const T* template_entry_data(const VkDescriptorUpdateTemplateEntry& entry, const void* pData, std::vector<T>& scratch)
+{
+	if (entry.descriptorCount == 0) return nullptr;
+	const uint8_t* base = reinterpret_cast<const uint8_t*>(pData) + entry.offset;
+	const size_t element_size = sizeof(T);
+	const size_t stride = entry.stride ? entry.stride : element_size;
+	if (stride == element_size)
+	{
+		return reinterpret_cast<const T*>(base);
+	}
+	scratch.resize(entry.descriptorCount);
+	for (uint32_t i = 0; i < entry.descriptorCount; i++)
+	{
+		memcpy(&scratch[i], base + i * stride, element_size);
+	}
+	return scratch.data();
+}
+
+static const uint8_t* template_entry_bytes(const VkDescriptorUpdateTemplateEntry& entry, const void* pData, std::vector<uint8_t>& scratch)
+{
+	if (entry.descriptorCount == 0) return nullptr;
+	const uint8_t* base = reinterpret_cast<const uint8_t*>(pData) + entry.offset;
+	const size_t stride = entry.stride ? entry.stride : 1;
+	if (stride == 1)
+	{
+		return base;
+	}
+	scratch.resize(entry.descriptorCount);
+	for (uint32_t i = 0; i < entry.descriptorCount; i++)
+	{
+		scratch[i] = base[i * stride];
+	}
+	return scratch.data();
+}
+
+static void handle_descriptor_update_template(lava_file_writer& writer, VkDescriptorSet descriptorSet, VkDescriptorUpdateTemplate descriptorUpdateTemplate, const void* pData, bool push)
+{
+	if (!pData) return;
+	auto* template_data = writer.parent->records.VkDescriptorUpdateTemplate_index.at(descriptorUpdateTemplate);
+	if (!template_data || template_data->entries.empty()) return;
+
+	bool clear_next = !push;
+	for (const auto& entry : template_data->entries)
+	{
+		VkWriteDescriptorSet write{};
+		write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+		write.dstSet = push ? VK_NULL_HANDLE : descriptorSet;
+		write.dstBinding = entry.dstBinding;
+		write.dstArrayElement = entry.dstArrayElement;
+		write.descriptorType = entry.descriptorType;
+		write.descriptorCount = entry.descriptorCount;
+
+		switch (entry.descriptorType)
+		{
+		case VK_DESCRIPTOR_TYPE_SAMPLER:
+		case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
+		case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:
+		case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:
+		case VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT:
+			{
+				std::vector<VkDescriptorImageInfo> scratch;
+				write.pImageInfo = template_entry_data(entry, pData, scratch);
+				handle_VkWriteDescriptorSets(writer, 1, &write, clear_next, push);
+			}
+			break;
+		case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
+		case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
+		case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC:
+		case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC:
+			{
+				std::vector<VkDescriptorBufferInfo> scratch;
+				write.pBufferInfo = template_entry_data(entry, pData, scratch);
+				handle_VkWriteDescriptorSets(writer, 1, &write, clear_next, push);
+			}
+			break;
+		case VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER:
+		case VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER:
+			{
+				std::vector<VkBufferView> scratch;
+				write.pTexelBufferView = template_entry_data(entry, pData, scratch);
+				handle_VkWriteDescriptorSets(writer, 1, &write, clear_next, push);
+			}
+			break;
+		case VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK:
+			{
+				std::vector<uint8_t> scratch;
+				VkWriteDescriptorSetInlineUniformBlock inline_block{};
+				inline_block.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_INLINE_UNIFORM_BLOCK;
+				inline_block.dataSize = entry.descriptorCount;
+				inline_block.pData = template_entry_bytes(entry, pData, scratch);
+				write.pNext = &inline_block;
+				handle_VkWriteDescriptorSets(writer, 1, &write, clear_next, push);
+			}
+			break;
+		case VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR:
+			{
+				std::vector<VkAccelerationStructureKHR> scratch;
+				VkWriteDescriptorSetAccelerationStructureKHR accel{};
+				accel.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR;
+				accel.accelerationStructureCount = entry.descriptorCount;
+				accel.pAccelerationStructures = template_entry_data(entry, pData, scratch);
+				write.pNext = &accel;
+				handle_VkWriteDescriptorSets(writer, 1, &write, clear_next, push);
+			}
+			break;
+		case VK_DESCRIPTOR_TYPE_TENSOR_ARM:
+			assert(false); // TODO
+			break;
+		case VK_DESCRIPTOR_TYPE_PARTITIONED_ACCELERATION_STRUCTURE_NV:
+			ABORT("VK_NV_partitioned_acceleration_structure not supported");
+			break;
+		case VK_DESCRIPTOR_TYPE_MUTABLE_EXT: // Provided by VK_EXT_mutable_descriptor_type
+			ABORT("vkUpdateDescriptorSetWithTemplate using VK_EXT_mutable_descriptor_type not yet implemented");
+			break;
+		case VK_DESCRIPTOR_TYPE_BLOCK_MATCH_IMAGE_QCOM: // Provided by VK_QCOM_image_processing
+		case VK_DESCRIPTOR_TYPE_SAMPLE_WEIGHT_IMAGE_QCOM: // Provided by VK_QCOM_image_processing
+			ABORT("VK_QCOM_image_processing not supported");
+			break;
+		case VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_NV: // Provided by VK_NV_ray_tracing
+			ABORT("VK_NV_ray_tracing not supported");
+			break;
+		case VK_DESCRIPTOR_TYPE_MAX_ENUM:
+			ABORT("Bad descriptor type in vkUpdateDescriptorSetWithTemplate");
+			break;
+		}
+		clear_next = false;
+	}
+}
+
 static void merge_descriptor_touched(trackeddescriptorset_trace* dst, const trackeddescriptorset_trace* src)
 {
 	for (const auto& pair : src->touched)
@@ -698,6 +847,26 @@ static void trace_post_vkUpdateDescriptorSets(lava_file_writer& writer, VkDevice
 {
 	handle_VkWriteDescriptorSets(writer, descriptorWriteCount, pDescriptorWrites, true, false);
 	handle_VkCopyDescriptorSets(writer, descriptorCopyCount, pDescriptorCopies);
+}
+
+static void trace_post_vkUpdateDescriptorSetWithTemplate(lava_file_writer& writer, VkDevice device, VkDescriptorSet descriptorSet, VkDescriptorUpdateTemplate descriptorUpdateTemplate, const void* pData)
+{
+	handle_descriptor_update_template(writer, descriptorSet, descriptorUpdateTemplate, pData, false);
+}
+
+static void trace_post_vkUpdateDescriptorSetWithTemplateKHR(lava_file_writer& writer, VkDevice device, VkDescriptorSet descriptorSet, VkDescriptorUpdateTemplate descriptorUpdateTemplate, const void* pData)
+{
+	handle_descriptor_update_template(writer, descriptorSet, descriptorUpdateTemplate, pData, false);
+}
+
+static void trace_post_vkCmdPushDescriptorSetWithTemplate(lava_file_writer& writer, VkCommandBuffer commandBuffer, VkDescriptorUpdateTemplate descriptorUpdateTemplate, VkPipelineLayout layout, uint32_t set, const void* pData)
+{
+	handle_descriptor_update_template(writer, VK_NULL_HANDLE, descriptorUpdateTemplate, pData, true);
+}
+
+static void trace_post_vkCmdPushDescriptorSetWithTemplateKHR(lava_file_writer& writer, VkCommandBuffer commandBuffer, VkDescriptorUpdateTemplate descriptorUpdateTemplate, VkPipelineLayout layout, uint32_t set, const void* pData)
+{
+	handle_descriptor_update_template(writer, VK_NULL_HANDLE, descriptorUpdateTemplate, pData, true);
 }
 
 // combine all updates for each memory into one update list for each device memory object, so we keep the number of map operations to a minimum
