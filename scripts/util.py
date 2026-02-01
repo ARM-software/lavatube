@@ -495,7 +495,10 @@ class parameter(spec.base_parameter):
 						z.do('%s.%s = reader.read_%s();' % (varname, tname, ttype))
 					z.brace_end()
 					z.do('break;')
-			z.do('default: assert(false);')
+			if self.type in vk.union_allow_default:
+				z.do('default: memset(&%s, 0, sizeof(%s)); break;' % (varname, varname))
+			else:
+				z.do('default: assert(false);')
 			z.brace_end()
 		elif self.type == 'VkClearColorValue': # union, requires special handling
 			if not isptr(varname):
@@ -772,7 +775,10 @@ class parameter(spec.base_parameter):
 						z.do('writer.write_%s(%s.%s);' % (ttype, varname, tname))
 					z.brace_end()
 					z.do('break;')
-			z.do('default: assert(false);')
+			if self.type in vk.union_allow_default:
+				z.do('default: break;')
+			else:
+				z.do('default: assert(false);')
 			z.brace_end()
 		elif self.type == 'VkClearColorValue': # union, requires special handling
 			if self.ptr: z.do('writer.write_array(%s->uint32, 4);' % varname)

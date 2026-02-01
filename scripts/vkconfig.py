@@ -60,6 +60,8 @@ extra_sync = [ 'vkQueueSubmit', 'vkQueueSubmit2', 'vkQueueSubmit2KHR', 'vkQueueW
 validate_funcs(extra_sync)
 
 skip_opt_check = ['pAllocator', 'pUserData', 'pfnCallback', 'pfnUserCallback', 'pNext' ]
+# Unions where undefined selector values must be ignored
+union_allow_default = [ 'VkIndirectCommandsTokenDataEXT' ]
 # for these, thread barrier goes before the function call to sync us up to other threads:
 thread_barrier_funcs = [ 'vkQueueSubmit', 'vkResetDescriptorPool', 'vkResetCommandPool', 'vkUnmapMemory', 'vkFlushMappedMemoryRanges', 'vkResetQueryPool',
 	'vkResetQueryPoolEXT', 'vkQueueSubmit2', 'vkQueueSubmit2KHR', 'vkQueuePresentKHR', 'vkUnmapMemory2KHR', 'vkUnmapMemory2' ]
