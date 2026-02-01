@@ -1316,6 +1316,13 @@ def load_add_tracking(name):
 				z.do('data.physicalDevice = physicalDevice; // track parentage')
 				z.do('data.allocator = new suballocator();')
 				z.do('data.allocator->create(selected_physical_device, pDevice, VkImage_index, VkBuffer_index, VkTensorARM_index, reader.run);')
+			elif type == 'VkBuffer':
+				z.do('data.size = pCreateInfo->size;')
+				z.do('data.flags = pCreateInfo->flags;')
+				z.do('data.sharingMode = pCreateInfo->sharingMode;')
+				z.do('data.usage = pCreateInfo->usage;')
+				z.do('const VkBufferUsageFlags2CreateInfo* usage_ext = (const VkBufferUsageFlags2CreateInfo*)find_extension(pCreateInfo, VK_STRUCTURE_TYPE_BUFFER_USAGE_FLAGS_2_CREATE_INFO);')
+				z.do('if (usage_ext) data.usage2 = usage_ext->usage;')
 			elif type == 'VkImage':
 				z.do('data.tiling = (lava_tiling)pCreateInfo->tiling;')
 				z.do('data.usage = pCreateInfo->usage;')
