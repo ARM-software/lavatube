@@ -472,6 +472,7 @@ static VkSwapchainKHR remake_swapchain(lava_file_reader& reader, VkQueue queue, 
 	// TBD check surface capabilities, these values may not be supported
 	VkSwapchainCreateInfoKHR s = { VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR, nullptr };
 	s.flags = data->info.flags;
+	s.flags &= ~VK_SWAPCHAIN_CREATE_DEFERRED_MEMORY_ALLOCATION_BIT_KHR; // disable lazy swapchain image allocation
 	s.surface = data->info.surface;
 	if (p__realimages > 0) s.minImageCount = p__realimages;
 	else s.minImageCount = data->info.minImageCount;
@@ -1507,6 +1508,7 @@ void retrace_vkGetSwapchainImagesKHR(lava_file_reader& reader)
 		VkImageCreateInfo pinfo = {};
 		pinfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
 		pinfo.flags = (data.info.flags & VK_SWAPCHAIN_CREATE_MUTABLE_FORMAT_BIT_KHR);
+		pinfo.flags &= ~VK_SWAPCHAIN_CREATE_DEFERRED_MEMORY_ALLOCATION_BIT_KHR; // disable lazy swapchain image allocation
 		pinfo.imageType = VK_IMAGE_TYPE_2D;
 		pinfo.extent.height = data.info.imageExtent.height;
 		pinfo.extent.width = data.info.imageExtent.width;
