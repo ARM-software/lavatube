@@ -38,6 +38,12 @@ static bool run_spirv(const trackeddevice& device_data, const trackedpipeline& p
 			std::byte* binding_ptr = base + access.offset;
 			set_bindings[binding_pair.first] = binding_ptr;
 			binding_lookup.emplace(binding_ptr, std::make_pair(set_pair.first, binding_pair.first));
+			// Provide real runtime-array length information to the SPIR-V simulator
+			const VkDeviceSize binding_size = (access.size != 0) ? access.size : (access.buffer_data->size - access.offset);
+			if (binding_size > 0)
+			{
+				inputs.rt_array_lengths[reinterpret_cast<uint64_t>(binding_ptr)][0] = static_cast<size_t>(binding_size);
+			}
 			if (!access.buffer_data->candidates.empty() && access.size != 0)
 			{
 				const VkDeviceSize binding_start = access.offset;
