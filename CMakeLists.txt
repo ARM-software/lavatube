@@ -621,7 +621,7 @@ layer_test(extended_dynamic_state3 extended_dynamic_state3)
 layer_test(host_image_copy host_image_copy)
 layer_test(host_image_copy_ext host_image_copy_ext)
 #layer_test(compute_aliasing compute_aliasing)
-layer_test(compute_bda_copying_address compute_bda_copying_address)
+#layer_test(compute_bda_copying_address compute_bda_copying_address) # crashes nvidia desktop hard
 layer_test(compute_descriptor_buffer compute_descriptor_buffer)
 layer_test(descriptor_buffer_mutable_type descriptor_buffer_mutable_type)
 layer_test(maintenance7 maintenance7)
