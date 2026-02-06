@@ -162,6 +162,8 @@ static void add_callbacks_for_first_round()
 	CALLBACK(vkCmdUpdateBuffer);
 	CALLBACK(vkCmdCopyBuffer);
 	CALLBACK(vkCmdCopyBuffer2);
+	CALLBACK(vkCreateShadersEXT);
+	CALLBACK(vkCmdBindShadersEXT);
 #undef CALLBACK
 }
 

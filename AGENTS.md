@@ -27,6 +27,10 @@
 - If there is an error in the app that we capture, we should be resistant to this and keep running if possible; but
   if there are problems caused by our capturing code, we should fail as early as possible with a clear error message so we
   can fix them, not try to work around them with defensive code.
+- Do not create new globals. If we need to track data betweeen commands, either use one of the tracked meta objects defined
+  in `src/lavatube.h` or create a new one. Each Vulkan object has a tracked meta-object that can be used to store data.
+  If there is no specialized trackable, then create a new one that inherits from `trackable` and then add it in
+  `trackable_type_map_general` in `scripts/vkconfig.py` for autogeneration.
 
 ## Testing Guidelines
 - Add new tests under `tests/` (see `container_test.cpp`, `tracing*.cpp` for patterns) and reuse helpers in `tests/common.*`.
@@ -45,6 +49,7 @@
 - Capture file IO code is in `src/filewriter.cpp` and higher-level code in `src/write.cpp`.
 - Manually implemented functions are found in `src/hardcode_write.cpp`
 - Capture is often initiated from the script `scripts/lava-capture.py`
+- Fetch metadata tracking objects with `writer.parent->records.<type>_index.at(<native handle>)`
 
 ## Modifying replay functionality (lava-replay)
 - Replay is often also called `read` or `retrace` in the code.
@@ -54,6 +59,7 @@
 - The memory suballocator is in `src/suballocator.cpp`
 - General window management (WSI) code is in `src/window.cpp`
 - The replay binary is built from `src/replay.cpp`
+- Fetch metadata tracking objects with `<type>_index.at(<index>)`
 
 ## Modifying post-processing functionality (lava-tool)
 - The post-processing tool uses both capture and replay functionality (as described above).
@@ -62,3 +68,4 @@
 - Most post-process callback functions are in `src/postprocess.cpp`, but if they require tool context, they are in `src/tool`.
   Some special callbacks eg for draw calls have hardcoded calls created in `scripts/util.py`.
 - SPIRV simulation is handled in `src/execute_commands.cpp`
+- Fetch metadata tracking objects with `<type>_index.at(<index>)`

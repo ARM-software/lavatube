@@ -256,6 +256,15 @@ Json::Value trackeddescriptorupdatetemplate_json(const trackeddescriptorupdatete
 	return v;
 }
 
+Json::Value trackedshaderobject_json(const trackedshaderobject* t)
+{
+	Json::Value v = trackable_json(t);
+	v["flags"] = t->flags;
+	v["stage"] = t->stage;
+	v["entry_name"] = t->entry_name;
+	return v;
+}
+
 // --- JSON read helpers ---
 
 static void trackable_helper(trackable& t, const Json::Value& v)
@@ -542,6 +551,16 @@ trackeddescriptorupdatetemplate trackeddescriptorupdatetemplate_json(const Json:
 	t.flags = v["create_flags"].asUInt();
 	t.data_size = v.get("data_size", 0).asUInt64();
 	t.enter_initialized();
+	return t;
+}
+
+trackedshaderobject trackedshaderobject_json(const Json::Value& v)
+{
+	trackedshaderobject t;
+	trackable_helper(t, v);
+	t.flags = (VkShaderCreateFlagsEXT)v["flags"].asUInt();
+	t.stage = (VkShaderStageFlagBits)v["stage"].asUInt();
+	t.entry_name = v["entry_name"].asString();
 	return t;
 }
 

@@ -9,13 +9,21 @@
 #include "util_auto.h"
 #include "suballocator.h"
 
-static bool run_spirv(const trackeddevice& device_data, const trackedpipeline& pipeline_data, const shader_stage& stage, const std::vector<std::byte>& push_constants,
+static bool run_spirv(const trackeddevice& device_data, const shader_stage& stage, const std::vector<std::byte>& push_constants,
 	const std::unordered_map<uint32_t, std::unordered_map<uint32_t, buffer_access>>& descriptorsets,
-	const std::unordered_map<uint32_t, std::unordered_map<uint32_t, image_access>>& imagesets)
+	const std::unordered_map<uint32_t, std::unordered_map<uint32_t, image_access>>& imagesets,
+	const std::vector<uint32_t>* code_override = nullptr)
 {
-	assert(stage.module != VK_NULL_HANDLE);
-	const uint32_t shader_index = index_to_VkShaderModule.index(stage.module);
-	trackedshadermodule& shader_data = VkShaderModule_index.at(shader_index);
+	const std::vector<uint32_t>* code_ptr = code_override;
+	trackedshadermodule* shader_data_ptr = nullptr;
+	if (!code_ptr)
+	{
+		assert(stage.module != VK_NULL_HANDLE);
+		const uint32_t shader_index = index_to_VkShaderModule.index(stage.module);
+		shader_data_ptr = &VkShaderModule_index.at(shader_index);
+		code_ptr = &shader_data_ptr->code;
+	}
+	assert(code_ptr);
 	SPIRVSimulator::InputData inputs;
 	std::unordered_map<const void*, std::pair<uint32_t, uint32_t>> binding_lookup;
 	inputs.push_constants = push_constants.empty() ? nullptr : push_constants.data();
@@ -84,8 +92,8 @@ static bool run_spirv(const trackeddevice& device_data, const trackedpipeline& p
 			set_bindings[binding_pair.first] = binding_ptr;
 		}
 	}
-	shader_data.calls++;
-	SPIRVSimulator::SPIRVSimulator sim(shader_data.code, inputs, false, ERROR_RAISE_ON_BUFFERS_INCOMPLETE);
+	if (shader_data_ptr) shader_data_ptr->calls++;
+	SPIRVSimulator::SPIRVSimulator sim(*code_ptr, inputs, false, ERROR_RAISE_ON_BUFFERS_INCOMPLETE);
 	sim.Run();
 
 	for (const auto& candidates : inputs.candidates)
@@ -116,6 +124,9 @@ bool execute_commands(lava_file_reader& reader, const trackeddevice& device_data
 {
 	std::vector<std::byte> push_constants; // current state of the push constants
 	uint32_t compute_pipeline_bound = CONTAINER_INVALID_INDEX; // currently bound pipeline
+	uint32_t compute_shader_object_bound = CONTAINER_INVALID_INDEX; // index into compute_shader_objects array
+	trackedshaderobject* compute_shader_objects = nullptr;
+	uint32_t compute_shader_objects_count = 0;
 	uint32_t graphics_pipeline_bound = CONTAINER_INVALID_INDEX; // currently bound pipeline
 	uint32_t raytracing_pipeline_bound = CONTAINER_INVALID_INDEX; // currently bound pipeline
 	uint32_t cmdbuffer_index = index_to_VkCommandBuffer.index(commandBuffer);
@@ -185,18 +196,52 @@ bool execute_commands(lava_file_reader& reader, const trackeddevice& device_data
 			break;
 		case VKCMDBINDPIPELINE:
 			if (c.data.bind_pipeline.pipelineBindPoint == VK_PIPELINE_BIND_POINT_GRAPHICS) graphics_pipeline_bound = c.data.bind_pipeline.pipeline_index;
-			else if (c.data.bind_pipeline.pipelineBindPoint == VK_PIPELINE_BIND_POINT_COMPUTE) compute_pipeline_bound = c.data.bind_pipeline.pipeline_index;
+			else if (c.data.bind_pipeline.pipelineBindPoint == VK_PIPELINE_BIND_POINT_COMPUTE)
+			{
+				compute_pipeline_bound = c.data.bind_pipeline.pipeline_index;
+				compute_shader_object_bound = CONTAINER_INVALID_INDEX;
+			}
 			else if (c.data.bind_pipeline.pipelineBindPoint == VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR) raytracing_pipeline_bound = c.data.bind_pipeline.pipeline_index;
 			break;
 		case VKCMDPUSHDESCRIPTORSETKHR:
 			assert(false); // TBD
 			break;
+		case VKCMDBINDSHADERSEXT:
+			if (compute_shader_objects) delete[] compute_shader_objects;
+			compute_shader_objects = c.data.bind_shaders_ext.shader_objects;
+			compute_shader_objects_count = c.data.bind_shaders_ext.stageCount;
+			compute_shader_object_bound = CONTAINER_INVALID_INDEX;
+			for (uint32_t i = 0; i < compute_shader_objects_count; i++)
+			{
+				if (compute_shader_objects[i].stage == VK_SHADER_STAGE_COMPUTE_BIT)
+				{
+					compute_shader_object_bound = i; // index into current array
+				}
+			}
+			break;
 		case VKCMDDISPATCH: // proxy for all compute commands
 			{
-				const auto& pipeline_data = VkPipeline_index.at(compute_pipeline_bound);
-				assert(pipeline_data.shader_stages.size() == 1);
-				assert(pipeline_data.shader_stages[0].stage == VK_SHADER_STAGE_COMPUTE_BIT);
-				run_spirv(device_data, pipeline_data, pipeline_data.shader_stages[0], push_constants, descriptorsets, imagesets);
+				if (compute_pipeline_bound != CONTAINER_INVALID_INDEX)
+				{
+					const auto& pipeline_data = VkPipeline_index.at(compute_pipeline_bound);
+					assert(pipeline_data.shader_stages.size() == 1);
+					assert(pipeline_data.shader_stages[0].stage == VK_SHADER_STAGE_COMPUTE_BIT);
+					run_spirv(device_data, pipeline_data.shader_stages[0], push_constants, descriptorsets, imagesets);
+				}
+				else
+				{
+					assert(compute_shader_object_bound != CONTAINER_INVALID_INDEX);
+					const auto& so = compute_shader_objects[compute_shader_object_bound];
+					shader_stage stage;
+					stage.index = 0;
+					stage.flags = so.flags;
+					stage.stage = so.stage;
+					stage.module = VK_NULL_HANDLE;
+					stage.name = so.name;
+					stage.specialization_constants = so.specialization_constants;
+					stage.specialization_data = so.specialization_data;
+					run_spirv(device_data, stage, push_constants, descriptorsets, imagesets, &so.code);
+				}
 			}
 			break;
 		case VKCMDDRAW: // proxy for all draw commands
@@ -204,7 +249,7 @@ bool execute_commands(lava_file_reader& reader, const trackeddevice& device_data
 				const auto& pipeline_data = VkPipeline_index.at(graphics_pipeline_bound);
 				for (const auto& stage : pipeline_data.shader_stages)
 				{
-					run_spirv(device_data, pipeline_data, stage, push_constants, descriptorsets, imagesets);
+					run_spirv(device_data, stage, push_constants, descriptorsets, imagesets);
 				}
 			}
 			break;
@@ -218,5 +263,6 @@ bool execute_commands(lava_file_reader& reader, const trackeddevice& device_data
 		}
 	}
 	cmdbuffer_data.commands.clear();
+	if (compute_shader_objects) delete[] compute_shader_objects;
 	return true;
 }

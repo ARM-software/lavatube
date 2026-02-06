@@ -1083,6 +1083,10 @@ def save_add_tracking(name):
 			z.do('if (usageflags2) add->usage2 = usageflags2->usage;')
 			z.do('add->sharingMode = pCreateInfo->sharingMode;')
 			z.do('add->object_type = VK_OBJECT_TYPE_BUFFER;')
+		elif type == 'VkShaderEXT':
+			z.do('add->entry_name = pCreateInfos[i].pName;')
+			z.do('add->flags = pCreateInfos[i].flags;')
+			z.do('add->stage = pCreateInfos[i].stage;')
 		elif type == 'VkPipelineLayout':
 			z.do('for (uint32_t i = 0; i < pCreateInfo->pushConstantRangeCount; i++) { const auto& v = pCreateInfo->pPushConstantRanges[i]; if (add->push_constant_space_used < v.offset + v.size) add->push_constant_space_used = v.offset + v.size; }')
 			z.do('add->flags = pCreateInfo->flags;')

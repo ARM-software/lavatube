@@ -4,6 +4,7 @@
 #include "read.h"
 #include "util_auto.h"
 #include "execute_commands.h"
+#include <cstring>
 
 #pragma GCC diagnostic ignored "-Wunused-variable"
 #if (__clang_major__ > 12) || (!defined(__llvm__) && defined(__GNUC__))
@@ -429,6 +430,53 @@ void postprocess_vkCreateRayTracingPipelinesKHR(callback_context& cb, VkDevice d
 			copy_shader_stage(pipeline_data, pipeline_data.shader_stages[stage], pCreateInfos[i].pStages[stage]);
 		}
 	}
+}
+
+void postprocess_vkCreateShadersEXT(callback_context& cb, VkDevice device, uint32_t createInfoCount, const VkShaderCreateInfoEXT* pCreateInfos, const VkAllocationCallbacks* pAllocator, VkShaderEXT* pShaders)
+{
+	for (uint32_t i = 0; i < createInfoCount; i++)
+	{
+		uint32_t shader_index = index_to_VkShaderEXT.index(pShaders[i]);
+		auto& obj = VkShaderEXT_index.at(shader_index);
+		obj.flags = pCreateInfos[i].flags;
+		obj.stage = pCreateInfos[i].stage;
+		obj.entry_name = pCreateInfos[i].pName ? pCreateInfos[i].pName : "";
+		if (pCreateInfos[i].pSpecializationInfo)
+		{
+			obj.specialization_constants.resize(pCreateInfos[i].pSpecializationInfo->mapEntryCount);
+			memcpy(obj.specialization_constants.data(), pCreateInfos[i].pSpecializationInfo->pMapEntries,
+				pCreateInfos[i].pSpecializationInfo->mapEntryCount * sizeof(VkSpecializationMapEntry));
+			obj.specialization_data.resize(pCreateInfos[i].pSpecializationInfo->dataSize);
+			memcpy(obj.specialization_data.data(), pCreateInfos[i].pSpecializationInfo->pData, pCreateInfos[i].pSpecializationInfo->dataSize);
+		}
+		if (pCreateInfos[i].codeType == VK_SHADER_CODE_TYPE_SPIRV_EXT && pCreateInfos[i].pCode && pCreateInfos[i].codeSize)
+		{
+			obj.code.resize(pCreateInfos[i].codeSize / sizeof(uint32_t));
+			memcpy(obj.code.data(), pCreateInfos[i].pCode, pCreateInfos[i].codeSize);
+		}
+	}
+}
+
+void postprocess_vkCmdBindShadersEXT(callback_context& cb, VkCommandBuffer commandBuffer, uint32_t stageCount, const VkShaderStageFlagBits* pStages, const VkShaderEXT* pShaders)
+{
+	const uint32_t cmdbuffer_index = index_to_VkCommandBuffer.index(commandBuffer);
+	auto& cmdbuffer_data = VkCommandBuffer_index.at(cmdbuffer_index);
+	trackedcommand cmd { VKCMDBINDSHADERSEXT };
+	cmd.data.bind_shaders_ext.stageCount = stageCount;
+	if (stageCount)
+	{
+		cmd.data.bind_shaders_ext.shader_objects = new trackedshaderobject[stageCount];
+		for (uint32_t i = 0; i < stageCount; i++)
+		{
+			uint32_t shader_index = index_to_VkShaderEXT.index(pShaders[i]);
+			cmd.data.bind_shaders_ext.shader_objects[i] = VkShaderEXT_index.at(shader_index);
+		}
+	}
+	else
+	{
+		cmd.data.bind_shaders_ext.shader_objects = nullptr;
+	}
+	cmdbuffer_data.commands.push_back(cmd);
 }
 
 void postprocess_vkSubmitDebugUtilsMessageEXT(callback_context& cb, VkInstance instance, VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity, VkDebugUtilsMessageTypeFlagsEXT messageTypes,

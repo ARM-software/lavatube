@@ -328,6 +328,18 @@ struct trackedtensor : trackedobject
 	}
 };
 
+struct trackedshaderobject : trackable
+{
+	using trackable::trackable; // inherit constructor
+
+	VkShaderCreateFlagsEXT flags = 0;
+	VkShaderStageFlagBits stage = VK_SHADER_STAGE_FLAG_BITS_MAX_ENUM;
+	std::string entry_name;
+	std::vector<uint32_t> code;
+	std::vector<VkSpecializationMapEntry> specialization_constants;
+	std::vector<char> specialization_data;
+};
+
 struct trackedaccelerationstructure : trackedobject
 {
 	using trackedobject::trackedobject; // inherit constructor
@@ -484,6 +496,7 @@ struct shader_stage // post-processor only
 	VkShaderStageFlagBits stage = VK_SHADER_STAGE_FLAG_BITS_MAX_ENUM;
 	VkShaderModule module = VK_NULL_HANDLE;
 	std::string name;
+	std::vector<uint32_t> code; // raw SPIR-V when sourced from VK_EXT_shader_object
 	std::vector<VkSpecializationMapEntry> specialization_constants;
 	std::vector<char> specialization_data;
 };
@@ -566,6 +579,11 @@ struct trackedcommand // does _not_ inherit trackable
 			uint32_t regionCount;
 			VkBufferCopy* pRegions;
 		} copy_buffer;
+		struct bind_shaders_ext
+		{
+			uint32_t stageCount;
+			trackedshaderobject* shader_objects; // array length stageCount
+		} bind_shaders_ext;
 	} data;
 };
 

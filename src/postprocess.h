@@ -29,6 +29,8 @@ void postprocess_vkCreateRayTracingPipelinesKHR(callback_context& cb, VkDevice d
 	uint32_t createInfoCount, const VkRayTracingPipelineCreateInfoKHR* pCreateInfos, const VkAllocationCallbacks* pAllocator, VkPipeline* pPipelines);
 void postprocess_vkSubmitDebugUtilsMessageEXT(callback_context& cb, VkInstance instance, VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity, VkDebugUtilsMessageTypeFlagsEXT messageTypes,
                                                   const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData);
+void postprocess_vkCreateShadersEXT(callback_context& cb, VkDevice device, uint32_t createInfoCount, const VkShaderCreateInfoEXT* pCreateInfos, const VkAllocationCallbacks* pAllocator, VkShaderEXT* pShaders);
+void postprocess_vkCmdBindShadersEXT(callback_context& cb, VkCommandBuffer commandBuffer, uint32_t stageCount, const VkShaderStageFlagBits* pStages, const VkShaderEXT* pShaders);
 
 // These three are special. They are called directly from the generated code. TBD: Should come up with a better interface for these.
 void postprocess_draw_command(callback_context& cb, uint32_t commandbuffer_index, trackedcmdbuffer& commandbuffer_data);
