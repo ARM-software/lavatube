@@ -183,12 +183,8 @@ public:
 				{
 					ELOG("Failed to get process CPU usage: %s", strerror(errno));
 				}
-				// Set start time in all threads
-				for (unsigned i = 0; i < parent->threads.size(); i++)
-				{
-					parent->thread_streams[i]->start_measurement();
-				}
 			}
+			start_measurement();
 		}
 		current.frame++;
 		parent->global_frame++; // just use for logging purposes

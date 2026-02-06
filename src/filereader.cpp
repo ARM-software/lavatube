@@ -156,6 +156,9 @@ void file_reader::decompressor()
 
 void file_reader::start_measurement()
 {
+	measurement_stopped.store(false, std::memory_order_release);
+	cached_worker_time = 0;
+	cached_runner_time = 0;
 	clockid_t id;
 	int r = pthread_getcpuclockid(pthread_self(), &id);
 	if (r != 0)
@@ -190,6 +193,12 @@ void file_reader::start_measurement()
 
 void file_reader::stop_measurement(uint64_t& worker, uint64_t& runner)
 {
+	if (measurement_stopped.load(std::memory_order_acquire))
+	{
+		worker = cached_worker_time;
+		runner = cached_runner_time;
+		return;
+	}
 	struct timespec stop_runner_cpu_usage;
 	clockid_t id;
 	int r = pthread_getcpuclockid(pthread_self(), &id);
@@ -212,6 +221,9 @@ void file_reader::stop_measurement(uint64_t& worker, uint64_t& runner)
 	if (!multithreaded_read)
 	{
 		worker = 0;
+		cached_worker_time = worker;
+		cached_runner_time = runner;
+		measurement_stopped.store(true, std::memory_order_release);
 		return;
 	}
 	pthread_t t = decompressor_thread.native_handle();
@@ -232,4 +244,7 @@ void file_reader::stop_measurement(uint64_t& worker, uint64_t& runner)
 		assert(stop_worker_cpu_usage.tv_sec >= worker_cpu_usage.tv_sec);
 		worker = diff_timespec(&stop_worker_cpu_usage, &worker_cpu_usage);
 	}
+	cached_worker_time = worker;
+	cached_runner_time = runner;
+	measurement_stopped.store(true, std::memory_order_release);
 }

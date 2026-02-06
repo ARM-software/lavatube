@@ -96,6 +96,9 @@ static void replay_thread(lava_reader* replayer, int thread_id)
 		switchboard_packet(instrtype, t);
 		t.self_test();
 	}
+	uint64_t worker_local = 0;
+	uint64_t runner_local = 0;
+	t.stop_measurement(worker_local, runner_local);
 }
 
 // We implement these here since we need info from rest of tool code

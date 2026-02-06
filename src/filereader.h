@@ -192,6 +192,9 @@ private:
 	struct timespec worker_cpu_usage;
 	/// Start CPU usage for our runner thread
 	struct timespec runner_cpu_usage;
+	std::atomic_bool measurement_stopped{ false };
+	uint64_t cached_worker_time = 0;
+	uint64_t cached_runner_time = 0;
 	/// Stop CPU usage for our worker thread
 	struct timespec stop_worker_cpu_usage;
 	/// Amount of memory mapped compressed data
