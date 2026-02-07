@@ -1229,7 +1229,7 @@ def save_add_tracking(name):
 			z.do('add->device_index = device_data->index;');
 			if name == 'vkCreateGraphicsPipelines': z.do('add->type = VK_PIPELINE_BIND_POINT_GRAPHICS;')
 			elif name == 'vkCreateComputePipelines': z.do('add->type = VK_PIPELINE_BIND_POINT_COMPUTE;')
-			elif name == 'PFN_vkCreateRayTracingPipelinesKHR': z.do('add->type = VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR;')
+			elif name == 'vkCreateRayTracingPipelinesKHR': z.do('add->type = VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR;')
 		elif type == 'VkSwapchainKHR':
 			z.do('add->info = pCreateInfos[i];')
 		z.do('DLOG2("insert %s into %s index %%u call=%%d", (unsigned)add->index, (int)writer.current.call);' % (type, name))

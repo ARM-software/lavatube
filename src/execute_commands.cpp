@@ -24,7 +24,8 @@ static bool run_spirv(const trackeddevice& device_data, const shader_stage& stag
 		code_ptr = &shader_data_ptr->code;
 	}
 	assert(code_ptr);
-	SPIRVSimulator::InputData inputs;
+	SPIRVSimulator::SimulationData inputs;
+	SPIRVSimulator::SimulationResults results;
 	std::unordered_map<const void*, std::pair<uint32_t, uint32_t>> binding_lookup;
 	inputs.push_constants = push_constants.empty() ? nullptr : push_constants.data();
 	inputs.entry_point_op_name = stage.name;
@@ -93,10 +94,10 @@ static bool run_spirv(const trackeddevice& device_data, const shader_stage& stag
 		}
 	}
 	if (shader_data_ptr) shader_data_ptr->calls++;
-	SPIRVSimulator::SPIRVSimulator sim(*code_ptr, inputs, false, ERROR_RAISE_ON_BUFFERS_INCOMPLETE);
+	SPIRVSimulator::SPIRVSimulator sim(*code_ptr, &inputs, &results, nullptr, false, ERROR_RAISE_ON_BUFFERS_INCOMPLETE);
 	sim.Run();
 
-	for (const auto& candidates : inputs.candidates)
+	for (const auto& candidates : results.output_candidates)
 	{
 		ILOG("Found set of %u candidates for %p", (unsigned)candidates.second.size(), candidates.first);
 		const void* base_ptr = candidates.first;
