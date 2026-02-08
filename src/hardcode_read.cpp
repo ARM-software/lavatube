@@ -452,6 +452,42 @@ static void replay_post_vkGetBufferDeviceAddress(lava_file_reader& reader, VkDev
 	VkBuffer_index.at(buffer_index).device_address = result;
 }
 
+static void replay_post_vkCreateBuffer(lava_file_reader& reader, VkResult result, VkDevice device, const VkBufferCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkBuffer* pBuffer)
+{
+	if (result != VK_SUCCESS || !pBuffer || *pBuffer == VK_NULL_HANDLE) return;
+	const uint32_t buffer_index = index_to_VkBuffer.index(*pBuffer);
+	auto& buf = VkBuffer_index.at(buffer_index);
+	if (buf.capture_device_address == 0) return;
+	reader.parent->device_address_remapping.add(buf.capture_device_address, &buf);
+}
+
+static void replay_pre_vkDestroyBuffer(lava_file_reader& reader, VkDevice device, VkBuffer buffer, const VkAllocationCallbacks* pAllocator)
+{
+	if (buffer == VK_NULL_HANDLE) return;
+	const uint32_t buffer_index = index_to_VkBuffer.index(buffer);
+	auto& buf = VkBuffer_index.at(buffer_index);
+	if (buf.capture_device_address == 0) return;
+	reader.parent->device_address_remapping.remove(buf.capture_device_address, &buf);
+}
+
+static void replay_post_vkCreateAccelerationStructureKHR(lava_file_reader& reader, VkResult result, VkDevice device, const VkAccelerationStructureCreateInfoKHR* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkAccelerationStructureKHR* pAccelerationStructure)
+{
+	if (result != VK_SUCCESS || !pAccelerationStructure || *pAccelerationStructure == VK_NULL_HANDLE) return;
+	const uint32_t as_index = index_to_VkAccelerationStructureKHR.index(*pAccelerationStructure);
+	auto& as = VkAccelerationStructureKHR_index.at(as_index);
+	if (as.capture_device_address == 0) return;
+	reader.parent->acceleration_structure_address_remapping.add(as.capture_device_address, &as);
+}
+
+static void replay_pre_vkDestroyAccelerationStructureKHR(lava_file_reader& reader, VkDevice device, VkAccelerationStructureKHR accelerationStructure, const VkAllocationCallbacks* pAllocator)
+{
+	if (accelerationStructure == VK_NULL_HANDLE) return;
+	const uint32_t as_index = index_to_VkAccelerationStructureKHR.index(accelerationStructure);
+	auto& as = VkAccelerationStructureKHR_index.at(as_index);
+	if (as.capture_device_address == 0) return;
+	reader.parent->acceleration_structure_address_remapping.remove(as.capture_device_address, &as);
+}
+
 void replay_post_vkAcquireNextImageKHR(lava_file_reader& reader, VkResult result, VkDevice device, VkSwapchainKHR swapchain, uint64_t timeout,
                                      VkSemaphore semaphore, VkFence fence, uint32_t* pImageIndex)
 {

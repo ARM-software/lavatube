@@ -14,7 +14,9 @@
 #include <memory>
 #include <cstddef>
 #include <mutex>
+#include <shared_mutex>
 #include <map>
+#include <algorithm>
 
 #include "tbb/concurrent_unordered_map.h"
 
@@ -54,34 +56,68 @@ private:
 template<typename T>
 class address_remapper
 {
-	auto iter_by_address(uint64_t stored) const
+	struct candidate
 	{
-		if (remapping.empty()) return remapping.end(); // none kept
-		auto iter = remapping.lower_bound(stored);
-		if (iter == remapping.end() || iter->first > stored)
+		T* obj = nullptr;
+		uint64_t base = 0;
+	};
+
+	T* choose_best(const std::vector<T*>& entries, uint64_t base, uint64_t stored) const
+	{
+		T* best = nullptr;
+		uint64_t best_size = 0;
+		bool best_has_addr = false;
+		for (T* obj : entries)
 		{
-			if (iter == remapping.begin()) return remapping.end(); // not found
-			iter--;
+			if (!obj) continue;
+			const uint64_t offset = stored - base;
+			if (obj->size == 0) continue;
+			if (offset >= obj->size) continue;
+			const bool has_addr = obj->device_address != 0;
+			if (!best || (has_addr && !best_has_addr) ||
+				(has_addr == best_has_addr && (obj->size > best_size || obj->size == best_size)))
+			{
+				best = obj;
+				best_size = obj->size;
+				best_has_addr = has_addr;
+			}
 		}
-		if (iter->first + iter->second->size < stored) return remapping.end(); // out of bounds
-		return iter;
-        }
+		return best;
+	}
+
+	candidate find_candidate(uint64_t stored) const
+	{
+		if (remapping.empty()) return {};
+		auto iter = remapping.upper_bound(stored);
+		while (iter != remapping.begin())
+		{
+			--iter;
+			const uint64_t base = iter->first;
+			if (base > stored) continue;
+			if (T* obj = choose_best(iter->second, base, stored))
+			{
+				return { obj, base };
+			}
+		}
+		return {};
+	}
 
 public:
-	/// Get stored object. Thread safe as long as only used after any calls to add() or iter().
+	/// Get stored object. Thread safe.
 	T* get_by_address(uint64_t stored) const
 	{
-		auto iter = iter_by_address(stored);
-		if (iter == remapping.end()) return nullptr;
-		return iter->second;
+		std::shared_lock lock(mutex);
+		candidate found = find_candidate(stored);
+		return found.obj;
         }
 
-	/// Translate an address. Thread safe as long as only used after any calls to add() or iter().
+	/// Translate an address. Thread safe.
 	uint64_t translate_address(uint64_t stored) const
 	{
-		auto iter = iter_by_address(stored);
-		if (iter == remapping.end()) return 0;
-		return iter->second->device_address + (stored - iter->first);
+		std::shared_lock lock(mutex);
+		candidate found = find_candidate(stored);
+		if (!found.obj || found.obj->device_address == 0) return 0;
+		return found.obj->device_address + (stored - found.base);
         }
 
 	/// Check if a value is a candidate for being a stored memory address. Also checks 32bit swapped addresses.
@@ -91,19 +127,36 @@ public:
 		return translate_address(stored) != 0 || translate_address((stored >> 32) | (stored << 32));
 	}
 
-	/// Add an address translation. 'addr' is the stored address. Unsafe. Only use before any calls to
-	/// translate_address() or get_by_address().
+	/// Add an address translation. 'addr' is the stored address. Thread safe.
 	void add(uint64_t addr, T* obj)
 	{
-		remapping[addr] = obj;
+		if (!obj || addr == 0) return;
+		std::unique_lock lock(mutex);
+		auto& entries = remapping[addr];
+		if (std::find(entries.begin(), entries.end(), obj) == entries.end())
+		{
+			entries.push_back(obj);
+		}
 	}
 
-	/// Get underlying container. Unsafe. Only use before any calls to translate_address() or get_by_address()
-	const std::map<uint64_t, T*>& iter() const { return remapping; }
+	/// Remove an address translation. Thread safe.
+	void remove(uint64_t addr, T* obj)
+	{
+		if (!obj || addr == 0) return;
+		std::unique_lock lock(mutex);
+		auto it = remapping.find(addr);
+		if (it == remapping.end()) return;
+		auto& entries = it->second;
+		entries.erase(std::remove(entries.begin(), entries.end(), obj), entries.end());
+		if (entries.empty()) remapping.erase(it);
+	}
+
+	/// Get underlying container. Unsafe. Only use when externally synchronized.
+	const std::map<uint64_t, std::vector<T*>>& iter() const { return remapping; }
 
 private:
-	// This container is thread safe since we allocate it all before threading begins.
-	std::map<uint64_t, T*> remapping;
+	std::map<uint64_t, std::vector<T*>> remapping;
+	mutable std::shared_mutex mutex;
 };
 
 /// A very limited RCU-based lockless concurrent vector implementation. Compared to a

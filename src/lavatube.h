@@ -213,6 +213,7 @@ struct trackedobject : trackable
 	VkObjectType alias_type = VK_OBJECT_TYPE_UNKNOWN;
 	uint32_t alias_index = UINT32_MAX;
 	VkDeviceAddress device_address = 0;
+	VkDeviceAddress capture_device_address = 0;
 	VkMemoryPropertyFlags memory_flags = 0;
 	lava_tiling tiling = TILING_LINEAR; // linear is the default
 

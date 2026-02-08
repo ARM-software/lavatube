@@ -320,6 +320,7 @@ trackedaccelerationstructure trackedaccelerationstructure_json(const Json::Value
 	t.size = (VkDeviceSize)v["size"].asUInt64();
 	t.offset = (VkDeviceSize)v["offset"].asUInt64();
 	t.buffer_index = v["buffer_index"].asUInt();
+	if (v.isMember("device_address")) t.capture_device_address = v["device_address"].asUInt64();
 	t.object_type = VK_OBJECT_TYPE_ACCELERATION_STRUCTURE_KHR;
 	if (v.isMember("alias_index"))
 	{
@@ -344,6 +345,7 @@ trackedbuffer trackedbuffer_json(const Json::Value& v)
 	t.sharingMode = (VkSharingMode)v["sharingMode"].asUInt();
 	t.usage = (VkBufferUsageFlags)v["usage"].asUInt();
 	if (v.isMember("usage2")) t.usage2 = (VkBufferUsageFlags2)v["usage2"].asUInt64();
+	if (v.isMember("device_address")) t.capture_device_address = v["device_address"].asUInt64();
 	t.object_type = VK_OBJECT_TYPE_BUFFER;
 	if (v.isMember("alias_index"))
 	{
@@ -374,6 +376,7 @@ trackedimage trackedimage_json(const Json::Value& v)
 	t.mipLevels = (unsigned)v.get("mipLevels", 0).asUInt();
 	t.arrayLayers = (unsigned)v.get("arrayLayers", 0).asUInt();
 	t.format = (VkFormat)v.get("format", VK_FORMAT_MAX_ENUM).asUInt();
+	if (v.isMember("device_address")) t.capture_device_address = v["device_address"].asUInt64();
 	if (v.isMember("extent"))
 	{
 		t.extent.width = v["extent"][0].asUInt();
@@ -406,6 +409,7 @@ trackedtensor trackedtensor_json(const Json::Value& v)
 	t.tiling = (lava_tiling)v["tiling"].asUInt();
 	t.format = (VkFormat)v["format"].asUInt();
 	t.usage = (VkTensorUsageFlagsARM)v["dimensions"].asUInt64();
+	if (v.isMember("device_address")) t.capture_device_address = v["device_address"].asUInt64();
 	for (const auto& val : v["dimensions"]) t.dimensions.push_back(val.asUInt64());
 	if (v.isMember("strides"))
 	{

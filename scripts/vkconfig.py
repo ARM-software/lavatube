@@ -131,11 +131,12 @@ validate_funcs(ignore_on_trace)
 # these functions have hard-coded post-execute callbacks
 replay_pre_calls = [ 'vkDestroyInstance', 'vkDestroyDevice', 'vkCreateDevice', 'vkCreateSampler', 'vkQueuePresentKHR', 'vkCreateSwapchainKHR',
 	'vkCreateSharedSwapchainsKHR', 'vkCreateGraphicsPipelines', 'vkCreateComputePipelines', 'vkCreateRayTracingPipelinesKHR', 'vkCmdPushConstants2KHR',
-	'vkCmdPushConstants2', 'vkQueueSubmit', 'vkQueueSubmit2', 'vkQueueSubmit2KHR', 'vkDestroyPipelineCache', 'vkDestroySwapchainKHR', 'vkCreateInstance' ]
+	'vkCmdPushConstants2', 'vkQueueSubmit', 'vkQueueSubmit2', 'vkQueueSubmit2KHR', 'vkDestroyPipelineCache', 'vkDestroySwapchainKHR', 'vkDestroyBuffer',
+	'vkDestroyAccelerationStructureKHR', 'vkCreateInstance' ]
 validate_funcs(replay_pre_calls)
 replay_post_calls = [ 'vkCreateInstance', 'vkDestroyInstance', 'vkQueuePresentKHR', 'vkAcquireNextImageKHR', 'vkAcquireNextImage2KHR',
 	'vkGetBufferDeviceAddress', 'vkGetBufferDeviceAddressKHR', 'vkGetBufferDeviceAddressEXT', 'vkGetAccelerationStructureDeviceAddressKHR',
-	'vkSubmitDebugUtilsMessageEXT' ]
+	'vkCreateBuffer', 'vkCreateAccelerationStructureKHR', 'vkSubmitDebugUtilsMessageEXT' ]
 validate_funcs(replay_post_calls)
 trace_pre_calls = [ 'vkQueueSubmit', 'vkCreateInstance', 'vkCreateDevice', 'vkFreeMemory', 'vkQueueSubmit2', 'vkQueueSubmit2KHR' ]
 validate_funcs(trace_pre_calls)

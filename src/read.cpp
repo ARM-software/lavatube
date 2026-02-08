@@ -176,32 +176,6 @@ void lava_reader::init(const std::string& path)
 		ELOG("Failed to initialize process CPU usage: %s", strerror(errno));
 	}
 
-	// Set up buffer device address tracking
-	if (trackable.isMember("VkBuffer"))
-	{
-		for (uint32_t i = 0; i < VkBuffer_index.size(); i++)
-		{
-			Json::Value& buf = trackable["VkBuffer"][i];
-			if (buf.isMember("device_address"))
-			{
-				VkDeviceAddress address = buf["device_address"].asUInt64();
-				device_address_remapping.add(address, &VkBuffer_index.at(i));
-			}
-		}
-	}
-	if (trackable.isMember("VkAccelerationStructureKHR"))
-	{
-		for (uint32_t i = 0; i < VkAccelerationStructureKHR_index.size(); i++)
-		{
-			Json::Value& buf = trackable["VkAccelerationStructureKHR"][i];
-			if (buf.isMember("device_address"))
-			{
-				VkDeviceAddress address = buf["device_address"].asUInt64();
-				acceleration_structure_address_remapping.add(address, &VkAccelerationStructureKHR_index.at(i));
-			}
-		}
-	}
-
 	Json::Value meta = packed_json("metadata.json", mPackedFile);
 	const int num_threads = meta["threads"].asInt();
 	mGlobalFrames = meta["global_frames"].asInt();

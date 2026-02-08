@@ -315,13 +315,13 @@ static void test_address_remapper()
 	assert(r.get_by_address(200) == &o2);
 	assert(r.get_by_address(300) == &o3);
 	assert(r.get_by_address(50) == nullptr);
-	assert(r.get_by_address(150) == &o1);
+	assert(r.get_by_address(150) == nullptr);
 	assert(r.get_by_address(299) == nullptr);
 	assert(r.translate_address(50) == 0);
 	assert(r.translate_address(450) == 0);
 	assert(r.translate_address(199) == 0);
 	assert(r.translate_address(100) == 1100);
-	assert(r.translate_address(150) == 1150);
+	assert(r.translate_address(150) == 0);
 	assert(r.is_candidate(0) == false);
 	assert(r.is_candidate(1) == false);
 	assert(r.is_candidate(100) == true);
