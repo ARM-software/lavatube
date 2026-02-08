@@ -40,9 +40,12 @@
 ## Coding
 - Keep in mind that lavatube is multi-threaded. For more information on the multi-threaded design, see [Multithreading.md](doc/Multithreading.md).
 - For investigations into memory management, read [MemoryManagement.md](doc/MemoryManagement.md).
+- At the lowest level of file processing we handle chunks, at the higher level we process packets. One chunk may contain many packets.
+- We try to avoid using mutexes. Avoid modifying another thread's state directly, instead leave information for it be pick up and let it
+  modify itself before processing its next packet. This way we keep thread state consistent while processing a packet.
 
 ## Debugging
-- For troubleshooting, set `LAVATUBE_DEBUG` (value from 1 to 3) but keep default output quiet in commits.
+- For troubleshooting, set `LAVATUBE_DEBUG` environment variable, value from 1 (some extra logging) to 3 (the most verbose).
 
 ## Modifying capture functionality
 - Capture is often also called `write` or `trace` in the code.

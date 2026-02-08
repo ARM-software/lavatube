@@ -84,56 +84,6 @@ struct trace_metadata
 	trace_capabilities app GUARDED_BY(frame_mutex);
 };
 
-// trace classes
-
-struct debug_info
-{
-	std::atomic_uint32_t flushes_queue { 0 }; // total number of memory mapping flushes called from queue submits
-	std::atomic_uint32_t flushes_event { 0 }; // total number of memory mapping flushes called from vkSetEvent
-	std::atomic_uint32_t flushes_remap { 0 }; // of the above flush types, how many required changing an existing mmap?
-	std::atomic_uint32_t flushes_persistent { 0 }; // of the above flush types, how many were persistent?
-	std::atomic_uint32_t memory_devices { 0 }; // total number of memory devices scanned
-	std::atomic_uint32_t memory_dumps { 0 }; // of the devices, how many times did we simply dump a range?
-	std::atomic_uint32_t memory_scans { 0 }; // of the devices, how many times did we scan for chages?
-	std::atomic_uint64_t memory_bytes { 0 }; // how many bytes we scanned for changes
-	std::atomic_uint64_t memory_changed_bytes { 0 }; // how many bytes were actually changed
-	std::atomic_uint32_t memory_scans_unchanged { 0 }; // of the scans, how many did actually change?
-
-	debug_info() {}
-
-	debug_info& operator=(const debug_info& rhs)
-	{
-		flushes_queue.store(rhs.flushes_queue.load(std::memory_order_relaxed));
-		flushes_event.store(rhs.flushes_event.load(std::memory_order_relaxed));
-		flushes_remap.store(rhs.flushes_remap.load(std::memory_order_relaxed));
-		flushes_persistent.store(rhs.flushes_persistent.load(std::memory_order_relaxed));
-		memory_devices.store(rhs.memory_devices.load(std::memory_order_relaxed));
-		memory_dumps.store(rhs.memory_dumps.load(std::memory_order_relaxed));
-		memory_scans.store(rhs.memory_scans.load(std::memory_order_relaxed));
-		memory_bytes.store(rhs.memory_bytes.load(std::memory_order_relaxed));
-		memory_changed_bytes.store(rhs.memory_changed_bytes.load(std::memory_order_relaxed));
-		memory_scans_unchanged.store(rhs.memory_scans_unchanged.load(std::memory_order_relaxed));
-		return *this;
-	}
-
-	debug_info(const debug_info& rhs) { operator=(rhs); }
-
-	debug_info& operator+=(const debug_info& rhs)
-	{
-		flushes_queue += rhs.flushes_queue.load(std::memory_order_relaxed);
-		flushes_event += rhs.flushes_event.load(std::memory_order_relaxed);
-		flushes_remap += rhs.flushes_remap.load(std::memory_order_relaxed);
-		flushes_persistent += rhs.flushes_persistent.load(std::memory_order_relaxed);
-		memory_devices += rhs.memory_devices.load(std::memory_order_relaxed);
-		memory_dumps += rhs.memory_dumps.load(std::memory_order_relaxed);
-		memory_scans += rhs.memory_scans.load(std::memory_order_relaxed);
-		memory_bytes += rhs.memory_bytes.load(std::memory_order_relaxed);
-		memory_changed_bytes += rhs.memory_changed_bytes.load(std::memory_order_relaxed);
-		memory_scans_unchanged += rhs.memory_scans_unchanged.load(std::memory_order_relaxed);
-		return *this;
-	}
-};
-
 class lava_writer;
 
 /// Per-thread controller
@@ -146,11 +96,10 @@ public:
 	lava_file_writer(uint16_t _tid, lava_writer* _parent);
 	~lava_file_writer();
 
-	debug_info new_frame(int global_frame) REQUIRES(frame_mutex);
+	void new_frame(int global_frame) REQUIRES(frame_mutex);
 	void set(const std::string& path) REQUIRES(frame_mutex);
 	inline int thread_index() const { return current.thread; }
 
-	debug_info debug;
 	int prev_callno = -1; // for validation
 	bool run = true;
 	result_value use_result; // for post-processing to set which result to store
@@ -255,7 +204,6 @@ private:
 	std::string mPack;
 	VkuVulkanLibrary library = nullptr;
 	Json::Value mJson GUARDED_BY(frame_mutex);
-	std::vector<debug_info> debug GUARDED_BY(frame_mutex);
 	bool should_serialize = false;
 };
 

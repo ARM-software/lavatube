@@ -100,7 +100,7 @@ lava_file_writer::~lava_file_writer()
 	write_json(path, v);
 }
 
-debug_info lava_file_writer::new_frame(int global_frame)
+void lava_file_writer::new_frame(int global_frame)
 {
 	framedata data;
 	data.start_pos = uncompressed_bytes;
@@ -109,10 +109,7 @@ debug_info lava_file_writer::new_frame(int global_frame)
 	frames.push_back(data);
 	assert(global_frame >= (int)current.frame);
 	current.frame++;
-	debug_info retval = debug;
-	debug = {};
 	self_test();
-	return retval;
 }
 
 // --- trace writer
@@ -223,28 +220,6 @@ void lava_writer::serialize()
 	// write out tracking info for each object
 	write_json(mPath + "/tracking.json", trackable_json(this));
 
-	// write out debug info
-	Json::Value dbg;
-	Json::Value arr = Json::arrayValue;
-	for (unsigned i = 0; i < debug.size(); i++)
-	{
-		Json::Value v;
-		v["frame"] = i;
-		v["flushes_queue"] = debug.at(i).flushes_queue.load(std::memory_order_relaxed);
-		v["flushes_event"] = debug.at(i).flushes_event.load(std::memory_order_relaxed);
-		v["flushes_remap"] = debug.at(i).flushes_remap.load(std::memory_order_relaxed);
-		v["flushes_persistent"] = debug.at(i).flushes_persistent.load(std::memory_order_relaxed);
-		v["memory_devices"] = debug.at(i).memory_devices.load(std::memory_order_relaxed);
-		v["memory_dumps"] = debug.at(i).memory_dumps.load(std::memory_order_relaxed);
-		v["memory_scans"] = debug.at(i).memory_scans.load(std::memory_order_relaxed);
-		v["memory_bytes"] = (Json::Value::Int64)debug.at(i).memory_bytes.load(std::memory_order_relaxed);
-		v["memory_changed_bytes"] = (Json::Value::Int64)debug.at(i).memory_changed_bytes.load(std::memory_order_relaxed);
-		v["memory_scans_unchanged"] = debug.at(i).memory_scans_unchanged.load(std::memory_order_relaxed);
-		arr.append(v);
-	}
-	dbg["frames"] = arr;
-	dbg["global_frames"] = global_frame + 1;
-	write_json(mPath + "/debug.json", dbg);
 	frame_mutex.unlock();
 }
 
@@ -321,12 +296,10 @@ void lava_writer::new_frame()
 	frame_mutex.lock();
 
 	// inform all workers
-	debug_info d;
 	for (unsigned i = 0; i < thread_streams.size(); i++)
 	{
-		d += thread_streams.at(i)->new_frame(global_frame);
+		thread_streams.at(i)->new_frame(global_frame);
 	}
-	debug.push_back(d);
 
 	global_frame++;
 	frame_mutex.unlock();

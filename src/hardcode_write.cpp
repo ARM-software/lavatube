@@ -946,7 +946,6 @@ static void memory_update(lava_file_writer& writer, trackedqueue* queue_data, co
 		if (memory_data->ptr && memory_data->offset <= pair.second.first && memory_data->size + memory_data->offset >= pair.second.last) // we already have mapped at least this area
 		{
 			NEVER("Flushing from existing persistent memory %u", memory_data->index);
-			writer.debug.flushes_persistent++;
 			ptr = memory_data->ptr;
 			binding_offset = memory_data->offset;
 			binding_size = memory_data->size;
@@ -960,7 +959,6 @@ static void memory_update(lava_file_writer& writer, trackedqueue* queue_data, co
 			if (memory_data->ptr) // remove old memory mapping, if any
 			{
 				NEVER("Remapping existing persistent memory %u to flush it, mapping to offset=%lu size=%lu", memory_data->index, binding_offset, binding_size);
-				writer.debug.flushes_remap++;
 				wrap_vkUnmapMemory(queue_data->device, memory_data->backing);
 				restore = true;
 			}
@@ -1025,7 +1023,6 @@ static void trace_pre_vkQueueSubmit2(VkQueue queue, uint32_t submitCount, const 
 		}
 	}
 	memory_update(writer, queue_data, ranges_by_memory, cmdbufs);
-	writer.debug.flushes_queue++;
 	instance.memory_mutex.unlock();
 }
 
@@ -1053,7 +1050,6 @@ static void trace_pre_vkQueueSubmit(VkQueue queue, uint32_t submitCount, const V
 		}
 	}
 	memory_update(writer, queue_data, ranges_by_memory, cmdbufs);
-	writer.debug.flushes_queue++;
 	instance.memory_mutex.unlock();
 }
 
