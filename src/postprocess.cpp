@@ -4,6 +4,7 @@
 #include "read.h"
 #include "util_auto.h"
 #include "execute_commands.h"
+#include <algorithm>
 #include <cstring>
 
 #pragma GCC diagnostic ignored "-Wunused-variable"
@@ -294,7 +295,13 @@ void postprocess_draw_command(callback_context& cb, uint32_t commandbuffer_index
 
 void postprocess_raytracing_command(callback_context& cb, uint32_t commandbuffer_index, trackedcmdbuffer& commandbuffer_data)
 {
+	if (commandbuffer_data.pending_raytracing_marker)
+	{
+		commandbuffer_data.pending_raytracing_marker = false;
+		return;
+	}
 	trackedcommand cmd { VKCMDTRACERAYSKHR };
+	cmd.trace_rays_valid = false;
 	commandbuffer_data.commands.push_back(cmd);
 }
 
@@ -429,7 +436,58 @@ void postprocess_vkCreateRayTracingPipelinesKHR(callback_context& cb, VkDevice d
 			pipeline_data.shader_stages[stage].index = stage;
 			copy_shader_stage(pipeline_data, pipeline_data.shader_stages[stage], pCreateInfos[i].pStages[stage]);
 		}
+		pipeline_data.raytracing_group_count = pCreateInfos[i].groupCount;
+		pipeline_data.raytracing_groups.resize(pCreateInfos[i].groupCount);
+		for (uint32_t group = 0; group < pCreateInfos[i].groupCount; group++)
+		{
+			const VkRayTracingShaderGroupCreateInfoKHR& src = pCreateInfos[i].pGroups[group];
+			raytracing_group& dst = pipeline_data.raytracing_groups[group];
+			dst.type = src.type;
+			dst.general_shader = src.generalShader;
+			dst.closest_hit_shader = src.closestHitShader;
+			dst.any_hit_shader = src.anyHitShader;
+			dst.intersection_shader = src.intersectionShader;
+		}
+		pipeline_data.raytracing_group_handle_size = 0;
+		pipeline_data.raytracing_group_handles.clear();
 	}
+}
+
+void postprocess_vkGetRayTracingShaderGroupHandlesKHR(callback_context& cb, VkDevice device, VkPipeline pipeline, uint32_t firstGroup,
+	uint32_t groupCount, size_t dataSize, void* pData)
+{
+	if (!pData || groupCount == 0 || dataSize == 0) return;
+	const uint32_t pipeline_index = index_to_VkPipeline.index(pipeline);
+	trackedpipeline& pipeline_data = VkPipeline_index.at(pipeline_index);
+	const size_t handle_size = dataSize / groupCount;
+	if (handle_size == 0 || (dataSize % groupCount) != 0)
+	{
+		DLOG("vkGetRayTracingShaderGroupHandlesKHR has invalid dataSize=%zu for groupCount=%u", dataSize, groupCount);
+		return;
+	}
+	if (pipeline_data.raytracing_group_handle_size == 0)
+	{
+		pipeline_data.raytracing_group_handle_size = (uint32_t)handle_size;
+	}
+	else if (pipeline_data.raytracing_group_handle_size != handle_size)
+	{
+		ABORT("Ray tracing shader group handle size mismatch for pipeline %u", pipeline_index);
+	}
+	const uint32_t required_groups = std::max(pipeline_data.raytracing_group_count, firstGroup + groupCount);
+	pipeline_data.raytracing_group_count = required_groups;
+	const size_t required_size = (size_t)required_groups * handle_size;
+	if (pipeline_data.raytracing_group_handles.size() < required_size)
+	{
+		pipeline_data.raytracing_group_handles.resize(required_size);
+	}
+	std::byte* dst = pipeline_data.raytracing_group_handles.data() + (size_t)firstGroup * handle_size;
+	memcpy(dst, pData, dataSize);
+}
+
+void postprocess_vkGetRayTracingCaptureReplayShaderGroupHandlesKHR(callback_context& cb, VkDevice device, VkPipeline pipeline, uint32_t firstGroup,
+	uint32_t groupCount, size_t dataSize, void* pData)
+{
+	postprocess_vkGetRayTracingShaderGroupHandlesKHR(cb, device, pipeline, firstGroup, groupCount, dataSize, pData);
 }
 
 void postprocess_vkCreateShadersEXT(callback_context& cb, VkDevice device, uint32_t createInfoCount, const VkShaderCreateInfoEXT* pCreateInfos, const VkAllocationCallbacks* pAllocator, VkShaderEXT* pShaders)
@@ -477,6 +535,67 @@ void postprocess_vkCmdBindShadersEXT(callback_context& cb, VkCommandBuffer comma
 		cmd.data.bind_shaders_ext.shader_objects = nullptr;
 	}
 	cmdbuffer_data.commands.push_back(cmd);
+}
+
+static void fill_trace_rays_regions(trackedcommand& cmd, const VkStridedDeviceAddressRegionKHR* raygen, const VkStridedDeviceAddressRegionKHR* miss,
+	const VkStridedDeviceAddressRegionKHR* hit, const VkStridedDeviceAddressRegionKHR* callable)
+{
+	cmd.data.trace_rays.raygen = raygen ? *raygen : VkStridedDeviceAddressRegionKHR{};
+	cmd.data.trace_rays.miss = miss ? *miss : VkStridedDeviceAddressRegionKHR{};
+	cmd.data.trace_rays.hit = hit ? *hit : VkStridedDeviceAddressRegionKHR{};
+	cmd.data.trace_rays.callable = callable ? *callable : VkStridedDeviceAddressRegionKHR{};
+}
+
+void postprocess_vkCmdTraceRaysKHR(callback_context& cb, VkCommandBuffer commandBuffer, const VkStridedDeviceAddressRegionKHR* pRaygenShaderBindingTable,
+	const VkStridedDeviceAddressRegionKHR* pMissShaderBindingTable, const VkStridedDeviceAddressRegionKHR* pHitShaderBindingTable,
+	const VkStridedDeviceAddressRegionKHR* pCallableShaderBindingTable, uint32_t width, uint32_t height, uint32_t depth)
+{
+	const uint32_t cmdbuffer_index = index_to_VkCommandBuffer.index(commandBuffer);
+	auto& cmdbuffer_data = VkCommandBuffer_index.at(cmdbuffer_index);
+	trackedcommand cmd { VKCMDTRACERAYSKHR };
+	cmd.trace_rays_valid = true;
+	cmd.data.trace_rays.mode = trackedcommand::TRACE_RAYS_DIRECT;
+	fill_trace_rays_regions(cmd, pRaygenShaderBindingTable, pMissShaderBindingTable, pHitShaderBindingTable, pCallableShaderBindingTable);
+	cmd.data.trace_rays.width = width;
+	cmd.data.trace_rays.height = height;
+	cmd.data.trace_rays.depth = depth;
+	cmd.data.trace_rays.indirect_device_address = 0;
+	cmdbuffer_data.commands.push_back(cmd);
+	cmdbuffer_data.pending_raytracing_marker = true;
+}
+
+void postprocess_vkCmdTraceRaysIndirectKHR(callback_context& cb, VkCommandBuffer commandBuffer, const VkStridedDeviceAddressRegionKHR* pRaygenShaderBindingTable,
+	const VkStridedDeviceAddressRegionKHR* pMissShaderBindingTable, const VkStridedDeviceAddressRegionKHR* pHitShaderBindingTable,
+	const VkStridedDeviceAddressRegionKHR* pCallableShaderBindingTable, VkDeviceAddress indirectDeviceAddress)
+{
+	const uint32_t cmdbuffer_index = index_to_VkCommandBuffer.index(commandBuffer);
+	auto& cmdbuffer_data = VkCommandBuffer_index.at(cmdbuffer_index);
+	trackedcommand cmd { VKCMDTRACERAYSKHR };
+	cmd.trace_rays_valid = true;
+	cmd.data.trace_rays.mode = trackedcommand::TRACE_RAYS_INDIRECT;
+	fill_trace_rays_regions(cmd, pRaygenShaderBindingTable, pMissShaderBindingTable, pHitShaderBindingTable, pCallableShaderBindingTable);
+	cmd.data.trace_rays.width = 0;
+	cmd.data.trace_rays.height = 0;
+	cmd.data.trace_rays.depth = 0;
+	cmd.data.trace_rays.indirect_device_address = indirectDeviceAddress;
+	cmdbuffer_data.commands.push_back(cmd);
+	cmdbuffer_data.pending_raytracing_marker = true;
+}
+
+void postprocess_vkCmdTraceRaysIndirect2KHR(callback_context& cb, VkCommandBuffer commandBuffer, VkDeviceAddress indirectDeviceAddress)
+{
+	const uint32_t cmdbuffer_index = index_to_VkCommandBuffer.index(commandBuffer);
+	auto& cmdbuffer_data = VkCommandBuffer_index.at(cmdbuffer_index);
+	trackedcommand cmd { VKCMDTRACERAYSKHR };
+	cmd.trace_rays_valid = true;
+	cmd.data.trace_rays.mode = trackedcommand::TRACE_RAYS_INDIRECT2;
+	fill_trace_rays_regions(cmd, nullptr, nullptr, nullptr, nullptr);
+	cmd.data.trace_rays.width = 0;
+	cmd.data.trace_rays.height = 0;
+	cmd.data.trace_rays.depth = 0;
+	cmd.data.trace_rays.indirect_device_address = indirectDeviceAddress;
+	cmdbuffer_data.commands.push_back(cmd);
+	cmdbuffer_data.pending_raytracing_marker = true;
 }
 
 void postprocess_vkSubmitDebugUtilsMessageEXT(callback_context& cb, VkInstance instance, VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity, VkDebugUtilsMessageTypeFlagsEXT messageTypes,

@@ -20,6 +20,7 @@
 #include <list>
 #include <vulkan/vk_icd.h>
 #include <type_traits>
+#include <cstddef>
 
 // Basically just assuming this will be fixed in later versions of the standard and that existing
 // implementations will continue doing the only sensible thing here.
@@ -501,6 +502,15 @@ struct shader_stage // post-processor only
 	std::vector<char> specialization_data;
 };
 
+struct raytracing_group // post-processor only
+{
+	VkRayTracingShaderGroupTypeKHR type = VK_RAY_TRACING_SHADER_GROUP_TYPE_MAX_ENUM_KHR;
+	uint32_t general_shader = VK_SHADER_UNUSED_KHR;
+	uint32_t closest_hit_shader = VK_SHADER_UNUSED_KHR;
+	uint32_t any_hit_shader = VK_SHADER_UNUSED_KHR;
+	uint32_t intersection_shader = VK_SHADER_UNUSED_KHR;
+};
+
 struct trackedpipeline : trackable
 {
 	using trackable::trackable; // inherit constructor
@@ -509,6 +519,10 @@ struct trackedpipeline : trackable
 	VkPipelineCreateFlags flags = 0;
 	VkPipelineCache cache = VK_NULL_HANDLE;
 	std::vector<shader_stage> shader_stages; // only set for postprocessing
+	std::vector<raytracing_group> raytracing_groups; // only set for ray tracing pipelines
+	uint32_t raytracing_group_count = 0;
+	uint32_t raytracing_group_handle_size = 0;
+	std::vector<std::byte> raytracing_group_handles;
 
 	void self_test() const
 	{
@@ -533,6 +547,13 @@ struct trackedpipelinelayout : trackable
 
 struct trackedcommand // does _not_ inherit trackable
 {
+	enum trace_rays_mode
+	{
+		TRACE_RAYS_DIRECT = 0,
+		TRACE_RAYS_INDIRECT = 1,
+		TRACE_RAYS_INDIRECT2 = 2,
+	};
+
 	lava_function_id id;
 	union data
 	{
@@ -584,7 +605,20 @@ struct trackedcommand // does _not_ inherit trackable
 			uint32_t stageCount;
 			trackedshaderobject* shader_objects; // array length stageCount
 		} bind_shaders_ext;
+		struct trace_rays
+		{
+			uint32_t mode;
+			VkStridedDeviceAddressRegionKHR raygen;
+			VkStridedDeviceAddressRegionKHR miss;
+			VkStridedDeviceAddressRegionKHR hit;
+			VkStridedDeviceAddressRegionKHR callable;
+			uint32_t width;
+			uint32_t height;
+			uint32_t depth;
+			VkDeviceAddress indirect_device_address;
+		} trace_rays;
 	} data;
+	bool trace_rays_valid = false;
 };
 
 struct trackedcmdbuffer : trackable
@@ -595,6 +629,7 @@ struct trackedcmdbuffer : trackable
 	VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
 	uint32_t pool_index = CONTAINER_INVALID_INDEX;
 	std::list<trackedcommand> commands; // track select commands for later processing
+	bool pending_raytracing_marker = false; // internal: prevent duplicate raytracing command markers
 
 	void self_test() const
 	{

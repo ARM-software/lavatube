@@ -1,5 +1,7 @@
 #define SPV_ENABLE_UTILITY_CODE 1
 #include <spirv/unified1/spirv.h>
+#include <unordered_set>
+#include <cstring>
 #include "spirv-simulator/framework/spirv_simulator.hpp"
 
 #include "execute_commands.h"
@@ -119,6 +121,109 @@ static bool run_spirv(const trackeddevice& device_data, const shader_stage& stag
 	}
 
 	return true;
+}
+
+struct mapped_address_range
+{
+	std::byte* ptr = nullptr;
+	VkDeviceSize size = 0;
+	trackedbuffer* buffer_data = nullptr;
+};
+
+static bool map_device_address_range(const lava_file_reader& reader, const trackeddevice& device_data, VkDeviceAddress address, VkDeviceSize size,
+	mapped_address_range& out, const char* label)
+{
+	if (address == 0 || size == 0) return false;
+	trackedobject* obj = reader.parent->device_address_remapping.get_by_address(address);
+	if (!obj || obj->object_type != VK_OBJECT_TYPE_BUFFER)
+	{
+		DLOG("Ray tracing %s address 0x%llx is not a buffer", label, (unsigned long long)address);
+		return false;
+	}
+	trackedbuffer* buffer_data = static_cast<trackedbuffer*>(obj);
+	const uint64_t translated = reader.parent->device_address_remapping.translate_address(address);
+	if (translated == 0)
+	{
+		DLOG("Ray tracing %s address 0x%llx could not be remapped", label, (unsigned long long)address);
+		return false;
+	}
+	const VkDeviceSize offset = translated - buffer_data->device_address;
+	if (offset + size > buffer_data->size)
+	{
+		DLOG("Ray tracing %s out of bounds: offset=%llu size=%llu buffer=%llu", label, (unsigned long long)offset,
+			(unsigned long long)size, (unsigned long long)buffer_data->size);
+		return false;
+	}
+	suballoc_location loc = device_data.allocator->find_buffer_memory(buffer_data->index);
+	out.ptr = (std::byte*)loc.memory + offset;
+	out.size = size;
+	out.buffer_data = buffer_data;
+	return true;
+}
+
+static void add_raytracing_group_stages(const trackedpipeline& pipeline_data, uint32_t group_index, std::unordered_set<uint32_t>& stages)
+{
+	if (group_index >= pipeline_data.raytracing_groups.size()) return;
+	const raytracing_group& group = pipeline_data.raytracing_groups[group_index];
+	auto add_stage = [&](uint32_t stage_index)
+	{
+		if (stage_index == VK_SHADER_UNUSED_KHR) return;
+		if (stage_index >= pipeline_data.shader_stages.size()) return;
+		stages.insert(stage_index);
+	};
+	if (group.type == VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_KHR)
+	{
+		add_stage(group.general_shader);
+	}
+	else
+	{
+		add_stage(group.closest_hit_shader);
+		add_stage(group.any_hit_shader);
+		add_stage(group.intersection_shader);
+	}
+}
+
+static int find_raytracing_group_index(const trackedpipeline& pipeline_data, const std::byte* handle_ptr)
+{
+	const uint32_t handle_size = pipeline_data.raytracing_group_handle_size;
+	if (handle_size == 0) return -1;
+	uint32_t group_count = pipeline_data.raytracing_group_count;
+	if (group_count == 0) group_count = (uint32_t)pipeline_data.raytracing_groups.size();
+	if (group_count == 0) return -1;
+	const size_t handle_capacity = pipeline_data.raytracing_group_handles.size();
+	const size_t max_groups = handle_capacity / handle_size;
+	if (max_groups == 0) return -1;
+	if (group_count > max_groups) group_count = (uint32_t)max_groups;
+	const std::byte* base = pipeline_data.raytracing_group_handles.data();
+	for (uint32_t i = 0; i < group_count; i++)
+	{
+		const std::byte* candidate = base + (size_t)i * handle_size;
+		if (memcmp(candidate, handle_ptr, handle_size) == 0) return (int)i;
+	}
+	return -1;
+}
+
+static void collect_stages_from_sbt_region(const lava_file_reader& reader, const trackeddevice& device_data, const trackedpipeline& pipeline_data,
+	const VkStridedDeviceAddressRegionKHR& region, const char* label, std::unordered_set<uint32_t>& stages)
+{
+	if (region.deviceAddress == 0 || region.size == 0) return;
+	if (pipeline_data.raytracing_group_handle_size == 0 || pipeline_data.raytracing_group_handles.empty()) return;
+	VkDeviceSize stride = region.stride;
+	if (stride == 0) stride = region.size;
+	if (stride < pipeline_data.raytracing_group_handle_size || region.size < pipeline_data.raytracing_group_handle_size)
+	{
+		DLOG("Ray tracing %s region stride/size too small for handle size", label);
+		return;
+	}
+	mapped_address_range mapping;
+	if (!map_device_address_range(reader, device_data, region.deviceAddress, region.size, mapping, label)) return;
+	const uint32_t record_count = (uint32_t)(region.size / stride);
+	for (uint32_t i = 0; i < record_count; i++)
+	{
+		const std::byte* handle_ptr = mapping.ptr + (size_t)i * stride;
+		const int group_index = find_raytracing_group_index(pipeline_data, handle_ptr);
+		if (group_index >= 0) add_raytracing_group_stages(pipeline_data, (uint32_t)group_index, stages);
+	}
 }
 
 bool execute_commands(lava_file_reader& reader, const trackeddevice& device_data, VkCommandBuffer commandBuffer)
@@ -255,9 +360,94 @@ bool execute_commands(lava_file_reader& reader, const trackeddevice& device_data
 			}
 			break;
 		case VKCMDTRACERAYSKHR: // proxy for all raytracing commands
-			//auto& pipeline_data = VkPipeline_index.at(raytracing_pipeline_bound);
-			//TBD
-			(void)raytracing_pipeline_bound;
+			{
+				if (raytracing_pipeline_bound == CONTAINER_INVALID_INDEX) break;
+				const auto& pipeline_data = VkPipeline_index.at(raytracing_pipeline_bound);
+				if (pipeline_data.shader_stages.empty()) break;
+				if (!c.trace_rays_valid)
+				{
+					for (const auto& stage : pipeline_data.shader_stages)
+					{
+						run_spirv(device_data, stage, push_constants, descriptorsets, imagesets);
+					}
+					break;
+				}
+
+				VkStridedDeviceAddressRegionKHR raygen = c.data.trace_rays.raygen;
+				VkStridedDeviceAddressRegionKHR miss = c.data.trace_rays.miss;
+				VkStridedDeviceAddressRegionKHR hit = c.data.trace_rays.hit;
+				VkStridedDeviceAddressRegionKHR callable = c.data.trace_rays.callable;
+				uint32_t width = c.data.trace_rays.width;
+				uint32_t height = c.data.trace_rays.height;
+				uint32_t depth = c.data.trace_rays.depth;
+
+				if (c.data.trace_rays.mode == trackedcommand::TRACE_RAYS_INDIRECT)
+				{
+					mapped_address_range mapping;
+					if (map_device_address_range(reader, device_data, c.data.trace_rays.indirect_device_address, sizeof(VkTraceRaysIndirectCommandKHR), mapping, "indirect"))
+					{
+						const VkTraceRaysIndirectCommandKHR* indirect = reinterpret_cast<const VkTraceRaysIndirectCommandKHR*>(mapping.ptr);
+						width = indirect->width;
+						height = indirect->height;
+						depth = indirect->depth;
+					}
+					else
+					{
+						DLOG("Ray tracing indirect command could not be read");
+					}
+				}
+				else if (c.data.trace_rays.mode == trackedcommand::TRACE_RAYS_INDIRECT2)
+				{
+					mapped_address_range mapping;
+					if (map_device_address_range(reader, device_data, c.data.trace_rays.indirect_device_address, sizeof(VkTraceRaysIndirectCommand2KHR), mapping, "indirect2"))
+					{
+						const VkTraceRaysIndirectCommand2KHR* indirect = reinterpret_cast<const VkTraceRaysIndirectCommand2KHR*>(mapping.ptr);
+						raygen.deviceAddress = indirect->raygenShaderRecordAddress;
+						raygen.size = indirect->raygenShaderRecordSize;
+						raygen.stride = indirect->raygenShaderRecordSize;
+						miss.deviceAddress = indirect->missShaderBindingTableAddress;
+						miss.size = indirect->missShaderBindingTableSize;
+						miss.stride = indirect->missShaderBindingTableStride;
+						hit.deviceAddress = indirect->hitShaderBindingTableAddress;
+						hit.size = indirect->hitShaderBindingTableSize;
+						hit.stride = indirect->hitShaderBindingTableStride;
+						callable.deviceAddress = indirect->callableShaderBindingTableAddress;
+						callable.size = indirect->callableShaderBindingTableSize;
+						callable.stride = indirect->callableShaderBindingTableStride;
+						width = indirect->width;
+						height = indirect->height;
+						depth = indirect->depth;
+					}
+					else
+					{
+						DLOG("Ray tracing indirect2 command could not be read");
+					}
+				}
+
+				std::unordered_set<uint32_t> stages_to_run;
+				collect_stages_from_sbt_region(reader, device_data, pipeline_data, raygen, "raygen", stages_to_run);
+				collect_stages_from_sbt_region(reader, device_data, pipeline_data, miss, "miss", stages_to_run);
+				collect_stages_from_sbt_region(reader, device_data, pipeline_data, hit, "hit", stages_to_run);
+				collect_stages_from_sbt_region(reader, device_data, pipeline_data, callable, "callable", stages_to_run);
+
+				if (stages_to_run.empty())
+				{
+					for (const auto& stage : pipeline_data.shader_stages)
+					{
+						run_spirv(device_data, stage, push_constants, descriptorsets, imagesets);
+					}
+				}
+				else
+				{
+					for (uint32_t stage_index : stages_to_run)
+					{
+						run_spirv(device_data, pipeline_data.shader_stages[stage_index], push_constants, descriptorsets, imagesets);
+					}
+				}
+				(void)width;
+				(void)height;
+				(void)depth;
+			}
 			break;
 		default:
 			break;
