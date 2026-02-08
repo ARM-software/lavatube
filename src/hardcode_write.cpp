@@ -181,6 +181,12 @@ static void trace_post_vkGetBufferDeviceAddressKHR(lava_file_writer& writer, VkD
 	buffer_data->device_address = result;
 }
 
+static void trace_post_vkGetBufferDeviceAddressEXT(lava_file_writer& writer, VkDeviceAddress result, VkDevice device, const VkBufferDeviceAddressInfo* pInfo)
+{
+	auto* buffer_data = writer.parent->records.VkBuffer_index.at(pInfo->buffer);
+	buffer_data->device_address = result;
+}
+
 static void trace_post_vkCreateShaderModule(lava_file_writer& writer, VkResult result, VkDevice device, const VkShaderModuleCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkShaderModule* pShaderModule)
 {
 	if (result != VK_SUCCESS) return; // ignore rest on failure

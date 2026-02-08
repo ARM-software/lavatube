@@ -339,6 +339,17 @@ class parameter(spec.base_parameter):
 			z.do('%s = reader.read_uint32_t();' % self.name)
 			z.do('if (%s == LAVATUBE_VIRTUAL_QUEUE) %s = selected_queue_family_index;' % (self.name, self.name))
 			if not is_root: z.do('%s = %s;' % (varname, self.name))
+		elif self.name == 'dataSize' and self.funcname in ['vkGetRayTracingShaderGroupHandlesKHR', 'vkGetRayTracingCaptureReplayShaderGroupHandlesKHR']:
+			storedtype = spec.type_mappings[self.type]
+			if is_root:
+				z.decl('%s%s' % (self.type, self.inline_ptrstr), varname)
+			z.do('%s = static_cast<%s>(reader.read_%s());' % (varname, self.type, storedtype))
+			z.do('if (reader.run && %s > 0)' % varname)
+			z.brace_begin()
+			z.do('pData_backing = reader.pool.allocate<char>(%s);' % varname)
+			z.do('memset(pData_backing, 0, %s);' % varname)
+			z.do('pData = pData_backing;')
+			z.brace_end()
 		elif self.name == 'pHostPointer':
 			if self.funcname in ['VkMemoryToImageCopy', 'VkImageToMemoryCopy']:
 				tmp_uuint64t = z.tmp('uint64_t')

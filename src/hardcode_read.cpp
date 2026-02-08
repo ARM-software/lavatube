@@ -440,6 +440,12 @@ static void replay_post_vkGetBufferDeviceAddressKHR(lava_file_reader& reader, Vk
 	VkBuffer_index.at(buffer_index).device_address = result;
 }
 
+static void replay_post_vkGetBufferDeviceAddressEXT(lava_file_reader& reader, VkDeviceAddress result, VkDevice device, const VkBufferDeviceAddressInfo* pInfo)
+{
+	const uint32_t buffer_index = index_to_VkBuffer.index(pInfo->buffer);
+	VkBuffer_index.at(buffer_index).device_address = result;
+}
+
 static void replay_post_vkGetBufferDeviceAddress(lava_file_reader& reader, VkDeviceAddress result, VkDevice device, const VkBufferDeviceAddressInfo* pInfo)
 {
 	const uint32_t buffer_index = index_to_VkBuffer.index(pInfo->buffer);

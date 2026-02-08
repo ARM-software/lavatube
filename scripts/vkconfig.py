@@ -134,7 +134,8 @@ replay_pre_calls = [ 'vkDestroyInstance', 'vkDestroyDevice', 'vkCreateDevice', '
 	'vkCmdPushConstants2', 'vkQueueSubmit', 'vkQueueSubmit2', 'vkQueueSubmit2KHR', 'vkDestroyPipelineCache', 'vkDestroySwapchainKHR', 'vkCreateInstance' ]
 validate_funcs(replay_pre_calls)
 replay_post_calls = [ 'vkCreateInstance', 'vkDestroyInstance', 'vkQueuePresentKHR', 'vkAcquireNextImageKHR', 'vkAcquireNextImage2KHR',
-	'vkGetBufferDeviceAddress', 'vkGetBufferDeviceAddressKHR', 'vkGetAccelerationStructureDeviceAddressKHR', 'vkSubmitDebugUtilsMessageEXT' ]
+	'vkGetBufferDeviceAddress', 'vkGetBufferDeviceAddressKHR', 'vkGetBufferDeviceAddressEXT', 'vkGetAccelerationStructureDeviceAddressKHR',
+	'vkSubmitDebugUtilsMessageEXT' ]
 validate_funcs(replay_post_calls)
 trace_pre_calls = [ 'vkQueueSubmit', 'vkCreateInstance', 'vkCreateDevice', 'vkFreeMemory', 'vkQueueSubmit2', 'vkQueueSubmit2KHR' ]
 validate_funcs(trace_pre_calls)
@@ -150,9 +151,9 @@ trace_post_calls = [ 'vkCreateInstance', 'vkCreateDevice', 'vkDestroyInstance', 
 		'vkGetBufferMemoryRequirements2KHR', 'vkGetDeviceBufferMemoryRequirements', 'vkGetDeviceBufferMemoryRequirementsKHR',
 		'vkGetDeviceImageMemoryRequirements', 'vkGetDeviceImageMemoryRequirementsKHR', 'vkGetPhysicalDeviceFeatures2', 'vkGetPhysicalDeviceFeatures2KHR',
 		'vkGetPhysicalDeviceMemoryProperties2', 'vkGetDeviceImageSparseMemoryRequirementsKHR', 'vkGetDeviceImageSparseMemoryRequirements',
-		'vkCreateShaderModule', 'vkGetBufferDeviceAddress', 'vkGetBufferDeviceAddressKHR', 'vkGetAccelerationStructureDeviceAddressKHR',
-		'vkCmdBindDescriptorSets2KHR', 'vkCmdBindDescriptorSets2', 'vkGetTensorMemoryRequirementsARM', 'vkBindTensorMemoryARM', 'vkSubmitDebugUtilsMessageEXT',
-		'vkGetPhysicalDeviceProperties2', 'vkGetPhysicalDeviceProperties2KHR' ]
+		'vkCreateShaderModule', 'vkGetBufferDeviceAddress', 'vkGetBufferDeviceAddressKHR', 'vkGetBufferDeviceAddressEXT',
+		'vkGetAccelerationStructureDeviceAddressKHR', 'vkCmdBindDescriptorSets2KHR', 'vkCmdBindDescriptorSets2', 'vkGetTensorMemoryRequirementsARM',
+		'vkBindTensorMemoryARM', 'vkSubmitDebugUtilsMessageEXT', 'vkGetPhysicalDeviceProperties2', 'vkGetPhysicalDeviceProperties2KHR' ]
 validate_funcs(trace_post_calls)
 skip_post_calls = [ 'vkGetQueryPoolResults', 'vkGetPhysicalDeviceXcbPresentationSupportKHR' ]
 validate_funcs(skip_post_calls)
