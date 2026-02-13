@@ -376,6 +376,14 @@ public:
 		return lookup.at(key);
 	}
 
+	inline uint32_t index_or_null(T key) const
+	{
+		if (key == 0) return CONTAINER_NULL_VALUE;
+		U* p = lookup.at(key);
+		assert(p != nullptr);
+		return p->index;
+	}
+
 	inline bool contains(const T key) const
 	{
 		return (key != 0 && lookup.count(key) > 0 && lookup.at(key) != nullptr);

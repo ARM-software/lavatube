@@ -729,9 +729,12 @@ class parameter(spec.base_parameter):
 			pass
 		elif self.name == 'pData' and self.funcname in ['vkUpdateDescriptorSetWithTemplate', 'vkUpdateDescriptorSetWithTemplateKHR', 'vkCmdPushDescriptorSetWithTemplate', 'vkCmdPushDescriptorSetWithTemplateKHR']:
 			z.decl('uint64_t', 'pData_size')
+			z.decl('const void*', 'pData_remap')
 			z.do('pData_size = descriptorupdatetemplate_data->data_size;')
 			z.do('writer.write_uint64_t(pData_size);')
-			z.do('if (pData_size > 0 && pData) writer.write_array(reinterpret_cast<const char*>(pData), pData_size);')
+			z.do('pData_remap = pData;')
+			z.do('if (pData_size > 0 && pData) pData_remap = rewrite_descriptor_update_template_data(writer, descriptorUpdateTemplate, pData, pData_size);')
+			z.do('if (pData_size > 0 && pData_remap) writer.write_array(reinterpret_cast<const char*>(pData_remap), pData_size);')
 		elif self.structure:
 			if self.name == 'pRegions' and self.type in ['VkMemoryToImageCopy', 'VkImageToMemoryCopy'] and self.funcname in ['VkCopyMemoryToImageInfo', 'VkCopyImageToMemoryInfo']:
 				z.decl('VkFormat', 'prev_host_copy_format', custom='writer.host_copy_format')

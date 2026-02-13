@@ -178,6 +178,16 @@ struct trackedphysicaldevice : trackable
 	std::vector<VkExtensionProperties> device_extension_properties; // equal to presented set, but as vector and with version info
 };
 
+struct internal_buffer
+{
+	VkBuffer buffer = VK_NULL_HANDLE;
+	VkDeviceMemory memory = VK_NULL_HANDLE;
+	VkDeviceAddress device_address = 0;
+	VkDeviceSize size = 0;
+	VkBufferUsageFlags usage = 0;
+	VkMemoryPropertyFlags memory_flags = 0;
+};
+
 struct trackeddevice : trackable
 {
 	using trackable::trackable; // inherit constructor
@@ -350,6 +360,7 @@ struct trackedaccelerationstructure : trackedobject
 	VkAccelerationStructureTypeKHR type = VK_ACCELERATION_STRUCTURE_TYPE_MAX_ENUM_KHR;
 	VkDeviceSize offset = 0;
 	VkAccelerationStructureCreateFlagsKHR flags = VK_ACCELERATION_STRUCTURE_CREATE_FLAG_BITS_MAX_ENUM_KHR;
+	internal_buffer replay_storage;
 
 	void self_test() const
 	{
@@ -524,6 +535,9 @@ struct trackedpipeline : trackable
 	uint32_t raytracing_group_count = 0;
 	uint32_t raytracing_group_handle_size = 0;
 	std::vector<std::byte> raytracing_group_handles;
+	uint32_t raytracing_group_handle_size_replay = 0;
+	std::vector<std::byte> raytracing_group_handles_replay;
+	bool raytracing_group_handles_capture_replay = false;
 
 	void self_test() const
 	{
@@ -631,6 +645,8 @@ struct trackedcmdbuffer : trackable
 	uint32_t pool_index = CONTAINER_INVALID_INDEX;
 	std::list<trackedcommand> commands; // track select commands for later processing
 	bool pending_raytracing_marker = false; // internal: prevent duplicate raytracing command markers
+	internal_buffer scratch_buffer;
+	uint32_t bound_raytracing_pipeline_index = CONTAINER_INVALID_INDEX;
 
 	void self_test() const
 	{

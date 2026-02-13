@@ -710,6 +710,127 @@ static const uint8_t* template_entry_bytes(const VkDescriptorUpdateTemplateEntry
 	return scratch.data();
 }
 
+static const void* rewrite_descriptor_update_template_data(lava_file_writer& writer, VkDescriptorUpdateTemplate descriptorUpdateTemplate, const void* pData, uint64_t data_size)
+{
+	if (!pData || data_size == 0 || descriptorUpdateTemplate == VK_NULL_HANDLE) return pData;
+	auto* template_data = writer.parent->records.VkDescriptorUpdateTemplate_index.at(descriptorUpdateTemplate);
+	if (!template_data || template_data->entries.empty())
+	{
+		ABORT("vkUpdateDescriptorSetWithTemplate: missing descriptor update template entries");
+	}
+
+	uint8_t* backing = writer.pool.allocate<uint8_t>(data_size);
+	if (!backing) ABORT("Failed to allocate descriptor update template data rewrite buffer");
+	memcpy(backing, pData, data_size);
+
+	for (const auto& entry : template_data->entries)
+	{
+		if (entry.descriptorCount == 0) continue;
+		switch (entry.descriptorType)
+		{
+		case VK_DESCRIPTOR_TYPE_SAMPLER:
+		case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
+		case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:
+		case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:
+		case VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT:
+			{
+				const size_t element_size = sizeof(VkDescriptorImageInfo);
+				const size_t stride = entry.stride ? entry.stride : element_size;
+				uint8_t* base = backing + entry.offset;
+				for (uint32_t i = 0; i < entry.descriptorCount; i++)
+				{
+					VkDescriptorImageInfo info{};
+					memcpy(&info, base + (size_t)i * stride, element_size);
+					if (entry.descriptorType == VK_DESCRIPTOR_TYPE_SAMPLER || entry.descriptorType == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
+					{
+						const uint32_t sampler_index = writer.parent->records.VkSampler_index.index_or_null(info.sampler);
+						info.sampler = (VkSampler)(uintptr_t)sampler_index;
+					}
+					if (entry.descriptorType != VK_DESCRIPTOR_TYPE_SAMPLER)
+					{
+						const uint32_t view_index = writer.parent->records.VkImageView_index.index_or_null(info.imageView);
+						info.imageView = (VkImageView)(uintptr_t)view_index;
+					}
+					memcpy(base + (size_t)i * stride, &info, element_size);
+				}
+			}
+			break;
+		case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
+		case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
+		case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC:
+		case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC:
+			{
+				const size_t element_size = sizeof(VkDescriptorBufferInfo);
+				const size_t stride = entry.stride ? entry.stride : element_size;
+				uint8_t* base = backing + entry.offset;
+				for (uint32_t i = 0; i < entry.descriptorCount; i++)
+				{
+					VkDescriptorBufferInfo info{};
+					memcpy(&info, base + (size_t)i * stride, element_size);
+					const uint32_t buffer_index = writer.parent->records.VkBuffer_index.index_or_null(info.buffer);
+					info.buffer = (VkBuffer)(uintptr_t)buffer_index;
+					memcpy(base + (size_t)i * stride, &info, element_size);
+				}
+			}
+			break;
+		case VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER:
+		case VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER:
+			{
+				const size_t element_size = sizeof(VkBufferView);
+				const size_t stride = entry.stride ? entry.stride : element_size;
+				uint8_t* base = backing + entry.offset;
+				for (uint32_t i = 0; i < entry.descriptorCount; i++)
+				{
+					VkBufferView view = VK_NULL_HANDLE;
+					memcpy(&view, base + (size_t)i * stride, element_size);
+					const uint32_t view_index = writer.parent->records.VkBufferView_index.index_or_null(view);
+					view = (VkBufferView)(uintptr_t)view_index;
+					memcpy(base + (size_t)i * stride, &view, element_size);
+				}
+			}
+			break;
+		case VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR:
+			{
+				const size_t element_size = sizeof(VkAccelerationStructureKHR);
+				const size_t stride = entry.stride ? entry.stride : element_size;
+				uint8_t* base = backing + entry.offset;
+				for (uint32_t i = 0; i < entry.descriptorCount; i++)
+				{
+					VkAccelerationStructureKHR as = VK_NULL_HANDLE;
+					memcpy(&as, base + (size_t)i * stride, element_size);
+					const uint32_t as_index = writer.parent->records.VkAccelerationStructureKHR_index.index_or_null(as);
+					as = (VkAccelerationStructureKHR)(uintptr_t)as_index;
+					memcpy(base + (size_t)i * stride, &as, element_size);
+				}
+			}
+			break;
+		case VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK:
+			break;
+		case VK_DESCRIPTOR_TYPE_TENSOR_ARM:
+			assert(false); // TODO
+			break;
+		case VK_DESCRIPTOR_TYPE_PARTITIONED_ACCELERATION_STRUCTURE_NV:
+			ABORT("VK_NV_partitioned_acceleration_structure not supported");
+			break;
+		case VK_DESCRIPTOR_TYPE_MUTABLE_EXT:
+			ABORT("vkUpdateDescriptorSetWithTemplate using VK_EXT_mutable_descriptor_type not yet implemented");
+			break;
+		case VK_DESCRIPTOR_TYPE_BLOCK_MATCH_IMAGE_QCOM:
+		case VK_DESCRIPTOR_TYPE_SAMPLE_WEIGHT_IMAGE_QCOM:
+			ABORT("VK_QCOM_image_processing not supported");
+			break;
+		case VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_NV:
+			ABORT("VK_NV_ray_tracing not supported");
+			break;
+		case VK_DESCRIPTOR_TYPE_MAX_ENUM:
+			ABORT("Bad descriptor type in vkUpdateDescriptorSetWithTemplate");
+			break;
+		}
+	}
+
+	return backing;
+}
+
 static void handle_descriptor_update_template(lava_file_writer& writer, VkDescriptorSet descriptorSet, VkDescriptorUpdateTemplate descriptorUpdateTemplate, const void* pData, bool push)
 {
 	if (!pData) return;

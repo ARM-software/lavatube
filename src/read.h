@@ -13,6 +13,7 @@
 #include <cstring>
 #include <stdio.h>
 #include <functional>
+#include <deque>
 
 #include "lavamutex.h"
 #include "containers.h"
@@ -75,6 +76,7 @@ public:
 
 	/// Are we currently looking for remap and rewrite candidates?
 	bool remap_scan = false;
+	bool raytracing_callbacks_registered = false;
 
 	/// Current global frame (only use for logging)
 	std::atomic_int global_frame{ 0 };
@@ -204,6 +206,10 @@ public:
 
 	/// Whether we should actually call into Vulkan or if we are just processing the data
 	bool run = true;
+
+	// Replay-only: per-thread queue for AS build sizes and internal AS buffers.
+	std::deque<VkAccelerationStructureBuildSizesInfoKHR> pending_as_build_sizes;
+	std::deque<internal_buffer> pending_as_storage_buffers;
 
 	/// Is this reader's thread terminated?
 	std::atomic_bool terminated{ false };

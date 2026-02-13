@@ -83,6 +83,151 @@ static VkBool32 VKAPI_PTR debug_report_callback(
 	return VK_TRUE;
 }
 
+static uint32_t choose_memory_type(VkPhysicalDevice physical_device, uint32_t type_filter, VkMemoryPropertyFlags properties)
+{
+	VkPhysicalDeviceMemoryProperties memory_properties = {};
+	wrap_vkGetPhysicalDeviceMemoryProperties(physical_device, &memory_properties);
+	for (uint32_t i = 0; i < memory_properties.memoryTypeCount; ++i)
+	{
+		if (type_filter & (1u << i) && (memory_properties.memoryTypes[i].propertyFlags & properties) == properties)
+		{
+			return i;
+		}
+	}
+	properties &= ~(VK_MEMORY_PROPERTY_HOST_CACHED_BIT | VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT);
+	for (uint32_t i = 0; i < memory_properties.memoryTypeCount; ++i)
+	{
+		if (type_filter & (1u << i) && (memory_properties.memoryTypes[i].propertyFlags & properties) == properties)
+		{
+			return i;
+		}
+	}
+	ILOG("Memory flags requested:");
+	if (properties & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) ILOG("\tDEVICE_LOCAL");
+	if (properties & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) ILOG("\tHOST_VISIBLE");
+	if (properties & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT) ILOG("\tHOST_COHERENT");
+	if (properties & VK_MEMORY_PROPERTY_HOST_CACHED_BIT) ILOG("\tHOST_CACHED");
+	if (properties & VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT) ILOG("\tLAZILY_ALLOCATED");
+	if (properties & VK_MEMORY_PROPERTY_PROTECTED_BIT) ILOG("\tPROTECTED");
+	ABORT("Failed to find required memory type (filter=%u, props=%u)", type_filter, (unsigned)properties);
+	return 0;
+}
+
+static VkDeviceAddress get_buffer_device_address(VkDevice device, VkBuffer buffer)
+{
+	if (buffer == VK_NULL_HANDLE) return 0;
+	VkBufferDeviceAddressInfo info = { VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO, nullptr };
+	info.buffer = buffer;
+	if (wrap_vkGetBufferDeviceAddress) return wrap_vkGetBufferDeviceAddress(device, &info);
+	if (wrap_vkGetBufferDeviceAddressKHR) return wrap_vkGetBufferDeviceAddressKHR(device, &info);
+	if (wrap_vkGetBufferDeviceAddressEXT) return wrap_vkGetBufferDeviceAddressEXT(device, &info);
+	return 0;
+}
+
+static char* mem_map(lava_file_reader& reader, VkDevice device, const suballoc_location& loc);
+static void mem_unmap(lava_file_reader& reader, VkDevice device, const suballoc_location& loc, VkMarkedOffsetsARM* ar, char* ptr);
+static void replay_register_raytracing_callbacks(lava_reader& reader);
+static void replay_track_vkCmdBindPipeline(callback_context& cb, VkCommandBuffer commandBuffer, VkPipelineBindPoint pipelineBindPoint, VkPipeline pipeline);
+static void replay_track_vkGetRayTracingShaderGroupHandlesKHR(callback_context& cb, VkDevice device, VkPipeline pipeline, uint32_t firstGroup, uint32_t groupCount, size_t dataSize, void* pData);
+static void replay_track_vkGetRayTracingCaptureReplayShaderGroupHandlesKHR(callback_context& cb, VkDevice device, VkPipeline pipeline, uint32_t firstGroup, uint32_t groupCount, size_t dataSize, void* pData);
+static void replay_fixup_vkCmdTraceRaysKHR(callback_context& cb, VkCommandBuffer commandBuffer, const VkStridedDeviceAddressRegionKHR* pRaygenShaderBindingTable,
+	const VkStridedDeviceAddressRegionKHR* pMissShaderBindingTable, const VkStridedDeviceAddressRegionKHR* pHitShaderBindingTable,
+	const VkStridedDeviceAddressRegionKHR* pCallableShaderBindingTable, uint32_t width, uint32_t height, uint32_t depth);
+static void replay_fixup_vkCmdTraceRaysIndirectKHR(callback_context& cb, VkCommandBuffer commandBuffer, const VkStridedDeviceAddressRegionKHR* pRaygenShaderBindingTable,
+	const VkStridedDeviceAddressRegionKHR* pMissShaderBindingTable, const VkStridedDeviceAddressRegionKHR* pHitShaderBindingTable,
+	const VkStridedDeviceAddressRegionKHR* pCallableShaderBindingTable, VkDeviceAddress indirectDeviceAddress);
+static void replay_fixup_vkCmdTraceRaysIndirect2KHR(callback_context& cb, VkCommandBuffer commandBuffer, VkDeviceAddress indirectDeviceAddress);
+
+static trackedbuffer* find_buffer_by_replay_address(VkDeviceAddress address, VkDeviceSize size, VkDeviceSize& out_offset)
+{
+	trackedbuffer* best = nullptr;
+	VkDeviceSize best_size = 0;
+	for (auto& buffer : VkBuffer_index)
+	{
+		if (buffer.device_address == 0 || buffer.size == 0) continue;
+		if (address < buffer.device_address) continue;
+		const VkDeviceSize offset = address - buffer.device_address;
+		if (offset + size > buffer.size) continue;
+		if (!best || buffer.size > best_size)
+		{
+			best = &buffer;
+			best_size = buffer.size;
+			out_offset = offset;
+		}
+	}
+	return best;
+}
+
+static bool is_known_replay_as_address(VkDeviceAddress address)
+{
+	if (address == 0) return false;
+	for (const auto& as : VkAccelerationStructureKHR_index)
+	{
+		if (as.device_address == address) return true;
+	}
+	return false;
+}
+
+static void destroy_internal_buffer(VkDevice device, internal_buffer& buffer)
+{
+	if (buffer.buffer != VK_NULL_HANDLE) wrap_vkDestroyBuffer(device, buffer.buffer, nullptr);
+	if (buffer.memory != VK_NULL_HANDLE) wrap_vkFreeMemory(device, buffer.memory, nullptr);
+	buffer = {};
+}
+
+static bool create_internal_buffer(VkDevice device, VkPhysicalDevice physical_device, VkDeviceSize size, VkBufferUsageFlags usage,
+	VkMemoryPropertyFlags memory_flags, internal_buffer& out)
+{
+	if (device == VK_NULL_HANDLE || size == 0) return false;
+	VkBufferCreateInfo info = { VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, nullptr };
+	info.size = size;
+	info.usage = usage;
+	info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+	VkResult result = wrap_vkCreateBuffer(device, &info, nullptr, &out.buffer);
+	if (result != VK_SUCCESS)
+	{
+		ELOG("Failed to create internal buffer (size=%lu, usage=%u)", (unsigned long)size, (unsigned)usage);
+		return false;
+	}
+	VkMemoryRequirements req = {};
+	wrap_vkGetBufferMemoryRequirements(device, out.buffer, &req);
+	VkMemoryAllocateFlagsInfo alloc_flags = { VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_FLAGS_INFO, nullptr };
+	if (usage & VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT)
+	{
+		alloc_flags.flags = VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT_KHR;
+	}
+	VkMemoryAllocateInfo alloc = { VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO, nullptr };
+	alloc.allocationSize = req.size;
+	alloc.memoryTypeIndex = choose_memory_type(physical_device, req.memoryTypeBits,
+		(memory_flags != 0) ? memory_flags : VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	if (alloc_flags.flags != 0) alloc.pNext = &alloc_flags;
+	result = wrap_vkAllocateMemory(device, &alloc, nullptr, &out.memory);
+	if (result != VK_SUCCESS)
+	{
+		wrap_vkDestroyBuffer(device, out.buffer, nullptr);
+		out.buffer = VK_NULL_HANDLE;
+		ELOG("Failed to allocate internal buffer memory (size=%lu)", (unsigned long)req.size);
+		return false;
+	}
+	result = wrap_vkBindBufferMemory(device, out.buffer, out.memory, 0);
+	if (result != VK_SUCCESS)
+	{
+		wrap_vkFreeMemory(device, out.memory, nullptr);
+		wrap_vkDestroyBuffer(device, out.buffer, nullptr);
+		out = {};
+		ELOG("Failed to bind internal buffer memory (size=%lu)", (unsigned long)req.size);
+		return false;
+	}
+	out.size = size;
+	out.usage = usage;
+	out.memory_flags = memory_flags;
+	if (usage & VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT)
+	{
+		out.device_address = get_buffer_device_address(device, out.buffer);
+	}
+	return true;
+}
+
 static uint64_t debug_object_lookup(VkDebugReportObjectTypeEXT type, uint32_t index)
 {
 	switch (type)
@@ -291,6 +436,361 @@ void replay_pre_vkQueueSubmit(lava_file_reader& reader, VkQueue queue, uint32_t 
 	}
 }
 
+void replay_pre_vkCmdBuildAccelerationStructuresKHR(lava_file_reader& reader, VkCommandBuffer commandBuffer, uint32_t infoCount,
+	VkAccelerationStructureBuildGeometryInfoKHR* pInfos, VkAccelerationStructureBuildRangeInfoKHR* const* ppBuildRangeInfos)
+{
+	if (!reader.run || !pInfos || !ppBuildRangeInfos || commandBuffer == VK_NULL_HANDLE) return;
+	const uint32_t commandbuffer_index = index_to_VkCommandBuffer.index(commandBuffer);
+	if (commandbuffer_index == CONTAINER_INVALID_INDEX) return;
+	trackedcmdbuffer& commandbuffer_data = VkCommandBuffer_index.at(commandbuffer_index);
+	const VkDevice device = commandbuffer_data.device;
+	const VkPhysicalDevice physical_device = commandbuffer_data.physicalDevice;
+	const auto& device_data = VkDevice_index.at(commandbuffer_data.device_index);
+
+	auto remap_instance_references = [&](const VkAccelerationStructureBuildGeometryInfoKHR& info, const VkAccelerationStructureBuildRangeInfoKHR* ranges)
+	{
+		if (!ranges || info.geometryCount == 0) return;
+		for (uint32_t g = 0; g < info.geometryCount; g++)
+		{
+			const VkAccelerationStructureGeometryKHR* geometry = nullptr;
+			if (info.pGeometries) geometry = &info.pGeometries[g];
+			else if (info.ppGeometries) geometry = info.ppGeometries[g];
+			if (!geometry) continue;
+			if (geometry->geometryType != VK_GEOMETRY_TYPE_INSTANCES_KHR) continue;
+
+			const VkAccelerationStructureGeometryInstancesDataKHR& instances = geometry->geometry.instances;
+			if (instances.arrayOfPointers)
+			{
+				ABORT("Acceleration structure instance remap does not support arrayOfPointers on replay");
+			}
+			if (instances.data.deviceAddress == 0) continue;
+
+			const VkDeviceSize instance_count = ranges[g].primitiveCount;
+			if (instance_count == 0) continue;
+
+			const VkDeviceAddress base_address = instances.data.deviceAddress + ranges[g].primitiveOffset;
+			const VkDeviceSize total_size = instance_count * sizeof(VkAccelerationStructureInstanceKHR);
+			VkDeviceSize buffer_offset = 0;
+			trackedbuffer* buffer_data = find_buffer_by_replay_address(base_address, total_size, buffer_offset);
+			if (!buffer_data)
+			{
+				ABORT("Acceleration structure instance buffer address 0x%llx is not mapped to a buffer",
+					(unsigned long long)base_address);
+			}
+
+			suballoc_location loc = device_data.allocator->find_buffer_memory(buffer_data->index);
+			char* mapped = mem_map(reader, device, loc);
+			char* base = mapped;
+			VkAccelerationStructureInstanceKHR* instance_data = reinterpret_cast<VkAccelerationStructureInstanceKHR*>(base + buffer_offset);
+
+			bool updated = false;
+			for (uint32_t idx = 0; idx < instance_count; idx++)
+			{
+				const VkDeviceAddress current = instance_data[idx].accelerationStructureReference;
+				if (current == 0) continue;
+				const VkDeviceAddress translated = reader.parent->acceleration_structure_address_remapping.translate_address(current);
+				if (translated != 0)
+				{
+					if (translated != current)
+					{
+						instance_data[idx].accelerationStructureReference = translated;
+						updated = true;
+					}
+					continue;
+				}
+				if (!is_known_replay_as_address(current))
+				{
+					mem_unmap(reader, device, loc, nullptr, mapped);
+					ABORT("Acceleration structure instance reference 0x%llx is not remapped for replay",
+						(unsigned long long)current);
+				}
+			}
+
+			mem_unmap(reader, device, loc, nullptr, mapped);
+			if (updated)
+			{
+				DLOG("Remapped %u acceleration structure instance references", (unsigned)instance_count);
+			}
+		}
+	};
+
+	for (uint32_t i = 0; i < infoCount; i++)
+	{
+		if (pInfos[i].geometryCount == 0) continue;
+		remap_instance_references(pInfos[i], ppBuildRangeInfos[i]);
+		std::vector<uint32_t> max_primitive_counts(pInfos[i].geometryCount);
+		for (uint32_t g = 0; g < pInfos[i].geometryCount; g++)
+		{
+			max_primitive_counts[g] = ppBuildRangeInfos[i][g].primitiveCount;
+		}
+		VkAccelerationStructureBuildSizesInfoKHR sizes = { VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR, nullptr };
+		wrap_vkGetAccelerationStructureBuildSizesKHR(device,
+			VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR,
+			&pInfos[i],
+			max_primitive_counts.data(),
+			&sizes);
+
+		VkDeviceSize scratch_size = sizes.buildScratchSize;
+		if (pInfos[i].mode == VK_BUILD_ACCELERATION_STRUCTURE_MODE_UPDATE_KHR)
+		{
+			scratch_size = sizes.updateScratchSize;
+		}
+		if (scratch_size == 0) continue;
+
+		if (commandbuffer_data.scratch_buffer.buffer == VK_NULL_HANDLE || commandbuffer_data.scratch_buffer.size < scratch_size)
+		{
+			if (commandbuffer_data.scratch_buffer.buffer != VK_NULL_HANDLE)
+			{
+				destroy_internal_buffer(device, commandbuffer_data.scratch_buffer);
+			}
+			const VkBufferUsageFlags usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+			if (!create_internal_buffer(device, physical_device, scratch_size, usage, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, commandbuffer_data.scratch_buffer))
+			{
+				ABORT("Failed to allocate scratch buffer for acceleration structure build (size=%lu)", (unsigned long)scratch_size);
+			}
+		}
+
+		pInfos[i].scratchData.deviceAddress = commandbuffer_data.scratch_buffer.device_address;
+	}
+}
+
+static void replay_register_raytracing_callbacks(lava_reader& reader)
+{
+	if (reader.raytracing_callbacks_registered) return;
+	reader.raytracing_callbacks_registered = true;
+	vkCmdBindPipeline_callbacks.push_back(replay_track_vkCmdBindPipeline);
+	vkGetRayTracingShaderGroupHandlesKHR_callbacks.push_back(replay_track_vkGetRayTracingShaderGroupHandlesKHR);
+	vkGetRayTracingCaptureReplayShaderGroupHandlesKHR_callbacks.push_back(replay_track_vkGetRayTracingCaptureReplayShaderGroupHandlesKHR);
+	vkCmdTraceRaysKHR_callbacks.push_back(replay_fixup_vkCmdTraceRaysKHR);
+	vkCmdTraceRaysIndirectKHR_callbacks.push_back(replay_fixup_vkCmdTraceRaysIndirectKHR);
+	vkCmdTraceRaysIndirect2KHR_callbacks.push_back(replay_fixup_vkCmdTraceRaysIndirect2KHR);
+}
+
+static void replay_track_vkCmdBindPipeline(callback_context& cb, VkCommandBuffer commandBuffer, VkPipelineBindPoint pipelineBindPoint, VkPipeline pipeline)
+{
+	if (!cb.reader.run) return;
+	if (pipelineBindPoint != VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR) return;
+	const uint32_t commandbuffer_index = index_to_VkCommandBuffer.index(commandBuffer);
+	if (commandbuffer_index == CONTAINER_INVALID_INDEX) return;
+	trackedcmdbuffer& commandbuffer_data = VkCommandBuffer_index.at(commandbuffer_index);
+	commandbuffer_data.bound_raytracing_pipeline_index = index_to_VkPipeline.index(pipeline);
+}
+
+static void store_raytracing_handles(trackedpipeline& pipeline_data, uint32_t firstGroup, uint32_t groupCount, uint32_t handle_size,
+	const void* data, bool capture_replay)
+{
+	if (!data || groupCount == 0 || handle_size == 0) return;
+	if (pipeline_data.raytracing_group_handle_size == 0)
+	{
+		pipeline_data.raytracing_group_handle_size = handle_size;
+	}
+	else if (pipeline_data.raytracing_group_handle_size != handle_size)
+	{
+		ABORT("Ray tracing shader group handle size mismatch for pipeline %u", pipeline_data.index);
+	}
+
+	const uint32_t required_groups = std::max(pipeline_data.raytracing_group_count, firstGroup + groupCount);
+	pipeline_data.raytracing_group_count = required_groups;
+	const size_t required_size = (size_t)required_groups * handle_size;
+	if (pipeline_data.raytracing_group_handles.size() < required_size)
+	{
+		pipeline_data.raytracing_group_handles.resize(required_size);
+	}
+	std::byte* dst = pipeline_data.raytracing_group_handles.data() + (size_t)firstGroup * handle_size;
+	memcpy(dst, data, (size_t)groupCount * handle_size);
+	if (capture_replay) pipeline_data.raytracing_group_handles_capture_replay = true;
+}
+
+static void store_raytracing_handles_replay(trackedpipeline& pipeline_data, uint32_t firstGroup, uint32_t groupCount, uint32_t handle_size, const void* data)
+{
+	if (!data || groupCount == 0 || handle_size == 0) return;
+	if (pipeline_data.raytracing_group_handle_size_replay == 0)
+	{
+		pipeline_data.raytracing_group_handle_size_replay = handle_size;
+	}
+	else if (pipeline_data.raytracing_group_handle_size_replay != handle_size)
+	{
+		ABORT("Ray tracing replay handle size mismatch for pipeline %u", pipeline_data.index);
+	}
+
+	const uint32_t required_groups = std::max(pipeline_data.raytracing_group_count, firstGroup + groupCount);
+	const size_t required_size = (size_t)required_groups * handle_size;
+	if (pipeline_data.raytracing_group_handles_replay.size() < required_size)
+	{
+		pipeline_data.raytracing_group_handles_replay.resize(required_size);
+	}
+	std::byte* dst = pipeline_data.raytracing_group_handles_replay.data() + (size_t)firstGroup * handle_size;
+	memcpy(dst, data, (size_t)groupCount * handle_size);
+}
+
+static void replay_track_vkGetRayTracingShaderGroupHandlesKHR(callback_context& cb, VkDevice device, VkPipeline pipeline, uint32_t firstGroup,
+	uint32_t groupCount, size_t dataSize, void* pData)
+{
+	if (!cb.reader.run || !pData || groupCount == 0 || dataSize == 0) return;
+	if (dataSize % groupCount != 0)
+	{
+		DLOG("vkGetRayTracingShaderGroupHandlesKHR dataSize=%zu not a multiple of groupCount=%u", dataSize, groupCount);
+		return;
+	}
+	const uint32_t pipeline_index = index_to_VkPipeline.index(pipeline);
+	if (pipeline_index == CONTAINER_INVALID_INDEX) return;
+	trackedpipeline& pipeline_data = VkPipeline_index.at(pipeline_index);
+
+	const uint32_t capture_handle_size = (uint32_t)(dataSize / groupCount);
+	store_raytracing_handles(pipeline_data, firstGroup, groupCount, capture_handle_size, pData, false);
+
+	if (!wrap_vkGetPhysicalDeviceProperties2 || cb.reader.physicalDevice == VK_NULL_HANDLE) return;
+	VkPhysicalDeviceRayTracingPipelinePropertiesKHR props = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_PROPERTIES_KHR, nullptr };
+	VkPhysicalDeviceProperties2 props2 = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2, &props };
+	wrap_vkGetPhysicalDeviceProperties2(cb.reader.physicalDevice, &props2);
+	if (props.shaderGroupHandleSize == 0 || !wrap_vkGetRayTracingShaderGroupHandlesKHR) return;
+	const size_t replay_size = (size_t)groupCount * props.shaderGroupHandleSize;
+	std::vector<std::byte> replay_data(replay_size);
+	VkResult result = wrap_vkGetRayTracingShaderGroupHandlesKHR(device, pipeline, firstGroup, groupCount, replay_size, replay_data.data());
+	if (result != VK_SUCCESS)
+	{
+		DLOG("vkGetRayTracingShaderGroupHandlesKHR replay query failed: %s", errorString(result));
+		return;
+	}
+	store_raytracing_handles_replay(pipeline_data, firstGroup, groupCount, props.shaderGroupHandleSize, replay_data.data());
+}
+
+static void replay_track_vkGetRayTracingCaptureReplayShaderGroupHandlesKHR(callback_context& cb, VkDevice device, VkPipeline pipeline, uint32_t firstGroup,
+	uint32_t groupCount, size_t dataSize, void* pData)
+{
+	if (!cb.reader.run || !pData || groupCount == 0 || dataSize == 0) return;
+	if (dataSize % groupCount != 0)
+	{
+		DLOG("vkGetRayTracingCaptureReplayShaderGroupHandlesKHR dataSize=%zu not a multiple of groupCount=%u", dataSize, groupCount);
+		return;
+	}
+	const uint32_t pipeline_index = index_to_VkPipeline.index(pipeline);
+	if (pipeline_index == CONTAINER_INVALID_INDEX) return;
+	trackedpipeline& pipeline_data = VkPipeline_index.at(pipeline_index);
+
+	const uint32_t capture_handle_size = (uint32_t)(dataSize / groupCount);
+	store_raytracing_handles(pipeline_data, firstGroup, groupCount, capture_handle_size, pData, true);
+}
+
+static int find_raytracing_group_index(const trackedpipeline& pipeline_data, const std::byte* handle_ptr)
+{
+	const uint32_t handle_size = pipeline_data.raytracing_group_handle_size;
+	if (handle_size == 0 || pipeline_data.raytracing_group_handles.empty()) return -1;
+	uint32_t group_count = pipeline_data.raytracing_group_count;
+	const size_t handle_capacity = pipeline_data.raytracing_group_handles.size();
+	const size_t max_groups = handle_capacity / handle_size;
+	if (max_groups == 0) return -1;
+	if (group_count == 0 || group_count > max_groups) group_count = (uint32_t)max_groups;
+	const std::byte* base = pipeline_data.raytracing_group_handles.data();
+	for (uint32_t i = 0; i < group_count; i++)
+	{
+		const std::byte* candidate = base + (size_t)i * handle_size;
+		if (memcmp(candidate, handle_ptr, handle_size) == 0) return (int)i;
+	}
+	return -1;
+}
+
+static void fixup_sbt_region(lava_file_reader& reader, const trackeddevice& device_data, VkDevice device, trackedpipeline& pipeline_data,
+	const VkStridedDeviceAddressRegionKHR* region, const char* label)
+{
+	if (!region || region->deviceAddress == 0 || region->size == 0) return;
+	const uint32_t capture_handle_size = pipeline_data.raytracing_group_handle_size;
+	const uint32_t replay_handle_size = pipeline_data.raytracing_group_handle_size_replay;
+	if (capture_handle_size == 0 || replay_handle_size == 0) return;
+	if (replay_handle_size > region->stride)
+	{
+		ABORT("Ray tracing %s SBT stride=%llu is smaller than replay handle size=%u",
+			label, (unsigned long long)region->stride, replay_handle_size);
+	}
+	if (replay_handle_size > capture_handle_size)
+	{
+		ABORT("Ray tracing %s replay handle size=%u larger than capture handle size=%u",
+			label, replay_handle_size, capture_handle_size);
+	}
+	if (region->stride == 0)
+	{
+		ABORT("Ray tracing %s SBT stride is zero", label);
+	}
+	const uint32_t record_count = (uint32_t)(region->size / region->stride);
+	if (record_count == 0) return;
+
+	VkDeviceSize buffer_offset = 0;
+	trackedbuffer* buffer_data = find_buffer_by_replay_address(region->deviceAddress, region->size, buffer_offset);
+	if (!buffer_data)
+	{
+		ABORT("Ray tracing %s SBT address 0x%llx is not mapped to a buffer", label, (unsigned long long)region->deviceAddress);
+	}
+	suballoc_location loc = device_data.allocator->find_buffer_memory(buffer_data->index);
+	char* mapped = mem_map(reader, device, loc);
+	char* base = mapped + buffer_offset;
+
+	bool updated = false;
+	for (uint32_t i = 0; i < record_count; i++)
+	{
+		std::byte* record = reinterpret_cast<std::byte*>(base + (size_t)i * region->stride);
+		const int group_index = find_raytracing_group_index(pipeline_data, record);
+		if (group_index < 0) continue;
+		const size_t replay_offset = (size_t)group_index * replay_handle_size;
+		if (replay_offset + replay_handle_size > pipeline_data.raytracing_group_handles_replay.size())
+		{
+			mem_unmap(reader, device, loc, nullptr, mapped);
+			ABORT("Ray tracing %s replay handle lookup out of bounds", label);
+		}
+		memcpy(record, pipeline_data.raytracing_group_handles_replay.data() + replay_offset, replay_handle_size);
+		updated = true;
+	}
+
+	mem_unmap(reader, device, loc, nullptr, mapped);
+	if (updated)
+	{
+		DLOG("Patched ray tracing %s SBT handles", label);
+	}
+}
+
+static void replay_fixup_vkCmdTraceRaysKHR(callback_context& cb, VkCommandBuffer commandBuffer, const VkStridedDeviceAddressRegionKHR* pRaygenShaderBindingTable,
+	const VkStridedDeviceAddressRegionKHR* pMissShaderBindingTable, const VkStridedDeviceAddressRegionKHR* pHitShaderBindingTable,
+	const VkStridedDeviceAddressRegionKHR* pCallableShaderBindingTable, uint32_t width, uint32_t height, uint32_t depth)
+{
+	(void)width;
+	(void)height;
+	(void)depth;
+	if (!cb.reader.run) return;
+	const uint32_t commandbuffer_index = index_to_VkCommandBuffer.index(commandBuffer);
+	if (commandbuffer_index == CONTAINER_INVALID_INDEX) return;
+	trackedcmdbuffer& commandbuffer_data = VkCommandBuffer_index.at(commandbuffer_index);
+	if (commandbuffer_data.bound_raytracing_pipeline_index == CONTAINER_INVALID_INDEX) return;
+	trackedpipeline& pipeline_data = VkPipeline_index.at(commandbuffer_data.bound_raytracing_pipeline_index);
+	if (pipeline_data.raytracing_group_handles_capture_replay) return;
+	if (pipeline_data.raytracing_group_handle_size == 0 || pipeline_data.raytracing_group_handles.empty() ||
+		pipeline_data.raytracing_group_handle_size_replay == 0 || pipeline_data.raytracing_group_handles_replay.empty())
+	{
+		DLOG("Ray tracing SBT fixup skipped: missing shader group handles for pipeline %u", pipeline_data.index);
+		return;
+	}
+	const auto& device_data = VkDevice_index.at(commandbuffer_data.device_index);
+	const VkDevice device = commandbuffer_data.device;
+	fixup_sbt_region(cb.reader, device_data, device, pipeline_data, pRaygenShaderBindingTable, "raygen");
+	fixup_sbt_region(cb.reader, device_data, device, pipeline_data, pMissShaderBindingTable, "miss");
+	fixup_sbt_region(cb.reader, device_data, device, pipeline_data, pHitShaderBindingTable, "hit");
+	fixup_sbt_region(cb.reader, device_data, device, pipeline_data, pCallableShaderBindingTable, "callable");
+}
+
+static void replay_fixup_vkCmdTraceRaysIndirectKHR(callback_context& cb, VkCommandBuffer commandBuffer, const VkStridedDeviceAddressRegionKHR* pRaygenShaderBindingTable,
+	const VkStridedDeviceAddressRegionKHR* pMissShaderBindingTable, const VkStridedDeviceAddressRegionKHR* pHitShaderBindingTable,
+	const VkStridedDeviceAddressRegionKHR* pCallableShaderBindingTable, VkDeviceAddress indirectDeviceAddress)
+{
+	(void)indirectDeviceAddress;
+	replay_fixup_vkCmdTraceRaysKHR(cb, commandBuffer, pRaygenShaderBindingTable, pMissShaderBindingTable, pHitShaderBindingTable, pCallableShaderBindingTable, 0, 0, 0);
+}
+
+static void replay_fixup_vkCmdTraceRaysIndirect2KHR(callback_context& cb, VkCommandBuffer commandBuffer, VkDeviceAddress indirectDeviceAddress)
+{
+	(void)commandBuffer;
+	(void)indirectDeviceAddress;
+	if (!cb.reader.run) return;
+	DLOG("Ray tracing indirect2 SBT fixup not implemented");
+}
+
 void replay_pre_vkCreateSampler(lava_file_reader& reader, VkDevice device, VkSamplerCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkSampler* pSampler)
 {
 	if (no_anisotropy())
@@ -452,6 +952,16 @@ static void replay_post_vkGetBufferDeviceAddress(lava_file_reader& reader, VkDev
 	VkBuffer_index.at(buffer_index).device_address = result;
 }
 
+static void replay_post_vkGetAccelerationStructureBuildSizesKHR(lava_file_reader& reader, VkDevice device,
+	VkAccelerationStructureBuildTypeKHR buildType, const VkAccelerationStructureBuildGeometryInfoKHR* pBuildInfo,
+	const uint32_t* pMaxPrimitiveCounts, VkAccelerationStructureBuildSizesInfoKHR* pSizeInfo)
+{
+	if (!reader.run || !pBuildInfo || !pMaxPrimitiveCounts) return;
+	VkAccelerationStructureBuildSizesInfoKHR sizes = { VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR, nullptr };
+	wrap_vkGetAccelerationStructureBuildSizesKHR(device, buildType, pBuildInfo, pMaxPrimitiveCounts, &sizes);
+	reader.pending_as_build_sizes.push_back(sizes);
+}
+
 static void replay_post_vkCreateBuffer(lava_file_reader& reader, VkResult result, VkDevice device, const VkBufferCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkBuffer* pBuffer)
 {
 	if (result != VK_SUCCESS || !pBuffer || *pBuffer == VK_NULL_HANDLE) return;
@@ -459,6 +969,83 @@ static void replay_post_vkCreateBuffer(lava_file_reader& reader, VkResult result
 	auto& buf = VkBuffer_index.at(buffer_index);
 	if (buf.capture_device_address == 0) return;
 	reader.parent->device_address_remapping.add(buf.capture_device_address, &buf);
+}
+
+static void replay_post_vkCreateDescriptorUpdateTemplate(lava_file_reader& reader, VkResult result, VkDevice device,
+	const VkDescriptorUpdateTemplateCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkDescriptorUpdateTemplate* pDescriptorUpdateTemplate)
+{
+	(void)device;
+	(void)pAllocator;
+	if (result != VK_SUCCESS || !pCreateInfo || !pDescriptorUpdateTemplate || *pDescriptorUpdateTemplate == VK_NULL_HANDLE) return;
+	const uint32_t template_index = index_to_VkDescriptorUpdateTemplate.index(*pDescriptorUpdateTemplate);
+	auto& data = VkDescriptorUpdateTemplate_index.at(template_index);
+	data.entries.clear();
+	if (pCreateInfo->descriptorUpdateEntryCount && pCreateInfo->pDescriptorUpdateEntries)
+	{
+		data.entries.assign(pCreateInfo->pDescriptorUpdateEntries, pCreateInfo->pDescriptorUpdateEntries + pCreateInfo->descriptorUpdateEntryCount);
+	}
+	data.type = pCreateInfo->templateType;
+	data.flags = pCreateInfo->flags;
+	const uint64_t computed_size = descriptor_update_template_data_size(pCreateInfo);
+	if (computed_size != 0 || data.data_size == 0) data.data_size = computed_size;
+}
+
+static void replay_post_vkCreateDescriptorUpdateTemplateKHR(lava_file_reader& reader, VkResult result, VkDevice device,
+	const VkDescriptorUpdateTemplateCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkDescriptorUpdateTemplate* pDescriptorUpdateTemplate)
+{
+	replay_post_vkCreateDescriptorUpdateTemplate(reader, result, device, pCreateInfo, pAllocator, pDescriptorUpdateTemplate);
+}
+
+static void replay_pre_vkCreateAccelerationStructureKHR(lava_file_reader& reader, VkDevice device,
+	VkAccelerationStructureCreateInfoKHR* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkAccelerationStructureKHR* pAccelerationStructure)
+{
+	if (!reader.run || !pCreateInfo || device == VK_NULL_HANDLE) return;
+	VkAccelerationStructureBuildSizesInfoKHR sizes = { VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR, nullptr };
+	bool have_sizes = false;
+	{
+		if (!reader.pending_as_build_sizes.empty())
+		{
+			sizes = reader.pending_as_build_sizes.front();
+			reader.pending_as_build_sizes.pop_front();
+			have_sizes = true;
+		}
+	}
+
+	VkDeviceSize required_size = pCreateInfo->size;
+	if (have_sizes && sizes.accelerationStructureSize > required_size)
+	{
+		required_size = sizes.accelerationStructureSize;
+		pCreateInfo->size = required_size;
+	}
+
+	internal_buffer replacement;
+	if (pCreateInfo->buffer != VK_NULL_HANDLE)
+	{
+		const uint32_t buffer_index = index_to_VkBuffer.index(pCreateInfo->buffer);
+		if (buffer_index != CONTAINER_INVALID_INDEX)
+		{
+			trackedbuffer& buf = VkBuffer_index.at(buffer_index);
+			const VkDeviceSize needed_size = pCreateInfo->offset + required_size;
+			if (buf.size < needed_size)
+			{
+				const VkBufferUsageFlags usage = buf.usage |
+					VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR |
+					VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+				const VkMemoryPropertyFlags memory_flags = (buf.memory_flags != 0) ? buf.memory_flags : VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+				const VkPhysicalDevice physical_device = reader.physicalDevice != VK_NULL_HANDLE ? reader.physicalDevice : selected_physical_device;
+				if (!create_internal_buffer(device, physical_device, needed_size, usage, memory_flags, replacement))
+				{
+					ABORT("Failed to allocate replacement buffer for acceleration structure (size=%lu)", (unsigned long)needed_size);
+				}
+				pCreateInfo->buffer = replacement.buffer;
+				pCreateInfo->offset = 0;
+			}
+		}
+	}
+
+	{
+		reader.pending_as_storage_buffers.push_back(replacement);
+	}
 }
 
 static void replay_pre_vkDestroyBuffer(lava_file_reader& reader, VkDevice device, VkBuffer buffer, const VkAllocationCallbacks* pAllocator)
@@ -472,9 +1059,32 @@ static void replay_pre_vkDestroyBuffer(lava_file_reader& reader, VkDevice device
 
 static void replay_post_vkCreateAccelerationStructureKHR(lava_file_reader& reader, VkResult result, VkDevice device, const VkAccelerationStructureCreateInfoKHR* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkAccelerationStructureKHR* pAccelerationStructure)
 {
-	if (result != VK_SUCCESS || !pAccelerationStructure || *pAccelerationStructure == VK_NULL_HANDLE) return;
+	internal_buffer replacement;
+	bool has_replacement = false;
+	{
+		if (!reader.pending_as_storage_buffers.empty())
+		{
+			replacement = reader.pending_as_storage_buffers.front();
+			reader.pending_as_storage_buffers.pop_front();
+			has_replacement = (replacement.buffer != VK_NULL_HANDLE);
+		}
+	}
+
+	if (result != VK_SUCCESS || !pAccelerationStructure || *pAccelerationStructure == VK_NULL_HANDLE)
+	{
+		if (reader.run && has_replacement) destroy_internal_buffer(device, replacement);
+		return;
+	}
 	const uint32_t as_index = index_to_VkAccelerationStructureKHR.index(*pAccelerationStructure);
 	auto& as = VkAccelerationStructureKHR_index.at(as_index);
+	if (has_replacement)
+	{
+		as.replay_storage = replacement;
+		as.size = pCreateInfo ? pCreateInfo->size : as.size;
+		as.offset = pCreateInfo ? pCreateInfo->offset : as.offset;
+		as.buffer = replacement.buffer;
+		as.buffer_index = CONTAINER_INVALID_INDEX;
+	}
 	if (as.capture_device_address == 0) return;
 	reader.parent->acceleration_structure_address_remapping.add(as.capture_device_address, &as);
 }
@@ -484,6 +1094,10 @@ static void replay_pre_vkDestroyAccelerationStructureKHR(lava_file_reader& reade
 	if (accelerationStructure == VK_NULL_HANDLE) return;
 	const uint32_t as_index = index_to_VkAccelerationStructureKHR.index(accelerationStructure);
 	auto& as = VkAccelerationStructureKHR_index.at(as_index);
+	if (reader.run && as.replay_storage.buffer != VK_NULL_HANDLE)
+	{
+		destroy_internal_buffer(device, as.replay_storage);
+	}
 	if (as.capture_device_address == 0) return;
 	reader.parent->acceleration_structure_address_remapping.remove(as.capture_device_address, &as);
 }
@@ -728,6 +1342,7 @@ void replay_pre_vkCreateSwapchainKHR(lava_file_reader& reader, VkDevice device, 
 void replay_initialize_vkCreateDevice(lava_file_reader& reader, uint32_t physicaldevice_index)
 {
 	(void)physicaldevice_index; // TBD use this later for multi-GPU support
+	replay_register_raytracing_callbacks(*reader.parent);
 
 	// Find the physical device we want to create, and point all physical device references to it
 	uint32_t num_phys_devices = 0;
@@ -1162,6 +1777,26 @@ void replay_pre_vkDestroyDevice(lava_file_reader& reader, VkDevice device, const
 	if (device != VK_NULL_HANDLE)
 	{
 		wrap_vkDeviceWaitIdle(device);
+		const uint32_t device_index = index_to_VkDevice.index(device);
+		if (device_index != CONTAINER_INVALID_INDEX)
+		{
+			auto& device_data = VkDevice_index.at(device_index);
+			for (auto& as : VkAccelerationStructureKHR_index)
+			{
+				if (as.parent_device_index == device_index && as.replay_storage.buffer != VK_NULL_HANDLE)
+				{
+					destroy_internal_buffer(device, as.replay_storage);
+				}
+			}
+
+			for (auto& cb : VkCommandBuffer_index)
+			{
+				if (cb.device_index == device_index && cb.scratch_buffer.buffer != VK_NULL_HANDLE)
+				{
+					destroy_internal_buffer(device, cb.scratch_buffer);
+				}
+			}
+		}
 		selected_physical_device = VK_NULL_HANDLE;
 	}
 }
@@ -1309,6 +1944,120 @@ static void translate_marked_offsets(lava_file_reader& reader, const VkMarkedOff
 	}
 }
 
+static void rewrite_descriptor_update_template_data(lava_file_reader& reader, VkDescriptorUpdateTemplate descriptorUpdateTemplate, void* pData)
+{
+	if (!pData || descriptorUpdateTemplate == VK_NULL_HANDLE) return;
+	const uint32_t template_index = index_to_VkDescriptorUpdateTemplate.index(descriptorUpdateTemplate);
+	auto& template_data = VkDescriptorUpdateTemplate_index.at(template_index);
+	if (template_data.entries.empty()) return;
+
+	uint8_t* base_data = reinterpret_cast<uint8_t*>(pData);
+	for (const auto& entry : template_data.entries)
+	{
+		if (entry.descriptorCount == 0) continue;
+		switch (entry.descriptorType)
+		{
+		case VK_DESCRIPTOR_TYPE_SAMPLER:
+		case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
+		case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:
+		case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:
+		case VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT:
+			{
+				const size_t element_size = sizeof(VkDescriptorImageInfo);
+				const size_t stride = entry.stride ? entry.stride : element_size;
+				uint8_t* base = base_data + entry.offset;
+				for (uint32_t i = 0; i < entry.descriptorCount; i++)
+				{
+					VkDescriptorImageInfo info{};
+					memcpy(&info, base + (size_t)i * stride, element_size);
+					if (entry.descriptorType == VK_DESCRIPTOR_TYPE_SAMPLER || entry.descriptorType == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
+					{
+						const uint32_t sampler_index = (uint32_t)(uintptr_t)info.sampler;
+						info.sampler = (sampler_index == CONTAINER_NULL_VALUE) ? VK_NULL_HANDLE : index_to_VkSampler.at(sampler_index);
+					}
+					if (entry.descriptorType != VK_DESCRIPTOR_TYPE_SAMPLER)
+					{
+						const uint32_t view_index = (uint32_t)(uintptr_t)info.imageView;
+						info.imageView = (view_index == CONTAINER_NULL_VALUE) ? VK_NULL_HANDLE : index_to_VkImageView.at(view_index);
+					}
+					memcpy(base + (size_t)i * stride, &info, element_size);
+				}
+			}
+			break;
+		case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
+		case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
+		case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC:
+		case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC:
+			{
+				const size_t element_size = sizeof(VkDescriptorBufferInfo);
+				const size_t stride = entry.stride ? entry.stride : element_size;
+				uint8_t* base = base_data + entry.offset;
+				for (uint32_t i = 0; i < entry.descriptorCount; i++)
+				{
+					VkDescriptorBufferInfo info{};
+					memcpy(&info, base + (size_t)i * stride, element_size);
+					const uint32_t buffer_index = (uint32_t)(uintptr_t)info.buffer;
+					info.buffer = (buffer_index == CONTAINER_NULL_VALUE) ? VK_NULL_HANDLE : index_to_VkBuffer.at(buffer_index);
+					memcpy(base + (size_t)i * stride, &info, element_size);
+				}
+			}
+			break;
+		case VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER:
+		case VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER:
+			{
+				const size_t element_size = sizeof(VkBufferView);
+				const size_t stride = entry.stride ? entry.stride : element_size;
+				uint8_t* base = base_data + entry.offset;
+				for (uint32_t i = 0; i < entry.descriptorCount; i++)
+				{
+					VkBufferView view = VK_NULL_HANDLE;
+					memcpy(&view, base + (size_t)i * stride, element_size);
+					const uint32_t view_index = (uint32_t)(uintptr_t)view;
+					view = (view_index == CONTAINER_NULL_VALUE) ? VK_NULL_HANDLE : index_to_VkBufferView.at(view_index);
+					memcpy(base + (size_t)i * stride, &view, element_size);
+				}
+			}
+			break;
+		case VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR:
+			{
+				const size_t element_size = sizeof(VkAccelerationStructureKHR);
+				const size_t stride = entry.stride ? entry.stride : element_size;
+				uint8_t* base = base_data + entry.offset;
+				for (uint32_t i = 0; i < entry.descriptorCount; i++)
+				{
+					VkAccelerationStructureKHR as = VK_NULL_HANDLE;
+					memcpy(&as, base + (size_t)i * stride, element_size);
+					const uint32_t as_index = (uint32_t)(uintptr_t)as;
+					as = (as_index == CONTAINER_NULL_VALUE) ? VK_NULL_HANDLE : index_to_VkAccelerationStructureKHR.at(as_index);
+					memcpy(base + (size_t)i * stride, &as, element_size);
+				}
+			}
+			break;
+		case VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK:
+			break;
+		case VK_DESCRIPTOR_TYPE_TENSOR_ARM:
+			assert(false); // TODO
+			break;
+		case VK_DESCRIPTOR_TYPE_PARTITIONED_ACCELERATION_STRUCTURE_NV:
+			ABORT("VK_NV_partitioned_acceleration_structure not supported");
+			break;
+		case VK_DESCRIPTOR_TYPE_MUTABLE_EXT:
+			ABORT("vkUpdateDescriptorSetWithTemplate using VK_EXT_mutable_descriptor_type not yet implemented");
+			break;
+		case VK_DESCRIPTOR_TYPE_BLOCK_MATCH_IMAGE_QCOM:
+		case VK_DESCRIPTOR_TYPE_SAMPLE_WEIGHT_IMAGE_QCOM:
+			ABORT("VK_QCOM_image_processing not supported");
+			break;
+		case VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_NV:
+			ABORT("VK_NV_ray_tracing not supported");
+			break;
+		case VK_DESCRIPTOR_TYPE_MAX_ENUM:
+			ABORT("Bad descriptor type in vkUpdateDescriptorSetWithTemplate");
+			break;
+		}
+	}
+}
+
 void replay_pre_vkCmdPushConstants2KHR(lava_file_reader& reader, VkCommandBuffer commandBuffer, const VkPushConstantsInfoKHR* pPushConstantsInfo)
 {
 	assert(pPushConstantsInfo);
@@ -1323,6 +2072,31 @@ void replay_pre_vkCmdPushConstants2KHR(lava_file_reader& reader, VkCommandBuffer
 void replay_pre_vkCmdPushConstants2(lava_file_reader& reader, VkCommandBuffer commandBuffer, const VkPushConstantsInfoKHR* pPushConstantsInfo)
 {
 	replay_pre_vkCmdPushConstants2KHR(reader, commandBuffer, pPushConstantsInfo);
+}
+
+void replay_pre_vkUpdateDescriptorSetWithTemplate(lava_file_reader& reader, VkDevice device, VkDescriptorSet descriptorSet, VkDescriptorUpdateTemplate descriptorUpdateTemplate, const void* pData)
+{
+	(void)device;
+	(void)descriptorSet;
+	rewrite_descriptor_update_template_data(reader, descriptorUpdateTemplate, const_cast<void*>(pData));
+}
+
+void replay_pre_vkUpdateDescriptorSetWithTemplateKHR(lava_file_reader& reader, VkDevice device, VkDescriptorSet descriptorSet, VkDescriptorUpdateTemplate descriptorUpdateTemplate, const void* pData)
+{
+	replay_pre_vkUpdateDescriptorSetWithTemplate(reader, device, descriptorSet, descriptorUpdateTemplate, pData);
+}
+
+void replay_pre_vkCmdPushDescriptorSetWithTemplate(lava_file_reader& reader, VkCommandBuffer commandBuffer, VkDescriptorUpdateTemplate descriptorUpdateTemplate, VkPipelineLayout layout, uint32_t set, const void* pData)
+{
+	(void)commandBuffer;
+	(void)layout;
+	(void)set;
+	rewrite_descriptor_update_template_data(reader, descriptorUpdateTemplate, const_cast<void*>(pData));
+}
+
+void replay_pre_vkCmdPushDescriptorSetWithTemplateKHR(lava_file_reader& reader, VkCommandBuffer commandBuffer, VkDescriptorUpdateTemplate descriptorUpdateTemplate, VkPipelineLayout layout, uint32_t set, const void* pData)
+{
+	replay_pre_vkCmdPushDescriptorSetWithTemplate(reader, commandBuffer, descriptorUpdateTemplate, layout, set, pData);
 }
 
 void replay_pre_vkCreateComputePipelines(lava_file_reader& reader, VkDevice device, VkPipelineCache pipelineCache, uint32_t createInfoCount,
