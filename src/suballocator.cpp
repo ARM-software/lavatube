@@ -44,6 +44,7 @@ struct heap
 	VkDeviceSize free;
 	VkDeviceSize total;
 	VkMemoryPropertyFlags flags;
+	VkMemoryAllocateFlags allocflags;
 	/// This one does not need to be concurrent safe, since each thread owns its own heap
 	/// and only it may iterate over and modify the allocations list.
 	std::list<suballocation> subs;
@@ -273,6 +274,7 @@ suballoc_location suballocator_private::add_object_new(uint16_t tid, uint32_t me
 	h.total = info.allocationSize;
 	h.memoryTypeIndex = memoryTypeIndex;
 	h.tiling = tiling;
+	h.allocflags = allocflags;
 	h.subs.push_back(s);
 	h.flags = flags;
 	DLOG2("allocating new memory pool with size = %lu, free = %lu (memoryTypeIndex=%u, tiling=%u)", (unsigned long)info.allocationSize,
@@ -318,7 +320,11 @@ suballoc_location suballocator_private::add_object(uint16_t tid, uint32_t memory
 			h.deletes.clear();
 		}
 		// find suballocation
-		if (h.tid == tid && (flags & h.flags) == flags && h.free >= s.size && h.memoryTypeIndex == memoryTypeIndex && (h.tiling == tiling || allow_mixed_tiling))
+		const bool requires_device_address = (allocflags & VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT_KHR) != 0;
+		const bool heap_has_device_address = (h.allocflags & VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT_KHR) != 0;
+		if (h.tid == tid && (flags & h.flags) == flags &&
+		    (!requires_device_address || heap_has_device_address) &&
+		    h.free >= s.size && h.memoryTypeIndex == memoryTypeIndex && (h.tiling == tiling || allow_mixed_tiling))
 		{
 			// First case: nothing allocated in heap. In this case, we do not care about alignment, because according to the spec:
 			// "Allocations returned by vkAllocateMemory are guaranteed to meet any alignment requirement of the implementation."
