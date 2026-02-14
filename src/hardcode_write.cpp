@@ -986,6 +986,182 @@ static void trace_post_vkUpdateDescriptorSetWithTemplateKHR(lava_file_writer& wr
 	handle_descriptor_update_template(writer, descriptorSet, descriptorUpdateTemplate, pData, false);
 }
 
+static trackedbuffer* find_buffer_by_device_address(const trace_records& records, VkDeviceAddress address, VkDeviceSize size, VkDeviceSize& out_offset)
+{
+	trackedbuffer* best = nullptr;
+	VkDeviceSize best_size = 0;
+	bool best_is_sbt = false;
+
+	for (auto* buffer : records.VkBuffer_index.iterate())
+	{
+		if (!buffer) continue;
+		if (buffer->is_state(trackedobject::states::destroyed) || buffer->is_state(trackedobject::states::uninitialized)) continue;
+		if (buffer->device_address == 0 || buffer->size == 0) continue;
+		if (address < buffer->device_address) continue;
+		const VkDeviceSize offset = address - buffer->device_address;
+		if (offset > buffer->size || size > buffer->size - offset) continue;
+		const bool is_sbt = ((buffer->usage & VK_BUFFER_USAGE_SHADER_BINDING_TABLE_BIT_KHR) != 0) ||
+			((buffer->usage2 & VK_BUFFER_USAGE_SHADER_BINDING_TABLE_BIT_KHR) != 0);
+		if (!best || (is_sbt && !best_is_sbt) || (is_sbt == best_is_sbt && buffer->size < best_size))
+		{
+			best = buffer;
+			best_size = buffer->size;
+			best_is_sbt = is_sbt;
+			out_offset = offset;
+		}
+	}
+
+	return best;
+}
+
+static void trace_touch_sbt_region(lava_file_writer& writer, trackedcmdbuffer_trace* cmdbuf_data,
+	const VkStridedDeviceAddressRegionKHR* region, const char* label)
+{
+	if (!region || region->deviceAddress == 0 || region->size == 0) return;
+
+	VkDeviceSize offset = 0;
+	trackedbuffer* buffer_data = find_buffer_by_device_address(writer.parent->records, region->deviceAddress, region->size, offset);
+	if (!buffer_data)
+	{
+		ABORT("vkCmdTraceRaysKHR %s SBT address 0x%llx (size=%llu) is not mapped to a buffer",
+			label, (unsigned long long)region->deviceAddress, (unsigned long long)region->size);
+	}
+
+	cmdbuf_data->touch(buffer_data, offset, region->size, __LINE__);
+}
+
+static void trace_touch_buffer_by_address(lava_file_writer& writer, trackedcmdbuffer_trace* cmdbuf_data,
+	VkDeviceAddress address, VkDeviceSize size, const char* label)
+{
+	if (address == 0) return;
+	VkDeviceSize offset = 0;
+	trackedbuffer* buffer_data = find_buffer_by_device_address(writer.parent->records, address, size ? size : 1, offset);
+	if (!buffer_data && size > 1)
+	{
+		VkDeviceSize fallback_offset = 0;
+		buffer_data = find_buffer_by_device_address(writer.parent->records, address, 1, fallback_offset);
+		if (buffer_data)
+		{
+			offset = fallback_offset;
+		}
+	}
+	if (!buffer_data)
+	{
+		ABORT("vkCmdBuildAccelerationStructuresKHR %s address 0x%llx (size=%llu) is not mapped to a buffer",
+			label, (unsigned long long)address, (unsigned long long)size);
+	}
+	VkDeviceSize touch_size = size;
+	if (touch_size == 0) touch_size = VK_WHOLE_SIZE;
+	else if (touch_size > buffer_data->size - offset)
+	{
+		DLOG2("vkCmdBuildAccelerationStructuresKHR %s address 0x%llx size=%llu exceeds buffer size=%llu, clamping",
+			label, (unsigned long long)address, (unsigned long long)touch_size, (unsigned long long)(buffer_data->size - offset));
+		touch_size = buffer_data->size - offset;
+	}
+	cmdbuf_data->touch(buffer_data, offset, touch_size, __LINE__);
+}
+
+static void trace_post_vkCmdBuildAccelerationStructuresKHR(lava_file_writer& writer, VkCommandBuffer commandBuffer,
+	uint32_t infoCount, const VkAccelerationStructureBuildGeometryInfoKHR* pInfos,
+	const VkAccelerationStructureBuildRangeInfoKHR* const* ppBuildRangeInfos)
+{
+	auto* cmdbuf_data = writer.parent->records.VkCommandBuffer_index.at(commandBuffer);
+	if (!cmdbuf_data || !pInfos || infoCount == 0) return;
+	cmdbuf_data->self_test();
+
+	for (uint32_t info_idx = 0; info_idx < infoCount; info_idx++)
+	{
+		const VkAccelerationStructureBuildGeometryInfoKHR& info = pInfos[info_idx];
+		const VkAccelerationStructureBuildRangeInfoKHR* ranges = (ppBuildRangeInfos) ? ppBuildRangeInfos[info_idx] : nullptr;
+		for (uint32_t g = 0; g < info.geometryCount; g++)
+		{
+			const VkAccelerationStructureGeometryKHR* geometry = nullptr;
+			if (info.pGeometries) geometry = &info.pGeometries[g];
+			else if (info.ppGeometries) geometry = info.ppGeometries[g];
+			if (!geometry) continue;
+
+			switch (geometry->geometryType)
+			{
+			case VK_GEOMETRY_TYPE_TRIANGLES_KHR:
+			{
+				const VkAccelerationStructureGeometryTrianglesDataKHR& tri = geometry->geometry.triangles;
+				if (tri.vertexData.deviceAddress != 0 && tri.vertexStride > 0)
+				{
+					const VkDeviceSize vertex_count = tri.maxVertex + 1;
+					const VkDeviceSize size = vertex_count * tri.vertexStride;
+					trace_touch_buffer_by_address(writer, cmdbuf_data, tri.vertexData.deviceAddress, size, "triangles vertex");
+				}
+				if (tri.indexData.deviceAddress != 0 && tri.indexType != VK_INDEX_TYPE_NONE_KHR)
+				{
+					VkDeviceSize index_size = 0;
+					if (tri.indexType == VK_INDEX_TYPE_UINT16) index_size = 2;
+					else if (tri.indexType == VK_INDEX_TYPE_UINT32) index_size = 4;
+					else if (tri.indexType == VK_INDEX_TYPE_UINT8_EXT) index_size = 1;
+					VkDeviceSize size = 0;
+					if (index_size != 0 && ranges)
+					{
+						const VkDeviceSize primitive_end = ranges[g].primitiveOffset + ranges[g].primitiveCount;
+						size = primitive_end * 3 * index_size;
+					}
+					trace_touch_buffer_by_address(writer, cmdbuf_data, tri.indexData.deviceAddress, size, "triangles index");
+				}
+				if (tri.transformData.deviceAddress != 0)
+				{
+					trace_touch_buffer_by_address(writer, cmdbuf_data, tri.transformData.deviceAddress, sizeof(VkTransformMatrixKHR), "triangles transform");
+				}
+				break;
+			}
+			case VK_GEOMETRY_TYPE_AABBS_KHR:
+			{
+				const VkAccelerationStructureGeometryAabbsDataKHR& aabb = geometry->geometry.aabbs;
+				VkDeviceSize size = 0;
+				if (ranges && aabb.stride > 0)
+				{
+					const VkDeviceSize primitive_end = ranges[g].primitiveOffset + ranges[g].primitiveCount;
+					size = primitive_end * aabb.stride;
+				}
+				trace_touch_buffer_by_address(writer, cmdbuf_data, aabb.data.deviceAddress, size, "aabbs");
+				break;
+			}
+			case VK_GEOMETRY_TYPE_INSTANCES_KHR:
+			{
+				const VkAccelerationStructureGeometryInstancesDataKHR& instances = geometry->geometry.instances;
+				if (instances.arrayOfPointers)
+				{
+					ABORT("vkCmdBuildAccelerationStructuresKHR capture does not support arrayOfPointers");
+				}
+				VkDeviceAddress addr = instances.data.deviceAddress;
+				VkDeviceSize size = 0;
+				if (ranges)
+				{
+					addr += ranges[g].primitiveOffset * sizeof(VkAccelerationStructureInstanceKHR);
+					size = ranges[g].primitiveCount * sizeof(VkAccelerationStructureInstanceKHR);
+				}
+				trace_touch_buffer_by_address(writer, cmdbuf_data, addr, size, "instances");
+				break;
+			}
+			default:
+				break;
+			}
+		}
+	}
+}
+
+static void trace_post_vkCmdTraceRaysKHR(lava_file_writer& writer, VkCommandBuffer commandBuffer,
+	const VkStridedDeviceAddressRegionKHR* pRaygenShaderBindingTable, const VkStridedDeviceAddressRegionKHR* pMissShaderBindingTable,
+	const VkStridedDeviceAddressRegionKHR* pHitShaderBindingTable, const VkStridedDeviceAddressRegionKHR* pCallableShaderBindingTable,
+	uint32_t width, uint32_t height, uint32_t depth)
+{
+	auto* cmdbuf_data = writer.parent->records.VkCommandBuffer_index.at(commandBuffer);
+	if (!cmdbuf_data) return;
+	cmdbuf_data->self_test();
+
+	trace_touch_sbt_region(writer, cmdbuf_data, pRaygenShaderBindingTable, "raygen");
+	trace_touch_sbt_region(writer, cmdbuf_data, pMissShaderBindingTable, "miss");
+	trace_touch_sbt_region(writer, cmdbuf_data, pHitShaderBindingTable, "hit");
+	trace_touch_sbt_region(writer, cmdbuf_data, pCallableShaderBindingTable, "callable");
+}
+
 static void trace_post_vkCmdPushDescriptorSetWithTemplate(lava_file_writer& writer, VkCommandBuffer commandBuffer, VkDescriptorUpdateTemplate descriptorUpdateTemplate, VkPipelineLayout layout, uint32_t set, const void* pData)
 {
 	handle_descriptor_update_template(writer, VK_NULL_HANDLE, descriptorUpdateTemplate, pData, true);

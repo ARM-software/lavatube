@@ -647,6 +647,22 @@ struct trackedcmdbuffer : trackable
 	bool pending_raytracing_marker = false; // internal: prevent duplicate raytracing command markers
 	internal_buffer scratch_buffer;
 	uint32_t bound_raytracing_pipeline_index = CONTAINER_INVALID_INDEX;
+	struct raytracing_sbt_use
+	{
+		uint32_t pipeline_index = CONTAINER_INVALID_INDEX;
+		VkStridedDeviceAddressRegionKHR raygen = {};
+		VkStridedDeviceAddressRegionKHR miss = {};
+		VkStridedDeviceAddressRegionKHR hit = {};
+		VkStridedDeviceAddressRegionKHR callable = {};
+	};
+	std::vector<raytracing_sbt_use> raytracing_sbt_uses;
+	struct raytracing_instance_use
+	{
+		VkDeviceAddress device_address = 0;
+		VkDeviceSize primitive_offset = 0;
+		uint32_t primitive_count = 0;
+	};
+	std::vector<raytracing_instance_use> raytracing_instance_uses;
 
 	void self_test() const
 	{

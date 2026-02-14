@@ -130,6 +130,8 @@ static void replay_register_raytracing_callbacks(lava_reader& reader);
 static void replay_track_vkCmdBindPipeline(callback_context& cb, VkCommandBuffer commandBuffer, VkPipelineBindPoint pipelineBindPoint, VkPipeline pipeline);
 static void replay_track_vkGetRayTracingShaderGroupHandlesKHR(callback_context& cb, VkDevice device, VkPipeline pipeline, uint32_t firstGroup, uint32_t groupCount, size_t dataSize, void* pData);
 static void replay_track_vkGetRayTracingCaptureReplayShaderGroupHandlesKHR(callback_context& cb, VkDevice device, VkPipeline pipeline, uint32_t firstGroup, uint32_t groupCount, size_t dataSize, void* pData);
+static void replay_fixup_commandbuffer_raytracing_sbt(lava_file_reader& reader, trackedcmdbuffer& commandbuffer_data);
+static void replay_fixup_commandbuffer_raytracing_instances(lava_file_reader& reader, trackedcmdbuffer& commandbuffer_data);
 static void replay_fixup_vkCmdTraceRaysKHR(callback_context& cb, VkCommandBuffer commandBuffer, const VkStridedDeviceAddressRegionKHR* pRaygenShaderBindingTable,
 	const VkStridedDeviceAddressRegionKHR* pMissShaderBindingTable, const VkStridedDeviceAddressRegionKHR* pHitShaderBindingTable,
 	const VkStridedDeviceAddressRegionKHR* pCallableShaderBindingTable, uint32_t width, uint32_t height, uint32_t depth);
@@ -420,6 +422,15 @@ void replay_pre_vkQueueSubmit2(lava_file_reader& reader, VkQueue queue, uint32_t
 	for (uint32_t i = 0; i < submitCount; i++)
 	{
 		if (!host_has_frame_boundary) purge_extension_parent(const_cast<VkSubmitInfo2*>(&pSubmits[i]), VK_STRUCTURE_TYPE_FRAME_BOUNDARY_EXT);
+		for (uint32_t j = 0; j < pSubmits[i].commandBufferInfoCount; j++)
+		{
+			const VkCommandBuffer command_buffer = pSubmits[i].pCommandBufferInfos[j].commandBuffer;
+			const uint32_t commandbuffer_index = index_to_VkCommandBuffer.index(command_buffer);
+			if (commandbuffer_index == CONTAINER_INVALID_INDEX) continue;
+			trackedcmdbuffer& commandbuffer_data = VkCommandBuffer_index.at(commandbuffer_index);
+			replay_fixup_commandbuffer_raytracing_instances(reader, commandbuffer_data);
+			replay_fixup_commandbuffer_raytracing_sbt(reader, commandbuffer_data);
+		}
 	}
 }
 
@@ -433,7 +444,40 @@ void replay_pre_vkQueueSubmit(lava_file_reader& reader, VkQueue queue, uint32_t 
 	for (uint32_t i = 0; i < submitCount; i++)
 	{
 		if (!host_has_frame_boundary) purge_extension_parent(const_cast<VkSubmitInfo*>(&pSubmits[i]), VK_STRUCTURE_TYPE_FRAME_BOUNDARY_EXT);
+		for (uint32_t j = 0; j < pSubmits[i].commandBufferCount; j++)
+		{
+			const VkCommandBuffer command_buffer = pSubmits[i].pCommandBuffers[j];
+			const uint32_t commandbuffer_index = index_to_VkCommandBuffer.index(command_buffer);
+			if (commandbuffer_index == CONTAINER_INVALID_INDEX) continue;
+			trackedcmdbuffer& commandbuffer_data = VkCommandBuffer_index.at(commandbuffer_index);
+			replay_fixup_commandbuffer_raytracing_instances(reader, commandbuffer_data);
+			replay_fixup_commandbuffer_raytracing_sbt(reader, commandbuffer_data);
+		}
 	}
+}
+
+void replay_pre_vkBeginCommandBuffer(lava_file_reader& reader, VkCommandBuffer commandBuffer, VkCommandBufferBeginInfo* pBeginInfo)
+{
+	(void)reader;
+	(void)pBeginInfo;
+	const uint32_t commandbuffer_index = index_to_VkCommandBuffer.index(commandBuffer);
+	if (commandbuffer_index == CONTAINER_INVALID_INDEX) return;
+	trackedcmdbuffer& commandbuffer_data = VkCommandBuffer_index.at(commandbuffer_index);
+	commandbuffer_data.raytracing_sbt_uses.clear();
+	commandbuffer_data.raytracing_instance_uses.clear();
+	commandbuffer_data.bound_raytracing_pipeline_index = CONTAINER_INVALID_INDEX;
+}
+
+void replay_pre_vkResetCommandBuffer(lava_file_reader& reader, VkCommandBuffer commandBuffer, VkCommandBufferResetFlags flags)
+{
+	(void)reader;
+	(void)flags;
+	const uint32_t commandbuffer_index = index_to_VkCommandBuffer.index(commandBuffer);
+	if (commandbuffer_index == CONTAINER_INVALID_INDEX) return;
+	trackedcmdbuffer& commandbuffer_data = VkCommandBuffer_index.at(commandbuffer_index);
+	commandbuffer_data.raytracing_sbt_uses.clear();
+	commandbuffer_data.raytracing_instance_uses.clear();
+	commandbuffer_data.bound_raytracing_pipeline_index = CONTAINER_INVALID_INDEX;
 }
 
 void replay_pre_vkCmdBuildAccelerationStructuresKHR(lava_file_reader& reader, VkCommandBuffer commandBuffer, uint32_t infoCount,
@@ -445,9 +489,8 @@ void replay_pre_vkCmdBuildAccelerationStructuresKHR(lava_file_reader& reader, Vk
 	trackedcmdbuffer& commandbuffer_data = VkCommandBuffer_index.at(commandbuffer_index);
 	const VkDevice device = commandbuffer_data.device;
 	const VkPhysicalDevice physical_device = commandbuffer_data.physicalDevice;
-	const auto& device_data = VkDevice_index.at(commandbuffer_data.device_index);
 
-	auto remap_instance_references = [&](const VkAccelerationStructureBuildGeometryInfoKHR& info, const VkAccelerationStructureBuildRangeInfoKHR* ranges)
+	auto record_instance_uses = [&](const VkAccelerationStructureBuildGeometryInfoKHR& info, const VkAccelerationStructureBuildRangeInfoKHR* ranges)
 	{
 		if (!ranges || info.geometryCount == 0) return;
 		for (uint32_t g = 0; g < info.geometryCount; g++)
@@ -467,57 +510,18 @@ void replay_pre_vkCmdBuildAccelerationStructuresKHR(lava_file_reader& reader, Vk
 
 			const VkDeviceSize instance_count = ranges[g].primitiveCount;
 			if (instance_count == 0) continue;
-
-			const VkDeviceAddress base_address = instances.data.deviceAddress + ranges[g].primitiveOffset;
-			const VkDeviceSize total_size = instance_count * sizeof(VkAccelerationStructureInstanceKHR);
-			VkDeviceSize buffer_offset = 0;
-			trackedbuffer* buffer_data = find_buffer_by_replay_address(base_address, total_size, buffer_offset);
-			if (!buffer_data)
-			{
-				ABORT("Acceleration structure instance buffer address 0x%llx is not mapped to a buffer",
-					(unsigned long long)base_address);
-			}
-
-			suballoc_location loc = device_data.allocator->find_buffer_memory(buffer_data->index);
-			char* mapped = mem_map(reader, device, loc);
-			char* base = mapped;
-			VkAccelerationStructureInstanceKHR* instance_data = reinterpret_cast<VkAccelerationStructureInstanceKHR*>(base + buffer_offset);
-
-			bool updated = false;
-			for (uint32_t idx = 0; idx < instance_count; idx++)
-			{
-				const VkDeviceAddress current = instance_data[idx].accelerationStructureReference;
-				if (current == 0) continue;
-				const VkDeviceAddress translated = reader.parent->acceleration_structure_address_remapping.translate_address(current);
-				if (translated != 0)
-				{
-					if (translated != current)
-					{
-						instance_data[idx].accelerationStructureReference = translated;
-						updated = true;
-					}
-					continue;
-				}
-				if (!is_known_replay_as_address(current))
-				{
-					mem_unmap(reader, device, loc, nullptr, mapped);
-					ABORT("Acceleration structure instance reference 0x%llx is not remapped for replay",
-						(unsigned long long)current);
-				}
-			}
-
-			mem_unmap(reader, device, loc, nullptr, mapped);
-			if (updated)
-			{
-				DLOG("Remapped %u acceleration structure instance references", (unsigned)instance_count);
-			}
+			trackedcmdbuffer::raytracing_instance_use use = {};
+			use.device_address = instances.data.deviceAddress;
+			use.primitive_offset = ranges[g].primitiveOffset;
+			use.primitive_count = (uint32_t)instance_count;
+			commandbuffer_data.raytracing_instance_uses.push_back(use);
 		}
 	};
 
 	for (uint32_t i = 0; i < infoCount; i++)
 	{
 		if (pInfos[i].geometryCount == 0) continue;
-		remap_instance_references(pInfos[i], ppBuildRangeInfos[i]);
+		record_instance_uses(pInfos[i], ppBuildRangeInfos[i]);
 		std::vector<uint32_t> max_primitive_counts(pInfos[i].geometryCount);
 		for (uint32_t g = 0; g < pInfos[i].geometryCount; g++)
 		{
@@ -637,6 +641,20 @@ static void replay_track_vkGetRayTracingShaderGroupHandlesKHR(callback_context& 
 	trackedpipeline& pipeline_data = VkPipeline_index.at(pipeline_index);
 
 	const uint32_t capture_handle_size = (uint32_t)(dataSize / groupCount);
+	if (capture_handle_size >= 8)
+	{
+		uint32_t h0 = 0;
+		uint32_t h1 = 0;
+		memcpy(&h0, pData, sizeof(uint32_t));
+		memcpy(&h1, reinterpret_cast<const std::byte*>(pData) + sizeof(uint32_t), sizeof(uint32_t));
+		DLOG2("Ray tracing capture handles: pipeline=%u firstGroup=%u groups=%u handleSize=%u h0=0x%08x%08x",
+			pipeline_index, firstGroup, groupCount, capture_handle_size, h0, h1);
+	}
+	else
+	{
+		DLOG2("Ray tracing capture handles: pipeline=%u firstGroup=%u groups=%u handleSize=%u",
+			pipeline_index, firstGroup, groupCount, capture_handle_size);
+	}
 	store_raytracing_handles(pipeline_data, firstGroup, groupCount, capture_handle_size, pData, false);
 
 	if (!wrap_vkGetPhysicalDeviceProperties2 || cb.reader.physicalDevice == VK_NULL_HANDLE) return;
@@ -690,13 +708,13 @@ static int find_raytracing_group_index(const trackedpipeline& pipeline_data, con
 	return -1;
 }
 
-static void fixup_sbt_region(lava_file_reader& reader, const trackeddevice& device_data, VkDevice device, trackedpipeline& pipeline_data,
+static bool fixup_sbt_region(lava_file_reader& reader, const trackeddevice& device_data, VkDevice device, trackedpipeline& pipeline_data,
 	const VkStridedDeviceAddressRegionKHR* region, const char* label)
 {
-	if (!region || region->deviceAddress == 0 || region->size == 0) return;
+	if (!region || region->deviceAddress == 0 || region->size == 0) return false;
 	const uint32_t capture_handle_size = pipeline_data.raytracing_group_handle_size;
 	const uint32_t replay_handle_size = pipeline_data.raytracing_group_handle_size_replay;
-	if (capture_handle_size == 0 || replay_handle_size == 0) return;
+	if (capture_handle_size == 0 || replay_handle_size == 0) return false;
 	if (replay_handle_size > region->stride)
 	{
 		ABORT("Ray tracing %s SBT stride=%llu is smaller than replay handle size=%u",
@@ -712,7 +730,7 @@ static void fixup_sbt_region(lava_file_reader& reader, const trackeddevice& devi
 		ABORT("Ray tracing %s SBT stride is zero", label);
 	}
 	const uint32_t record_count = (uint32_t)(region->size / region->stride);
-	if (record_count == 0) return;
+	if (record_count == 0) return false;
 
 	VkDeviceSize buffer_offset = 0;
 	trackedbuffer* buffer_data = find_buffer_by_replay_address(region->deviceAddress, region->size, buffer_offset);
@@ -725,11 +743,32 @@ static void fixup_sbt_region(lava_file_reader& reader, const trackeddevice& devi
 	char* base = mapped + buffer_offset;
 
 	bool updated = false;
+	uint32_t matched = 0;
+	uint32_t patched = 0;
+	bool logged_mismatch = false;
 	for (uint32_t i = 0; i < record_count; i++)
 	{
 		std::byte* record = reinterpret_cast<std::byte*>(base + (size_t)i * region->stride);
 		const int group_index = find_raytracing_group_index(pipeline_data, record);
-		if (group_index < 0) continue;
+		if (group_index < 0)
+		{
+			if (!logged_mismatch && pipeline_data.raytracing_group_handles.size() >= 8 && capture_handle_size >= 8)
+			{
+				uint32_t r0 = 0;
+				uint32_t r1 = 0;
+				uint32_t c0 = 0;
+				uint32_t c1 = 0;
+				memcpy(&r0, record, sizeof(uint32_t));
+				memcpy(&r1, record + sizeof(uint32_t), sizeof(uint32_t));
+				memcpy(&c0, pipeline_data.raytracing_group_handles.data(), sizeof(uint32_t));
+				memcpy(&c1, pipeline_data.raytracing_group_handles.data() + sizeof(uint32_t), sizeof(uint32_t));
+				DLOG2("Ray tracing %s SBT first record mismatch: record=0x%08x%08x capture=0x%08x%08x",
+					label, r0, r1, c0, c1);
+				logged_mismatch = true;
+			}
+			continue;
+		}
+		matched++;
 		const size_t replay_offset = (size_t)group_index * replay_handle_size;
 		if (replay_offset + replay_handle_size > pipeline_data.raytracing_group_handles_replay.size())
 		{
@@ -738,12 +777,101 @@ static void fixup_sbt_region(lava_file_reader& reader, const trackeddevice& devi
 		}
 		memcpy(record, pipeline_data.raytracing_group_handles_replay.data() + replay_offset, replay_handle_size);
 		updated = true;
+		patched++;
 	}
 
 	mem_unmap(reader, device, loc, nullptr, mapped);
 	if (updated)
 	{
-		DLOG("Patched ray tracing %s SBT handles", label);
+		DLOG2("Ray tracing %s SBT patched %u/%u records (buffer=%u offset=%llu)",
+			label, patched, record_count, buffer_data->index, (unsigned long long)buffer_offset);
+	}
+	else
+	{
+		DLOG2("Ray tracing %s SBT has no matching handles (records=%u, buffer=%u)", label, record_count, buffer_data->index);
+	}
+	return updated;
+}
+
+static void replay_fixup_commandbuffer_raytracing_sbt(lava_file_reader& reader, trackedcmdbuffer& commandbuffer_data)
+{
+	if (commandbuffer_data.raytracing_sbt_uses.empty()) return;
+	const auto& device_data = VkDevice_index.at(commandbuffer_data.device_index);
+	const VkDevice device = commandbuffer_data.device;
+
+	for (const auto& use : commandbuffer_data.raytracing_sbt_uses)
+	{
+		if (use.pipeline_index == CONTAINER_INVALID_INDEX) continue;
+		trackedpipeline& pipeline_data = VkPipeline_index.at(use.pipeline_index);
+		if (pipeline_data.raytracing_group_handles_capture_replay) continue;
+		if (pipeline_data.raytracing_group_handle_size == 0 || pipeline_data.raytracing_group_handles.empty() ||
+			pipeline_data.raytracing_group_handle_size_replay == 0 || pipeline_data.raytracing_group_handles_replay.empty())
+		{
+			DLOG2("Ray tracing SBT fixup skipped: missing shader group handles for pipeline %u", pipeline_data.index);
+			continue;
+		}
+		DLOG2("Ray tracing SBT fixup: pipeline=%u capture_handle=%u replay_handle=%u groups=%u",
+			pipeline_data.index, pipeline_data.raytracing_group_handle_size, pipeline_data.raytracing_group_handle_size_replay,
+			pipeline_data.raytracing_group_count);
+		fixup_sbt_region(reader, device_data, device, pipeline_data, &use.raygen, "raygen");
+		fixup_sbt_region(reader, device_data, device, pipeline_data, &use.miss, "miss");
+		fixup_sbt_region(reader, device_data, device, pipeline_data, &use.hit, "hit");
+		fixup_sbt_region(reader, device_data, device, pipeline_data, &use.callable, "callable");
+	}
+}
+
+static void replay_fixup_commandbuffer_raytracing_instances(lava_file_reader& reader, trackedcmdbuffer& commandbuffer_data)
+{
+	if (!reader.run || commandbuffer_data.raytracing_instance_uses.empty()) return;
+	const auto& device_data = VkDevice_index.at(commandbuffer_data.device_index);
+	const VkDevice device = commandbuffer_data.device;
+
+	for (const auto& use : commandbuffer_data.raytracing_instance_uses)
+	{
+		if (use.device_address == 0 || use.primitive_count == 0) continue;
+		const VkDeviceAddress base_address = use.device_address + use.primitive_offset;
+		const VkDeviceSize total_size = (VkDeviceSize)use.primitive_count * sizeof(VkAccelerationStructureInstanceKHR);
+		VkDeviceSize buffer_offset = 0;
+		trackedbuffer* buffer_data = find_buffer_by_replay_address(base_address, total_size, buffer_offset);
+		if (!buffer_data)
+		{
+			ABORT("Acceleration structure instance buffer address 0x%llx is not mapped to a buffer",
+				(unsigned long long)base_address);
+		}
+
+		suballoc_location loc = device_data.allocator->find_buffer_memory(buffer_data->index);
+		char* mapped = mem_map(reader, device, loc);
+		char* base = mapped;
+		VkAccelerationStructureInstanceKHR* instance_data = reinterpret_cast<VkAccelerationStructureInstanceKHR*>(base + buffer_offset);
+
+		bool updated = false;
+		for (uint32_t idx = 0; idx < use.primitive_count; idx++)
+		{
+			const VkDeviceAddress current = instance_data[idx].accelerationStructureReference;
+			if (current == 0) continue;
+			const VkDeviceAddress translated = reader.parent->acceleration_structure_address_remapping.translate_address(current);
+			if (translated != 0)
+			{
+				if (translated != current)
+				{
+					instance_data[idx].accelerationStructureReference = translated;
+					updated = true;
+				}
+				continue;
+			}
+			if (!is_known_replay_as_address(current))
+			{
+				mem_unmap(reader, device, loc, nullptr, mapped);
+				ABORT("Acceleration structure instance reference 0x%llx is not remapped for replay",
+					(unsigned long long)current);
+			}
+		}
+
+		mem_unmap(reader, device, loc, nullptr, mapped);
+		if (updated)
+		{
+			DLOG("Remapped %u acceleration structure instance references", (unsigned)use.primitive_count);
+		}
 	}
 }
 
@@ -759,20 +887,13 @@ static void replay_fixup_vkCmdTraceRaysKHR(callback_context& cb, VkCommandBuffer
 	if (commandbuffer_index == CONTAINER_INVALID_INDEX) return;
 	trackedcmdbuffer& commandbuffer_data = VkCommandBuffer_index.at(commandbuffer_index);
 	if (commandbuffer_data.bound_raytracing_pipeline_index == CONTAINER_INVALID_INDEX) return;
-	trackedpipeline& pipeline_data = VkPipeline_index.at(commandbuffer_data.bound_raytracing_pipeline_index);
-	if (pipeline_data.raytracing_group_handles_capture_replay) return;
-	if (pipeline_data.raytracing_group_handle_size == 0 || pipeline_data.raytracing_group_handles.empty() ||
-		pipeline_data.raytracing_group_handle_size_replay == 0 || pipeline_data.raytracing_group_handles_replay.empty())
-	{
-		DLOG("Ray tracing SBT fixup skipped: missing shader group handles for pipeline %u", pipeline_data.index);
-		return;
-	}
-	const auto& device_data = VkDevice_index.at(commandbuffer_data.device_index);
-	const VkDevice device = commandbuffer_data.device;
-	fixup_sbt_region(cb.reader, device_data, device, pipeline_data, pRaygenShaderBindingTable, "raygen");
-	fixup_sbt_region(cb.reader, device_data, device, pipeline_data, pMissShaderBindingTable, "miss");
-	fixup_sbt_region(cb.reader, device_data, device, pipeline_data, pHitShaderBindingTable, "hit");
-	fixup_sbt_region(cb.reader, device_data, device, pipeline_data, pCallableShaderBindingTable, "callable");
+	trackedcmdbuffer::raytracing_sbt_use use = {};
+	use.pipeline_index = commandbuffer_data.bound_raytracing_pipeline_index;
+	if (pRaygenShaderBindingTable) use.raygen = *pRaygenShaderBindingTable;
+	if (pMissShaderBindingTable) use.miss = *pMissShaderBindingTable;
+	if (pHitShaderBindingTable) use.hit = *pHitShaderBindingTable;
+	if (pCallableShaderBindingTable) use.callable = *pCallableShaderBindingTable;
+	commandbuffer_data.raytracing_sbt_uses.push_back(use);
 }
 
 static void replay_fixup_vkCmdTraceRaysIndirectKHR(callback_context& cb, VkCommandBuffer commandBuffer, const VkStridedDeviceAddressRegionKHR* pRaygenShaderBindingTable,

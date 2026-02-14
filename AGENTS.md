@@ -46,6 +46,13 @@
 
 ## Debugging
 - For troubleshooting, set `LAVATUBE_DEBUG` environment variable, value from 1 (some extra logging) to 3 (the most verbose).
+- Trace files are actually containers that contain other files. Some of these may contain useful information for debugging, and these
+  may be inspected with the `packtool` utility. If they are JSON format, they can be printed with `packtool print`. Example usage:
+  `build/packtool print limits.json build/vulkan_general.vk`
+- The contained file `limits.json` counts how many of each Vulkan object were created during the capture.
+- The contained file `tracking.json` contains immutable or accumulated meta-information for each Vulkan object.
+- The contained file `metadata.json` contains information on presented device capabilities (given by capture device) and requested
+  capabilities (as requested by the captured application or by our capture layer).
 
 ## Modifying capture functionality
 - Capture is often also called `write` or `trace` in the code.
