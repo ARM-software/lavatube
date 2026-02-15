@@ -161,6 +161,38 @@ public:
 				memcpy(ptr, uptr, size);
 				const VkDeviceSize base_offset = (VkDeviceSize)(ptr - buf);
 				parent->find_address_candidates(buffer_data, size, ptr, base_offset, current);
+				if (!run) buffer_data.source.register_source(base_offset, size, current);
+			}
+			read_position += size;
+			ptr += size;
+			changed += size;
+			// cppcheck-suppress nullPointerRedundantCheck
+			assert(maxsize == 0 || ptr <= buf + maxsize);
+		}
+		while (!(offset == 0 && size == 0));
+		return changed;
+	}
+
+	/// Read patch update and track host side changes
+	uint32_t read_patch_tracking(char* buf, uint64_t maxsize, host_write_regions& regions)
+	{
+		char* ptr = buf;
+		uint32_t offset;
+		uint32_t size;
+		uint64_t changed = 0;
+		do {
+			offset = read_uint32_t();
+			ptr += offset;
+			// cppcheck-suppress nullPointerRedundantCheck
+			assert(maxsize == 0 || ptr <= buf + maxsize);
+			size = read_uint32_t();
+			check_space(size);
+			const char* uptr = uncompressed_data + read_position;
+			if (buf && size)
+			{
+				memcpy(ptr, uptr, size);
+				const VkDeviceSize base_offset = (VkDeviceSize)(ptr - buf);
+				regions.register_source(base_offset, size, current);
 			}
 			read_position += size;
 			ptr += size;

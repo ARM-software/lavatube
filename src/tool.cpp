@@ -20,6 +20,7 @@ static bool validate = false;
 static bool verbose = false;
 static bool report_unused = false;
 static bool dump_shaders = false;
+static bool dump_host_write_stats = false;
 static int invokation_count = 0;
 
 // Utility funcs
@@ -39,6 +40,7 @@ static void usage()
 	printf("-r/--remap-validate    Validate existing device address remappings - abort if we find less or more addresses than already marked\n");
 	printf("-u/--unused            Find any found unused features and extensions in the trace file; remove them from the output file\n");
 	printf("-DS/--dump-shaders     Dump any shaders found to disk\n");
+	printf("-hw/--host-write-stats Dump host-side write tracking stats after replay\n");
 	printf("-s/--sandbox level     Set security sandbox level (from 1 to 3, with 3 the most strict, default %d)\n", (int)p__sandbox_level);
 	//printf("-R/--remap-addresses   Adding remapping of device addresses. Replaces existing address remappings. Requires an output file.\n");
 	exit(-1);
@@ -72,6 +74,41 @@ static std::string get_str(const char* in, int& remaining)
 	}
 	remaining--;
 	return in;
+}
+
+static void dump_host_write_stats_report(const char* label)
+{
+	const host_write_totals buffers = gather_host_write_stats(VkBuffer_index);
+	const host_write_totals images = gather_host_write_stats(VkImage_index);
+	const host_write_totals tensors = gather_host_write_stats(VkTensorARM_index);
+	const host_write_totals accel = gather_host_write_stats(VkAccelerationStructureKHR_index);
+
+	host_write_totals total;
+	total.objects = buffers.objects + images.objects + tensors.objects + accel.objects;
+	total.objects_with_data = buffers.objects_with_data + images.objects_with_data + tensors.objects_with_data + accel.objects_with_data;
+	total.segments = buffers.segments + images.segments + tensors.segments + accel.segments;
+	total.bytes = buffers.bytes + images.bytes + tensors.bytes + accel.bytes;
+
+	printf("Host write stats (%s):\n", label);
+	printf("  Total: objects=%lu with_data=%lu segments=%lu bytes=%lu\n",
+		(unsigned long)total.objects, (unsigned long)total.objects_with_data,
+		(unsigned long)total.segments, (unsigned long)total.bytes);
+	printf("  Buffers: objects=%lu with_data=%lu segments=%lu bytes=%lu max_segments=%lu highest index=%s\n",
+		(unsigned long)buffers.objects, (unsigned long)buffers.objects_with_data,
+		(unsigned long)buffers.segments, (unsigned long)buffers.bytes,
+		(unsigned long)buffers.max_segments, buffers.max_index == CONTAINER_INVALID_INDEX ? "n/a" : std::to_string(buffers.max_index).c_str());
+	printf("  Images: objects=%lu with_data=%lu segments=%lu bytes=%lu max_segments=%lu highest index=%s\n",
+		(unsigned long)images.objects, (unsigned long)images.objects_with_data,
+		(unsigned long)images.segments, (unsigned long)images.bytes,
+		(unsigned long)images.max_segments, images.max_index == CONTAINER_INVALID_INDEX ? "n/a" : std::to_string(buffers.max_index).c_str());
+	printf("  Tensors: objects=%lu with_data=%lu segments=%lu bytes=%lu max_segments=%lu highest index=%s\n",
+		(unsigned long)tensors.objects, (unsigned long)tensors.objects_with_data,
+		(unsigned long)tensors.segments, (unsigned long)tensors.bytes,
+		(unsigned long)tensors.max_segments, tensors.max_index == CONTAINER_INVALID_INDEX ? "n/a" : std::to_string(buffers.max_index).c_str());
+	printf("  AccelStructs: objects=%lu with_data=%lu segments=%lu bytes=%lu max_segments=%lu highest index=%s\n",
+		(unsigned long)accel.objects, (unsigned long)accel.objects_with_data,
+		(unsigned long)accel.segments, (unsigned long)accel.bytes,
+		(unsigned long)accel.max_segments, accel.max_index == CONTAINER_INVALID_INDEX ? "n/a" : std::to_string(buffers.max_index).c_str());
 }
 
 static void replay_thread(lava_reader* replayer, int thread_id)
@@ -219,6 +256,10 @@ int main(int argc, char **argv)
 		{
 			dump_shaders = true;
 		}
+		else if (match(argv[i], "-hw", "--host-write-stats", remaining))
+		{
+			dump_host_write_stats = true;
+		}
 		else if (match(argv[i], "-o", "--debugfile", remaining))
 		{
 			if (remaining < 1) usage();
@@ -317,6 +358,7 @@ int main(int argc, char **argv)
 		// Copy out the rewrite queue
 		if (validate_remap) rewrite_queue_copy = replayer.rewrite_queue;
 
+		if (dump_host_write_stats) dump_host_write_stats_report("pass1");
 		reset_for_tools();
 		replayer.finalize(false);
 	}
@@ -344,6 +386,7 @@ int main(int argc, char **argv)
 			replayer.threads[i].join();
 		}
 
+		if (dump_host_write_stats) dump_host_write_stats_report("pass2");
 		reset_for_tools();
 		replayer.finalize(false);
 	}

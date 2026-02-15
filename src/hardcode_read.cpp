@@ -2976,8 +2976,12 @@ void image_update(lava_file_reader& reader, uint32_t device_index, uint32_t imag
 	suballoc_location loc = device_data.allocator->find_image_memory(image_index);
 	DLOG2("image update idx=%u flush=%s init=%s size=%lu", image_index, loc.needs_flush ? "yes" : "no", loc.needs_init ? "yes" : "no", (unsigned long)loc.size);
 	assert(sptr == nullptr);
+	trackedimage& image_data = VkImage_index.at(image_index);
 	char* ptr = mem_map(reader, device, loc);
-	int32_t changed = reader.read_patch(ptr, loc.size);
+	int32_t changed = 0;
+	if (!reader.run && loc.needs_init) image_data.source.register_source(0, loc.size, reader.current);
+	if (!reader.run) reader.read_patch_tracking(ptr, loc.size, image_data.source);
+	else reader.read_patch(ptr, loc.size);
 	mem_unmap(reader, device, loc, nullptr, ptr);
 }
 
@@ -2988,10 +2992,14 @@ void buffer_update(lava_file_reader& reader, uint32_t device_index, uint32_t buf
 	DLOG2("buffer update idx=%u flush=%s init=%s size=%lu", buffer_index, loc.needs_flush ? "yes" : "no", loc.needs_init ? "yes" : "no", (unsigned long)loc.size);
 	assert(sptr == nullptr || sptr->sType == VK_STRUCTURE_TYPE_MARKED_OFFSETS_ARM);
 	VkDevice device = index_to_VkDevice.at(device_index);
+	trackedbuffer& buffer_data = VkBuffer_index.at(buffer_index);
 	char* ptr = mem_map(reader, device, loc);
 	int32_t changed = 0;
 
-	if (reader.parent->remap_scan) reader.read_patch_scanning(ptr, loc.size, VkBuffer_index.at(buffer_index));
+	if (!reader.run && loc.needs_init) buffer_data.source.register_source(0, loc.size, reader.current);
+
+	if (reader.parent->remap_scan) reader.read_patch_scanning(ptr, loc.size, buffer_data);
+	else if (!reader.run) reader.read_patch_tracking(ptr, loc.size, buffer_data.source);
 	else reader.read_patch(ptr, loc.size);
 
 	if (sptr) translate_marked_offsets(reader, (VkMarkedOffsetsARM*)sptr, ptr);
@@ -3006,9 +3014,12 @@ void tensor_update(lava_file_reader& reader, uint32_t device_index, uint32_t ten
 	DLOG2("tensor update idx=%u flush=%s init=%s size=%lu", tensor_index, loc.needs_flush ? "yes" : "no", loc.needs_init ? "yes" : "no", (unsigned long)loc.size);
 	assert(sptr == nullptr);
 	VkDevice device = index_to_VkDevice.at(device_index);
+	trackedtensor& tensor_data = VkTensorARM_index.at(tensor_index);
 	char* ptr = mem_map(reader, device, loc);
 	int32_t changed = 0;
-	reader.read_patch(ptr, loc.size);
+	if (!reader.run && loc.needs_init) tensor_data.source.register_source(0, loc.size, reader.current);
+	if (!reader.run) reader.read_patch_tracking(ptr, loc.size, tensor_data.source);
+	else reader.read_patch(ptr, loc.size);
 	mem_unmap(reader, device, loc, nullptr, ptr);
 }
 

@@ -217,7 +217,7 @@ struct trackedobject : trackable
 	uint64_t written = 0; // bytes written out for this object
 	uint32_t updates = 0; // number of times it was updated
 	bool accessible = false; // whether our backing memory is host visible and understandable
-	int source = 0; // code line that is the last source for us to be scanned, only for debugging
+	int source_line = 0; // code line that is the last source for us to be scanned, only for debugging
 	/// Do we alias another object in memory? if we alias 1-to-1, both point to each other, otherwise only the child points to
 	/// the parent object.
 	VkObjectType alias_type = VK_OBJECT_TYPE_UNKNOWN;
@@ -226,6 +226,9 @@ struct trackedobject : trackable
 	VkDeviceAddress capture_device_address = 0;
 	VkMemoryPropertyFlags memory_flags = 0;
 	lava_tiling tiling = TILING_LINEAR; // linear is the default
+
+	/// Data structure used to track the host write source for our data. Only used during post-processing.
+	host_write_regions source;
 
 	bool is_state(states s) const { return (uint8_t)s == state; }
 	void set_state(states s) { state = (uint8_t)s; }
@@ -570,6 +573,7 @@ struct trackedcommand // does _not_ inherit trackable
 	};
 
 	lava_function_id id;
+	change_source source;
 	union data
 	{
 		struct bind_descriptorsets
@@ -708,7 +712,7 @@ struct trackedcmdbuffer_trace : trackedcmdbuffer
 	void touch(trackedobject* data, VkDeviceSize offset, VkDeviceSize size, unsigned source)
 	{
 		if (!data->accessible) return;
-		data->source = source;
+		data->source_line = (int)source;
 		if (size == VK_WHOLE_SIZE) size = data->size - offset;
 		touched[data].add_os(offset, size);
 	}
@@ -785,7 +789,7 @@ struct trackeddescriptorset_trace : trackeddescriptorset
 	void touch(trackedobject* data, VkDeviceSize offset, VkDeviceSize size, unsigned source)
 	{
 		if (!data->accessible) return;
-		data->source = -(int)source;
+		data->source_line = -(int)source;
 		if (size == VK_WHOLE_SIZE) size = data->size - offset;
 		touched[data].add_os(offset, size);
 	}

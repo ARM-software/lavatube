@@ -279,10 +279,13 @@ bool execute_commands(lava_file_reader& reader, const trackeddevice& device_data
 			{
 				suballoc_location src = device_data.allocator->find_buffer_memory(c.data.copy_buffer.src_buffer_index);
 				suballoc_location dst = device_data.allocator->find_buffer_memory(c.data.copy_buffer.dst_buffer_index);
+				trackedbuffer& src_buffer = VkBuffer_index.at(c.data.copy_buffer.src_buffer_index);
+				trackedbuffer& dst_buffer = VkBuffer_index.at(c.data.copy_buffer.dst_buffer_index);
 				for (uint32_t i = 0; i < c.data.copy_buffer.regionCount; i++)
 				{
 					VkBufferCopy& r = c.data.copy_buffer.pRegions[i];
 					memcpy((char*)dst.memory + r.dstOffset, (char*)src.memory + r.srcOffset, r.size);
+					dst_buffer.source.copy_sources(src_buffer.source, r.dstOffset, r.srcOffset, r.size);
 				}
 			}
 			free(c.data.copy_buffer.pRegions);
@@ -290,7 +293,9 @@ bool execute_commands(lava_file_reader& reader, const trackeddevice& device_data
 		case VKCMDUPDATEBUFFER:
 			{
 				suballoc_location sub = device_data.allocator->find_buffer_memory(c.data.update_buffer.buffer_index);
+				trackedbuffer& dst_buffer = VkBuffer_index.at(c.data.update_buffer.buffer_index);
 				memcpy((char*)sub.memory + c.data.update_buffer.offset, c.data.update_buffer.values, c.data.update_buffer.size);
+				dst_buffer.source.register_source(c.data.update_buffer.offset, c.data.update_buffer.size, c.source);
 			}
 			free(c.data.update_buffer.values);
 			break;

@@ -51,6 +51,395 @@ private:
 	tbb::concurrent_unordered_map<T, U> map;
 };
 
+/// Track host write regions for post-process analysis
+struct host_write_regions
+{
+public:
+	struct stats
+	{
+		uint64_t segments = 0;
+		uint64_t bytes = 0;
+
+		bool empty() const { return segments == 0; }
+	};
+
+	host_write_regions() = default;
+
+	host_write_regions(const host_write_regions& other)
+	{
+		std::unique_lock lock(other.mutex);
+		data = other.data;
+	}
+
+	host_write_regions& operator=(const host_write_regions& other)
+	{
+		if (this == &other) return *this;
+		std::unique_lock lock_this(mutex, std::defer_lock);
+		std::unique_lock lock_other(other.mutex, std::defer_lock);
+		std::lock(lock_this, lock_other);
+		data = other.data;
+		return *this;
+	}
+
+	host_write_regions(host_write_regions&& other) noexcept
+	{
+		std::unique_lock lock(other.mutex);
+		data = std::move(other.data);
+	}
+
+	host_write_regions& operator=(host_write_regions&& other) noexcept
+	{
+		if (this == &other) return *this;
+		std::unique_lock lock_this(mutex, std::defer_lock);
+		std::unique_lock lock_other(other.mutex, std::defer_lock);
+		std::lock(lock_this, lock_other);
+		data = std::move(other.data);
+		return *this;
+	}
+
+	change_source get_source(uint64_t address, uint32_t size) const
+	{
+		std::shared_lock lock(mutex);
+		assert(size > 0);
+		const uint64_t end = address + (uint64_t)size;
+		assert(end >= address);
+
+		auto it = data.lower_bound(address);
+		if (it != data.begin())
+		{
+			auto prev = std::prev(it);
+			if (prev->second.end > address)
+			{
+				it = prev;
+			}
+		}
+		assert(it != data.end());
+		assert(it->first <= address);
+		assert(it->second.end > address);
+
+		const change_source source = it->second.source;
+		uint64_t pos = address;
+		while (pos < end)
+		{
+			if (it == data.end() || it->first > pos)
+			{
+				assert(false && "host_write_regions missing coverage");
+				return source;
+			}
+			if (!same_source(it->second.source, source))
+			{
+				assert(false && "host_write_regions mixed sources");
+				return source;
+			}
+			const uint64_t seg_end = it->second.end;
+			if (seg_end <= pos)
+			{
+				++it;
+				continue;
+			}
+			pos = seg_end;
+			if (pos < end)
+			{
+				++it;
+			}
+		}
+		return source;
+	}
+
+	stats get_stats() const
+	{
+		std::shared_lock lock(mutex);
+		stats out;
+		out.segments = data.size();
+		for (const auto& entry : data)
+		{
+			if (entry.second.end > entry.first)
+			{
+				out.bytes += (entry.second.end - entry.first);
+			}
+		}
+		return out;
+	}
+
+	void register_source(uint64_t address, uint64_t size, change_source source, uint32_t elements = 1, uint32_t stride = 0)
+	{
+		if (size == 0) return;
+		std::unique_lock lock(mutex);
+		assert(elements > 0);
+		source.self_test();
+
+		if (elements == 1)
+		{
+			const uint64_t end = address + size;
+			assert(end >= address);
+			insert_range(address, end, source);
+			return;
+		}
+
+		if (stride == 0)
+		{
+			const uint64_t total = size * (uint64_t)elements;
+			assert(total / elements == size);
+			const uint64_t end = address + total;
+			assert(end >= address);
+			insert_range(address, end, source);
+			return;
+		}
+
+		for (uint32_t i = 0; i < elements; ++i)
+		{
+			const uint64_t start = address + (uint64_t)i * (uint64_t)stride;
+			const uint64_t end = start + size;
+			assert(end >= start);
+			insert_range(start, end, source);
+		}
+	}
+
+	void copy_sources(const host_write_regions& regions, uint64_t dst_address, uint64_t src_address, uint64_t src_size)
+	{
+		if (src_size == 0) return;
+		const uint64_t src_end = src_address + src_size;
+		assert(src_end >= src_address);
+
+		struct pending_range
+		{
+			uint64_t start = 0;
+			uint64_t end = 0;
+			change_source source;
+		};
+
+		std::vector<pending_range> pending;
+
+		if (this == &regions)
+		{
+			std::unique_lock lock(mutex);
+			auto it = data.lower_bound(src_address);
+			if (it != data.begin())
+			{
+				auto prev = std::prev(it);
+				if (prev->second.end > src_address)
+				{
+					it = prev;
+				}
+			}
+
+			uint64_t pos = src_address;
+			while (pos < src_end)
+			{
+				if (it == data.end() || it->first > pos)
+				{
+					assert(false && "host_write_regions missing coverage");
+					return;
+				}
+				const uint64_t seg_start = std::max<uint64_t>(it->first, src_address);
+				const uint64_t seg_end = std::min<uint64_t>(it->second.end, src_end);
+				if (seg_start > pos)
+				{
+					assert(false && "host_write_regions missing coverage");
+					return;
+				}
+				const uint64_t dst_start = dst_address + (seg_start - src_address);
+				const uint64_t dst_end = dst_start + (seg_end - seg_start);
+				if (!pending.empty() && pending.back().end == dst_start && same_source(pending.back().source, it->second.source))
+				{
+					pending.back().end = dst_end;
+				}
+				else
+				{
+					pending.push_back({ dst_start, dst_end, it->second.source });
+				}
+				pos = seg_end;
+				if (seg_end >= it->second.end)
+				{
+					++it;
+				}
+			}
+
+			for (const auto& entry : pending)
+			{
+				insert_range(entry.start, entry.end, entry.source);
+			}
+			return;
+		}
+
+		{
+			std::shared_lock lock(regions.mutex);
+			auto it = regions.data.lower_bound(src_address);
+			if (it != regions.data.begin())
+			{
+				auto prev = std::prev(it);
+				if (prev->second.end > src_address)
+				{
+					it = prev;
+				}
+			}
+
+			uint64_t pos = src_address;
+			while (pos < src_end)
+			{
+				if (it == regions.data.end() || it->first > pos)
+				{
+					assert(false && "host_write_regions missing coverage");
+					return;
+				}
+				const uint64_t seg_start = std::max<uint64_t>(it->first, src_address);
+				const uint64_t seg_end = std::min<uint64_t>(it->second.end, src_end);
+				if (seg_start > pos)
+				{
+					assert(false && "host_write_regions missing coverage");
+					return;
+				}
+				const uint64_t dst_start = dst_address + (seg_start - src_address);
+				const uint64_t dst_end = dst_start + (seg_end - seg_start);
+				if (!pending.empty() && pending.back().end == dst_start && same_source(pending.back().source, it->second.source))
+				{
+					pending.back().end = dst_end;
+				}
+				else
+				{
+					pending.push_back({ dst_start, dst_end, it->second.source });
+				}
+				pos = seg_end;
+				if (seg_end >= it->second.end)
+				{
+					++it;
+				}
+			}
+		}
+
+		if (pending.empty()) return;
+
+		std::unique_lock lock(mutex);
+		for (const auto& entry : pending)
+		{
+			insert_range(entry.start, entry.end, entry.source);
+		}
+	}
+
+private:
+	struct segment
+	{
+		uint64_t end = 0;
+		change_source source;
+	};
+
+	static bool same_source(const change_source& a, const change_source& b)
+	{
+		return a.call == b.call && a.frame == b.frame && a.thread == b.thread && a.call_id == b.call_id;
+	}
+
+	void erase_range(uint64_t start, uint64_t end)
+	{
+		if (start >= end) return;
+
+		auto it = data.lower_bound(start);
+		if (it != data.begin())
+		{
+			auto prev = std::prev(it);
+			if (prev->second.end > start)
+			{
+				it = prev;
+			}
+		}
+
+		while (it != data.end() && it->first < end)
+		{
+			const uint64_t seg_start = it->first;
+			const uint64_t seg_end = it->second.end;
+			const change_source seg_source = it->second.source;
+
+			if (seg_start < start && seg_end > end)
+			{
+				it->second.end = start;
+				data.emplace(end, segment{ seg_end, seg_source });
+				return;
+			}
+
+			if (seg_start < start && seg_end > start)
+			{
+				it->second.end = start;
+				++it;
+				continue;
+			}
+
+			if (seg_start < end && seg_end > end)
+			{
+				data.erase(it++);
+				data.emplace(end, segment{ seg_end, seg_source });
+				return;
+			}
+
+			it = data.erase(it);
+		}
+	}
+
+	void insert_range(uint64_t start, uint64_t end, const change_source& source)
+	{
+		if (start >= end) return;
+
+		erase_range(start, end);
+
+		uint64_t new_start = start;
+		uint64_t new_end = end;
+
+		auto it = data.lower_bound(start);
+		if (it != data.begin())
+		{
+			auto prev = std::prev(it);
+			if (prev->second.end == start && same_source(prev->second.source, source))
+			{
+				new_start = prev->first;
+				data.erase(prev);
+			}
+		}
+
+		auto next = data.lower_bound(end);
+		if (next != data.end() && next->first == end && same_source(next->second.source, source))
+		{
+			new_end = next->second.end;
+			data.erase(next);
+		}
+
+		data.emplace(new_start, segment{ new_end, source });
+	}
+
+	std::map<uint64_t, segment> data;
+	mutable std::shared_mutex mutex;
+};
+
+struct host_write_totals
+{
+	uint64_t objects = 0;
+	uint64_t objects_with_data = 0;
+	uint64_t segments = 0;
+	uint64_t bytes = 0;
+	uint64_t max_segments = 0;
+	uint32_t max_index = CONTAINER_INVALID_INDEX;
+};
+
+template <typename T>
+inline host_write_totals gather_host_write_stats(const std::vector<T>& objects)
+{
+	host_write_totals totals;
+	for (const auto& obj : objects)
+	{
+		const host_write_regions::stats stats = obj.source.get_stats();
+		totals.objects++;
+		if (!stats.empty())
+		{
+			totals.objects_with_data++;
+			totals.segments += stats.segments;
+			totals.bytes += stats.bytes;
+			if (stats.segments > totals.max_segments)
+			{
+				totals.max_segments = stats.segments;
+				totals.max_index = obj.index;
+			}
+		}
+	}
+	return totals;
+}
+
 /// Limited thread safe remapping allocator for memory addresses used for replay. The payload needs to
 /// store size in a 'size' member and its own remapped address in a 'device_address' member.
 template<typename T>

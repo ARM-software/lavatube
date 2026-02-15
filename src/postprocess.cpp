@@ -133,6 +133,7 @@ void postprocess_vkCmdPushDescriptorSetKHR(callback_context& cb, VkCommandBuffer
 	const uint32_t cmdbuffer_index = index_to_VkCommandBuffer.index(commandBuffer);
 	auto& cmdbuffer_data = VkCommandBuffer_index.at(cmdbuffer_index);
 	trackedcommand cmd { VKCMDPUSHDESCRIPTORSETKHR };
+	cmd.source = cb.reader.current;
 	cmd.data.push_descriptorset.pipelineBindPoint = pipelineBindPoint;
 	cmd.data.push_descriptorset.layout = layout;
 	cmd.data.push_descriptorset.set = set;
@@ -158,6 +159,7 @@ void postprocess_vkCmdPushDescriptorSet2KHR(callback_context& cb, VkCommandBuffe
 	if (pPushDescriptorSetInfo->stageFlags & (VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT))
 	{
 		trackedcommand cmd { VKCMDPUSHDESCRIPTORSETKHR };
+		cmd.source = cb.reader.current;
 		cmd.data.push_descriptorset.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
 		cmd.data.push_descriptorset.layout = pPushDescriptorSetInfo->layout;
 		cmd.data.push_descriptorset.set = pPushDescriptorSetInfo->set;
@@ -168,6 +170,7 @@ void postprocess_vkCmdPushDescriptorSet2KHR(callback_context& cb, VkCommandBuffe
 	if (pPushDescriptorSetInfo->stageFlags & VK_SHADER_STAGE_COMPUTE_BIT)
 	{
 		trackedcommand cmd { VKCMDPUSHDESCRIPTORSETKHR };
+		cmd.source = cb.reader.current;
 		cmd.data.push_descriptorset.pipelineBindPoint = VK_PIPELINE_BIND_POINT_COMPUTE;
 		cmd.data.push_descriptorset.layout = pPushDescriptorSetInfo->layout;
 		cmd.data.push_descriptorset.set = pPushDescriptorSetInfo->set;
@@ -194,6 +197,7 @@ void postprocess_vkCmdBindDescriptorSets(callback_context& cb, VkCommandBuffer c
 	const uint32_t cmdbuffer_index = index_to_VkCommandBuffer.index(commandBuffer);
 	auto& cmdbuffer_data = VkCommandBuffer_index.at(cmdbuffer_index);
 	trackedcommand cmd { VKCMDBINDDESCRIPTORSETS };
+	cmd.source = cb.reader.current;
 	cmd.data.bind_descriptorsets.pipelineBindPoint = pipelineBindPoint;
 	cmd.data.bind_descriptorsets.layout = layout;
 	cmd.data.bind_descriptorsets.firstSet = firstSet;
@@ -282,6 +286,7 @@ void postprocess_vkCmdBindPipeline(callback_context& cb, VkCommandBuffer command
 	const uint32_t pipeline_index = index_to_VkPipeline.index(pipeline);
 	auto& cmdbuffer_data = VkCommandBuffer_index.at(cmdbuffer_index);
 	trackedcommand cmd { VKCMDBINDPIPELINE };
+	cmd.source = cb.reader.current;
 	cmd.data.bind_pipeline.pipelineBindPoint = pipelineBindPoint;
 	cmd.data.bind_pipeline.pipeline_index = pipeline_index;
 	cmdbuffer_data.commands.push_back(cmd);
@@ -290,6 +295,7 @@ void postprocess_vkCmdBindPipeline(callback_context& cb, VkCommandBuffer command
 void postprocess_draw_command(callback_context& cb, uint32_t commandbuffer_index, trackedcmdbuffer& commandbuffer_data)
 {
 	trackedcommand cmd { VKCMDDRAW };
+	cmd.source = cb.reader.current;
 	commandbuffer_data.commands.push_back(cmd);
 }
 
@@ -301,6 +307,7 @@ void postprocess_raytracing_command(callback_context& cb, uint32_t commandbuffer
 		return;
 	}
 	trackedcommand cmd { VKCMDTRACERAYSKHR };
+	cmd.source = cb.reader.current;
 	cmd.trace_rays_valid = false;
 	commandbuffer_data.commands.push_back(cmd);
 }
@@ -308,6 +315,7 @@ void postprocess_raytracing_command(callback_context& cb, uint32_t commandbuffer
 void postprocess_compute_command(callback_context& cb, uint32_t commandbuffer_index, trackedcmdbuffer& commandbuffer_data)
 {
 	trackedcommand cmd { VKCMDDISPATCH };
+	cmd.source = cb.reader.current;
 	commandbuffer_data.commands.push_back(cmd);
 }
 
@@ -316,6 +324,7 @@ void postprocess_vkCmdUpdateBuffer(callback_context& cb, VkCommandBuffer command
 	uint32_t cmdbuffer_index = index_to_VkCommandBuffer.index(commandBuffer);
 	auto& cmdbuffer_data = VkCommandBuffer_index.at(cmdbuffer_index);
 	trackedcommand cmd { VKCMDUPDATEBUFFER };
+	cmd.source = cb.reader.current;
 	cmd.data.update_buffer.size = dataSize;
 	cmd.data.update_buffer.offset = dstOffset;
 	cmd.data.update_buffer.buffer_index = index_to_VkBuffer.index(dstBuffer);
@@ -329,6 +338,7 @@ void postprocess_vkCmdCopyBuffer(callback_context& cb, VkCommandBuffer commandBu
 	uint32_t cmdbuffer_index = index_to_VkCommandBuffer.index(commandBuffer);
 	auto& cmdbuffer_data = VkCommandBuffer_index.at(cmdbuffer_index);
 	trackedcommand cmd { VKCMDCOPYBUFFER };
+	cmd.source = cb.reader.current;
 	cmd.data.copy_buffer.src_buffer_index = index_to_VkBuffer.index(srcBuffer);
 	cmd.data.copy_buffer.dst_buffer_index = index_to_VkBuffer.index(dstBuffer);
 	cmd.data.copy_buffer.regionCount = regionCount;
@@ -342,6 +352,7 @@ void postprocess_vkCmdCopyBuffer2(callback_context& cb, VkCommandBuffer commandB
 	uint32_t cmdbuffer_index = index_to_VkCommandBuffer.index(commandBuffer);
 	auto& cmdbuffer_data = VkCommandBuffer_index.at(cmdbuffer_index);
 	trackedcommand cmd { VKCMDCOPYBUFFER };
+	cmd.source = cb.reader.current;
 	cmd.data.copy_buffer.src_buffer_index = index_to_VkBuffer.index(pCopyBufferInfo->srcBuffer);
 	cmd.data.copy_buffer.dst_buffer_index = index_to_VkBuffer.index(pCopyBufferInfo->dstBuffer);
 	cmd.data.copy_buffer.regionCount = pCopyBufferInfo->regionCount;
@@ -355,6 +366,7 @@ static void postprocess_push_constants(callback_context& cb, VkCommandBuffer com
 	uint32_t cmdbuffer_index = index_to_VkCommandBuffer.index(commandBuffer);
 	auto& cmdbuffer_data = VkCommandBuffer_index.at(cmdbuffer_index);
 	trackedcommand cmd { VKCMDPUSHCONSTANTS };
+	cmd.source = cb.reader.current;
 	cmd.data.push_constants.offset = offset;
 	cmd.data.push_constants.size = size;
 	cmd.data.push_constants.values = (char*)malloc(size);
@@ -520,6 +532,7 @@ void postprocess_vkCmdBindShadersEXT(callback_context& cb, VkCommandBuffer comma
 	const uint32_t cmdbuffer_index = index_to_VkCommandBuffer.index(commandBuffer);
 	auto& cmdbuffer_data = VkCommandBuffer_index.at(cmdbuffer_index);
 	trackedcommand cmd { VKCMDBINDSHADERSEXT };
+	cmd.source = cb.reader.current;
 	cmd.data.bind_shaders_ext.stageCount = stageCount;
 	if (stageCount)
 	{
@@ -553,6 +566,7 @@ void postprocess_vkCmdTraceRaysKHR(callback_context& cb, VkCommandBuffer command
 	const uint32_t cmdbuffer_index = index_to_VkCommandBuffer.index(commandBuffer);
 	auto& cmdbuffer_data = VkCommandBuffer_index.at(cmdbuffer_index);
 	trackedcommand cmd { VKCMDTRACERAYSKHR };
+	cmd.source = cb.reader.current;
 	cmd.trace_rays_valid = true;
 	cmd.data.trace_rays.mode = trackedcommand::TRACE_RAYS_DIRECT;
 	fill_trace_rays_regions(cmd, pRaygenShaderBindingTable, pMissShaderBindingTable, pHitShaderBindingTable, pCallableShaderBindingTable);
@@ -571,6 +585,7 @@ void postprocess_vkCmdTraceRaysIndirectKHR(callback_context& cb, VkCommandBuffer
 	const uint32_t cmdbuffer_index = index_to_VkCommandBuffer.index(commandBuffer);
 	auto& cmdbuffer_data = VkCommandBuffer_index.at(cmdbuffer_index);
 	trackedcommand cmd { VKCMDTRACERAYSKHR };
+	cmd.source = cb.reader.current;
 	cmd.trace_rays_valid = true;
 	cmd.data.trace_rays.mode = trackedcommand::TRACE_RAYS_INDIRECT;
 	fill_trace_rays_regions(cmd, pRaygenShaderBindingTable, pMissShaderBindingTable, pHitShaderBindingTable, pCallableShaderBindingTable);
@@ -587,6 +602,7 @@ void postprocess_vkCmdTraceRaysIndirect2KHR(callback_context& cb, VkCommandBuffe
 	const uint32_t cmdbuffer_index = index_to_VkCommandBuffer.index(commandBuffer);
 	auto& cmdbuffer_data = VkCommandBuffer_index.at(cmdbuffer_index);
 	trackedcommand cmd { VKCMDTRACERAYSKHR };
+	cmd.source = cb.reader.current;
 	cmd.trace_rays_valid = true;
 	cmd.data.trace_rays.mode = trackedcommand::TRACE_RAYS_INDIRECT2;
 	fill_trace_rays_regions(cmd, nullptr, nullptr, nullptr, nullptr);

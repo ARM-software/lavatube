@@ -251,6 +251,12 @@ target_link_libraries(containers2 ${MOST_COMMON_LIBRARIES} tbb pthread)
 target_compile_options(containers2 PRIVATE ${COMMON_FLAGS})
 add_test(NAME container_test2 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/containers2)
 
+add_executable(host_write_regions_test tests/host_write_regions.cpp)
+target_include_directories(host_write_regions_test ${COMMON_INCLUDE})
+target_link_libraries(host_write_regions_test ${MOST_COMMON_LIBRARIES} tbb pthread)
+target_compile_options(host_write_regions_test PRIVATE ${COMMON_FLAGS})
+add_test(NAME host_write_regions_test COMMAND ${CMAKE_CURRENT_BINARY_DIR}/host_write_regions_test)
+
 add_executable(containers_perf tests/container_perf.cpp)
 target_include_directories(containers_perf ${COMMON_INCLUDE})
 target_link_libraries(containers_perf ${MOST_COMMON_LIBRARIES} tbb pthread)
