@@ -268,18 +268,6 @@ struct trackedshadermodule : trackable
 	uint32_t calls = 0; // numbere of times this shader was called
 };
 
-/// Tracking device address candidates
-struct remap_candidate
-{
-	VkDeviceAddress address; // contained value
-	VkDeviceSize offset; // byte offset from start of buffer
-	change_source source; // last write to memory area from which we came
-
-	remap_candidate(VkDeviceAddress a, VkDeviceSize b, change_source c) { address = a; offset = b; source = c; }
-	remap_candidate(const remap_candidate& c) { address = c.address; offset = c.offset; source = c.source; }
-	remap_candidate(remap_candidate&& c) { address = c.address; offset = c.offset; source = c.source; }
-};
-
 struct trackedbuffer : trackedobject
 {
 	using trackedobject::trackedobject; // inherit constructor
@@ -296,28 +284,7 @@ struct trackedbuffer : trackedobject
 		assert(usage != VK_BUFFER_USAGE_FLAG_BITS_MAX_ENUM);
 		assert(object_type == VK_OBJECT_TYPE_BUFFER);
 		if (is_state(states::bound)) assert(size != 0);
-		assert(candidates.size() == candidate_lookup.size());
 		trackedobject::self_test();
-	}
-
-	// -- The below is only used during remap post-processing --
-
-	std::list<remap_candidate> candidates;
-	std::unordered_map<VkDeviceSize, std::list<remap_candidate>::iterator> candidate_lookup;
-
-	void add_candidate(VkDeviceSize off, VkDeviceAddress candidate, change_source origin)
-	{
-		assert(candidate_lookup.count(off) == 0);
-		candidates.emplace_back(candidate, off, origin);
-		candidate_lookup[off] = --candidates.end();
-	}
-
-	void remove_candidate(VkDeviceSize off)
-	{
-		assert(candidate_lookup.count(off) > 0);
-		auto it = candidate_lookup.at(off);
-		candidate_lookup.erase(off);
-		candidates.erase(it);
 	}
 };
 
@@ -922,4 +889,9 @@ inline void trackedmemory::unbind(trackedobject* obj)
 			return;
 		}
 	}
+}
+
+inline std::string describe_change_source(const change_source& src)
+{
+	return "Memory last written to by " + std::string(get_function_name(src.call_id)) + " at frame " + std::to_string(src.frame) + " call number " + std::to_string(src.call) + " thread " + std::to_string(src.thread);
 }

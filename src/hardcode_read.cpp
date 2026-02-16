@@ -2979,9 +2979,12 @@ void image_update(lava_file_reader& reader, uint32_t device_index, uint32_t imag
 	trackedimage& image_data = VkImage_index.at(image_index);
 	char* ptr = mem_map(reader, device, loc);
 	int32_t changed = 0;
+
 	if (!reader.run && loc.needs_init) image_data.source.register_source(0, loc.size, reader.current);
+
 	if (!reader.run) reader.read_patch_tracking(ptr, loc.size, image_data.source);
 	else reader.read_patch(ptr, loc.size);
+
 	mem_unmap(reader, device, loc, ptr);
 }
 
@@ -2998,8 +3001,7 @@ void buffer_update(lava_file_reader& reader, uint32_t device_index, uint32_t buf
 
 	if (!reader.run && loc.needs_init) buffer_data.source.register_source(0, loc.size, reader.current);
 
-	if (reader.parent->remap_scan) reader.read_patch_scanning(ptr, loc.size, buffer_data);
-	else if (!reader.run) reader.read_patch_tracking(ptr, loc.size, buffer_data.source);
+	if (!reader.run) reader.read_patch_tracking(ptr, loc.size, buffer_data.source);
 	else reader.read_patch(ptr, loc.size);
 
 	if (sptr) translate_marked_offsets(reader, (VkMarkedOffsetsARM*)sptr, ptr, loc.size);
@@ -3017,9 +3019,12 @@ void tensor_update(lava_file_reader& reader, uint32_t device_index, uint32_t ten
 	trackedtensor& tensor_data = VkTensorARM_index.at(tensor_index);
 	char* ptr = mem_map(reader, device, loc);
 	int32_t changed = 0;
+
 	if (!reader.run && loc.needs_init) tensor_data.source.register_source(0, loc.size, reader.current);
+
 	if (!reader.run) reader.read_patch_tracking(ptr, loc.size, tensor_data.source);
 	else reader.read_patch(ptr, loc.size);
+
 	mem_unmap(reader, device, loc, ptr);
 }
 

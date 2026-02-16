@@ -55,22 +55,6 @@ static bool run_spirv(const trackeddevice& device_data, const shader_stage& stag
 			{
 				inputs.rt_array_lengths[reinterpret_cast<uint64_t>(binding_ptr)][0] = static_cast<size_t>(binding_size);
 			}
-			if (!access.buffer_data->candidates.empty() && access.size != 0)
-			{
-				const VkDeviceSize binding_start = access.offset;
-				const VkDeviceSize binding_end = access.offset + access.size;
-				std::vector<SPIRVSimulator::PhysicalAddressCandidate>* candidate_list = nullptr;
-				for (const auto& candidate : access.buffer_data->candidates)
-				{
-					if (candidate.offset < binding_start || candidate.offset >= binding_end) continue;
-					if (!candidate_list) candidate_list = &inputs.candidates[static_cast<const void*>(binding_ptr)];
-					SPIRVSimulator::PhysicalAddressCandidate sim_candidate;
-					sim_candidate.address = candidate.address;
-					sim_candidate.offset = candidate.offset - binding_start;
-					sim_candidate.payload = access.buffer_data;
-					candidate_list->push_back(sim_candidate);
-				}
-			}
 		}
 	}
 	for (const auto& set_pair : imagesets)
@@ -96,7 +80,7 @@ static bool run_spirv(const trackeddevice& device_data, const shader_stage& stag
 		}
 	}
 	if (shader_data_ptr) shader_data_ptr->calls++;
-	SPIRVSimulator::SPIRVSimulator sim(*code_ptr, &inputs, &results, nullptr, false, ERROR_RAISE_ON_BUFFERS_INCOMPLETE);
+	SPIRVSimulator::SPIRVSimulator sim(*code_ptr, &inputs, &results, nullptr, false); //, ERROR_RAISE_ON_BUFFERS_INCOMPLETE);
 	sim.Run();
 
 	for (const auto& candidates : results.output_candidates)

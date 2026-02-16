@@ -34,15 +34,13 @@ static void usage()
 	printf("-V/--validate          Validate the input trace, abort with an error if anything amiss found instead of just reporting on it\n");
 #ifndef NDEBUG
 	printf("-d/--debug level       Set debug level [0,1,2,3]\n");
-	printf("-o/--debugfile FILE    Output debug output to the given file\n");
+	printf("-df/--debugfile FILE   Output debug output to the given file\n");
 #endif
 	printf("-f/--frames start end  Select a frame range\n");
-	printf("-r/--remap-validate    Validate existing device address remappings - abort if we find less or more addresses than already marked\n");
 	printf("-u/--unused            Find any found unused features and extensions in the trace file; remove them from the output file\n");
 	printf("-DS/--dump-shaders     Dump any shaders found to disk\n");
 	printf("-hw/--host-write-stats Dump host-side write tracking stats after replay\n");
 	printf("-s/--sandbox level     Set security sandbox level (from 1 to 3, with 3 the most strict, default %d)\n", (int)p__sandbox_level);
-	//printf("-R/--remap-addresses   Adding remapping of device addresses. Replaces existing address remappings. Requires an output file.\n");
 	exit(-1);
 }
 
@@ -225,7 +223,6 @@ int main(int argc, char **argv)
 	int remaining = argc - 1; // zeroth is name of program
 	std::string filename_input;
 	std::string filename_output;
-	bool validate_remap = false;
 
 	if (p__sandbox_level >= 1) sandbox_level_one();
 
@@ -242,7 +239,6 @@ int main(int argc, char **argv)
 		else if (match(argv[i], "-V", "--validate", remaining))
 		{
 			validate = true;
-			(void)validate; // does not do anything yet...
 		}
 		else if (match(argv[i], "-v", "--verbose", remaining))
 		{
@@ -260,7 +256,7 @@ int main(int argc, char **argv)
 		{
 			dump_host_write_stats = true;
 		}
-		else if (match(argv[i], "-o", "--debugfile", remaining))
+		else if (match(argv[i], "-df", "--debugfile", remaining))
 		{
 			if (remaining < 1) usage();
 			std::string val = get_str(argv[++i], remaining);
@@ -277,10 +273,6 @@ int main(int argc, char **argv)
 		{
 			p__sandbox_level = get_int(argv[++i], remaining);
 			if (p__sandbox_level <= 0 || p__sandbox_level > 3) DIE("Invalid sandbox level %d", (int)p__sandbox_level);
-		}
-		else if (match(argv[i], "-r", "--remap-validate", remaining))
-		{
-			validate_remap = true;
 		}
 		else if (strcmp(argv[i], "--") == 0) // eg in case you have a file named -f ...
 		{
@@ -332,9 +324,9 @@ int main(int argc, char **argv)
 	{
 		lava_reader replayer;
 		replayer.run = false; // do not actually run anything
+		replayer.validate = true; // abort on less serious errors, not just warn
 		replayer.set_frames(start, end);
 		replayer.init(filename_input);
-		replayer.remap_scan = validate_remap;
 
 		// Add callbacks
 		add_callbacks_for_first_round();
@@ -356,20 +348,19 @@ int main(int argc, char **argv)
 		}
 
 		// Copy out the rewrite queue
-		if (validate_remap) rewrite_queue_copy = replayer.rewrite_queue;
+		rewrite_queue_copy = replayer.rewrite_queue;
 
 		if (dump_host_write_stats) dump_host_write_stats_report("pass1");
 		reset_for_tools();
 		replayer.finalize(false);
 	}
 
-	if (validate_remap) // run second round
+	if (!filename_output.empty()) // run second round to write out all changes
 	{
 		lava_reader replayer;
 		replayer.run = false; // do not actually run anything
 		replayer.init(filename_input);
 		replayer.set_frames(start, end);
-		replayer.remap_scan = false;
 
 		// We can probably skip most of the callbacks now. Trying to skip all for now.
 		assert(vkCreateShaderModule_callbacks.size() == 0); // Verify that they were cleared

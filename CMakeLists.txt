@@ -351,13 +351,13 @@ internal_test(tracing_remap)
 add_test(NAME trace_test_remap_replay COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -V tracing_remap.vk)
 add_test(NAME trace_test_remap_replay_cpu COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -C -V tracing_remap.vk)
 add_test(NAME trace_test_remap_validate COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-tool -V tracing_remap.vk)
-add_test(NAME trace_test_remap_validate_remap COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-tool -V -r tracing_remap.vk)
+add_test(NAME trace_test_remap_validate_remap COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-tool -V tracing_remap.vk)
 
 internal_test(tracing_remap_noncoherent)
 add_test(NAME trace_test_remap_noncoherent_replay COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -V tracing_remap_noncoherent.vk)
 add_test(NAME trace_test_remap_noncoherent_replay_cpu COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -C -V tracing_remap_noncoherent.vk)
 add_test(NAME trace_test_remap_noncoherent_validate COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-tool -V tracing_remap_noncoherent.vk)
-add_test(NAME trace_test_remap_noncoherent_validate_remap COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-tool -V -r tracing_remap_noncoherent.vk)
+add_test(NAME trace_test_remap_noncoherent_validate_remap COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-tool -V tracing_remap_noncoherent.vk)
 
 internal_test(tracing_buffers)
 add_test(NAME trace_test_buffers_replay COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -V tracing_buffers.vk)
@@ -455,6 +455,7 @@ install(TARGETS lava-replay RUNTIME)
 
 # --- lava-tool ---
 
+file(REMOVE "log.txt")
 add_executable(lava-tool src/tool.cpp)
 target_include_directories(lava-tool ${COMMON_INCLUDE})
 target_link_libraries(lava-tool ${COMMON_LIBRARIES} lavatube)
@@ -464,7 +465,9 @@ add_test(NAME validate_vulkan_demo COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-tool
 add_test(NAME validate_vulkan_demo2 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-tool -V -f 10 20 ${PROJECT_SOURCE_DIR}/traces/demo_computeraytracing.vk)
 add_test(NAME validate_vkmark COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-tool -V -f 5 9 ${PROJECT_SOURCE_DIR}/traces/vkmark_cube.vk)
 add_test(NAME validate_samples COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-tool -V -f 5 9 ${PROJECT_SOURCE_DIR}/traces/sample_hello_triangle.vk)
-add_test(NAME validate_vkcube COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-tool -V -f 5 9 ${PROJECT_SOURCE_DIR}/traces/lunarg_vkcube.vk)
+add_test(NAME validate_vkcube COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-tool -d 2 -df log.txt -V -f 5 9 ${PROJECT_SOURCE_DIR}/traces/lunarg_vkcube.vk)
+add_test(NAME validate_vkcube_check_file_exists COMMAND ${CMAKE_COMMAND} -E cat "log.txt")
+set_tests_properties(validate_vkcube_check_file_exists PROPERTIES DEPENDS validate_vkcube)
 install(TARGETS lava-tool RUNTIME)
 
 # --- packtool ---

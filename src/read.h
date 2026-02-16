@@ -60,12 +60,6 @@ public:
 
 	std::vector<std::atomic_uint_fast32_t>* thread_call_numbers; // thread local call numbers
 
-	// Use the remapping lists below to find possible candidates for remapping in a buffer.
-	// Return the number of candidates found. Will search from 'ptr' over a 'size' sized window.
-	// base_offset is the byte offset from the start of the buffer to 'ptr'.
-	// Caller must make sure access is thread safe.
-	uint32_t find_address_candidates(trackedbuffer& buffer_data, VkDeviceSize size, const void* ptr, VkDeviceSize base_offset, change_source source) const;
-
 	// This is thread safe since we allocate it all before threading begins.
 	address_remapper<trackedobject> device_address_remapping;
 	address_remapper<trackedaccelerationstructure> acceleration_structure_address_remapping;
@@ -74,8 +68,6 @@ public:
 	// pass they must be ordered by change time.
 	std::list<address_rewrite> rewrite_queue;
 
-	/// Are we currently looking for remap and rewrite candidates?
-	bool remap_scan = false;
 	bool raytracing_callbacks_registered = false;
 
 	/// Current global frame (only use for logging)
@@ -89,6 +81,9 @@ public:
 	/// Whether we should actually call into Vulkan or if we are just processing the data.
 	/// Duplicated into the file reader.
 	bool run = true;
+
+	/// Whether we should abort on less serious errors or just warn
+	bool validate = false;
 
 	// Version numbers are never reset but just keep increasing
 	int stored_version_major = 0;
@@ -140,38 +135,6 @@ public:
 #endif
 	inline void read_barrier();
 	uint16_t read_apicall();
-
-	/// Read patch update while scanning for remap candidates
-	uint32_t read_patch_scanning(char* buf, uint64_t maxsize, trackedbuffer& buffer_data)
-	{
-		char* ptr = buf;
-		uint32_t offset;
-		uint32_t size;
-		uint64_t changed = 0;
-		do {
-			offset = read_uint32_t();
-			ptr += offset;
-			// cppcheck-suppress nullPointerRedundantCheck
-			assert(maxsize == 0 || ptr <= buf + maxsize);
-			size = read_uint32_t();
-			check_space(size);
-			const char* uptr = uncompressed_data + read_position;
-			if (buf && size)
-			{
-				memcpy(ptr, uptr, size);
-				const VkDeviceSize base_offset = (VkDeviceSize)(ptr - buf);
-				parent->find_address_candidates(buffer_data, size, ptr, base_offset, current);
-				if (!run) buffer_data.source.register_source(base_offset, size, current);
-			}
-			read_position += size;
-			ptr += size;
-			changed += size;
-			// cppcheck-suppress nullPointerRedundantCheck
-			assert(maxsize == 0 || ptr <= buf + maxsize);
-		}
-		while (!(offset == 0 && size == 0));
-		return changed;
-	}
 
 	/// Read patch update and track host side changes
 	uint32_t read_patch_tracking(char* buf, uint64_t maxsize, host_write_regions& regions)

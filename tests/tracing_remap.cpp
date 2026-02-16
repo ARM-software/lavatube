@@ -237,7 +237,6 @@ static bool getnext(lava_file_reader& t)
 static void retrace()
 {
 	lava_reader r(TEST_NAME_1 ".vk");
-	r.remap_scan = true;
 	lava_file_reader& t = r.file_reader(0);
 	while (getnext(t)) {}
 }
