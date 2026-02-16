@@ -1,6 +1,7 @@
 #define SPV_ENABLE_UTILITY_CODE 1
 #include <spirv/unified1/spirv.h>
 #include <unordered_set>
+#include <unordered_map>
 #include <cstring>
 #include "spirv-simulator/framework/spirv_simulator.hpp"
 
@@ -13,19 +14,8 @@
 
 static bool run_spirv(const trackeddevice& device_data, const shader_stage& stage, const std::vector<std::byte>& push_constants,
 	const std::unordered_map<uint32_t, std::unordered_map<uint32_t, buffer_access>>& descriptorsets,
-	const std::unordered_map<uint32_t, std::unordered_map<uint32_t, image_access>>& imagesets,
-	const std::vector<uint32_t>* code_override = nullptr)
+	const std::unordered_map<uint32_t, std::unordered_map<uint32_t, image_access>>& imagesets)
 {
-	const std::vector<uint32_t>* code_ptr = code_override;
-	trackedshadermodule* shader_data_ptr = nullptr;
-	if (!code_ptr)
-	{
-		assert(stage.module != VK_NULL_HANDLE);
-		const uint32_t shader_index = index_to_VkShaderModule.index(stage.module);
-		shader_data_ptr = &VkShaderModule_index.at(shader_index);
-		code_ptr = &shader_data_ptr->code;
-	}
-	assert(code_ptr);
 	SPIRVSimulator::SimulationData inputs;
 	SPIRVSimulator::SimulationResults results;
 	std::unordered_map<const void*, std::pair<uint32_t, uint32_t>> binding_lookup;
@@ -79,8 +69,8 @@ static bool run_spirv(const trackeddevice& device_data, const shader_stage& stag
 			set_bindings[binding_pair.first] = binding_ptr;
 		}
 	}
-	if (shader_data_ptr) shader_data_ptr->calls++;
-	SPIRVSimulator::SPIRVSimulator sim(*code_ptr, &inputs, &results, nullptr, false, ERROR_RAISE_ON_BUFFERS_INCOMPLETE);
+	inputs.shader_id = stage.unique_index;
+	SPIRVSimulator::SPIRVSimulator sim(stage.code, &inputs, &results, nullptr, false, ERROR_RAISE_ON_BUFFERS_INCOMPLETE);
 	sim.Run();
 
 	for (const auto& candidates : results.output_candidates)
@@ -214,9 +204,7 @@ bool execute_commands(lava_file_reader& reader, const trackeddevice& device_data
 {
 	std::vector<std::byte> push_constants; // current state of the push constants
 	uint32_t compute_pipeline_bound = CONTAINER_INVALID_INDEX; // currently bound pipeline
-	uint32_t compute_shader_object_bound = CONTAINER_INVALID_INDEX; // index into compute_shader_objects array
-	trackedshaderobject* compute_shader_objects = nullptr;
-	uint32_t compute_shader_objects_count = 0;
+	std::unordered_map<VkShaderStageFlagBits, uint32_t> shader_objects;
 	uint32_t graphics_pipeline_bound = CONTAINER_INVALID_INDEX; // currently bound pipeline
 	uint32_t raytracing_pipeline_bound = CONTAINER_INVALID_INDEX; // currently bound pipeline
 	uint32_t cmdbuffer_index = index_to_VkCommandBuffer.index(commandBuffer);
@@ -294,7 +282,6 @@ bool execute_commands(lava_file_reader& reader, const trackeddevice& device_data
 			else if (c.data.bind_pipeline.pipelineBindPoint == VK_PIPELINE_BIND_POINT_COMPUTE)
 			{
 				compute_pipeline_bound = c.data.bind_pipeline.pipeline_index;
-				compute_shader_object_bound = CONTAINER_INVALID_INDEX;
 			}
 			else if (c.data.bind_pipeline.pipelineBindPoint == VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR) raytracing_pipeline_bound = c.data.bind_pipeline.pipeline_index;
 			break;
@@ -302,61 +289,61 @@ bool execute_commands(lava_file_reader& reader, const trackeddevice& device_data
 			assert(false); // TBD
 			break;
 		case VKCMDBINDSHADERSEXT:
-			if (compute_shader_objects) delete[] compute_shader_objects;
-			compute_shader_objects = c.data.bind_shaders_ext.shader_objects;
-			compute_shader_objects_count = c.data.bind_shaders_ext.stageCount;
-			compute_shader_object_bound = CONTAINER_INVALID_INDEX;
-			for (uint32_t i = 0; i < compute_shader_objects_count; i++)
+			for (uint32_t i = 0; i < c.data.bind_shaders_ext.stageCount; i++)
 			{
-				if (compute_shader_objects[i].stage == VK_SHADER_STAGE_COMPUTE_BIT)
-				{
-					compute_shader_object_bound = i; // index into current array
-				}
+				if (c.data.bind_shaders_ext.shader_objects[i] != CONTAINER_NULL_VALUE) shader_objects[c.data.bind_shaders_ext.shader_types[i]] = c.data.bind_shaders_ext.shader_objects[i];
+				else shader_objects.erase(c.data.bind_shaders_ext.shader_types[i]); // explicit unbind
 			}
+			free(c.data.bind_shaders_ext.shader_types);
+			free(c.data.bind_shaders_ext.shader_objects);
 			break;
 		case VKCMDDISPATCH: // proxy for all compute commands
+			if (compute_pipeline_bound != CONTAINER_INVALID_INDEX) // old style pipeline
 			{
-				if (compute_pipeline_bound != CONTAINER_INVALID_INDEX)
-				{
-					const auto& pipeline_data = VkPipeline_index.at(compute_pipeline_bound);
-					assert(pipeline_data.shader_stages.size() == 1);
-					assert(pipeline_data.shader_stages[0].stage == VK_SHADER_STAGE_COMPUTE_BIT);
-					run_spirv(device_data, pipeline_data.shader_stages[0], push_constants, descriptorsets, imagesets);
-				}
-				else
-				{
-					assert(compute_shader_object_bound != CONTAINER_INVALID_INDEX);
-					const auto& so = compute_shader_objects[compute_shader_object_bound];
-					shader_stage stage;
-					stage.index = 0;
-					stage.flags = so.flags;
-					stage.stage = so.stage;
-					stage.module = VK_NULL_HANDLE;
-					stage.name = so.name;
-					stage.specialization_constants = so.specialization_constants;
-					stage.specialization_data = so.specialization_data;
-					run_spirv(device_data, stage, push_constants, descriptorsets, imagesets, &so.code);
-				}
+				auto& pipeline_data = VkPipeline_index.at(compute_pipeline_bound);
+				assert(pipeline_data.shader_stages.size() == 1);
+				assert(pipeline_data.shader_stages[0].stage == VK_SHADER_STAGE_COMPUTE_BIT);
+				pipeline_data.shader_stages[0].calls++;
+				run_spirv(device_data, pipeline_data.shader_stages[0], push_constants, descriptorsets, imagesets);
+			}
+			else // shader objects
+			{
+				auto& shader_object_data = VkShaderEXT_index.at(shader_objects.at(VK_SHADER_STAGE_COMPUTE_BIT));
+				shader_object_data.stage.calls++;
+				run_spirv(device_data, shader_object_data.stage, push_constants, descriptorsets, imagesets);
 			}
 			break;
 		case VKCMDDRAW: // proxy for all draw commands
+			if (graphics_pipeline_bound != CONTAINER_INVALID_INDEX) // old style pipeline
 			{
-				const auto& pipeline_data = VkPipeline_index.at(graphics_pipeline_bound);
-				for (const auto& stage : pipeline_data.shader_stages)
+				auto& pipeline_data = VkPipeline_index.at(graphics_pipeline_bound);
+				for (auto& stage : pipeline_data.shader_stages)
 				{
+					if (stage.stage == VK_SHADER_STAGE_COMPUTE_BIT) continue;
+					stage.calls++;
 					run_spirv(device_data, stage, push_constants, descriptorsets, imagesets);
 				}
+			}
+			else for (auto& pair : shader_objects) // shader objects
+			{
+				if (pair.first == VK_SHADER_STAGE_COMPUTE_BIT) continue;
+				auto& shader_object_data = VkShaderEXT_index.at(pair.second);
+				shader_stage& stage = shader_object_data.stage;
+				assert(pair.first == stage.stage);
+				stage.calls++;
+				run_spirv(device_data, stage, push_constants, descriptorsets, imagesets);
 			}
 			break;
 		case VKCMDTRACERAYSKHR: // proxy for all raytracing commands
 			{
 				if (raytracing_pipeline_bound == CONTAINER_INVALID_INDEX) break;
-				const auto& pipeline_data = VkPipeline_index.at(raytracing_pipeline_bound);
+				auto& pipeline_data = VkPipeline_index.at(raytracing_pipeline_bound);
 				if (pipeline_data.shader_stages.empty()) break;
 				if (!c.trace_rays_valid)
 				{
-					for (const auto& stage : pipeline_data.shader_stages)
+					for (auto& stage : pipeline_data.shader_stages)
 					{
+						stage.calls++;
 						run_spirv(device_data, stage, push_constants, descriptorsets, imagesets);
 					}
 					break;
@@ -421,8 +408,9 @@ bool execute_commands(lava_file_reader& reader, const trackeddevice& device_data
 
 				if (stages_to_run.empty())
 				{
-					for (const auto& stage : pipeline_data.shader_stages)
+					for (auto& stage : pipeline_data.shader_stages)
 					{
+						stage.calls++;
 						run_spirv(device_data, stage, push_constants, descriptorsets, imagesets);
 					}
 				}
@@ -430,6 +418,7 @@ bool execute_commands(lava_file_reader& reader, const trackeddevice& device_data
 				{
 					for (uint32_t stage_index : stages_to_run)
 					{
+						pipeline_data.shader_stages[stage_index].calls++;
 						run_spirv(device_data, pipeline_data.shader_stages[stage_index], push_constants, descriptorsets, imagesets);
 					}
 				}
@@ -443,6 +432,5 @@ bool execute_commands(lava_file_reader& reader, const trackeddevice& device_data
 		}
 	}
 	cmdbuffer_data.commands.clear();
-	if (compute_shader_objects) delete[] compute_shader_objects;
 	return true;
 }

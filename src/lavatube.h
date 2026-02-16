@@ -265,7 +265,6 @@ struct trackedshadermodule : trackable
 	bool enables_device_address = false;
 	size_t size = 0;
 	std::vector<uint32_t> code; // only for replayer
-	uint32_t calls = 0; // numbere of times this shader was called
 };
 
 struct trackedbuffer : trackedobject
@@ -310,16 +309,32 @@ struct trackedtensor : trackedobject
 	}
 };
 
+struct shader_stage
+{
+	uint32_t index = CONTAINER_INVALID_INDEX; // our position in our local array of stages
+	uint64_t unique_index = UINT64_MAX; // something unique to identify this shader
+	uint32_t device_index = CONTAINER_INVALID_INDEX; // device we belong to
+	VkPipelineShaderStageCreateFlags flags = VK_PIPELINE_SHADER_STAGE_CREATE_FLAG_BITS_MAX_ENUM;
+	VkShaderStageFlagBits stage = VK_SHADER_STAGE_FLAG_BITS_MAX_ENUM;
+	VkShaderModule module = VK_NULL_HANDLE;
+	std::string name;
+	std::vector<uint32_t> code; // raw SPIR-V when sourced from VK_EXT_shader_object or maintenance 5
+	std::vector<VkSpecializationMapEntry> specialization_constants;
+	std::vector<char> specialization_data;
+	uint32_t calls = 0; // numbere of times this shader was called
+
+	void self_test() const // use with post-processing only
+	{
+		assert(index != CONTAINER_INVALID_INDEX);
+		assert(device_index != CONTAINER_INVALID_INDEX);
+		assert(unique_index != UINT64_MAX);
+	}
+};
+
 struct trackedshaderobject : trackable
 {
 	using trackable::trackable; // inherit constructor
-
-	VkShaderCreateFlagsEXT flags = 0;
-	VkShaderStageFlagBits stage = VK_SHADER_STAGE_FLAG_BITS_MAX_ENUM;
-	std::string entry_name;
-	std::vector<uint32_t> code;
-	std::vector<VkSpecializationMapEntry> specialization_constants;
-	std::vector<char> specialization_data;
+	shader_stage stage;
 };
 
 struct trackedaccelerationstructure : trackedobject
@@ -472,18 +487,6 @@ struct trackedfence : trackable
 	int frame_delay = -1; // delay fuse uninitialized
 };
 
-struct shader_stage // post-processor only
-{
-	uint32_t index = CONTAINER_INVALID_INDEX; // our position in our local array of stages
-	VkPipelineShaderStageCreateFlags flags = VK_PIPELINE_SHADER_STAGE_CREATE_FLAG_BITS_MAX_ENUM;
-	VkShaderStageFlagBits stage = VK_SHADER_STAGE_FLAG_BITS_MAX_ENUM;
-	VkShaderModule module = VK_NULL_HANDLE;
-	std::string name;
-	std::vector<uint32_t> code; // raw SPIR-V when sourced from VK_EXT_shader_object
-	std::vector<VkSpecializationMapEntry> specialization_constants;
-	std::vector<char> specialization_data;
-};
-
 struct raytracing_group // post-processor only
 {
 	VkRayTracingShaderGroupTypeKHR type = VK_RAY_TRACING_SHADER_GROUP_TYPE_MAX_ENUM_KHR;
@@ -589,7 +592,8 @@ struct trackedcommand // does _not_ inherit trackable
 		struct bind_shaders_ext
 		{
 			uint32_t stageCount;
-			trackedshaderobject* shader_objects; // array length stageCount
+			VkShaderStageFlagBits* shader_types;
+			uint32_t* shader_objects;
 		} bind_shaders_ext;
 		struct trace_rays
 		{

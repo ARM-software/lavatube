@@ -391,10 +391,30 @@ void postprocess_vkCmdPushConstants2(callback_context& cb, VkCommandBuffer comma
 
 static void copy_shader_stage(const trackedpipeline& pipeline_data, shader_stage& stage, const VkPipelineShaderStageCreateInfo& info)
 {
+	stage.device_index = pipeline_data.device_index;
 	stage.flags = info.flags;
 	stage.module = info.module;
+	if (stage.module == VK_NULL_HANDLE) // allowed since maintenance 5
+	{
+		auto* idext = (VkPipelineShaderStageModuleIdentifierCreateInfoEXT*)find_extension(info.pNext, VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_MODULE_IDENTIFIER_CREATE_INFO_EXT);
+		assert(!idext); // not yet supported
+		auto* smciext = (VkShaderModuleCreateInfo*)find_extension(info.pNext, VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO);
+		assert(smciext); // must have this if no module is defined!
+		if (smciext)
+		{
+			stage.code.resize(smciext->codeSize / sizeof(uint32_t));
+			memcpy(stage.code.data(), smciext->pCode, smciext->codeSize);
+		}
+	}
+	else // old style shader modules
+	{
+		const uint32_t shader_index = index_to_VkShaderModule.index(stage.module);
+		const auto& shader_data = VkShaderModule_index.at(shader_index);
+		stage.code = shader_data.code;
+	}
 	stage.name = info.pName;
 	stage.stage = info.stage;
+	stage.unique_index = (uint64_t)pipeline_data.index | ((uint64_t)info.stage << 32);
 	if (info.pSpecializationInfo)
 	{
 		stage.specialization_constants.resize(info.pSpecializationInfo->mapEntryCount);
@@ -403,6 +423,7 @@ static void copy_shader_stage(const trackedpipeline& pipeline_data, shader_stage
 		stage.specialization_data.resize(info.pSpecializationInfo->dataSize);
 		memcpy(stage.specialization_data.data(), info.pSpecializationInfo->pData, info.pSpecializationInfo->dataSize);
 	}
+	stage.self_test();
 }
 
 void postprocess_vkCreateComputePipelines(callback_context& cb, VkDevice device, VkPipelineCache pipelineCache, uint32_t createInfoCount,
@@ -508,21 +529,18 @@ void postprocess_vkCreateShadersEXT(callback_context& cb, VkDevice device, uint3
 	{
 		uint32_t shader_index = index_to_VkShaderEXT.index(pShaders[i]);
 		auto& obj = VkShaderEXT_index.at(shader_index);
-		obj.flags = pCreateInfos[i].flags;
-		obj.stage = pCreateInfos[i].stage;
-		obj.entry_name = pCreateInfos[i].pName ? pCreateInfos[i].pName : "";
 		if (pCreateInfos[i].pSpecializationInfo)
 		{
-			obj.specialization_constants.resize(pCreateInfos[i].pSpecializationInfo->mapEntryCount);
-			memcpy(obj.specialization_constants.data(), pCreateInfos[i].pSpecializationInfo->pMapEntries,
+			obj.stage.specialization_constants.resize(pCreateInfos[i].pSpecializationInfo->mapEntryCount);
+			memcpy(obj.stage.specialization_constants.data(), pCreateInfos[i].pSpecializationInfo->pMapEntries,
 				pCreateInfos[i].pSpecializationInfo->mapEntryCount * sizeof(VkSpecializationMapEntry));
-			obj.specialization_data.resize(pCreateInfos[i].pSpecializationInfo->dataSize);
-			memcpy(obj.specialization_data.data(), pCreateInfos[i].pSpecializationInfo->pData, pCreateInfos[i].pSpecializationInfo->dataSize);
+			obj.stage.specialization_data.resize(pCreateInfos[i].pSpecializationInfo->dataSize);
+			memcpy(obj.stage.specialization_data.data(), pCreateInfos[i].pSpecializationInfo->pData, pCreateInfos[i].pSpecializationInfo->dataSize);
 		}
 		if (pCreateInfos[i].codeType == VK_SHADER_CODE_TYPE_SPIRV_EXT && pCreateInfos[i].pCode && pCreateInfos[i].codeSize)
 		{
-			obj.code.resize(pCreateInfos[i].codeSize / sizeof(uint32_t));
-			memcpy(obj.code.data(), pCreateInfos[i].pCode, pCreateInfos[i].codeSize);
+			obj.stage.code.resize(pCreateInfos[i].codeSize / sizeof(uint32_t));
+			memcpy(obj.stage.code.data(), pCreateInfos[i].pCode, pCreateInfos[i].codeSize);
 		}
 	}
 }
@@ -536,15 +554,25 @@ void postprocess_vkCmdBindShadersEXT(callback_context& cb, VkCommandBuffer comma
 	cmd.data.bind_shaders_ext.stageCount = stageCount;
 	if (stageCount)
 	{
-		cmd.data.bind_shaders_ext.shader_objects = new trackedshaderobject[stageCount];
+		cmd.data.bind_shaders_ext.shader_types = (VkShaderStageFlagBits*)malloc(sizeof(VkShaderStageFlagBits) * stageCount);
+		cmd.data.bind_shaders_ext.shader_objects = (uint32_t*)malloc(sizeof(uint32_t) * stageCount);
 		for (uint32_t i = 0; i < stageCount; i++)
 		{
-			uint32_t shader_index = index_to_VkShaderEXT.index(pShaders[i]);
-			cmd.data.bind_shaders_ext.shader_objects[i] = VkShaderEXT_index.at(shader_index);
+			cmd.data.bind_shaders_ext.shader_types[i] = pStages[i];
+			if (pShaders[i] == VK_NULL_HANDLE)
+			{
+				cmd.data.bind_shaders_ext.shader_objects[i] = CONTAINER_NULL_VALUE;
+			}
+			else
+			{
+				const uint32_t shader_index = index_to_VkShaderEXT.index(pShaders[i]);
+				cmd.data.bind_shaders_ext.shader_objects[i] = shader_index;
+			}
 		}
 	}
 	else
 	{
+		cmd.data.bind_shaders_ext.shader_types = nullptr;
 		cmd.data.bind_shaders_ext.shader_objects = nullptr;
 	}
 	cmdbuffer_data.commands.push_back(cmd);

@@ -169,11 +169,18 @@ void postprocess_vkDestroyDevice(callback_context& cb, VkDevice device, const Vk
 {
 	uint32_t device_index = index_to_VkDevice.index(device);
 	const auto& device_data = VkDevice_index.at(device_index);
-	uint32_t num_modules = index_to_VkShaderModule.size();
-	for (uint32_t i = 0; i < num_modules; i++)
+	for (uint32_t i = 0; i < index_to_VkPipeline.size(); i++)
 	{
-		const auto& shadermodule_data = VkShaderModule_index.at(i);
-		if (shadermodule_data.device_index == device_data.index) invokation_count += shadermodule_data.calls;
+		const auto& pipeline_data = VkPipeline_index.at(i);
+		for (const auto& stage : pipeline_data.shader_stages)
+		{
+			if (stage.device_index == device_data.index) invokation_count += stage.calls;
+		}
+	}
+	for (uint32_t i = 0; i < index_to_VkShaderEXT.size(); i++)
+	{
+		const auto& shader_data = VkShaderEXT_index.at(i);
+		if (shader_data.stage.device_index == device_data.index) invokation_count += shader_data.stage.calls;
 	}
 }
 
