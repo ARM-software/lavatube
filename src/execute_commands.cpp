@@ -80,7 +80,7 @@ static bool run_spirv(const trackeddevice& device_data, const shader_stage& stag
 		}
 	}
 	if (shader_data_ptr) shader_data_ptr->calls++;
-	SPIRVSimulator::SPIRVSimulator sim(*code_ptr, &inputs, &results, nullptr, false); //, ERROR_RAISE_ON_BUFFERS_INCOMPLETE);
+	SPIRVSimulator::SPIRVSimulator sim(*code_ptr, &inputs, &results, nullptr, false, ERROR_RAISE_ON_BUFFERS_INCOMPLETE);
 	sim.Run();
 
 	for (const auto& candidates : results.output_candidates)
