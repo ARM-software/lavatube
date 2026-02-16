@@ -125,7 +125,7 @@ static VkDeviceAddress get_buffer_device_address(VkDevice device, VkBuffer buffe
 }
 
 static char* mem_map(lava_file_reader& reader, VkDevice device, const suballoc_location& loc);
-static void mem_unmap(lava_file_reader& reader, VkDevice device, const suballoc_location& loc, VkMarkedOffsetsARM* ar, char* ptr);
+static void mem_unmap(lava_file_reader& reader, VkDevice device, const suballoc_location& loc, char* ptr);
 static void replay_register_raytracing_callbacks(lava_reader& reader);
 static void replay_track_vkCmdBindPipeline(callback_context& cb, VkCommandBuffer commandBuffer, VkPipelineBindPoint pipelineBindPoint, VkPipeline pipeline);
 static void replay_track_vkGetRayTracingShaderGroupHandlesKHR(callback_context& cb, VkDevice device, VkPipeline pipeline, uint32_t firstGroup, uint32_t groupCount, size_t dataSize, void* pData);
@@ -772,7 +772,7 @@ static bool fixup_sbt_region(lava_file_reader& reader, const trackeddevice& devi
 		const size_t replay_offset = (size_t)group_index * replay_handle_size;
 		if (replay_offset + replay_handle_size > pipeline_data.raytracing_group_handles_replay.size())
 		{
-			mem_unmap(reader, device, loc, nullptr, mapped);
+			mem_unmap(reader, device, loc, mapped);
 			ABORT("Ray tracing %s replay handle lookup out of bounds", label);
 		}
 		memcpy(record, pipeline_data.raytracing_group_handles_replay.data() + replay_offset, replay_handle_size);
@@ -780,7 +780,7 @@ static bool fixup_sbt_region(lava_file_reader& reader, const trackeddevice& devi
 		patched++;
 	}
 
-	mem_unmap(reader, device, loc, nullptr, mapped);
+	mem_unmap(reader, device, loc, mapped);
 	if (updated)
 	{
 		DLOG2("Ray tracing %s SBT patched %u/%u records (buffer=%u offset=%llu)",
@@ -861,13 +861,13 @@ static void replay_fixup_commandbuffer_raytracing_instances(lava_file_reader& re
 			}
 			if (!is_known_replay_as_address(current))
 			{
-				mem_unmap(reader, device, loc, nullptr, mapped);
+				mem_unmap(reader, device, loc, mapped);
 				ABORT("Acceleration structure instance reference 0x%llx is not remapped for replay",
 					(unsigned long long)current);
 			}
 		}
 
-		mem_unmap(reader, device, loc, nullptr, mapped);
+		mem_unmap(reader, device, loc, mapped);
 		if (updated)
 		{
 			DLOG("Remapped %u acceleration structure instance references", (unsigned)use.primitive_count);
@@ -2047,13 +2047,16 @@ void read_VkMarkedOffsetsARM(lava_file_reader& reader, VkMarkedOffsetsARM* sptr)
 	DLOG("Got a memory markup struct with count=%u", (unsigned)sptr->count);
 }
 
-static void translate_marked_offsets(lava_file_reader& reader, const VkMarkedOffsetsARM* markings, void* ptr)
+/// `ptr` points to the start of the modified and marked up region of memory. All provided offsets are relative to the start of this region.
+/// `size` is the size of the modified region of memory
+static void translate_marked_offsets(lava_file_reader& reader, const VkMarkedOffsetsARM* markings, void* ptr, uint64_t size)
 {
 	if (!markings || !markings->pOffsets || !markings->pMarkingTypes) return;
 	for (uint32_t i = 0; i < markings->count; i++)
 	{
 		if (markings->pMarkingTypes[i] != VK_MARKING_TYPE_DEVICE_ADDRESS_ARM) continue;
 		const uint64_t offset = markings->pOffsets[i];
+		assert(offset + sizeof(uint64_t) <= size); // extension does not allow offsets pointing outside of updated region
 		void* addr = (char*)ptr + offset;
 		uint64_t current = 0;
 		// Use memcpy to handle unaligned device address storage.
@@ -2185,7 +2188,7 @@ void replay_pre_vkCmdPushConstants2KHR(lava_file_reader& reader, VkCommandBuffer
 	const VkMarkedOffsetsARM* remap = (const VkMarkedOffsetsARM*)find_extension(pPushConstantsInfo, VK_STRUCTURE_TYPE_MARKED_OFFSETS_ARM);
 	if (!remap) return; // nothing to do here
 	assert(pPushConstantsInfo->pValues);
-	translate_marked_offsets(reader, remap, const_cast<void*>(pPushConstantsInfo->pValues));
+	translate_marked_offsets(reader, remap, const_cast<void*>(pPushConstantsInfo->pValues), pPushConstantsInfo->size);
 	// make sure we don't leak this to the driver, as this would break validation
 	purge_extension_parent(const_cast<VkPushConstantsInfoKHR*>(pPushConstantsInfo), VK_STRUCTURE_TYPE_MARKED_OFFSETS_ARM);
 }
@@ -2231,7 +2234,7 @@ void replay_pre_vkCreateComputePipelines(lava_file_reader& reader, VkDevice devi
 		assert(pCreateInfos[i].stage.pSpecializationInfo != nullptr);
 		assert(pCreateInfos[i].stage.pSpecializationInfo->pData != nullptr);
 
-		translate_marked_offsets(reader, remap, const_cast<void*>(pCreateInfos[i].stage.pSpecializationInfo->pData));
+		translate_marked_offsets(reader, remap, const_cast<void*>(pCreateInfos[i].stage.pSpecializationInfo->pData), pCreateInfos[i].stage.pSpecializationInfo->dataSize);
 
 		// make sure we don't leak this to the driver, as this would break validation
 		purge_extension_parent(const_cast<VkPipelineShaderStageCreateInfo*>(&pCreateInfos[i].stage), VK_STRUCTURE_TYPE_MARKED_OFFSETS_ARM);
@@ -2251,7 +2254,7 @@ void replay_pre_vkCreateGraphicsPipelines(lava_file_reader& reader, VkDevice dev
 			assert(pCreateInfos[i].pStages[stage].pSpecializationInfo != nullptr);
 			assert(pCreateInfos[i].pStages[stage].pSpecializationInfo->pData != nullptr);
 
-			translate_marked_offsets(reader, remap, const_cast<void*>(pCreateInfos[i].pStages[stage].pSpecializationInfo->pData));
+			translate_marked_offsets(reader, remap, const_cast<void*>(pCreateInfos[i].pStages[stage].pSpecializationInfo->pData), pCreateInfos[i].pStages[stage].pSpecializationInfo->dataSize);
 
 			// make sure we don't leak this to the driver, as this would break validation
 			purge_extension_parent(const_cast<VkPipelineShaderStageCreateInfo*>(&pCreateInfos[i].pStages[stage]), VK_STRUCTURE_TYPE_MARKED_OFFSETS_ARM);
@@ -2272,7 +2275,7 @@ void replay_pre_vkCreateRayTracingPipelinesKHR(lava_file_reader& reader, VkDevic
 			assert(pCreateInfos[i].pStages[stage].pSpecializationInfo != nullptr);
 			assert(pCreateInfos[i].pStages[stage].pSpecializationInfo->pData != nullptr);
 
-			translate_marked_offsets(reader, remap, const_cast<void*>(pCreateInfos[i].pStages[stage].pSpecializationInfo->pData));
+			translate_marked_offsets(reader, remap, const_cast<void*>(pCreateInfos[i].pStages[stage].pSpecializationInfo->pData), pCreateInfos[i].pStages[stage].pSpecializationInfo->dataSize);
 
 			// make sure we don't leak this to the driver, as this would break validation
 			purge_extension_parent(const_cast<VkPipelineShaderStageCreateInfo*>(&pCreateInfos[i].pStages[stage]), VK_STRUCTURE_TYPE_MARKED_OFFSETS_ARM);
@@ -2299,13 +2302,11 @@ static char* mem_map(lava_file_reader& reader, VkDevice device, const suballoc_l
 	return ptr;
 }
 
-static void mem_unmap(lava_file_reader& reader, VkDevice device, const suballoc_location& loc, VkMarkedOffsetsARM* ar, char* ptr)
+static void mem_unmap(lava_file_reader& reader, VkDevice device, const suballoc_location& loc, char* ptr)
 {
-	if (ar) translate_marked_offsets(reader, ar, ptr);
 	if (loc.needs_flush && reader.run)
 	{
-		VkMappedMemoryRange flush = {};
-		flush.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE;
+		VkMappedMemoryRange flush = { VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE, nullptr };
 		flush.memory = loc.memory;
 		flush.offset = loc.offset;
 		flush.size = loc.size;
@@ -2357,9 +2358,8 @@ VKAPI_ATTR void retrace_vkCmdUpdateBuffer2ARM(lava_file_reader& reader)
 	trackedobject& tbuf = VkBuffer_index.at(buffer_index);
 	VkMarkedOffsetsARM* ar = (VkMarkedOffsetsARM*)find_extension(&info, VK_STRUCTURE_TYPE_MARKED_OFFSETS_ARM);
 	// -- Execute --
-	if (ar) translate_marked_offsets(reader, ar, const_cast<void*>(info.pData));
+	if (ar) translate_marked_offsets(reader, ar, const_cast<void*>(info.pData), info.dataSize);
 	if (reader.run) wrap_vkCmdUpdateBuffer(commandBuffer, info.dstBuffer, info.dstOffset, info.dataSize, info.pData);
-	ILOG("Ran vkCmdUpdateBuffer2ARM"); // TBD REMOVE ME
 	tbuf.last_modified = reader.current;
 }
 
@@ -2982,7 +2982,7 @@ void image_update(lava_file_reader& reader, uint32_t device_index, uint32_t imag
 	if (!reader.run && loc.needs_init) image_data.source.register_source(0, loc.size, reader.current);
 	if (!reader.run) reader.read_patch_tracking(ptr, loc.size, image_data.source);
 	else reader.read_patch(ptr, loc.size);
-	mem_unmap(reader, device, loc, nullptr, ptr);
+	mem_unmap(reader, device, loc, ptr);
 }
 
 void buffer_update(lava_file_reader& reader, uint32_t device_index, uint32_t buffer_index, uint64_t size, const VkBaseOutStructure* sptr)
@@ -3002,9 +3002,9 @@ void buffer_update(lava_file_reader& reader, uint32_t device_index, uint32_t buf
 	else if (!reader.run) reader.read_patch_tracking(ptr, loc.size, buffer_data.source);
 	else reader.read_patch(ptr, loc.size);
 
-	if (sptr) translate_marked_offsets(reader, (VkMarkedOffsetsARM*)sptr, ptr);
+	if (sptr) translate_marked_offsets(reader, (VkMarkedOffsetsARM*)sptr, ptr, loc.size);
 
-	mem_unmap(reader, device, loc, nullptr, ptr);
+	mem_unmap(reader, device, loc, ptr);
 }
 
 void tensor_update(lava_file_reader& reader, uint32_t device_index, uint32_t tensor_index, uint64_t size, const VkBaseOutStructure* sptr)
@@ -3020,7 +3020,7 @@ void tensor_update(lava_file_reader& reader, uint32_t device_index, uint32_t ten
 	if (!reader.run && loc.needs_init) tensor_data.source.register_source(0, loc.size, reader.current);
 	if (!reader.run) reader.read_patch_tracking(ptr, loc.size, tensor_data.source);
 	else reader.read_patch(ptr, loc.size);
-	mem_unmap(reader, device, loc, nullptr, ptr);
+	mem_unmap(reader, device, loc, ptr);
 }
 
 static inline int64_t read_version2_packet(lava_file_reader& reader, VkBaseOutStructure** sptr)
