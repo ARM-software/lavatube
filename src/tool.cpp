@@ -16,6 +16,8 @@
 #include "sandbox.h"
 #include "postprocess.h"
 
+extern lava::mutex sync_mutex;
+
 static bool validate = false;
 static bool verbose = false;
 static bool report_unused = false;
@@ -24,6 +26,11 @@ static bool dump_host_write_stats = false;
 static int invokation_count = 0;
 
 // Utility funcs
+
+static bool rewrite_call_less(const address_rewrite& a, const address_rewrite& b)
+{
+	return a.source.call < b.source.call;
+}
 
 static void usage()
 {
@@ -331,7 +338,8 @@ int main(int argc, char **argv)
 	{
 		lava_reader replayer;
 		replayer.run = false; // do not actually run anything
-		replayer.validate = true; // abort on less serious errors, not just warn
+		replayer.validate = validate; // abort on less serious errors, not just warn
+		replayer.pass = 0; // first pass
 		replayer.set_frames(start, end);
 		replayer.init(filename_input);
 
@@ -355,25 +363,55 @@ int main(int argc, char **argv)
 		}
 
 		// Copy out the rewrite queue
-		rewrite_queue_copy = replayer.rewrite_queue;
+		sync_mutex.lock(); // threads are stopped here but let's avoid warnings
+		rewrite_queue_copy = replayer.global_rewrite_queue;
+		sync_mutex.unlock();
 
 		if (dump_host_write_stats) dump_host_write_stats_report("pass1");
 		reset_for_tools();
 		replayer.finalize(false);
 	}
 
-	if (!filename_output.empty()) // run second round to write out all changes
+	if (!filename_output.empty() || validate) // run second round to write out or test all changes
 	{
 		lava_reader replayer;
-		replayer.run = false; // do not actually run anything
+		replayer.pass = 1; // second pass
+		replayer.run = false; // do not actually run anything, again
+		replayer.validate = validate; // abort on less serious errors, not just warn
 		replayer.init(filename_input);
 		replayer.set_frames(start, end);
 
 		// We can probably skip most of the callbacks now. Trying to skip all for now.
 		assert(vkCreateShaderModule_callbacks.size() == 0); // Verify that they were cleared
 
-		// Add in the rewrite queue from the previous run
-		replayer.rewrite_queue = rewrite_queue_copy;
+		// Add in the rewrite queue from the previous run, but split by thread and sorted by call number.
+		sync_mutex.lock();
+		replayer.global_rewrite_queue = rewrite_queue_copy;
+		sync_mutex.unlock();
+		for (const auto& v : rewrite_queue_copy)
+		{
+			assert(v.markings != nullptr && v.markings->count > 0);
+			ILOG("%s - number of markings: %u", describe_change_source(v.source).c_str(), (unsigned)v.markings->count);
+			lava_file_reader& t = replayer.file_reader(v.source.thread); // get the right filereader object
+			t.rewrite_queue.push_back(v);
+		}
+		for (unsigned i = 0; i < replayer.threads.size(); i++)
+		{
+			lava_file_reader& t = replayer.file_reader(i);
+			t.rewrite_queue.sort(rewrite_call_less);
+		}
+		for (unsigned i = 0; i < replayer.threads.size(); i++) // TBD sanity test, remove later
+		{
+			lava_file_reader& t = replayer.file_reader(i);
+			assert(i == (unsigned)t.thread_index());
+			unsigned last = 0;
+			for (const auto& v : t.rewrite_queue)
+			{
+				assert((int)v.source.thread == (int)t.thread_index());
+				assert(last <= v.source.call);
+				last = v.source.call;
+			}
+		}
 
 		for (unsigned i = 0; i < replayer.threads.size(); i++)
 		{

@@ -2047,11 +2047,143 @@ void read_VkMarkedOffsetsARM(lava_file_reader& reader, VkMarkedOffsetsARM* sptr)
 	DLOG("Got a memory markup struct with count=%u", (unsigned)sptr->count);
 }
 
+static VkMarkedOffsetsARM* clone_marked_offsets(const VkMarkedOffsetsARM* src)
+{
+	if (!src) return nullptr;
+	assert(src->count > 0);
+	assert(src->pMarkingTypes);
+	assert(src->pSubTypes);
+	assert(src->pOffsets);
+	VkMarkedOffsetsARM* dst = (VkMarkedOffsetsARM*)malloc(sizeof(VkMarkedOffsetsARM));
+	if (!dst) ABORT("Failed to allocate VkMarkedOffsetsARM");
+	memset(dst, 0, sizeof(*dst));
+	dst->sType = src->sType;
+	dst->pNext = nullptr;
+	dst->count = src->count;
+	const size_t types_bytes = sizeof(VkMarkingTypeARM) * src->count;
+	const size_t subs_bytes = sizeof(VkMarkingSubTypeARM) * src->count;
+	const size_t offsets_bytes = sizeof(VkDeviceSize) * src->count;
+	dst->pMarkingTypes = (VkMarkingTypeARM*)malloc(types_bytes);
+	dst->pSubTypes = (VkMarkingSubTypeARM*)malloc(subs_bytes);
+	dst->pOffsets = (VkDeviceSize*)malloc(offsets_bytes);
+	if (!dst->pMarkingTypes) ABORT("Failed to allocate VkMarkedOffsetsARM pMarkingTypes");
+	if (!dst->pSubTypes) ABORT("Failed to allocate VkMarkedOffsetsARM pSubTypes");
+	if (!dst->pOffsets) ABORT("Failed to allocate VkMarkedOffsetsARM pOffsets");
+	memcpy((void*)dst->pMarkingTypes, src->pMarkingTypes, types_bytes);
+	memcpy((void*)dst->pSubTypes, src->pSubTypes, subs_bytes);
+	memcpy((void*)dst->pOffsets, src->pOffsets, offsets_bytes);
+	return dst;
+}
+
+static void sort_marked_offsets(VkMarkedOffsetsARM* markings)
+{
+	if (!markings || markings->count <= 1) return;
+	assert(markings->pOffsets);
+	assert(markings->pMarkingTypes);
+	assert(markings->pSubTypes);
+
+	std::vector<uint32_t> order(markings->count);
+	for (uint32_t i = 0; i < markings->count; i++) order[i] = i;
+
+	std::sort(order.begin(), order.end(), [&](uint32_t a, uint32_t b)
+	{
+		if (markings->pOffsets[a] != markings->pOffsets[b]) return markings->pOffsets[a] < markings->pOffsets[b];
+		const uint32_t type_a = (uint32_t)markings->pMarkingTypes[a];
+		const uint32_t type_b = (uint32_t)markings->pMarkingTypes[b];
+		if (type_a != type_b) return type_a < type_b;
+		const uint64_t sub_a = markings->pSubTypes[a].reserved;
+		const uint64_t sub_b = markings->pSubTypes[b].reserved;
+		return sub_a < sub_b;
+	});
+
+	std::vector<VkDeviceSize> offsets(markings->count);
+	for (uint32_t i = 0; i < markings->count; i++) offsets[i] = markings->pOffsets[order[i]];
+	memcpy((void*)markings->pOffsets, offsets.data(), sizeof(VkDeviceSize) * markings->count);
+
+	std::vector<VkMarkingTypeARM> types(markings->count);
+	for (uint32_t i = 0; i < markings->count; i++) types[i] = markings->pMarkingTypes[order[i]];
+	memcpy((void*)markings->pMarkingTypes, types.data(), sizeof(VkMarkingTypeARM) * markings->count);
+
+	std::vector<VkMarkingSubTypeARM> subs(markings->count);
+	for (uint32_t i = 0; i < markings->count; i++) subs[i] = markings->pSubTypes[order[i]];
+	memcpy((void*)markings->pSubTypes, subs.data(), sizeof(VkMarkingSubTypeARM) * markings->count);
+}
+
+static void free_marked_offsets(VkMarkedOffsetsARM* markings)
+{
+	if (!markings) return;
+	free((void*)markings->pMarkingTypes);
+	free((void*)markings->pSubTypes);
+	free((void*)markings->pOffsets);
+	free(markings);
+}
+
+static bool same_source_local(const change_source& a, const change_source& b)
+{
+	return a.call == b.call && a.frame == b.frame && a.thread == b.thread && a.call_id == b.call_id;
+}
+
+static void assert_marked_offsets_equal(const VkMarkedOffsetsARM* a, const VkMarkedOffsetsARM* b)
+{
+	assert(a);
+	assert(b);
+	assert(a->sType == b->sType);
+	assert(a->count == b->count);
+	assert(a->count > 0);
+	assert(a->pMarkingTypes);
+	assert(a->pSubTypes);
+	assert(a->pOffsets);
+	assert(b->pMarkingTypes);
+	assert(b->pSubTypes);
+	assert(b->pOffsets);
+
+	const size_t types_bytes = sizeof(VkMarkingTypeARM) * a->count;
+	const size_t subs_bytes = sizeof(VkMarkingSubTypeARM) * a->count;
+	const size_t offsets_bytes = sizeof(VkDeviceSize) * a->count;
+	assert(memcmp(a->pMarkingTypes, b->pMarkingTypes, types_bytes) == 0);
+	assert(memcmp(a->pSubTypes, b->pSubTypes, subs_bytes) == 0);
+	assert(memcmp(a->pOffsets, b->pOffsets, offsets_bytes) == 0);
+}
+
+static void track_marked_offsets(lava_file_reader& reader, const VkMarkedOffsetsARM* markings)
+{
+	if (!markings) return;
+
+	if (reader.parent->pass == 0)
+	{
+		address_rewrite entry;
+		entry.markings = clone_marked_offsets(markings);
+		sort_marked_offsets(entry.markings);
+		entry.source = reader.current;
+		lava::lock_guard lock(sync_mutex);
+		reader.parent->global_rewrite_queue.push_back(entry);
+		return;
+	}
+
+	if (reader.parent->pass != 1) return;
+
+	lava::lock_guard lock(sync_mutex);
+	auto& queue = reader.parent->global_rewrite_queue;
+	auto it = std::find_if(queue.begin(), queue.end(), [&](const address_rewrite& v)
+	{
+		return same_source_local(v.source, reader.current);
+	});
+	assert(it != queue.end());
+	VkMarkedOffsetsARM* temp = clone_marked_offsets(markings);
+	sort_marked_offsets(temp);
+	assert_marked_offsets_equal(it->markings, temp);
+	free_marked_offsets(temp);
+	free_marked_offsets(it->markings);
+	queue.erase(it);
+}
+
 /// `ptr` points to the start of the modified and marked up region of memory. All provided offsets are relative to the start of this region.
 /// `size` is the size of the modified region of memory
 static void translate_marked_offsets(lava_file_reader& reader, const VkMarkedOffsetsARM* markings, void* ptr, uint64_t size)
 {
-	if (!markings || !markings->pOffsets || !markings->pMarkingTypes) return;
+	if (!markings) return;
+	track_marked_offsets(reader, markings);
+	if (!markings->pOffsets || !markings->pMarkingTypes) return;
 	for (uint32_t i = 0; i < markings->count; i++)
 	{
 		if (markings->pMarkingTypes[i] != VK_MARKING_TYPE_DEVICE_ADDRESS_ARM) continue;

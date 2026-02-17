@@ -28,8 +28,7 @@ extern lava::mutex sync_mutex;
 
 struct address_rewrite
 {
-	VkDeviceSize offset;
-	VkDeviceSize size;
+	VkMarkedOffsetsARM* markings = nullptr; // pointer content malloc'ed, free after second pass usage
 	change_source source;
 };
 
@@ -65,8 +64,8 @@ public:
 	address_remapper<trackedaccelerationstructure> acceleration_structure_address_remapping;
 
 	// Our rewrite queue. Only used during post-processing. During first pass entries are ordered by entry time. During second
-	// pass they must be ordered by change time.
-	std::list<address_rewrite> rewrite_queue;
+	// pass they must be ordered by call number and split into one list for each thread.
+	std::list<address_rewrite> global_rewrite_queue REQUIRES(sync_mutex);
 
 	bool raytracing_callbacks_registered = false;
 
@@ -84,6 +83,9 @@ public:
 
 	/// Whether we should abort on less serious errors or just warn
 	bool validate = false;
+
+	/// If we are run first or second pass
+	int pass = 0;
 
 	// Version numbers are never reset but just keep increasing
 	int stored_version_major = 0;
@@ -208,6 +210,9 @@ public:
 
 	/// Is this reader's thread terminated?
 	std::atomic_bool terminated{ false };
+
+	/// Rewrite queue for the second pass, re-sorted and split by thread.
+	std::list<address_rewrite> rewrite_queue;
 
 	change_source current;
 
