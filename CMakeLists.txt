@@ -451,6 +451,12 @@ add_test(NAME replayer_samples_cpu COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-repl
 add_test(NAME replayer_vkcube_cpu COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -C -B -w none ${PROJECT_SOURCE_DIR}/traces/lunarg_vkcube.vk)
 add_test(NAME replayer_vulkan_demo_rtbasic_gpu COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -B -w none --gpu ${PROJECT_SOURCE_DIR}/traces/demo_raytracingbasic.vk)
 add_test(NAME replayer_vulkan_demo_rtbasic_cpu COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -B -w none --cpu ${PROJECT_SOURCE_DIR}/traces/demo_raytracingbasic.vk)
+add_test(NAME replayer_vulkan_demo_descriptorindexing_gpu COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -B -w none --gpu ${PROJECT_SOURCE_DIR}/traces/demo_descriptorindexing.vk)
+add_test(NAME replayer_vulkan_demo_descriptorindexing_cpu COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -B -w none --cpu ${PROJECT_SOURCE_DIR}/traces/demo_descriptorindexing.vk)
+add_test(NAME replayer_vulkan_demo_pushconstants_gpu COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -B -w none --gpu ${PROJECT_SOURCE_DIR}/traces/demo_pushconstants.vk)
+add_test(NAME replayer_vulkan_demo_pushconstants_cpu COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -B -w none --cpu ${PROJECT_SOURCE_DIR}/traces/demo_pushconstants.vk)
+add_test(NAME replayer_vulkan_demo_rtsbtdata_gpu COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -B -w none --gpu ${PROJECT_SOURCE_DIR}/traces/demo_raytracingsbtdata.vk)
+add_test(NAME replayer_vulkan_demo_rtsbtdata_cpu COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -B -w none --cpu ${PROJECT_SOURCE_DIR}/traces/demo_raytracingsbtdata.vk)
 install(TARGETS lava-replay RUNTIME)
 
 # --- lava-tool ---
@@ -468,6 +474,10 @@ add_test(NAME validate_samples COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-tool -V 
 add_test(NAME validate_vkcube COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-tool -d 2 -df log.txt -V -f 5 9 ${PROJECT_SOURCE_DIR}/traces/lunarg_vkcube.vk)
 add_test(NAME validate_vkcube_check_file_exists COMMAND ${CMAKE_COMMAND} -E cat "log.txt")
 set_tests_properties(validate_vkcube_check_file_exists PROPERTIES DEPENDS validate_vkcube)
+add_test(NAME validate_rtbasic COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-tool ${PROJECT_SOURCE_DIR}/traces/demo_raytracingbasic.vk)
+add_test(NAME validate_rtsbtdata COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-tool ${PROJECT_SOURCE_DIR}/traces/demo_raytracingsbtdata.vk)
+add_test(NAME validate_descriptorindexing COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-tool ${PROJECT_SOURCE_DIR}/traces/demo_descriptorindexing.vk)
+add_test(NAME validate_pushconstants COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-tool ${PROJECT_SOURCE_DIR}/traces/demo_pushconstants.vk)
 install(TARGETS lava-tool RUNTIME)
 
 # --- packtool ---
