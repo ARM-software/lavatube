@@ -6,8 +6,7 @@ metadata:
 ---
 
 1. Check that we were told which Vulkan extension we are supposed to check. If this was not specified, ask.
-2. If you are not familiar with the extension, download the extension text from
-   `https://docs.vulkan.org/refpages/latest/refpages/source/<extension name>.html` and read it.
+2. Download the extension text from `https://docs.vulkan.org/refpages/latest/refpages/source/<extension name>.html` and read it.
 3. For each new Vulkan command defined in the given extension, look for its generated implementation named
    `trace_<name>` in `generated/write_auto.cpp`. Review it for errors, then compare it to the corresponding
    read function named `retrace_<name>` in `generated/read_auto.cpp`. Verify that the serialized output is

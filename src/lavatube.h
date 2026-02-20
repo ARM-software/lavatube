@@ -4,7 +4,8 @@
 
 #define LAVATUBE_VERSION_MAJOR 0
 #define LAVATUBE_VERSION_MINOR 0
-#define LAVATUBE_VERSION_PATCH 1
+// Patch version 2 - Unhardcoded vkDestroySurfaceKHR which requires a workaround
+#define LAVATUBE_VERSION_PATCH 2
 
 #define VK_NO_PROTOTYPES
 #include "vulkan/vulkan.h"

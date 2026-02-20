@@ -271,7 +271,7 @@ int main(int argc, char **argv)
 			filename = get_str(argv[i], remaining);
 			if (remaining > 0)
 			{
-				printf("Options after filename is not valid!\n\n");
+				printf("Invalid options\n\n");
 				usage();
 			}
 		}

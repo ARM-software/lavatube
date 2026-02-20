@@ -2604,23 +2604,6 @@ VKAPI_ATTR VkResult VKAPI_CALL trace_vkCreateWaylandSurfaceKHR(VkInstance instan
 
 #endif // VK_USE_PLATFORM_WAYLAND_KHR
 
-VKAPI_ATTR void VKAPI_CALL trace_vkDestroySurfaceKHR(VkInstance instance, VkSurfaceKHR surface, const VkAllocationCallbacks* pAllocator)
-{
-	// Declarations
-	uint8_t surface_opt;
-	lava_file_writer& writer = write_header("vkDestroySurfaceKHR", VKDESTROYSURFACEKHR);
-	writer.write_handle(writer.parent->records.VkInstance_index.at(instance));
-	surface_opt = (surface != 0); // whether we should load this optional value
-	writer.write_uint8_t(surface_opt);
-	if (surface_opt)
-	{
-		const auto* surface_data = writer.parent->records.VkSurfaceKHR_index.unset(surface, writer.current);
-		writer.write_handle(surface_data);
-	}
-	// Execute
-	wrap_vkDestroySurfaceKHR(instance, surface, pAllocator);
-}
-
 /// Map virtual queue to real queue. Since we cannot reverse map from one family to two, the two graphics queues must be on the same
 /// family, and we only check the first one.
 static void internalGetDeviceQueue(const std::vector<VkQueueFamilyProperties>& props, uint32_t queueIndex, uint32_t& realIndex, uint32_t& realFamily)

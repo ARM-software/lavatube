@@ -984,28 +984,12 @@ void replay_pre_vkDestroyPipelineCache(lava_file_reader& reader, VkDevice device
 	}
 }
 
-void retrace_vkDestroySurfaceKHR(lava_file_reader& reader)
+static void replay_pre_vkDestroySurfaceKHR(lava_file_reader& reader, VkInstance instance, VkSurfaceKHR surface, const VkAllocationCallbacks* pAllocator)
 {
-	// Declarations
-	VkSurfaceKHR surface;
-	// Load
-	const uint32_t instance_index = reader.read_handle(DEBUGPARAM("VkInstance"));
-	VkInstance instance = index_to_VkInstance.at(instance_index);
-	const uint8_t surface_opt = reader.read_uint8_t(); // whether we should load this optional value
-	uint32_t surface_index = 0;
-	if (surface_opt)
+	if (surface != VK_NULL_HANDLE && !is_noscreen())
 	{
-		surface_index = reader.read_handle(DEBUGPARAM("VkSurfaceKHR"));
-		surface = index_to_VkSurfaceKHR.at(surface_index);
-		if (!is_noscreen() && reader.run)
-		{
-			VkAllocationCallbacks allocator = {};
-			VkAllocationCallbacks* pAllocator = &allocator;
-			allocators_set(pAllocator);
-			wrap_vkDestroySurfaceKHR(instance, surface, pAllocator);
-			window_destroy(instance, surface_index);
-		}
-		index_to_VkSurfaceKHR.unset(surface_index);
+		uint32_t surface_index = index_to_VkSurfaceKHR.index(surface);
+		window_destroy(instance, surface_index);
 	}
 }
 
@@ -2655,180 +2639,82 @@ void retrace_vkGetSwapchainImagesKHR(lava_file_reader& reader)
 	data.initialized = true; // in case this function is called more than once
 }
 
-void retrace_vkCreateAndroidSurfaceKHR(lava_file_reader& reader)
+static void common_vkCreateSurfaceKHR(lava_file_reader& reader, uint32_t stored_sType, const char* name)
 {
 	VkInstance instance = index_to_VkInstance.at(reader.read_handle(DEBUGPARAM("VkInstance")));
-	const uint32_t sType = static_cast<VkStructureType>(reader.read_uint32_t());
-	assert(sType == VK_STRUCTURE_TYPE_ANDROID_SURFACE_CREATE_INFO_KHR);
+	const uint32_t sType = reader.read_uint32_t();
+	assert(sType == stored_sType);
 
 	VkBaseOutStructure* pNext = nullptr;
 	read_extension(reader, (VkBaseOutStructure**)&pNext);
 
 	const uint32_t flags = reader.read_uint32_t();
-	(void)flags; // nothing here yet
 	const int32_t x = reader.read_int32_t();
 	const int32_t y = reader.read_int32_t();
-	const int32_t width = reader.read_int32_t();
-	const int32_t height = reader.read_int32_t();
-	DLOG("window originally from android width=%d height=%d", width, height);
-	const int32_t stride = reader.read_int32_t();
-	(void)stride; // just here FYI
-	const int32_t format = reader.read_int32_t();
-	(void)format; // nothing here yet
-	// Execute
+	int32_t width = reader.read_int32_t();
+	int32_t height = reader.read_int32_t();
+	if (stored_sType == VK_STRUCTURE_TYPE_HEADLESS_SURFACE_CREATE_INFO_EXT)
+	{
+		// TBD fix this ugly hack, we should store json window info in the surface object
+		trackedswapchain_replay& t = VkSwapchainKHR_index.at(0);
+		width = t.info.imageExtent.width;
+		height = t.info.imageExtent.height;
+	}
+	DLOG("window originally from %s created with width=%d height=%d", name, width, height);
+	(void)reader.read_int32_t(); // depth
+	(void)reader.read_int32_t(); // border
 	const uint32_t retval = reader.read_uint32_t();
 	(void)retval;
 	const uint32_t surface_index = reader.read_handle(DEBUGPARAM("VkSurfaceKHR"));
 	VkSurfaceKHR pSurface = VK_NULL_HANDLE;
-	if (!is_noscreen() && reader.run) window_create(instance, surface_index, x, y, width, height);
+	if (!is_noscreen() && reader.run) pSurface = window_create(instance, surface_index, x, y, width, height);
 	else pSurface = fake_handle<VkSurfaceKHR>(surface_index);
 	// Post
-	index_to_VkSurfaceKHR.set(surface_index, pSurface);
+	if (pSurface) index_to_VkSurfaceKHR.set(surface_index, pSurface);
+	auto& data = VkSurfaceKHR_index.at(surface_index);
+	data.creation = reader.current;
+	data.last_modified = reader.current;
+	data.enter_created();
+}
+
+void retrace_vkCreateAndroidSurfaceKHR(lava_file_reader& reader)
+{
+	common_vkCreateSurfaceKHR(reader, VK_STRUCTURE_TYPE_ANDROID_SURFACE_CREATE_INFO_KHR, "vkCreateAndroidSurfaceKHR");
 }
 
 void retrace_vkCreateXcbSurfaceKHR(lava_file_reader& reader)
 {
-	VkInstance instance = index_to_VkInstance.at(reader.read_handle(DEBUGPARAM("VkInstance")));
-	const uint32_t sType = static_cast<VkStructureType>(reader.read_uint32_t());
-	assert(sType == VK_STRUCTURE_TYPE_XCB_SURFACE_CREATE_INFO_KHR);
-
-	VkBaseOutStructure* pNext = nullptr;
-	read_extension(reader, (VkBaseOutStructure**)&pNext);
-
-	const uint32_t flags = reader.read_uint32_t(); // VkXcbSurfaceCreateFlagsKHR
-	(void)flags; // nothing here yet
-	const int32_t x = reader.read_int32_t();
-	const int32_t y = reader.read_int32_t();
-	const int32_t width = reader.read_int32_t();
-	const int32_t height = reader.read_int32_t();
-	DLOG("window originally from xcb width=%d height=%d", width, height);
-	const int32_t border_width = reader.read_int32_t();
-	(void)border_width; // ignore
-	const int32_t depth = reader.read_int32_t();
-	(void)depth; // ignore
-	// Execute
-	const uint32_t retval = reader.read_uint32_t();
-	(void)retval;
-	const uint32_t surface_index = reader.read_handle(DEBUGPARAM("VkSurfaceKHR"));
-	VkSurfaceKHR pSurface = VK_NULL_HANDLE;
-	if (!is_noscreen() && reader.run)
-	{
-		pSurface = window_create(instance, surface_index, x, y, width, height);
-	}
-	else pSurface = fake_handle<VkSurfaceKHR>(surface_index);
-	// Post
-	index_to_VkSurfaceKHR.set(surface_index, pSurface);
+	common_vkCreateSurfaceKHR(reader, VK_STRUCTURE_TYPE_XCB_SURFACE_CREATE_INFO_KHR, "vkCreateXcbSurfaceKHR");
 }
 
 void retrace_vkCreateXlibSurfaceKHR(lava_file_reader& reader)
 {
-	VkInstance instance = index_to_VkInstance.at(reader.read_handle(DEBUGPARAM("VkInstance")));
-	const uint32_t sType = static_cast<VkStructureType>(reader.read_uint32_t());
-	assert(sType == VK_STRUCTURE_TYPE_XLIB_SURFACE_CREATE_INFO_KHR);
-
-	VkBaseOutStructure* pNext = nullptr;
-	read_extension(reader, (VkBaseOutStructure**)&pNext);
-
-	const uint32_t flags = reader.read_uint32_t();
-	(void)flags; // nothing here yet
-	const int32_t x = reader.read_int32_t();
-	const int32_t y = reader.read_int32_t();
-	const int32_t width = reader.read_int32_t();
-	const int32_t height = reader.read_int32_t();
-	DLOG("window originally from xlib width=%d height=%d", width, height);
-	const int32_t border_width = reader.read_int32_t();
-	(void)border_width; // ignore
-	const int32_t depth = reader.read_int32_t();
-	(void)depth; // ignore
-	// Execute
-	const uint32_t retval = reader.read_uint32_t();
-	(void)retval;
-	const uint32_t surface_index = reader.read_handle(DEBUGPARAM("VkSurfaceKHR"));
-	VkSurfaceKHR pSurface = VK_NULL_HANDLE;
-	if (!is_noscreen() && reader.run) pSurface = window_create(instance, surface_index, x, y, width, height);
-	else pSurface = fake_handle<VkSurfaceKHR>(surface_index);
-	// Post
-	index_to_VkSurfaceKHR.set(surface_index, pSurface);
+	common_vkCreateSurfaceKHR(reader, VK_STRUCTURE_TYPE_XLIB_SURFACE_CREATE_INFO_KHR, "vkCreateXlibSurfaceKHR");
 }
 
 void retrace_vkCreateWaylandSurfaceKHR(lava_file_reader& reader)
 {
-	VkInstance instance = index_to_VkInstance.at(reader.read_handle(DEBUGPARAM("VkInstance")));
-	const uint32_t sType = reader.read_uint32_t();
-	assert(sType == VK_STRUCTURE_TYPE_WAYLAND_SURFACE_CREATE_INFO_KHR);
-
-	VkBaseOutStructure* pNext = nullptr;
-	read_extension(reader, (VkBaseOutStructure**)&pNext);
-
-	const uint32_t flags = reader.read_uint32_t();
-	(void)flags; // nothing
-	// Execute
-	const int32_t x = reader.read_int32_t();
-	const int32_t y = reader.read_int32_t();
-	const int32_t width = reader.read_int32_t();
-	const int32_t height = reader.read_int32_t();
-	DLOG("window originally from wayland width=%d height=%d", width, height);
-	(void)reader.read_int32_t(); // reserved
-	const uint32_t retval = reader.read_uint32_t();
-	(void)retval;
-	const uint32_t surface_index = reader.read_handle(DEBUGPARAM("VkSurfaceKHR"));
-	VkSurfaceKHR pSurface = VK_NULL_HANDLE;
-	if (!is_noscreen() && reader.run) pSurface = window_create(instance, surface_index, x, y, width, height);
-	else pSurface = fake_handle<VkSurfaceKHR>(surface_index);
-	// Post
-	index_to_VkSurfaceKHR.set(surface_index, pSurface);
+	common_vkCreateSurfaceKHR(reader, VK_STRUCTURE_TYPE_WAYLAND_SURFACE_CREATE_INFO_KHR, "vkCreateWaylandSurfaceKHR");
 }
 
 void retrace_vkCreateHeadlessSurfaceEXT(lava_file_reader& reader)
 {
-	VkInstance instance = index_to_VkInstance.at(reader.read_handle(DEBUGPARAM("VkInstance")));
-	const uint32_t sType = reader.read_uint32_t();
-	assert(sType == VK_STRUCTURE_TYPE_HEADLESS_SURFACE_CREATE_INFO_EXT);
-
-	VkBaseOutStructure* pNext = nullptr;
-	read_extension(reader, (VkBaseOutStructure**)&pNext);
-
-	const uint32_t flags = reader.read_uint32_t();
-	(void)flags; // nothing
-	// Execute
-	(void)reader.read_int32_t();
-	(void)reader.read_int32_t();
-	(void)reader.read_int32_t();
-	(void)reader.read_int32_t();
-	(void)reader.read_int32_t();
-	(void)reader.read_int32_t();
-	// We must read these values from JSON, since they are only set when the
-	// first frame is drawn, from the swapchain imageExtent. Assuming only a
-	// single swapchain and surface for now.
-	trackedswapchain_replay& t = VkSwapchainKHR_index.at(0);
-	const int32_t x = 0;
-	const int32_t y = 0;
-	const int32_t width = t.info.imageExtent.width;
-	const int32_t height = t.info.imageExtent.height;
-	DLOG("window originally from headless width=%d height=%d (values taken from json)", width, height);
-	const uint32_t retval = reader.read_uint32_t();
-	(void)retval;
-	const uint32_t surface_index = reader.read_handle(DEBUGPARAM("VkSurfaceKHR"));
-	VkSurfaceKHR pSurface = VK_NULL_HANDLE;
-	if (!is_noscreen() && reader.run) pSurface = window_create(instance, surface_index, x, y, width, height);
-	else pSurface = fake_handle<VkSurfaceKHR>(surface_index);
-	// Post
-	index_to_VkSurfaceKHR.set(surface_index, pSurface);
+	common_vkCreateSurfaceKHR(reader, VK_STRUCTURE_TYPE_HEADLESS_SURFACE_CREATE_INFO_EXT, "vkCreateHeadlessSurfaceEXT");
 }
 
 void retrace_vkCreateWin32SurfaceKHR(lava_file_reader& reader)
 {
-	assert(false);
+	common_vkCreateSurfaceKHR(reader, VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR, "vkCreateWin32SurfaceKHR");
 }
 
 void retrace_vkCreateDirectFBSurfaceEXT(lava_file_reader& reader)
 {
-	assert(false);
+	common_vkCreateSurfaceKHR(reader, VK_STRUCTURE_TYPE_DIRECTFB_SURFACE_CREATE_INFO_EXT, "vkCreateDirectFBSurfaceEXT");
 }
 
 void retrace_vkCreateMetalSurfaceEXT(lava_file_reader& reader)
 {
-	assert(false);
+	common_vkCreateSurfaceKHR(reader, VK_STRUCTURE_TYPE_METAL_SURFACE_CREATE_INFO_EXT, "vkCreateMetalSurfaceEXT");
 }
 
 void retrace_vkGetDeviceQueue2(lava_file_reader& reader)

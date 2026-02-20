@@ -646,6 +646,9 @@ class parameter(spec.base_parameter):
 			elif self.name == 'memoryOffset':
 				z.do('%s = loc.offset;' % varname) # relying on the order of arguments here; see case above
 
+		if self.funcname == 'vkDestroySurfaceKHR' and self.name == 'instance':
+			z.do('if (reader.parent->stored_version_patch < 2) (void)reader.read_uint8_t();') # TBD remove this hack one day
+
 		if self.funcname in ['vkDestroyBuffer', 'vkDestroyImage', 'vkDestroyTensorARM', 'vkDestroyDevice', 'VkCreateDevice'] and self.name == 'device':  #['image', 'buffer', 'tensor', 'device']:
 			z.do('%s& %s = %s_index.at(%s);' % (vk.trackable_type_map_replay['VkDevice'], totrackable('VkDevice'), self.type, toindex('VkDevice')))
 
