@@ -445,6 +445,8 @@ add_test(NAME replayer_samples_cpu COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-repl
 add_test(NAME replayer_vkcube_cpu COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -C -B -w none ${PROJECT_SOURCE_DIR}/traces/lunarg_vkcube.vk)
 add_test(NAME replayer_vulkan_demo_rtbasic_gpu COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -B -w none --gpu ${PROJECT_SOURCE_DIR}/traces/demo_raytracingbasic.vk)
 add_test(NAME replayer_vulkan_demo_rtbasic_cpu COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -B -w none --cpu ${PROJECT_SOURCE_DIR}/traces/demo_raytracingbasic.vk)
+set_tests_properties(replayer_vulkan_demo_rtbasic_gpu PROPERTIES SKIP_RETURN_CODE 77)
+set_tests_properties(replayer_vulkan_demo_rtbasic_cpu PROPERTIES SKIP_RETURN_CODE 77)
 install(TARGETS lava-replay RUNTIME)
 
 # --- lava-tool ---

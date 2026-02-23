@@ -1601,6 +1601,7 @@ def loadfunc(name, node, target, header):
 		z.brace_begin()
 		z.do('reader.parent->exit_status = 77;')
 		z.do('reader.parent->finalize(true);') # this actually exits now, since we cancel our own thread
+		z.do('exit(77);')
 		z.brace_end()
 		z.do('check_retval(stored_retval, retval);')
 		z.brace_end()
