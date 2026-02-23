@@ -831,6 +831,36 @@ struct trackedqueue : trackable
 	}
 };
 
+struct trackedindirectexecutionset : trackable
+{
+	using trackable::trackable; // inherit constructor
+	VkIndirectExecutionSetInfoTypeEXT type = VK_INDIRECT_EXECUTION_SET_INFO_TYPE_MAX_ENUM_EXT;
+
+	void self_test() const
+	{
+		assert(type != VK_INDIRECT_EXECUTION_SET_INFO_TYPE_MAX_ENUM_EXT);
+		trackable::self_test();
+	}
+};
+
+struct trackedindirectcommandslayout : trackable
+{
+	using trackable::trackable; // inherit constructor
+	VkIndirectCommandsLayoutUsageFlagsEXT flags = VK_INDIRECT_COMMANDS_LAYOUT_USAGE_FLAG_BITS_MAX_ENUM_EXT;
+	VkShaderStageFlags stages = VK_PIPELINE_LAYOUT_CREATE_FLAG_BITS_MAX_ENUM;
+	uint32_t indirectStride = UINT32_MAX;
+	uint32_t pipeline_layout_index = CONTAINER_INVALID_INDEX; // is optional
+	// TBD we need to store the indirect command tokens here, at least for postprocessing needs, but this is not trivial
+
+	void self_test() const
+	{
+		assert(flags != VK_INDIRECT_COMMANDS_LAYOUT_USAGE_FLAG_BITS_MAX_ENUM_EXT);
+		assert(stages != VK_PIPELINE_LAYOUT_CREATE_FLAG_BITS_MAX_ENUM);
+		assert(indirectStride != UINT32_MAX);
+		trackable::self_test();
+	}
+};
+
 struct trackedevent_trace : trackable
 {
 	using trackable::trackable; // inherit constructor

@@ -24,12 +24,6 @@ Missing Vulkan call implementations:
 * vkGetMicromapBuildSizesEXT
 * vkGetDeviceFaultInfoEXT
 
-Missing and desirable extension support:
-* VK_EXT_descriptor_buffer
-* VK_EXT_mutable_descriptor_type
-* VK_EXT_device_generated_commands
-* VK_KHR_pipeline_binary
-
 Replayer:
 * Add back Android build
 * Trace fastforwarding

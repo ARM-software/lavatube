@@ -261,7 +261,7 @@ out(targets_read, '\tassert(pNextType != VK_STRUCTURE_TYPE_LOADER_INSTANCE_CREAT
 out(targets_read, '\tswitch ((uint32_t)pNextType)')
 out(targets_read, '\t{')
 out(targets_read, '\t\tdefault: ABORT("Unhandled extension (aborting): %lu\\n", (unsigned long)pNextType); break; // unknown extension, should never have been stored')
-out(targets_read, '\t\tcase 0: break; // list terminator')
+out(targets_read, '\t\tcase 0: *sptr = nullptr; break; // list terminator')
 for v in spec.extension_structs:
 	if v in struct.skiplist: continue
 	if v in spec.protected_types:

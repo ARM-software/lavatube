@@ -234,6 +234,23 @@ Json::Value trackedrenderpass_json(const trackedrenderpass* t)
 	return v;
 }
 
+Json::Value trackedindirectexecutionset_json(const trackedindirectexecutionset* t)
+{
+	Json::Value v = trackable_json(t);
+	v["type"] = (unsigned)t->type;
+	return v;
+}
+
+Json::Value trackedindirectcommandslayout_json(const trackedindirectcommandslayout* t)
+{
+	Json::Value v = trackable_json(t);
+	v["flags"] = (unsigned)t->flags;
+	v["stages"] = (unsigned)t->stages;
+	v["indirect_stride"] = (unsigned)t->indirectStride;
+	if (t->pipeline_layout_index != CONTAINER_INVALID_INDEX) v["pipeline_layout_index"] = t->pipeline_layout_index;
+	return v;
+}
+
 Json::Value trackedpipelinelayout_json(const trackedpipelinelayout* t)
 {
 	Json::Value v = trackable_json(t);
@@ -526,6 +543,27 @@ trackedrenderpass trackedrenderpass_json(const Json::Value& v)
 {
 	trackedrenderpass t;
 	trackable_helper(t, v);
+	t.enter_initialized();
+	return t;
+}
+
+trackedindirectexecutionset trackedindirectexecutionset_json(const Json::Value& v)
+{
+	trackedindirectexecutionset t;
+	trackable_helper(t, v);
+	t.type = (VkIndirectExecutionSetInfoTypeEXT)v["type"].asUInt();
+	t.enter_initialized();
+	return t;
+}
+
+trackedindirectcommandslayout trackedindirectcommandslayout_json(const Json::Value& v)
+{
+	trackedindirectcommandslayout t;
+	trackable_helper(t, v);
+	t.flags = (VkIndirectCommandsLayoutUsageFlagsEXT)v["flags"].asUInt();
+	t.stages = (VkShaderStageFlags)v["stages"].asUInt();
+	t.indirectStride = v["indirect_stride"].asUInt();
+	if (v.isMember("pipeline_layout_index")) t.pipeline_layout_index = v["pipeline_layout_index"].asUInt();
 	t.enter_initialized();
 	return t;
 }

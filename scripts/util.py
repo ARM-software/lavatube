@@ -285,6 +285,10 @@ class parameter(spec.base_parameter):
 		varname = owner + name
 		is_root = not isptr(varname)
 
+		if self.funcname == 'VkRenderPassPerformanceCountersByRegionBeginInfoARM': # temprary workaround until it gets fixed in Khronos xml
+			if self.name == 'pCounterAddresses': self.length = 'counterAddressCount'
+			elif self.name == 'pCounterIndices': self.length = 'counterIndexCount'
+
 		if not self.funcname in vk.noscreen_calls and not self.funcname in vk.virtualswap_calls and self.funcname[0] == 'v':
 			assert self.type != 'VkSwapchainKHR', '%s has VkSwapchainKHR in %s' % (self.funcname, self.name)
 		if not self.funcname in vk.noscreen_calls and self.funcname[0] == 'v':
@@ -324,12 +328,20 @@ class parameter(spec.base_parameter):
 			z.do('%s = reader.pool.allocate<VkAccelerationStructureBuildRangeInfoKHR*>(infoCount);' % varname)
 			z.do('for (unsigned i = 0; i < infoCount; i++) %s[i] = reader.pool.allocate<VkAccelerationStructureBuildRangeInfoKHR>(pInfos[i].geometryCount);' % varname)
 			z.do('for (unsigned i = 0; i < infoCount; i++) for (unsigned j = 0; j < pInfos[i].geometryCount; j++) { auto* p = %s[i]; read_VkAccelerationStructureBuildRangeInfoKHR(reader, &p[j]); }' % varname)
-		elif self.name in ['deviceAddress', 'bufferDeviceAddress'] and self.type == 'VkDeviceAddress':
-			z.decl('uint64_t', 'stored_address')
-			z.do('stored_address = reader.read_uint64_t();')
-			z.do('%s = reader.parent->device_address_remapping.translate_address(stored_address);' % varname)
-			z.do('ILOG("%s changing device address from %%lu to %%lu", (unsigned long)stored_address, (unsigned long)%s);' % (self.funcname, varname))
-		elif self.name == 'address' and self.type == 'VkDeviceAddress' and self.funcname in ['VkDescriptorBufferBindingInfoEXT', 'VkDescriptorAddressInfoEXT']:
+		elif ('Address' in self.name or self.name == 'address') and self.type == 'VkDeviceAddress' and self.length and self.ptr: # array of addresses
+			if is_root:
+				z.decl('VkDeviceAddress*', varname)
+			tmpname = z.tmpmem('VkDeviceAddress', self.length)
+			z.do('for (uint32_t k = 0; k < %s; k++)' % self.length)
+			z.loop_begin()
+			z.do('uint64_t stored_address = reader.read_uint64_t();')
+			z.do('%s[k] = reader.parent->device_address_remapping.translate_address(stored_address);' % tmpname)
+			z.do('ILOG("%s changing device address from %%lu to %%lu at array position %%u", (unsigned long)stored_address, (unsigned long)%s[k], (unsigned)k);' % (self.funcname, tmpname))
+			z.loop_end()
+			z.do('%s = %s;' % (varname, tmpname))
+		elif ('Address' in self.name or self.name == 'address') and self.type == 'VkDeviceAddress':
+			if is_root:
+				z.decl('VkDeviceAddress', varname)
 			z.decl('uint64_t', 'stored_address')
 			z.do('stored_address = reader.read_uint64_t();')
 			z.do('%s = reader.parent->device_address_remapping.translate_address(stored_address);' % varname)
@@ -689,6 +701,10 @@ class parameter(spec.base_parameter):
 
 		varname = owner + name
 		is_root = not isptr(varname)
+
+		if self.funcname == 'VkRenderPassPerformanceCountersByRegionBeginInfoARM': # temprary workaround until it gets fixed in Khronos xml
+			if self.name == 'pCounterAddresses': self.length = 'counterAddressCount'
+			elif self.name == 'pCounterIndices': self.length = 'counterIndexCount'
 
 		if not is_root and iscount(self):
 			z.decl('%s%s%s' % (self.mod if self.structure else '', self.type, self.param_ptrstr), self.name)
@@ -1097,6 +1113,13 @@ def save_add_tracking(name):
 			z.do('if (usageflags2) add->usage2 = usageflags2->usage;')
 			z.do('add->sharingMode = pCreateInfo->sharingMode;')
 			z.do('add->object_type = VK_OBJECT_TYPE_BUFFER;')
+		elif type == 'VkIndirectCommandsLayoutEXT':
+			z.do('add->flags = pCreateInfo->flags;')
+			z.do('add->stages = pCreateInfo->shaderStages;')
+			z.do('add->indirectStride = pCreateInfo->indirectStride;')
+			z.do('if (pCreateInfo->pipelineLayout != VK_NULL_HANDLE) add->pipeline_layout_index = writer.parent->records.VkPipelineLayout_index.at(pCreateInfo->pipelineLayout)->index;')
+		elif type == 'VkIndirectExecutionSetEXT':
+			z.do('add->type = pCreateInfo->type;')
 		elif type == 'VkShaderEXT':
 			z.do('add->entry_name = pCreateInfos[i].pName;')
 			z.do('add->flags = pCreateInfos[i].flags;')
