@@ -2137,10 +2137,10 @@ static void write_VkMarkedOffsetsARM(lava_file_writer& writer, const VkMarkedOff
 	}
 }
 
-static void write_VkUpdateMemoryInfoARM(lava_file_writer& writer, const VkUpdateMemoryInfoARM* sptr)
+static void write_VkUpdateBufferInfoARM(lava_file_writer& writer, const VkUpdateBufferInfoARM* sptr)
 {
 	writer.write_uint32_t(sptr->sType);
-	assert(sptr->sType == VK_STRUCTURE_TYPE_UPDATE_MEMORY_INFO_ARM);
+	assert(sptr->sType == VK_STRUCTURE_TYPE_UPDATE_BUFFER_INFO_ARM);
 	write_extension(writer, (VkBaseOutStructure*)sptr->pNext);
 	const trackable* buffer_data = nullptr;
 	if (sptr->dstBuffer != VK_NULL_HANDLE)
@@ -2158,7 +2158,7 @@ static void write_VkUpdateMemoryInfoARM(lava_file_writer& writer, const VkUpdate
 	}
 }
 
-VKAPI_ATTR void trace_vkCmdUpdateBuffer2ARM(VkCommandBuffer commandBuffer, const VkUpdateMemoryInfoARM* pInfo)
+VKAPI_ATTR void trace_vkCmdUpdateBuffer2ARM(VkCommandBuffer commandBuffer, const VkUpdateBufferInfoARM* pInfo)
 {
 	lava_file_writer& writer = write_header("vkCmdUpdateBuffer2ARM", VKCMDUPDATEBUFFER2ARM);
 	auto* commandbuffer_data = writer.parent->records.VkCommandBuffer_index.at(commandBuffer);
@@ -2179,7 +2179,7 @@ VKAPI_ATTR void trace_vkCmdUpdateBuffer2ARM(VkCommandBuffer commandBuffer, const
 	writer.commandBuffer = commandBuffer;
 	writer.device = commandbuffer_data->device;
 	writer.physicalDevice = commandbuffer_data->physicalDevice;
-	write_VkUpdateMemoryInfoARM(writer, pInfo);
+	write_VkUpdateBufferInfoARM(writer, pInfo);
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL trace_vkAssertBufferARM(VkDevice device, VkBuffer buffer, VkDeviceSize offset, VkDeviceSize size, uint32_t* checksum, const char* comment)

@@ -21,7 +21,7 @@ skiplist = [ 'VkXlibSurfaceCreateInfoKHR', 'VkXcbSurfaceCreateInfoKHR', 'VkBaseO
 ]
 
 hardcoded_read = [ 'VkAccelerationStructureBuildGeometryInfoKHR', 'VkDataGraphPipelineConstantARM' ]
-hardcoded_write = [ 'VkUpdateMemoryInfoARM', 'VkAddressRemapARM', 'VkPatchChunkTRACETOOLTEST', 'VkDataGraphPipelineConstantARM' ]
+hardcoded_write = [ 'VkUpdateBufferInfoARM', 'VkAddressRemapARM', 'VkPatchChunkTRACETOOLTEST', 'VkDataGraphPipelineConstantARM' ]
 
 z = util.getspool()
 

@@ -2459,10 +2459,10 @@ VKAPI_ATTR void retrace_vkThreadBarrierTRACETOOLTEST(lava_file_reader& reader)
 	DLOG2("Passed thread barrier on thread %d, waited for %u threads", reader.thread_index(), size);
 }
 
-void read_VkUpdateMemoryInfoARM(lava_file_reader& reader, VkUpdateMemoryInfoARM* sptr)
+void read_VkUpdateBufferInfoARM(lava_file_reader& reader, VkUpdateBufferInfoARM* sptr)
 {
 	sptr->sType = (VkStructureType)reader.read_uint32_t();
-	assert(sptr->sType == VK_STRUCTURE_TYPE_UPDATE_MEMORY_INFO_ARM);
+	assert(sptr->sType == VK_STRUCTURE_TYPE_UPDATE_BUFFER_INFO_ARM);
 	read_extension(reader, (VkBaseOutStructure**)&sptr->pNext);
 	const uint32_t buffer_index = reader.read_handle(DEBUGPARAM("VkBuffer"));
 	sptr->dstBuffer = index_to_VkBuffer.at(buffer_index);
@@ -2481,10 +2481,10 @@ void read_VkUpdateMemoryInfoARM(lava_file_reader& reader, VkUpdateMemoryInfoARM*
 
 VKAPI_ATTR void retrace_vkCmdUpdateBuffer2ARM(lava_file_reader& reader)
 {
-	VkUpdateMemoryInfoARM info = {};
+	VkUpdateBufferInfoARM info = {};
 	const uint32_t commandbuffer_index = reader.read_handle(DEBUGPARAM("VkCommandBuffer"));
 	VkCommandBuffer commandBuffer = index_to_VkCommandBuffer.at(commandbuffer_index);
-	read_VkUpdateMemoryInfoARM(reader, &info);
+	read_VkUpdateBufferInfoARM(reader, &info);
 	assert(info.dstBuffer != VK_NULL_HANDLE);
 	uint32_t buffer_index = index_to_VkBuffer.index(info.dstBuffer);
 	trackedobject& tbuf = VkBuffer_index.at(buffer_index);
