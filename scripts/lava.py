@@ -326,6 +326,16 @@ for v in spec.root.findall("commands/command"):
 		all_funcs[v.attrib.get('name')] = all_funcs[v.attrib.get('alias')]
 
 # Generate all functions
+out([gh], '#include "decode/api_decoder.h"')
+out([gh], '#include "decode/pointer_decoder.h"')
+out([gh], '#include "format/format.h"')
+out([gh], '#include "util/vulkan_modifier_base.h"')
+out([gh], '#include "write.h"')
+out([g], '#include "write_gfxr_consumer.h"')
+out([gh,g])
+out([gh,g], 'GFXRECON_BEGIN_NAMESPACE(gfxrecon)')
+out([gh,g], 'GFXRECON_BEGIN_NAMESPACE(decode)')
+out([gh,g])
 out([gh], 'class LavatubeConsumer : public util::VulkanModifierBase')
 out([gh], '{')
 for v in spec.root.findall("commands/command"):
@@ -360,7 +370,7 @@ out([gh], 'private:')
 out([gh], '\tlava_file_writer& start(const char* funcname, lava_function_id id, const ApiCallInfo& call_info, bool thread_barrier = false)')
 out([gh], '\t{')
 out([gh], '\t\tint tid = -1;')
-out([gh], '\t\tif (threads.contains(call_info.thread_id)) { tid = threads[call_info.thread_id]) }')
+out([gh], '\t\tif (threads.contains(call_info.thread_id)) { tid = threads[call_info.thread_id]; }')
 out([gh], '\t\telse { tid = threads.size(); threads[call_info.thread_id] = tid; }')
 out([gh], '\t\treturn write_header(funcname, id, tid, thread_barrier);')
 out([gh], '\t}')
@@ -368,6 +378,9 @@ out([gh], '\tinline void finish(lava_file_writer& writer) { writer.thaw(); }')
 out([gh])
 out([gh], '\tstd::unordered_map<uint64_t, int> threads;')
 out([gh], '};')
+out([gh,g])
+out([gh,g], 'GFXRECON_END_NAMESPACE(decode)')
+out([gh,g], 'GFXRECON_END_NAMESPACE(gfxrecon)')
 
 out(targets_all)
 

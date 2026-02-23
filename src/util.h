@@ -16,7 +16,9 @@
 #include <vector>
 #include <string>
 
+#ifndef VK_NO_PROTOTYPES
 #define VK_NO_PROTOTYPES
+#endif
 #include "vulkan_utility.h"
 
 #if defined(_MSC_VER)

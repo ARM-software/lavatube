@@ -6,7 +6,9 @@
 #define LAVATUBE_VERSION_MINOR 0
 #define LAVATUBE_VERSION_PATCH 1
 
+#ifndef VK_NO_PROTOTYPES
 #define VK_NO_PROTOTYPES
+#endif
 #include "vulkan/vulkan.h"
 #include "vk_wrapper_auto.h"
 #include "util.h"

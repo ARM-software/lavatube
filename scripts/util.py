@@ -196,6 +196,8 @@ class parameter(spec.base_parameter):
 			return ('%s%s%s%s' % (self.mod, 'format::HandleId', self.param_ptrstr, name)).strip()
 		if self.disphandle or self.nondisphandle: # pointer to handle
 			return ('%s%s%s' % ('HandlePointerDecoder<%s>' % self.type, self.param_ptrstr, name)).strip()
+		if self.ptr and (self.type in spec.type_mappings or self.type in ['uint32_t', 'int32_t', 'wl_display', 'Display', 'xcb_connection_t', 'uint64_t', 'uint8_t', 'int8_t']):
+			return ('%s%s%s' % ('StructPointerDecoder<%s>' % self.type, self.param_ptrstr, name)).strip()
 		if self.ptr:
 			return ('%s%s%s' % ('StructPointerDecoder<Decoded_%s>' % self.type, self.param_ptrstr, name)).strip()
 		if self.length and not self.ptr:
