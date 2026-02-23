@@ -16,13 +16,21 @@
 #include "sandbox.h"
 #include "postprocess.h"
 
+extern lava::mutex sync_mutex;
+
 static bool validate = false;
 static bool verbose = false;
 static bool report_unused = false;
 static bool dump_shaders = false;
+static bool dump_host_write_stats = false;
 static int invokation_count = 0;
 
 // Utility funcs
+
+static bool rewrite_call_less(const address_rewrite& a, const address_rewrite& b)
+{
+	return a.source.call < b.source.call;
+}
 
 static void usage()
 {
@@ -33,14 +41,13 @@ static void usage()
 	printf("-V/--validate          Validate the input trace, abort with an error if anything amiss found instead of just reporting on it\n");
 #ifndef NDEBUG
 	printf("-d/--debug level       Set debug level [0,1,2,3]\n");
-	printf("-o/--debugfile FILE    Output debug output to the given file\n");
+	printf("-df/--debugfile FILE   Output debug output to the given file\n");
 #endif
 	printf("-f/--frames start end  Select a frame range\n");
-	printf("-r/--remap-validate    Validate existing device address remappings - abort if we find less or more addresses than already marked\n");
 	printf("-u/--unused            Find any found unused features and extensions in the trace file; remove them from the output file\n");
 	printf("-DS/--dump-shaders     Dump any shaders found to disk\n");
+	printf("-hw/--host-write-stats Dump host-side write tracking stats after replay\n");
 	printf("-s/--sandbox level     Set security sandbox level (from 1 to 3, with 3 the most strict, default %d)\n", (int)p__sandbox_level);
-	//printf("-R/--remap-addresses   Adding remapping of device addresses. Replaces existing address remappings. Requires an output file.\n");
 	exit(-1);
 }
 
@@ -72,6 +79,41 @@ static std::string get_str(const char* in, int& remaining)
 	}
 	remaining--;
 	return in;
+}
+
+static void dump_host_write_stats_report(const char* label)
+{
+	const host_write_totals buffers = gather_host_write_stats(VkBuffer_index);
+	const host_write_totals images = gather_host_write_stats(VkImage_index);
+	const host_write_totals tensors = gather_host_write_stats(VkTensorARM_index);
+	const host_write_totals accel = gather_host_write_stats(VkAccelerationStructureKHR_index);
+
+	host_write_totals total;
+	total.objects = buffers.objects + images.objects + tensors.objects + accel.objects;
+	total.objects_with_data = buffers.objects_with_data + images.objects_with_data + tensors.objects_with_data + accel.objects_with_data;
+	total.segments = buffers.segments + images.segments + tensors.segments + accel.segments;
+	total.bytes = buffers.bytes + images.bytes + tensors.bytes + accel.bytes;
+
+	printf("Host write stats (%s):\n", label);
+	printf("  Total: objects=%lu with_data=%lu segments=%lu bytes=%lu\n",
+		(unsigned long)total.objects, (unsigned long)total.objects_with_data,
+		(unsigned long)total.segments, (unsigned long)total.bytes);
+	printf("  Buffers: objects=%lu with_data=%lu segments=%lu bytes=%lu max_segments=%lu highest index=%s\n",
+		(unsigned long)buffers.objects, (unsigned long)buffers.objects_with_data,
+		(unsigned long)buffers.segments, (unsigned long)buffers.bytes,
+		(unsigned long)buffers.max_segments, buffers.max_index == CONTAINER_INVALID_INDEX ? "n/a" : std::to_string(buffers.max_index).c_str());
+	printf("  Images: objects=%lu with_data=%lu segments=%lu bytes=%lu max_segments=%lu highest index=%s\n",
+		(unsigned long)images.objects, (unsigned long)images.objects_with_data,
+		(unsigned long)images.segments, (unsigned long)images.bytes,
+		(unsigned long)images.max_segments, images.max_index == CONTAINER_INVALID_INDEX ? "n/a" : std::to_string(buffers.max_index).c_str());
+	printf("  Tensors: objects=%lu with_data=%lu segments=%lu bytes=%lu max_segments=%lu highest index=%s\n",
+		(unsigned long)tensors.objects, (unsigned long)tensors.objects_with_data,
+		(unsigned long)tensors.segments, (unsigned long)tensors.bytes,
+		(unsigned long)tensors.max_segments, tensors.max_index == CONTAINER_INVALID_INDEX ? "n/a" : std::to_string(buffers.max_index).c_str());
+	printf("  AccelStructs: objects=%lu with_data=%lu segments=%lu bytes=%lu max_segments=%lu highest index=%s\n",
+		(unsigned long)accel.objects, (unsigned long)accel.objects_with_data,
+		(unsigned long)accel.segments, (unsigned long)accel.bytes,
+		(unsigned long)accel.max_segments, accel.max_index == CONTAINER_INVALID_INDEX ? "n/a" : std::to_string(buffers.max_index).c_str());
 }
 
 static void replay_thread(lava_reader* replayer, int thread_id)
@@ -134,11 +176,18 @@ void postprocess_vkDestroyDevice(callback_context& cb, VkDevice device, const Vk
 {
 	uint32_t device_index = index_to_VkDevice.index(device);
 	const auto& device_data = VkDevice_index.at(device_index);
-	uint32_t num_modules = index_to_VkShaderModule.size();
-	for (uint32_t i = 0; i < num_modules; i++)
+	for (uint32_t i = 0; i < index_to_VkPipeline.size(); i++)
 	{
-		const auto& shadermodule_data = VkShaderModule_index.at(i);
-		if (shadermodule_data.device_index == device_data.index) invokation_count += shadermodule_data.calls;
+		const auto& pipeline_data = VkPipeline_index.at(i);
+		for (const auto& stage : pipeline_data.shader_stages)
+		{
+			if (stage.device_index == device_data.index) invokation_count += stage.calls;
+		}
+	}
+	for (uint32_t i = 0; i < index_to_VkShaderEXT.size(); i++)
+	{
+		const auto& shader_data = VkShaderEXT_index.at(i);
+		if (shader_data.stage.device_index == device_data.index) invokation_count += shader_data.stage.calls;
 	}
 }
 
@@ -188,7 +237,6 @@ int main(int argc, char **argv)
 	int remaining = argc - 1; // zeroth is name of program
 	std::string filename_input;
 	std::string filename_output;
-	bool validate_remap = false;
 
 	if (p__sandbox_level >= 1) sandbox_level_one();
 
@@ -205,7 +253,6 @@ int main(int argc, char **argv)
 		else if (match(argv[i], "-V", "--validate", remaining))
 		{
 			validate = true;
-			(void)validate; // does not do anything yet...
 		}
 		else if (match(argv[i], "-v", "--verbose", remaining))
 		{
@@ -219,7 +266,11 @@ int main(int argc, char **argv)
 		{
 			dump_shaders = true;
 		}
-		else if (match(argv[i], "-o", "--debugfile", remaining))
+		else if (match(argv[i], "-hw", "--host-write-stats", remaining))
+		{
+			dump_host_write_stats = true;
+		}
+		else if (match(argv[i], "-df", "--debugfile", remaining))
 		{
 			if (remaining < 1) usage();
 			std::string val = get_str(argv[++i], remaining);
@@ -236,10 +287,6 @@ int main(int argc, char **argv)
 		{
 			p__sandbox_level = get_int(argv[++i], remaining);
 			if (p__sandbox_level <= 0 || p__sandbox_level > 3) DIE("Invalid sandbox level %d", (int)p__sandbox_level);
-		}
-		else if (match(argv[i], "-r", "--remap-validate", remaining))
-		{
-			validate_remap = true;
 		}
 		else if (strcmp(argv[i], "--") == 0) // eg in case you have a file named -f ...
 		{
@@ -291,9 +338,10 @@ int main(int argc, char **argv)
 	{
 		lava_reader replayer;
 		replayer.run = false; // do not actually run anything
+		replayer.validate = validate; // abort on less serious errors, not just warn
+		replayer.pass = 0; // first pass
 		replayer.set_frames(start, end);
 		replayer.init(filename_input);
-		replayer.remap_scan = validate_remap;
 
 		// Add callbacks
 		add_callbacks_for_first_round();
@@ -315,25 +363,55 @@ int main(int argc, char **argv)
 		}
 
 		// Copy out the rewrite queue
-		if (validate_remap) rewrite_queue_copy = replayer.rewrite_queue;
+		sync_mutex.lock(); // threads are stopped here but let's avoid warnings
+		rewrite_queue_copy = replayer.global_rewrite_queue;
+		sync_mutex.unlock();
 
+		if (dump_host_write_stats) dump_host_write_stats_report("pass1");
 		reset_for_tools();
 		replayer.finalize(false);
 	}
 
-	if (validate_remap) // run second round
+	if (!filename_output.empty() || validate) // run second round to write out or test all changes
 	{
 		lava_reader replayer;
-		replayer.run = false; // do not actually run anything
+		replayer.pass = 1; // second pass
+		replayer.run = false; // do not actually run anything, again
+		replayer.validate = validate; // abort on less serious errors, not just warn
 		replayer.init(filename_input);
 		replayer.set_frames(start, end);
-		replayer.remap_scan = false;
 
 		// We can probably skip most of the callbacks now. Trying to skip all for now.
 		assert(vkCreateShaderModule_callbacks.size() == 0); // Verify that they were cleared
 
-		// Add in the rewrite queue from the previous run
-		replayer.rewrite_queue = rewrite_queue_copy;
+		// Add in the rewrite queue from the previous run, but split by thread and sorted by call number.
+		sync_mutex.lock();
+		replayer.global_rewrite_queue = rewrite_queue_copy;
+		sync_mutex.unlock();
+		for (const auto& v : rewrite_queue_copy)
+		{
+			assert(v.markings != nullptr && v.markings->count > 0);
+			ILOG("%s - number of markings: %u", describe_change_source(v.source).c_str(), (unsigned)v.markings->count);
+			lava_file_reader& t = replayer.file_reader(v.source.thread); // get the right filereader object
+			t.rewrite_queue.push_back(v);
+		}
+		for (unsigned i = 0; i < replayer.threads.size(); i++)
+		{
+			lava_file_reader& t = replayer.file_reader(i);
+			t.rewrite_queue.sort(rewrite_call_less);
+		}
+		for (unsigned i = 0; i < replayer.threads.size(); i++) // TBD sanity test, remove later
+		{
+			lava_file_reader& t = replayer.file_reader(i);
+			assert(i == (unsigned)t.thread_index());
+			unsigned last = 0;
+			for (const auto& v : t.rewrite_queue)
+			{
+				assert((int)v.source.thread == (int)t.thread_index());
+				assert(last <= v.source.call);
+				last = v.source.call;
+			}
+		}
 
 		for (unsigned i = 0; i < replayer.threads.size(); i++)
 		{
@@ -344,6 +422,7 @@ int main(int argc, char **argv)
 			replayer.threads[i].join();
 		}
 
+		if (dump_host_write_stats) dump_host_write_stats_report("pass2");
 		reset_for_tools();
 		replayer.finalize(false);
 	}

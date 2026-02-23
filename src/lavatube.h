@@ -217,7 +217,7 @@ struct trackedobject : trackable
 	uint64_t written = 0; // bytes written out for this object
 	uint32_t updates = 0; // number of times it was updated
 	bool accessible = false; // whether our backing memory is host visible and understandable
-	int source = 0; // code line that is the last source for us to be scanned, only for debugging
+	int source_line = 0; // code line that is the last source for us to be scanned, only for debugging
 	/// Do we alias another object in memory? if we alias 1-to-1, both point to each other, otherwise only the child points to
 	/// the parent object.
 	VkObjectType alias_type = VK_OBJECT_TYPE_UNKNOWN;
@@ -226,6 +226,9 @@ struct trackedobject : trackable
 	VkDeviceAddress capture_device_address = 0;
 	VkMemoryPropertyFlags memory_flags = 0;
 	lava_tiling tiling = TILING_LINEAR; // linear is the default
+
+	/// Data structure used to track the host write source for our data. Only used during post-processing.
+	host_write_regions source;
 
 	bool is_state(states s) const { return (uint8_t)s == state; }
 	void set_state(states s) { state = (uint8_t)s; }
@@ -262,19 +265,6 @@ struct trackedshadermodule : trackable
 	bool enables_device_address = false;
 	size_t size = 0;
 	std::vector<uint32_t> code; // only for replayer
-	uint32_t calls = 0; // numbere of times this shader was called
-};
-
-/// Tracking device address candidates
-struct remap_candidate
-{
-	VkDeviceAddress address; // contained value
-	VkDeviceSize offset; // byte offset from start of buffer
-	change_source source; // last write to memory area from which we came
-
-	remap_candidate(VkDeviceAddress a, VkDeviceSize b, change_source c) { address = a; offset = b; source = c; }
-	remap_candidate(const remap_candidate& c) { address = c.address; offset = c.offset; source = c.source; }
-	remap_candidate(remap_candidate&& c) { address = c.address; offset = c.offset; source = c.source; }
 };
 
 struct trackedbuffer : trackedobject
@@ -293,28 +283,7 @@ struct trackedbuffer : trackedobject
 		assert(usage != VK_BUFFER_USAGE_FLAG_BITS_MAX_ENUM);
 		assert(object_type == VK_OBJECT_TYPE_BUFFER);
 		if (is_state(states::bound)) assert(size != 0);
-		assert(candidates.size() == candidate_lookup.size());
 		trackedobject::self_test();
-	}
-
-	// -- The below is only used during remap post-processing --
-
-	std::list<remap_candidate> candidates;
-	std::unordered_map<VkDeviceSize, std::list<remap_candidate>::iterator> candidate_lookup;
-
-	void add_candidate(VkDeviceSize off, VkDeviceAddress candidate, change_source origin)
-	{
-		assert(candidate_lookup.count(off) == 0);
-		candidates.emplace_back(candidate, off, origin);
-		candidate_lookup[off] = --candidates.end();
-	}
-
-	void remove_candidate(VkDeviceSize off)
-	{
-		assert(candidate_lookup.count(off) > 0);
-		auto it = candidate_lookup.at(off);
-		candidate_lookup.erase(off);
-		candidates.erase(it);
 	}
 };
 
@@ -340,16 +309,32 @@ struct trackedtensor : trackedobject
 	}
 };
 
+struct shader_stage
+{
+	uint32_t index = CONTAINER_INVALID_INDEX; // our position in our local array of stages
+	uint64_t unique_index = UINT64_MAX; // something unique to identify this shader
+	uint32_t device_index = CONTAINER_INVALID_INDEX; // device we belong to
+	VkPipelineShaderStageCreateFlags flags = VK_PIPELINE_SHADER_STAGE_CREATE_FLAG_BITS_MAX_ENUM;
+	VkShaderStageFlagBits stage = VK_SHADER_STAGE_FLAG_BITS_MAX_ENUM;
+	VkShaderModule module = VK_NULL_HANDLE;
+	std::string name;
+	std::vector<uint32_t> code; // raw SPIR-V when sourced from VK_EXT_shader_object or maintenance 5
+	std::vector<VkSpecializationMapEntry> specialization_constants;
+	std::vector<char> specialization_data;
+	uint32_t calls = 0; // numbere of times this shader was called
+
+	void self_test() const // use with post-processing only
+	{
+		assert(index != CONTAINER_INVALID_INDEX);
+		assert(device_index != CONTAINER_INVALID_INDEX);
+		assert(unique_index != UINT64_MAX);
+	}
+};
+
 struct trackedshaderobject : trackable
 {
 	using trackable::trackable; // inherit constructor
-
-	VkShaderCreateFlagsEXT flags = 0;
-	VkShaderStageFlagBits stage = VK_SHADER_STAGE_FLAG_BITS_MAX_ENUM;
-	std::string entry_name;
-	std::vector<uint32_t> code;
-	std::vector<VkSpecializationMapEntry> specialization_constants;
-	std::vector<char> specialization_data;
+	shader_stage stage;
 };
 
 struct trackedaccelerationstructure : trackedobject
@@ -502,18 +487,6 @@ struct trackedfence : trackable
 	int frame_delay = -1; // delay fuse uninitialized
 };
 
-struct shader_stage // post-processor only
-{
-	uint32_t index = CONTAINER_INVALID_INDEX; // our position in our local array of stages
-	VkPipelineShaderStageCreateFlags flags = VK_PIPELINE_SHADER_STAGE_CREATE_FLAG_BITS_MAX_ENUM;
-	VkShaderStageFlagBits stage = VK_SHADER_STAGE_FLAG_BITS_MAX_ENUM;
-	VkShaderModule module = VK_NULL_HANDLE;
-	std::string name;
-	std::vector<uint32_t> code; // raw SPIR-V when sourced from VK_EXT_shader_object
-	std::vector<VkSpecializationMapEntry> specialization_constants;
-	std::vector<char> specialization_data;
-};
-
 struct raytracing_group // post-processor only
 {
 	VkRayTracingShaderGroupTypeKHR type = VK_RAY_TRACING_SHADER_GROUP_TYPE_MAX_ENUM_KHR;
@@ -570,6 +543,7 @@ struct trackedcommand // does _not_ inherit trackable
 	};
 
 	lava_function_id id;
+	change_source source;
 	union data
 	{
 		struct bind_descriptorsets
@@ -618,7 +592,8 @@ struct trackedcommand // does _not_ inherit trackable
 		struct bind_shaders_ext
 		{
 			uint32_t stageCount;
-			trackedshaderobject* shader_objects; // array length stageCount
+			VkShaderStageFlagBits* shader_types;
+			uint32_t* shader_objects;
 		} bind_shaders_ext;
 		struct trace_rays
 		{
@@ -708,7 +683,7 @@ struct trackedcmdbuffer_trace : trackedcmdbuffer
 	void touch(trackedobject* data, VkDeviceSize offset, VkDeviceSize size, unsigned source)
 	{
 		if (!data->accessible) return;
-		data->source = source;
+		data->source_line = (int)source;
 		if (size == VK_WHOLE_SIZE) size = data->size - offset;
 		touched[data].add_os(offset, size);
 	}
@@ -785,7 +760,7 @@ struct trackeddescriptorset_trace : trackeddescriptorset
 	void touch(trackedobject* data, VkDeviceSize offset, VkDeviceSize size, unsigned source)
 	{
 		if (!data->accessible) return;
-		data->source = -(int)source;
+		data->source_line = -(int)source;
 		if (size == VK_WHOLE_SIZE) size = data->size - offset;
 		touched[data].add_os(offset, size);
 	}
@@ -948,4 +923,9 @@ inline void trackedmemory::unbind(trackedobject* obj)
 			return;
 		}
 	}
+}
+
+inline std::string describe_change_source(const change_source& src)
+{
+	return "Memory last written to by " + std::string(get_function_name(src.call_id)) + " at frame " + std::to_string(src.frame) + " call number " + std::to_string(src.call) + " thread " + std::to_string(src.thread);
 }

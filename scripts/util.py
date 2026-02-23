@@ -1257,6 +1257,12 @@ def save_add_tracking(name):
 			z.do('add->pool_index = commandpool_data->index;')
 			z.do('add->level = pAllocateInfo->level;')
 			z.do('commandpool_data->commandbuffers.insert(add);')
+		elif type == 'VkShaderEXT':
+			z.do('add->stage.device_index = device_data->index;')
+			z.do('add->stage.name = pCreateInfos[i].pName;')
+			z.do('add->stage.flags = pCreateInfos[i].flags;')
+			z.do('add->stage.stage = pCreateInfos[i].stage;')
+			z.do('add->stage.unique_index = add->index;')
 		elif type == 'VkDescriptorSet':
 			z.do('add->pool = pAllocateInfo->descriptorPool;')
 			z.do('add->pool_index = writer.parent->records.VkDescriptorPool_index.at(pAllocateInfo->descriptorPool)->index;')
@@ -1400,17 +1406,25 @@ def load_add_tracking(name):
 			z.do('assert(data.creation.frame == reader.current.frame);')
 			z.do('data.creation = reader.current;')
 			z.do('data.last_modified = reader.current;')
-			if type == 'VkSwapchainKHR':
-				z.do('if (is_noscreen() || !reader.run) pSwapchains[i] = fake_handle<VkSwapchainKHR>(indices[i]);')
+
+			if type == 'VkShaderEXT':
+				z.do('data.stage.device_index = device_index;')
+				z.do('data.stage.name = pCreateInfos[i].pName;')
+				z.do('data.stage.flags = pCreateInfos[i].flags;')
+				z.do('data.stage.stage = pCreateInfos[i].stage;')
+				z.do('data.stage.unique_index = data.index;')
 			elif type == 'VkCommandBuffer':
 				z.do('data.device = device;')
 				z.do('data.device_index = device_index;')
 				z.do('data.physicalDevice = VkDevice_index.at(device_index).physicalDevice;')
-				z.do('if (!reader.run) %s[i] = fake_handle<%s>(indices[i]);' % (param, type))
 			elif type == 'VkPipeline':
 				z.do('data.device_index = device_index;');
+
+			if type == 'VkSwapchainKHR':
+				z.do('if (is_noscreen() || !reader.run) pSwapchains[i] = fake_handle<VkSwapchainKHR>(indices[i]);')
 			else:
 				z.do('if (!reader.run) %s[i] = fake_handle<%s>(indices[i]);' % (param, type))
+
 			z.do('if (%s[i]) index_to_%s.set(indices[i], %s[i]);' % (param, type, param))
 			if type == 'VkSwapchainKHR':
 				z.do('data.info = pCreateInfos[i];')
