@@ -3028,7 +3028,67 @@ VKAPI_ATTR VkBool32 VKAPI_CALL trace_vkGetPhysicalDeviceXlibPresentationSupportK
 
 #endif
 
-// TBD handle vkGetPhysicalDeviceQueueFamilyProperties2
+static void common_virtual_VkQueueFamilyProperties(VkPhysicalDevice physicalDevice, VkQueueFamilyProperties* pQueueFamilyProperties)
+{
+	uint32_t timestampValidBits = 0;
+	uint32_t sparseBits = 0;
+	uint32_t count = 0;
+	wrap_vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice, &count, nullptr);
+	std::vector<VkQueueFamilyProperties> props(count);
+	wrap_vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice, &count, props.data());
+	for (const auto& f : props)
+	{
+		if (f.queueFlags & VK_QUEUE_GRAPHICS_BIT)
+		{
+			assert(f.minImageTransferGranularity.width == 1 && f.minImageTransferGranularity.height == 1 && f.minImageTransferGranularity.depth == 1);
+			if ((f.queueFlags & VK_QUEUE_SPARSE_BINDING_BIT)) sparseBits = VK_QUEUE_SPARSE_BINDING_BIT;
+			timestampValidBits = f.timestampValidBits;
+			break; // both our virtual graphics queues are on the first queue family supporting graphics
+		}
+	}
+
+	pQueueFamilyProperties->queueFlags = VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT | VK_QUEUE_TRANSFER_BIT | sparseBits;
+	pQueueFamilyProperties->queueCount = 2;
+	pQueueFamilyProperties->timestampValidBits = timestampValidBits;
+	pQueueFamilyProperties->minImageTransferGranularity.width = 1;
+	pQueueFamilyProperties->minImageTransferGranularity.height = 1;
+	pQueueFamilyProperties->minImageTransferGranularity.depth = 1;
+}
+
+static void common_vkGetPhysicalDeviceQueueFamilyProperties2(lava_file_writer& writer, VkPhysicalDevice physicalDevice, uint32_t* pQueueFamilyPropertyCount,
+	VkQueueFamilyProperties2* pQueueFamilyProperties)
+{
+	trackedphysicaldevice* physicaldevice_data = nullptr;
+	// -- Instructions --
+	physicaldevice_data = writer.parent->records.VkPhysicalDevice_index.at(physicalDevice);
+	if (physicaldevice_data) physicaldevice_data->self_test();
+	writer.write_handle(physicaldevice_data);
+	writer.physicalDevice = physicalDevice;
+	writer.write_uint8_t((pQueueFamilyProperties) ? 1 : 0);
+	// -- Post --
+	if (p__virtualqueues != 0)
+	{
+		*pQueueFamilyPropertyCount = 1;
+		if (pQueueFamilyProperties != nullptr) common_virtual_VkQueueFamilyProperties(physicalDevice, &pQueueFamilyProperties->queueFamilyProperties);
+	}
+	writer.thaw();
+}
+
+VKAPI_ATTR void VKAPI_CALL trace_vkGetPhysicalDeviceQueueFamilyProperties2(VkPhysicalDevice physicalDevice, uint32_t* pQueueFamilyPropertyCount, VkQueueFamilyProperties2* pQueueFamilyProperties)
+{
+	lava_file_writer& writer = write_header("vkGetPhysicalDeviceQueueFamilyProperties2", VKGETPHYSICALDEVICEQUEUEFAMILYPROPERTIES2);
+	common_vkGetPhysicalDeviceQueueFamilyProperties2(writer, physicalDevice, pQueueFamilyPropertyCount, pQueueFamilyProperties);
+	if (p__virtualqueues == 0 && writer.run) wrap_vkGetPhysicalDeviceQueueFamilyProperties2(physicalDevice, pQueueFamilyPropertyCount, pQueueFamilyProperties);
+}
+
+VKAPI_ATTR void VKAPI_CALL trace_vkGetPhysicalDeviceQueueFamilyProperties2KHR(VkPhysicalDevice physicalDevice, uint32_t* pQueueFamilyPropertyCount, VkQueueFamilyProperties2KHR* pQueueFamilyProperties)
+{
+	// -- Declarations --
+	lava_file_writer& writer = write_header("vkGetPhysicalDeviceQueueFamilyProperties2KHR", VKGETPHYSICALDEVICEQUEUEFAMILYPROPERTIES2KHR);
+	common_vkGetPhysicalDeviceQueueFamilyProperties2(writer, physicalDevice, pQueueFamilyPropertyCount, pQueueFamilyProperties);
+	if (p__virtualqueues == 0 && writer.run) wrap_vkGetPhysicalDeviceQueueFamilyProperties2KHR(physicalDevice, pQueueFamilyPropertyCount, pQueueFamilyProperties);
+}
+
 VKAPI_ATTR void VKAPI_CALL trace_vkGetPhysicalDeviceQueueFamilyProperties(VkPhysicalDevice physicalDevice, uint32_t* pQueueFamilyPropertyCount, VkQueueFamilyProperties* pQueueFamilyProperties)
 {
 	lava_file_writer& writer = write_header("vkGetPhysicalDeviceQueueFamilyProperties", VKGETPHYSICALDEVICEQUEUEFAMILYPROPERTIES);
@@ -3036,41 +3096,14 @@ VKAPI_ATTR void VKAPI_CALL trace_vkGetPhysicalDeviceQueueFamilyProperties(VkPhys
 	writer.write_handle(physicaldevice_data);
 	writer.write_uint8_t((pQueueFamilyProperties) ? 1 : 0);
 
-	if (p__virtualqueues == 0)
+	if (p__virtualqueues == 0 && writer.run)
 	{
 		wrap_vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice, pQueueFamilyPropertyCount, pQueueFamilyProperties);
 	}
 	else // virtual queues
 	{
-		if (pQueueFamilyProperties == nullptr)
-		{
-			*pQueueFamilyPropertyCount = 1;
-		}
-		else // fill the first and only passed in property struct
-		{
-			uint32_t timestampValidBits = 0;
-			uint32_t sparseBits = 0;
-			uint32_t count = 0;
-			wrap_vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice, &count, nullptr);
-			std::vector<VkQueueFamilyProperties> props(count);
-			wrap_vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice, &count, props.data());
-			for (const auto& f : props)
-			{
-				if (f.queueFlags & VK_QUEUE_GRAPHICS_BIT)
-				{
-					assert(f.minImageTransferGranularity.width == 1 && f.minImageTransferGranularity.height == 1 && f.minImageTransferGranularity.depth == 1);
-					if ((f.queueFlags & VK_QUEUE_SPARSE_BINDING_BIT)) sparseBits = VK_QUEUE_SPARSE_BINDING_BIT;
-					timestampValidBits = f.timestampValidBits;
-					break; // both our virtual graphics queues are on the first queue family supporting graphics
-				}
-			}
-
-			pQueueFamilyProperties->queueFlags = VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT | VK_QUEUE_TRANSFER_BIT | sparseBits;
-			pQueueFamilyProperties->queueCount = 2;
-			pQueueFamilyProperties->timestampValidBits = timestampValidBits;
-			pQueueFamilyProperties->minImageTransferGranularity.width = 1;
-			pQueueFamilyProperties->minImageTransferGranularity.height = 1;
-			pQueueFamilyProperties->minImageTransferGranularity.depth = 1;
-		}
+		*pQueueFamilyPropertyCount = 1;
+		if (pQueueFamilyProperties != nullptr) common_virtual_VkQueueFamilyProperties(physicalDevice, pQueueFamilyProperties);
 	}
+	writer.thaw();
 }

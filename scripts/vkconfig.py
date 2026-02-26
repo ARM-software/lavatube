@@ -105,7 +105,8 @@ hardcoded = [ 'vkGetSwapchainImagesKHR', 'vkCreateAndroidSurfaceKHR', 'vkGetDevi
 	'vkEnumerateInstanceLayerProperties', 'vkEnumerateInstanceExtensionProperties', 'vkEnumerateDeviceLayerProperties', 'vkEnumerateDeviceExtensionProperties',
 	'vkGetPhysicalDeviceXlibPresentationSupportKHR', 'vkCreateWin32SurfaceKHR', 'vkCreateDirectFBSurfaceEXT', 'vkCreateMetalSurfaceEXT' ]
 validate_funcs(hardcoded)
-hardcoded_write = [ 'vkGetPhysicalDeviceToolPropertiesEXT', 'vkGetPhysicalDeviceToolProperties', 'vkGetPhysicalDeviceQueueFamilyProperties' ]
+hardcoded_write = [ 'vkGetPhysicalDeviceToolPropertiesEXT', 'vkGetPhysicalDeviceToolProperties', 'vkGetPhysicalDeviceQueueFamilyProperties',
+	'vkGetPhysicalDeviceQueueFamilyProperties2KHR', 'vkGetPhysicalDeviceQueueFamilyProperties2' ]
 validate_funcs(hardcoded_write)
 hardcoded_read = []
 validate_funcs(hardcoded_read)
