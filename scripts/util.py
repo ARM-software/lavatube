@@ -753,6 +753,9 @@ class parameter(spec.base_parameter):
 			z.do('pData_remap = pData;')
 			z.do('if (pData_size > 0 && pData) pData_remap = rewrite_descriptor_update_template_data(writer, descriptorUpdateTemplate, pData, pData_size);')
 			z.do('if (pData_size > 0 && pData_remap) writer.write_array(reinterpret_cast<const char*>(pData_remap), pData_size);')
+		elif self.type == 'VkAccelerationStructureBuildRangeInfoKHR':
+			assert(self.funcname == 'vkBuildAccelerationStructuresKHR' or self.funcname == 'vkCmdBuildAccelerationStructuresKHR')
+			z.do('for (unsigned i = 0; i < infoCount; i++) for (unsigned j = 0; j < pInfos[i].geometryCount; j++) { auto* p = %s[i]; write_VkAccelerationStructureBuildRangeInfoKHR(writer, &p[j]); }' % varname)
 		elif self.structure:
 			if self.name == 'pRegions' and self.type in ['VkMemoryToImageCopy', 'VkImageToMemoryCopy'] and self.funcname in ['VkCopyMemoryToImageInfo', 'VkCopyImageToMemoryInfo']:
 				z.decl('VkFormat', 'prev_host_copy_format', custom='writer.host_copy_format')
