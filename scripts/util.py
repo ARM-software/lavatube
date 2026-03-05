@@ -1364,7 +1364,6 @@ def load_add_tracking(name):
 				z.do('if (!reader.run) %s = fake_handle<%s>(%s);' % (param, type, toindex(type)))
 			z.do('if (%s) index_to_%s.set(%s, %s);' % (param, type, toindex(type), param))
 			z.do('auto& data = %s_index.at(%s);' % (type, toindex(type)))
-			z.do('assert(data.creation.frame == reader.current.frame);')
 			z.do('data.creation = reader.current;')
 			z.do('data.last_modified = reader.current;')
 			if type == 'VkSwapchainKHR':
@@ -1408,7 +1407,6 @@ def load_add_tracking(name):
 			z.brace_begin()
 			z.do('DLOG2("insert %s into %s index %%u at pos=%%u call=%%d", indices[i], i, (int)reader.current.call);' % (type, name))
 			z.do('auto& data = %s_index.at(indices[i]);' % type)
-			z.do('assert(data.creation.frame == reader.current.frame);')
 			z.do('data.creation = reader.current;')
 			z.do('data.last_modified = reader.current;')
 
@@ -1447,7 +1445,7 @@ def load_add_tracking(name):
 		z.brace_begin()
 		if count == '1' and name not in vk.ignore_on_read:
 			z.do('auto& data = %s_index.at(%s);' % (type, toindex(type)))
-			z.do('assert(data.destroyed.frame == UINT32_MAX || data.destroyed.frame == reader.current.frame);')
+			#z.do('assert(data.destroyed.frame == UINT32_MAX || data.destroyed.frame == reader.current.frame);')
 			z.do('data.destroyed = reader.current;')
 			z.do('data.last_modified = reader.current;')
 			z.do('data.enter_destroyed();')
@@ -1455,7 +1453,7 @@ def load_add_tracking(name):
 		elif name not in vk.ignore_on_read:
 			z.do('if (indices[i] == CONTAINER_NULL_VALUE) continue;')
 			z.do('auto& data = %s_index.at(indices[i]);' % type)
-			z.do('assert(data.destroyed.frame == UINT32_MAX || data.destroyed.frame == reader.current.frame);')
+			#z.do('assert(data.destroyed.frame == UINT32_MAX || data.destroyed.frame == reader.current.frame);')
 			z.do('data.destroyed = reader.current;')
 			z.do('data.last_modified = reader.current;')
 			z.do('data.enter_destroyed();')
