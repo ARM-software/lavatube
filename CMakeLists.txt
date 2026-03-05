@@ -449,10 +449,6 @@ add_test(NAME replayer_vulkan_demo_cpu COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-
 add_test(NAME replayer_vkmark_cpu COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -C -B -w none ${PROJECT_SOURCE_DIR}/traces/vkmark_cube.vk)
 add_test(NAME replayer_samples_cpu COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -C -B -w none ${PROJECT_SOURCE_DIR}/traces/sample_hello_triangle.vk)
 add_test(NAME replayer_vkcube_cpu COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -C -B -w none ${PROJECT_SOURCE_DIR}/traces/lunarg_vkcube.vk)
-add_test(NAME replayer_vulkan_demo_rtbasic_gpu COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -B -w none --gpu ${PROJECT_SOURCE_DIR}/traces/demo_raytracingbasic.vk)
-add_test(NAME replayer_vulkan_demo_rtbasic_cpu COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -B -w none --cpu ${PROJECT_SOURCE_DIR}/traces/demo_raytracingbasic.vk)
-set_tests_properties(replayer_vulkan_demo_rtbasic_gpu PROPERTIES SKIP_RETURN_CODE 77)
-set_tests_properties(replayer_vulkan_demo_rtbasic_cpu PROPERTIES SKIP_RETURN_CODE 77)
 install(TARGETS lava-replay RUNTIME)
 
 # --- lava-tool ---
@@ -471,6 +467,26 @@ add_test(NAME validate_vkcube COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-tool -d 2
 add_test(NAME validate_vkcube_check_file_exists COMMAND ${CMAKE_COMMAND} -E cat "log.txt")
 set_tests_properties(validate_vkcube_check_file_exists PROPERTIES DEPENDS validate_vkcube)
 install(TARGETS lava-tool RUNTIME)
+
+# --- traces ---
+
+function(trace_test test_name test_exe)
+	add_test(NAME trace_file_test_${ARGV0}_replay COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -w none --gpu ${PROJECT_SOURCE_DIR}/${ARGV1})
+	set_tests_properties(trace_file_test_${ARGV0}_replay PROPERTIES SKIP_RETURN_CODE 77)
+	add_test(NAME trace_file_test_${ARGV0}_replay_cpu COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -w none -B --cpu ${PROJECT_SOURCE_DIR}/${ARGV1})
+	set_tests_properties(trace_file_test_${ARGV0}_replay_cpu PROPERTIES SKIP_RETURN_CODE 77)
+	add_test(NAME trace_file_test_${ARGV0}_validate COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-tool ${PROJECT_SOURCE_DIR}/${ARGV1})
+endfunction()
+
+trace_test(raytracingbasic traces/demo_raytracingbasic.vk)
+trace_test(raytracingsbtdata traces/demo_raytracingsbtdata.vk)
+trace_test(descriptorindexing traces/demo_descriptorindexing.vk)
+trace_test(pushconstants traces/demo_pushconstants.vk)
+trace_test(inlineuniformblocks traces/demo_inlineuniformblocks.vk)
+trace_test(raytracingintersection traces/demo_raytracingintersection.vk)
+trace_test(raytracingpositionfetch traces/demo_raytracingpositionfetch.vk)
+trace_test(geometryshader traces/demo_geometryshader.vk)
+trace_test(inputattachments traces/demo_inputattachments.vk)
 
 # --- packtool ---
 
