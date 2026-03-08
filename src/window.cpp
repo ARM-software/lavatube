@@ -291,7 +291,7 @@ VkSurfaceKHR window_create(VkInstance instance, uint32_t index, int32_t x, int32
 		bool fullscreen = false;
 		if ((geomreply = xcb_get_geometry_reply(context.xcb.connection, geomcookie, &error)))
 		{
-			DLOG("XCB screen size is %d x %d, window is %d x %d, with border=%d\n", geomreply->width, geomreply->height, width, height, (int)geomreply->border_width);
+			DLOG("XCB screen size is %d x %d, window is %d x %d, with border=%d", geomreply->width, geomreply->height, width, height, (int)geomreply->border_width);
 			if (geomreply->width == width || geomreply->height == height) // go fullscreen?
 			{
 				x = 0;

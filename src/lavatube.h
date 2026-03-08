@@ -340,6 +340,22 @@ struct trackedshaderobject : trackable
 	shader_stage stage;
 };
 
+struct trackedsurface : trackable
+{
+	using trackable::trackable; // inherit constructor
+	// initial values
+	uint32_t width = 0;
+	uint32_t height = 0;
+	int32_t x = 0;
+	int32_t y = 0;
+
+	void self_test() const
+	{
+		static_assert(offsetof(trackedsurface, magic) == 0, "ICD loader magic must be at offset zero!");
+		trackable::self_test();
+	}
+};
+
 struct trackedaccelerationstructure : trackedobject
 {
 	using trackedobject::trackedobject; // inherit constructor

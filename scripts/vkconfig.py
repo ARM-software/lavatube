@@ -184,7 +184,7 @@ trackable_type_map_general = { 'VkBuffer': 'trackedbuffer', 'VkImage': 'trackedi
 	'VkDevice': 'trackeddevice', 'VkFramebuffer': 'trackedframebuffer', 'VkRenderPass': 'trackedrenderpass', 'VkQueue': 'trackedqueue', 'VkPhysicalDevice': 'trackedphysicaldevice',
 	'VkShaderModule': 'trackedshadermodule', 'VkAccelerationStructureKHR': 'trackedaccelerationstructure', 'VkPipelineLayout': 'trackedpipelinelayout',
 	'VkDescriptorSetLayout': 'trackeddescriptorsetlayout', 'VkTensorARM': 'trackedtensor', 'VkDescriptorUpdateTemplate': 'trackeddescriptorupdatetemplate', 'VkShaderEXT': 'trackedshaderobject',
-	'VkIndirectExecutionSetEXT': 'trackedindirectexecutionset', 'VkIndirectCommandsLayoutEXT': 'trackedindirectcommandslayout' }
+	'VkIndirectExecutionSetEXT': 'trackedindirectexecutionset', 'VkIndirectCommandsLayoutEXT': 'trackedindirectcommandslayout', 'VkSurfaceKHR': 'trackedsurface' }
 trackable_type_map_trace = trackable_type_map_general.copy()
 trackable_type_map_trace.update({ 'VkCommandBuffer': 'trackedcmdbuffer_trace', 'VkSwapchainKHR': 'trackedswapchain', 'VkDescriptorSet': 'trackeddescriptorset_trace',
 	'VkEvent': 'trackedevent_trace', 'VkDescriptorPool': 'trackeddescriptorpool_trace', 'VkCommandPool': 'trackedcommandpool_trace' })

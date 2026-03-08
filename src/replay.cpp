@@ -32,7 +32,7 @@ static void usage()
 	printf("-C/--cpu               Use a CPU software rasterizer as your GPU, fails if not available\n");
 	printf("-V/--validate          Enable validation layers\n");
 	printf("-f/--frames start end  Select a measurement frame range\n");
-	printf("-w/--wsi wsi           Use the given windowing system [xcb, wayland, headless, none]\n");
+	printf("-w/--wsi wsi           Use the given windowing system [xcb, headless, none]\n");
 	printf("-i/--info              Output information about the trace file and exit (affected by debug level)\n");
 	printf("-p/--preload size      The amount of file data to preload before starting replay (default %d)\n", (int)p__preload);
 	printf("-a/--allow-stalls      Allow stalls if we run out of input data from our readahead thread while in measurement frame range\n");
@@ -105,6 +105,45 @@ static void run_multithreaded()
 	for (unsigned i = 0; i < replayer.threads.size(); i++)
 	{
 		replayer.threads[i].join();
+	}
+}
+
+static void cleanup_xcb_wsi_objects()
+{
+	if (strcmp(window_winsys(), "xcb") != 0) return;
+
+	for (uint32_t i = 0; i < index_to_VkSwapchainKHR.size(); i++)
+	{
+		if (!index_to_VkSwapchainKHR.contains(i)) continue;
+		trackedswapchain_replay& t = VkSwapchainKHR_index.at(i);
+		VkSwapchainKHR swapchain = index_to_VkSwapchainKHR.at(i);
+		if (t.device != VK_NULL_HANDLE && swapchain != VK_NULL_HANDLE)
+		{
+			wrap_vkDeviceWaitIdle(t.device);
+			wrap_vkDestroySwapchainKHR(t.device, swapchain, nullptr);
+		}
+		index_to_VkSwapchainKHR.unset(i);
+	}
+
+	VkInstance instance = VK_NULL_HANDLE;
+	for (uint32_t i = 0; i < index_to_VkInstance.size(); i++)
+	{
+		if (index_to_VkInstance.contains(i))
+		{
+			instance = index_to_VkInstance.at(i);
+			break;
+		}
+	}
+	if (instance != VK_NULL_HANDLE)
+	{
+		for (uint32_t i = 0; i < index_to_VkSurfaceKHR.size(); i++)
+		{
+			if (!index_to_VkSurfaceKHR.contains(i)) continue;
+			window_destroy(instance, i);
+			VkSurfaceKHR surface = index_to_VkSurfaceKHR.at(i);
+			wrap_vkDestroySurfaceKHR(instance, surface, nullptr);
+			index_to_VkSurfaceKHR.unset(i);
+		}
 	}
 }
 
@@ -304,8 +343,9 @@ int main(int argc, char **argv)
 
 	run_multithreaded();
 	if (p__custom_allocator) allocators_print(stdout);
-	wsi_shutdown();
+	cleanup_xcb_wsi_objects();
 	vkuDestroyWrapper(library);
+	wsi_shutdown();
 	if (p__debug_destination) fclose(p__debug_destination);
 	return replayer.exit_status;
 }

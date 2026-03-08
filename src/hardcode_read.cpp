@@ -2649,32 +2649,45 @@ static void common_vkCreateSurfaceKHR(lava_file_reader& reader, uint32_t stored_
 	read_extension(reader, (VkBaseOutStructure**)&pNext);
 
 	const uint32_t flags = reader.read_uint32_t();
-	const int32_t x = reader.read_int32_t();
-	const int32_t y = reader.read_int32_t();
+	int32_t x = reader.read_int32_t();
+	int32_t y = reader.read_int32_t();
 	int32_t width = reader.read_int32_t();
 	int32_t height = reader.read_int32_t();
-	if (stored_sType == VK_STRUCTURE_TYPE_HEADLESS_SURFACE_CREATE_INFO_EXT)
+	if (stored_sType == VK_STRUCTURE_TYPE_HEADLESS_SURFACE_CREATE_INFO_EXT && VkSwapchainKHR_index.size() > 0)
 	{
-		// TBD fix this ugly hack, we should store json window info in the surface object
+		// Ugly hack for older trace file version. We now store json window info in the surface object instead.
 		trackedswapchain_replay& t = VkSwapchainKHR_index.at(0);
 		width = t.info.imageExtent.width;
 		height = t.info.imageExtent.height;
 	}
-	DLOG("window originally from %s created with width=%d height=%d", name, width, height);
 	(void)reader.read_int32_t(); // depth
 	(void)reader.read_int32_t(); // border
 	const uint32_t retval = reader.read_uint32_t();
 	(void)retval;
 	const uint32_t surface_index = reader.read_handle(DEBUGPARAM("VkSurfaceKHR"));
-	VkSurfaceKHR pSurface = VK_NULL_HANDLE;
-	if (!is_noscreen() && reader.run) pSurface = window_create(instance, surface_index, x, y, width, height);
-	else pSurface = fake_handle<VkSurfaceKHR>(surface_index);
-	// Post
-	if (pSurface) index_to_VkSurfaceKHR.set(surface_index, pSurface);
 	auto& data = VkSurfaceKHR_index.at(surface_index);
 	data.creation = reader.current;
 	data.last_modified = reader.current;
 	data.enter_created();
+	if (data.width != 0)
+	{
+		x = data.x;
+		y = data.y;
+		width = data.width;
+		height = data.height;
+	}
+	if (width == 0) // final fallback - if we never got any size info and there was no swapchain, just create a dummy window
+	{
+		ILOG("No valid swapchain info found - creating dummy window");
+		width = 64;
+		height = 64;
+	}
+	// Now finally create the window
+	DLOG("window originally from %s created with width=%d height=%d", name, width, height);
+	VkSurfaceKHR pSurface = VK_NULL_HANDLE;
+	if (!is_noscreen() && reader.run) pSurface = window_create(instance, surface_index, x, y, width, height);
+	else pSurface = fake_handle<VkSurfaceKHR>(surface_index);
+	if (pSurface) index_to_VkSurfaceKHR.set(surface_index, pSurface);
 }
 
 void retrace_vkCreateAndroidSurfaceKHR(lava_file_reader& reader)

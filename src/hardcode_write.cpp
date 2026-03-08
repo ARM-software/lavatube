@@ -2387,6 +2387,12 @@ void trace_pre_vkFreeMemory(VkDevice device, VkDeviceMemory memory, const VkAllo
 void trace_post_vkCreateSwapchainKHR(lava_file_writer& writer, VkResult result, VkDevice device, const VkSwapchainCreateInfoKHR* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkSwapchainKHR* pSwapchain)
 {
 	assert(result == VK_SUCCESS);
+	auto* surface_data = writer.parent->records.VkSurfaceKHR_index.at(pCreateInfo->surface);
+	if (surface_data->width == 0)
+	{
+		surface_data->width = pCreateInfo->imageExtent.width;
+		surface_data->height = pCreateInfo->imageExtent.height;
+	}
 	uint32_t count = 0;
 	wrap_vkGetSwapchainImagesKHR(device, *pSwapchain, &count, nullptr);
 	if (count != pCreateInfo->minImageCount) ILOG("Requested %u swapchain images, got %u instead", pCreateInfo->minImageCount, count);
@@ -2513,8 +2519,12 @@ VKAPI_ATTR VkResult VKAPI_CALL trace_vkCreateXlibSurfaceKHR(VkInstance instance,
 	VkResult retval = wrap_vkCreateXlibSurfaceKHR(instance, pCreateInfo, pAllocator, pSurface);
 	writer.write_uint32_t(retval);
 	// -- Post --
-	trackable* surface_data = writer.parent->records.VkSurfaceKHR_index.add(*pSurface, writer.current);
+	trackedsurface* surface_data = writer.parent->records.VkSurfaceKHR_index.add(*pSurface, writer.current);
 	DLOG("insert VkSurfaceKHR into vkCreateXlibSurfaceKHR index %u", (unsigned)surface_data->index);
+	surface_data->width = attr.width;
+	surface_data->height = attr.height;
+	surface_data->x = attr.x;
+	surface_data->y = attr.y;
 	surface_data->enter_created();
 	writer.write_handle(surface_data); // id tracking
 	// -- Return --
@@ -2567,6 +2577,10 @@ VKAPI_ATTR VkResult VKAPI_CALL trace_vkCreateXcbSurfaceKHR(VkInstance instance, 
 	// Post
 	auto* surface_data = writer.parent->records.VkSurfaceKHR_index.add(*pSurface, writer.current);
 	DLOG("insert VkSurfaceKHR into vkCreateXcbSurfaceKHR index %u", (unsigned)surface_data->index);
+	surface_data->width = geom_reply->width;
+	surface_data->height = geom_reply->height;
+	surface_data->x = trans_reply->dst_x;
+	surface_data->y = trans_reply->dst_y;
 	surface_data->enter_created();
 	writer.write_handle(surface_data); // id tracking
 	free(geom_reply);
@@ -2596,6 +2610,7 @@ VKAPI_ATTR VkResult VKAPI_CALL trace_vkCreateWaylandSurfaceKHR(VkInstance instan
 	assert(retval == VK_SUCCESS);
 	// Post
 	auto* surface_data = writer.parent->records.VkSurfaceKHR_index.add(*pSurface, writer.current);
+	// just letting swapchain creation add our metadata, as wayland is too much of a brainrot API to handle here
 	surface_data->enter_created();
 	writer.write_handle(surface_data); // id tracking
 	// Return
@@ -2743,7 +2758,9 @@ VKAPI_ATTR VkResult VKAPI_CALL trace_vkCreateAndroidSurfaceKHR(VkInstance instan
 	VkResult retval = wrap_vkCreateAndroidSurfaceKHR(instance, pCreateInfo, pAllocator, pSurface);
 	writer.write_uint32_t(retval);
 	// Post
-	const auto* surface_data = writer.parent->records.VkSurfaceKHR_index.add(*pSurface, writer.current);
+	auto* surface_data = writer.parent->records.VkSurfaceKHR_index.add(*pSurface, writer.current);
+	surface_data->width = ANativeWindow_getWidth(pCreateInfo->window);
+	surface_data->height = ANativeWindow_getHeight(pCreateInfo->window);
 	surface_data->enter_created();
 	writer.write_handle(surface_data); // id tracking
 	// Return
