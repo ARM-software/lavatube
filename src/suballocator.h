@@ -36,7 +36,7 @@ struct suballocator
 {
 	/// Call this when our parent device object is created, and before calling any other suballoc function. Set `run` to false if we are not actually running the API, but instead
 	/// doing some post-processing.
-	void create(VkPhysicalDevice physicaldevice, VkDevice device, const std::vector<trackedimage>& images, const std::vector<trackedbuffer>& buffers, const std::vector<trackedtensor>& tensors, bool run);
+	void create(VkPhysicalDevice physicaldevice, VkDevice device, std::vector<trackedimage>& images, std::vector<trackedbuffer>& buffers, std::vector<trackedtensor>& tensors, bool run);
 
 	/// Call when our parent device is destroyed.
 	void destroy();
@@ -49,7 +49,7 @@ struct suballocator
 
 	/// Add an object to our memory pools. Thread safe because each thread gets its own set of memory pools that only they
 	/// can modify. Other threads may access the objects stored inside subject to Vulkan external synchronization rules.
-	suballoc_location add_trackedobject(uint16_t tid, const memory_requirements& reqs, uint64_t native, const trackedobject& data);
+	suballoc_location add_trackedobject(uint16_t tid, uint64_t native, const trackedobject& data);
 
 	/// Delete an image from our memory pools. Thread safe because the internal data structure is preallocated and never resized,
 	/// and deleted entries are never reused.

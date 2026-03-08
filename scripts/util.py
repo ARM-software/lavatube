@@ -650,10 +650,7 @@ class parameter(spec.base_parameter):
 					z.do('assert((lava_tiling)tiling == image_data.tiling);')
 					z.do('const VkDeviceSize min_size = static_cast<VkDeviceSize>(reader.read_uint64_t()); // fetch padded memory size')
 					z.do('assert(min_size == image_data.size);')
-				z.do('memory_requirements reqs;')
-				z.do('if (reader.run) reqs = get_%s_memory_requirements(reader.device, %s);' % (vk.trackable_type_map_replay[self.type], totrackable(self.type)))
-				z.do('else reqs = get_fake_memory_requirements(reader.device, %s);' % totrackable(self.type))
-				z.do('suballoc_location loc = device_data.allocator->add_trackedobject(reader.thread_index(), reqs, (uint64_t)%s, %s);' % (varname, totrackable(self.type)))
+				z.do('suballoc_location loc = device_data.allocator->add_trackedobject(reader.thread_index(), (uint64_t)%s, %s);' % (varname, totrackable(self.type)))
 			if self.name == 'memory':
 				z.do('assert(loc.memory != VK_NULL_HANDLE);')
 				z.do('%s = loc.memory;' % varname) # relying on the order of arguments here; see case above

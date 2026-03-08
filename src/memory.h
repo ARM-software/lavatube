@@ -2,14 +2,6 @@
 
 #include "lavatube.h"
 
-struct memory_requirements
-{
-	VkMemoryRequirements requirements { 0 };
-	VkMemoryPropertyFlags memory_flags { 0 };
-	VkMemoryDedicatedRequirements dedicated { VK_STRUCTURE_TYPE_MEMORY_DEDICATED_REQUIREMENTS, nullptr };
-	VkMemoryAllocateFlags allocate_flags { 0 };
-};
-
 // Merge two memory requirements
 memory_requirements merge_memory_requirements(const memory_requirements& req1, const memory_requirements& req2);
 

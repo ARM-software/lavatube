@@ -82,6 +82,7 @@ struct suballocator_private
 	std::vector<lookup> tensor_lookup;
 	/// Does this device have the an annoying optimal-to-linear padding requirement? If so, put optimal and linear objects in different memory heaps
 	bool allow_mixed_tiling = true;
+	uint32_t max_allocations = 0;
 	std::atomic_uint64_t used_bytes { 0 };
 	std::atomic_uint_least32_t used_count { 0 };
 	std::atomic_uint64_t allocated_bytes { 0 };
@@ -89,12 +90,9 @@ struct suballocator_private
 
 	void print_memory_usage();
 	uint32_t get_device_memory_type(uint32_t type_filter, VkMemoryPropertyFlags properties);
-	suballoc_location add_object_new(uint16_t tid, uint32_t memoryTypeIndex, suballocation &s, VkMemoryPropertyFlags flags,
-		lava_tiling tiling, bool dedicated, VkMemoryAllocateFlags allocflags);
-	bool fill_image_memreq(VkImage image, VkMemoryRequirements2& req, VkDeviceSize size);
+	suballoc_location allocate(uint16_t tid, uint32_t memoryTypeIndex, suballocation &s, VkMemoryPropertyFlags flags, lava_tiling tiling, bool dedicated, VkMemoryAllocateFlags allocflags);
 	void suballoc_print(FILE* fp);
-	suballoc_location add_object(uint16_t tid, uint32_t memoryTypeIndex, suballocation &s, VkMemoryPropertyFlags flags,
-		lava_tiling tiling, bool dedicated, VkMemoryAllocateFlags allocflags);
+	suballoc_location suballocate(uint16_t tid, uint32_t memoryTypeIndex, suballocation &s, VkMemoryPropertyFlags flags, lava_tiling tiling, VkMemoryAllocateFlags allocflags);
 	void self_test() const;
 	void bind(heap& h, const suballocation& s);
 	suballoc_metrics performance() const;
@@ -188,8 +186,10 @@ suballocator::~suballocator()
 	delete priv;
 }
 
-void suballocator::create(VkPhysicalDevice physicaldevice, VkDevice device, const std::vector<trackedimage>& images, const std::vector<trackedbuffer>& buffers, const std::vector<trackedtensor>& tensors, bool run)
+void suballocator::create(VkPhysicalDevice physicaldevice, VkDevice device, std::vector<trackedimage>& images, std::vector<trackedbuffer>& buffers, std::vector<trackedtensor>& tensors, bool run)
 {
+	// Step 1 - Initialize internal state
+
 	priv = new suballocator_private;
 	priv->run = run;
 	priv->image_lookup.resize(images.size());
@@ -205,6 +205,7 @@ void suballocator::create(VkPhysicalDevice physicaldevice, VkDevice device, cons
 		VkPhysicalDeviceProperties pdprops = {};
 		wrap_vkGetPhysicalDeviceProperties(physicaldevice, &pdprops);
 		priv->allow_mixed_tiling = (pdprops.limits.bufferImageGranularity == 1);
+		priv->max_allocations = pdprops.limits.maxMemoryAllocationCount - 64; // add space for some virtual swapchain images etc as well
 	}
 	else
 	{
@@ -215,11 +216,80 @@ void suballocator::create(VkPhysicalDevice physicaldevice, VkDevice device, cons
 		priv->memory_properties.memoryHeaps[0].size = UINT64_MAX;
 		priv->memory_properties.memoryHeaps[0].flags = VK_MEMORY_HEAP_DEVICE_LOCAL_BIT;
 		priv->allow_mixed_tiling = true;
+		priv->max_allocations = UINT32_MAX; // no GPU, no limits
 	}
 	assert(priv->memory_properties.memoryTypeCount > 0);
+
+	// Step 2 - Query memory requirements for each passed in object and find their new memory type. Assign
+	// some to dedicated allocation.
+
+	if (priv->run)
+	{
+		// First consume allocations on those that require dedicated allocation
+		for (auto& obj : images)
+		{
+			if (obj.is_swapchain_image) continue;
+			obj.reqs = get_trackedimage_memory_requirements(device, obj);
+			if (obj.reqs.dedicated.requiresDedicatedAllocation == VK_TRUE && priv->max_allocations)
+			{
+				obj.dedicated_allocation = true;
+				priv->max_allocations--;
+			}
+		}
+		for (auto& obj : buffers)
+		{
+			obj.reqs = get_trackedbuffer_memory_requirements(device, obj);
+			if (obj.reqs.dedicated.requiresDedicatedAllocation == VK_TRUE && priv->max_allocations)
+			{
+				obj.dedicated_allocation = true;
+				priv->max_allocations--;
+			}
+		}
+		for (auto& obj : tensors)
+		{
+			obj.reqs = get_trackedtensor_memory_requirements(device, obj);
+			if (obj.reqs.dedicated.requiresDedicatedAllocation == VK_TRUE && priv->max_allocations)
+			{
+				obj.dedicated_allocation = true;
+				priv->max_allocations--;
+			}
+		}
+		// Second consume allocations on those that prefer dedicated allocation
+		for (auto& obj : images)
+		{
+			if (obj.is_swapchain_image) continue;
+			if (!obj.dedicated_allocation && obj.reqs.dedicated.prefersDedicatedAllocation == VK_TRUE && priv->max_allocations)
+			{
+				obj.dedicated_allocation = true;
+				priv->max_allocations--;
+			}
+		}
+		for (auto& obj : buffers)
+		{
+			if (!obj.dedicated_allocation && obj.reqs.dedicated.prefersDedicatedAllocation == VK_TRUE && priv->max_allocations)
+			{
+				obj.dedicated_allocation = true;
+				priv->max_allocations--;
+			}
+		}
+		for (auto& obj : tensors)
+		{
+			if (!obj.dedicated_allocation && obj.reqs.dedicated.prefersDedicatedAllocation == VK_TRUE && priv->max_allocations)
+			{
+				obj.dedicated_allocation = true;
+				priv->max_allocations--;
+			}
+		}
+	}
+	else // for post-processing, allocate everything to dedicated allocation, unless it uses aliasing (TBD)
+	{
+		for (auto& obj : images) { obj.reqs = get_fake_memory_requirements(device, obj); obj.dedicated_allocation = true; }
+		for (auto& obj : buffers) { obj.reqs = get_fake_memory_requirements(device, obj); obj.dedicated_allocation = true; }
+		for (auto& obj : tensors) { obj.reqs = get_fake_memory_requirements(device, obj); obj.dedicated_allocation = true; }
+	}
 }
 
-suballoc_location suballocator_private::add_object_new(uint16_t tid, uint32_t memoryTypeIndex, suballocation &s, VkMemoryPropertyFlags flags,
+suballoc_location suballocator_private::allocate(uint16_t tid, uint32_t memoryTypeIndex, suballocation &s, VkMemoryPropertyFlags flags,
         lava_tiling tiling, bool dedicated, VkMemoryAllocateFlags allocflags)
 {
 	heap h;
@@ -285,16 +355,11 @@ suballoc_location suballocator_private::add_object_new(uint16_t tid, uint32_t me
 	return { h.mem, 0, s.size, true, needs_flush(memoryTypeIndex) };
 }
 
-suballoc_location suballocator_private::add_object(uint16_t tid, uint32_t memoryTypeIndex, suballocation &s, VkMemoryPropertyFlags flags,
-	lava_tiling tiling, bool dedicated, VkMemoryAllocateFlags allocflags)
+suballoc_location suballocator_private::suballocate(uint16_t tid, uint32_t memoryTypeIndex, suballocation &s, VkMemoryPropertyFlags flags, lava_tiling tiling, VkMemoryAllocateFlags allocflags)
 {
 	used_count++;
 	used_bytes += s.size;
 	assert(s.alignment != 0);
-	if (dedicated)
-	{
-		return add_object_new(tid, memoryTypeIndex, s, flags, tiling, dedicated, allocflags);
-	}
 	for (heap& h : heaps)
 	{
 		// this is a safe time to actually delete things
@@ -372,28 +437,7 @@ suballoc_location suballocator_private::add_object(uint16_t tid, uint32_t memory
 		}
 	}
 	// if we get here, we need to create another heap
-	return add_object_new(tid, memoryTypeIndex, s, flags, tiling, dedicated, allocflags);
-}
-
-bool suballocator_private::fill_image_memreq(VkImage image, VkMemoryRequirements2& req, VkDeviceSize size)
-{
-	if (!run) { req.memoryRequirements.size = size; req.memoryRequirements.alignment = 1; req.memoryRequirements.memoryTypeBits = 1; return false; }
-	assert(run);
-	req.sType = VK_STRUCTURE_TYPE_MEMORY_REQUIREMENTS_2;
-	VkMemoryDedicatedRequirements dedicated = { VK_STRUCTURE_TYPE_MEMORY_DEDICATED_REQUIREMENTS, nullptr, VK_FALSE, VK_FALSE };
-	if (use_dedicated_allocation())
-	{
-		VkImageMemoryRequirementsInfo2 info = {};
-		info.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_REQUIREMENTS_INFO_2;
-		info.image = image;
-		if (use_dedicated_allocation()) req.pNext = &dedicated;
-		wrap_vkGetImageMemoryRequirements2(device, &info, &req);
-	}
-	else
-	{
-		wrap_vkGetImageMemoryRequirements(device, image, &req.memoryRequirements);
-	}
-	return dedicated.prefersDedicatedAllocation || dedicated.requiresDedicatedAllocation;
+	return allocate(tid, memoryTypeIndex, s, flags, tiling, false, allocflags);
 }
 
 void suballocator_private::bind(heap& h, const suballocation& s)
@@ -434,20 +478,23 @@ void suballocator_private::bind(heap& h, const suballocation& s)
 	assert(s.offset + s.size <= h.total);
 }
 
-suballoc_location suballocator::add_trackedobject(uint16_t tid, const memory_requirements& reqs, uint64_t native, const trackedobject& data)
+suballoc_location suballocator::add_trackedobject(uint16_t tid, uint64_t native, const trackedobject& data)
 {
-	assert(reqs.requirements.alignment != 0); // not properly initialized!
+	assert(data.reqs.requirements.alignment != 0); // not properly initialized!
 	const VkMemoryPropertyFlags memory_flags = prune_memory_flags(data.memory_flags);
-	const uint32_t memoryTypeIndex = priv->get_device_memory_type(reqs.requirements.memoryTypeBits, memory_flags);
+	const uint32_t memoryTypeIndex = priv->get_device_memory_type(data.reqs.requirements.memoryTypeBits, memory_flags);
 	suballocation s;
 	s.type = data.object_type;
 	s.handle.native = native;
-	s.size = reqs.requirements.size;
+	s.size = data.reqs.requirements.size;
 	s.offset = 0;
 	s.index = data.index;
-	s.alignment = reqs.requirements.alignment;
-	const bool dedicated = reqs.dedicated.prefersDedicatedAllocation || reqs.dedicated.requiresDedicatedAllocation;
-	auto r = priv->add_object(tid, memoryTypeIndex, s, memory_flags, data.tiling, dedicated, reqs.allocate_flags);
+	s.alignment = data.reqs.requirements.alignment;
+	if (data.dedicated_allocation)
+	{
+		return priv->allocate(tid, memoryTypeIndex, s, memory_flags, data.tiling, true, data.reqs.allocate_flags);
+	}
+	auto r = priv->suballocate(tid, memoryTypeIndex, s, memory_flags, data.tiling, data.reqs.allocate_flags);
 	assert(r.offset == s.offset);
 	return r;
 }
@@ -456,33 +503,34 @@ void suballocator::virtualswap_images(const std::vector<VkImage>& images, VkMemo
 {
 	assert(priv->run);
 	VkMemoryPropertyFlags flags = prune_memory_flags(memory_flags);
-	VkMemoryRequirements2 req = {};
-	const bool dedicated = priv->fill_image_memreq(images.at(0), req, 0);
+	VkMemoryRequirements2 req = { VK_STRUCTURE_TYPE_MEMORY_REQUIREMENTS_2, nullptr };
+	VkImageMemoryRequirementsInfo2 reqinfo = { VK_STRUCTURE_TYPE_IMAGE_MEMORY_REQUIREMENTS_INFO_2, nullptr };
+	reqinfo.image = images.at(0);
+	wrap_vkGetImageMemoryRequirements2(priv->device, &reqinfo, &req);
 	const uint32_t memoryTypeIndex = priv->get_device_memory_type(req.memoryRequirements.memoryTypeBits, flags);
-	VkMemoryAllocateInfo info = { VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO, nullptr };
-	VkDeviceSize image_size = aligned_size(req.memoryRequirements.size, req.memoryRequirements.alignment);
-	info.memoryTypeIndex = memoryTypeIndex;
+	VkMemoryDedicatedAllocateInfo dedicinfo = { VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO, nullptr };
+	dedicinfo.buffer = VK_NULL_HANDLE;
+	VkMemoryAllocateInfo allocinfo = { VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO, &dedicinfo };
+	// Dedicated allocations must match VkMemoryRequirements::size exactly.
+	VkDeviceSize image_size = req.memoryRequirements.size;
+	allocinfo.memoryTypeIndex = memoryTypeIndex;
 	VkDeviceMemory mem = VK_NULL_HANDLE;
-	if (dedicated)
+	std::vector<VkBindImageMemoryInfo> bindinfos;
+	bindinfos.resize(images.size());
+	for (unsigned i = 0; i < images.size(); i++)
 	{
-		for (unsigned i = 0; i < images.size(); i++)
-		{
-			info.allocationSize = VkDeviceSize(image_size);
-			VkResult result = wrap_vkAllocateMemory(priv->device, &info, nullptr, &mem);
-			if (result != VK_SUCCESS) SUBALLOC_ABORT(priv, "Failed to allocate dedicated memory for virtual swapchain!");
-			priv->virtualswapmemory.push_back(mem);
-			wrap_vkBindImageMemory(priv->device, images.at(i), mem, 0);
-		}
-	}
-	else
-	{
-		info.allocationSize = VkDeviceSize(image_size * images.size());
-		VkResult result = wrap_vkAllocateMemory(priv->device, &info, nullptr, &mem);
-		if (result != VK_SUCCESS) SUBALLOC_ABORT(priv, "Failed to allocate memory for virtual swapchain!");
+		dedicinfo.image = images.at(i);
+		allocinfo.allocationSize = VkDeviceSize(image_size);
+		VkResult result = wrap_vkAllocateMemory(priv->device, &allocinfo, nullptr, &mem);
+		if (result != VK_SUCCESS) SUBALLOC_ABORT(priv, "Failed to allocate dedicated memory for virtual swapchain images!");
 		priv->virtualswapmemory.push_back(mem);
-		uint32_t offset = 0;
-		for (unsigned i = 0; i < images.size(); i++) { wrap_vkBindImageMemory(priv->device, images.at(i), mem, offset); offset += image_size; }
+		bindinfos[i].sType = VK_STRUCTURE_TYPE_BIND_IMAGE_MEMORY_INFO;
+		bindinfos[i].pNext = nullptr;
+		bindinfos[i].memory = mem;
+		bindinfos[i].memoryOffset = 0;
+		bindinfos[i].image = images.at(i);
 	}
+	wrap_vkBindImageMemory2(priv->device, bindinfos.size(), bindinfos.data());
 }
 
 void suballocator::free_image(uint32_t image_index)

@@ -61,6 +61,14 @@ enum lava_tiling // generalize memory tiling
 	TILING_DRM = VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT,
 };
 
+struct memory_requirements
+{
+	VkMemoryRequirements requirements { 0 };
+	VkMemoryPropertyFlags memory_flags { 0 };
+	VkMemoryDedicatedRequirements dedicated { VK_STRUCTURE_TYPE_MEMORY_DEDICATED_REQUIREMENTS, nullptr };
+	VkMemoryAllocateFlags allocate_flags { 0 };
+};
+
 struct callback_context
 {
 	lava_file_reader& reader;
@@ -216,11 +224,12 @@ struct trackedobject : trackable
 	VkDeviceSize size = 0;
 	VkDeviceSize offset = 0; // our offset into our backing memory
 	VkMemoryRequirements req = {};
+	memory_requirements reqs;
 	VkObjectType object_type = VK_OBJECT_TYPE_UNKNOWN;
 	uint64_t written = 0; // bytes written out for this object
 	uint32_t updates = 0; // number of times it was updated
 	bool accessible = false; // whether our backing memory is host visible and understandable
-	int source_line = 0; // code line that is the last source for us to be scanned, only for debugging
+	bool dedicated_allocation = false; // whether we do or will reside in dedicated memory; set on device creation
 	/// Do we alias another object in memory? if we alias 1-to-1, both point to each other, otherwise only the child points to
 	/// the parent object.
 	VkObjectType alias_type = VK_OBJECT_TYPE_UNKNOWN;
@@ -699,10 +708,9 @@ struct trackedcmdbuffer_trace : trackedcmdbuffer
 		touch(indexBuffer.buffer_data, offset, size, __LINE__);
 	}
 
-	void touch(trackedobject* data, VkDeviceSize offset, VkDeviceSize size, unsigned source)
+	void touch(trackedobject* data, VkDeviceSize offset, VkDeviceSize size, unsigned line = 0)
 	{
 		if (!data->accessible) return;
-		data->source_line = (int)source;
 		if (size == VK_WHOLE_SIZE) size = data->size - offset;
 		touched[data].add_os(offset, size);
 	}
@@ -776,10 +784,9 @@ struct trackeddescriptorset_trace : trackeddescriptorset
 	std::unordered_map<trackedobject*, exposure> touched; // track memory updates
 	std::vector<VkDescriptorBufferInfo> dynamic_buffers; // must be resolved on bind
 
-	void touch(trackedobject* data, VkDeviceSize offset, VkDeviceSize size, unsigned source)
+	void touch(trackedobject* data, VkDeviceSize offset, VkDeviceSize size, unsigned line = 0)
 	{
 		if (!data->accessible) return;
-		data->source_line = -(int)source;
 		if (size == VK_WHOLE_SIZE) size = data->size - offset;
 		touched[data].add_os(offset, size);
 	}
