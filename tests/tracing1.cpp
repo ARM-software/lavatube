@@ -14,6 +14,8 @@
 #pragma GCC diagnostic ignored "-Wunused-variable"
 #pragma GCC diagnostic ignored "-Wunused-function"
 
+void test_register_replay_callbacks();
+
 #define TEST_NAME_1 "tracing_1_1"
 #define TEST_NAME_2 "tracing_1_2"
 #define NUM_BUFFERS 48
@@ -336,6 +338,7 @@ static void getnext(lava_file_reader& t, const char* expected_s)
 static void retrace_1()
 {
 	lava_reader r(TEST_NAME_1 ".vk");
+	test_register_replay_callbacks();
 	lava_file_reader& t = r.file_reader(0);
 
 	getnext(t, nullptr); // initial thread barrier for thread start
@@ -348,6 +351,7 @@ static void retrace_2(int variant)
 {
 	std::string testname = std::string(TEST_NAME_2) + "_" +  _to_string(variant) + ".vk";
 	lava_reader r(testname);
+	test_register_replay_callbacks();
 	lava_file_reader& t = r.file_reader(0);
 
 	getnext(t, nullptr); // initial thread barrier for thread start

@@ -131,6 +131,7 @@ static void read_test(int start, int end)
 {
 	lava_reader reader(TEST_NAME ".vk");
 	reader.set_frames(start, end);
+	test_register_replay_callbacks();
 	std::vector<std::thread*> threads; // main thread + helper threads
 	for (int tid = 0; tid < NUM_THREADS + 1; tid++)
 	{

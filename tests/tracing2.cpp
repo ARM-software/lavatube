@@ -219,6 +219,7 @@ static void my_VkCreateInstance_callback(callback_context& cb, const VkInstanceC
 static void retrace_3()
 {
 	lava_reader r(TEST_NAME_1 ".vk");
+	test_register_replay_callbacks();
 	lava_file_reader& t = r.file_reader(0);
 
 	// set up callbacks

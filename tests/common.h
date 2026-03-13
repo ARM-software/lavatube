@@ -46,6 +46,7 @@ void test_marker_mention(const vulkan_setup_t& vulkan, const std::string& text, 
 void print_cmdbuf(const vulkan_setup_t& vulkan, VkCommandBuffer cmdbuf);
 void print_memory(const vulkan_setup_t& vulkan, VkDeviceMemory memory, const char* name);
 void print_buffer(const vulkan_setup_t& vulkan, VkBuffer buffer);
+void test_register_replay_callbacks();
 
 // Prior assumption: Memory is not already mapped.
 static inline void test_destroy_buffer(vulkan_setup_t& vulkan, unsigned value, VkDeviceMemory memory, VkBuffer buffer, VkDeviceSize offset, VkDeviceSize size)

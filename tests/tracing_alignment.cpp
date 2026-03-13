@@ -134,6 +134,7 @@ static void retrace()
 
 	// Replay it
 	lava_reader r(TEST_NAME ".vk");
+	test_register_replay_callbacks();
 	replay_call_index = 0;
 	replay_alignments.clear();
 	vkGetBufferMemoryRequirements_callbacks.push_back(record_vkGetBufferMemoryRequirements);

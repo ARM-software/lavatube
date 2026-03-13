@@ -90,7 +90,7 @@ replaying with old objects. This could have been handled with object runtime
 order except that would introduce a race condition for access to their metadata,
 since objects of a pool are not externally synchronized.
 
-Athough For command pools, all objects in the pool are assumed to be externally
+For command pools, all objects in the pool are assumed to be externally
 synchronized under the "Implicit Externally Synchronized Parameters" rule of
 the Vulkan spec.
 

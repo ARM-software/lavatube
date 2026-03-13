@@ -126,19 +126,8 @@ static VkDeviceAddress get_buffer_device_address(VkDevice device, VkBuffer buffe
 
 static char* mem_map(lava_file_reader& reader, VkDevice device, const suballoc_location& loc);
 static void mem_unmap(lava_file_reader& reader, VkDevice device, const suballoc_location& loc, char* ptr);
-static void replay_register_raytracing_callbacks(lava_reader& reader);
-static void replay_track_vkCmdBindPipeline(callback_context& cb, VkCommandBuffer commandBuffer, VkPipelineBindPoint pipelineBindPoint, VkPipeline pipeline);
-static void replay_track_vkGetRayTracingShaderGroupHandlesKHR(callback_context& cb, VkDevice device, VkPipeline pipeline, uint32_t firstGroup, uint32_t groupCount, size_t dataSize, void* pData);
-static void replay_track_vkGetRayTracingCaptureReplayShaderGroupHandlesKHR(callback_context& cb, VkDevice device, VkPipeline pipeline, uint32_t firstGroup, uint32_t groupCount, size_t dataSize, void* pData);
 static void replay_fixup_commandbuffer_raytracing_sbt(lava_file_reader& reader, trackedcmdbuffer& commandbuffer_data);
 static void replay_fixup_commandbuffer_raytracing_instances(lava_file_reader& reader, trackedcmdbuffer& commandbuffer_data);
-static void replay_fixup_vkCmdTraceRaysKHR(callback_context& cb, VkCommandBuffer commandBuffer, const VkStridedDeviceAddressRegionKHR* pRaygenShaderBindingTable,
-	const VkStridedDeviceAddressRegionKHR* pMissShaderBindingTable, const VkStridedDeviceAddressRegionKHR* pHitShaderBindingTable,
-	const VkStridedDeviceAddressRegionKHR* pCallableShaderBindingTable, uint32_t width, uint32_t height, uint32_t depth);
-static void replay_fixup_vkCmdTraceRaysIndirectKHR(callback_context& cb, VkCommandBuffer commandBuffer, const VkStridedDeviceAddressRegionKHR* pRaygenShaderBindingTable,
-	const VkStridedDeviceAddressRegionKHR* pMissShaderBindingTable, const VkStridedDeviceAddressRegionKHR* pHitShaderBindingTable,
-	const VkStridedDeviceAddressRegionKHR* pCallableShaderBindingTable, VkDeviceAddress indirectDeviceAddress);
-static void replay_fixup_vkCmdTraceRaysIndirect2KHR(callback_context& cb, VkCommandBuffer commandBuffer, VkDeviceAddress indirectDeviceAddress);
 
 static trackedbuffer* find_buffer_by_replay_address(VkDeviceAddress address, VkDeviceSize size, VkDeviceSize& out_offset)
 {
@@ -558,19 +547,7 @@ void replay_pre_vkCmdBuildAccelerationStructuresKHR(lava_file_reader& reader, Vk
 	}
 }
 
-static void replay_register_raytracing_callbacks(lava_reader& reader)
-{
-	if (reader.raytracing_callbacks_registered) return;
-	reader.raytracing_callbacks_registered = true;
-	vkCmdBindPipeline_callbacks.push_back(replay_track_vkCmdBindPipeline);
-	vkGetRayTracingShaderGroupHandlesKHR_callbacks.push_back(replay_track_vkGetRayTracingShaderGroupHandlesKHR);
-	vkGetRayTracingCaptureReplayShaderGroupHandlesKHR_callbacks.push_back(replay_track_vkGetRayTracingCaptureReplayShaderGroupHandlesKHR);
-	vkCmdTraceRaysKHR_callbacks.push_back(replay_fixup_vkCmdTraceRaysKHR);
-	vkCmdTraceRaysIndirectKHR_callbacks.push_back(replay_fixup_vkCmdTraceRaysIndirectKHR);
-	vkCmdTraceRaysIndirect2KHR_callbacks.push_back(replay_fixup_vkCmdTraceRaysIndirect2KHR);
-}
-
-static void replay_track_vkCmdBindPipeline(callback_context& cb, VkCommandBuffer commandBuffer, VkPipelineBindPoint pipelineBindPoint, VkPipeline pipeline)
+void replay_track_vkCmdBindPipeline(callback_context& cb, VkCommandBuffer commandBuffer, VkPipelineBindPoint pipelineBindPoint, VkPipeline pipeline)
 {
 	if (!cb.reader.run) return;
 	if (pipelineBindPoint != VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR) return;
@@ -627,7 +604,7 @@ static void store_raytracing_handles_replay(trackedpipeline& pipeline_data, uint
 	memcpy(dst, data, (size_t)groupCount * handle_size);
 }
 
-static void replay_track_vkGetRayTracingShaderGroupHandlesKHR(callback_context& cb, VkDevice device, VkPipeline pipeline, uint32_t firstGroup,
+void replay_track_vkGetRayTracingShaderGroupHandlesKHR(callback_context& cb, VkDevice device, VkPipeline pipeline, uint32_t firstGroup,
 	uint32_t groupCount, size_t dataSize, void* pData)
 {
 	if (!cb.reader.run || !pData || groupCount == 0 || dataSize == 0) return;
@@ -673,7 +650,7 @@ static void replay_track_vkGetRayTracingShaderGroupHandlesKHR(callback_context& 
 	store_raytracing_handles_replay(pipeline_data, firstGroup, groupCount, props.shaderGroupHandleSize, replay_data.data());
 }
 
-static void replay_track_vkGetRayTracingCaptureReplayShaderGroupHandlesKHR(callback_context& cb, VkDevice device, VkPipeline pipeline, uint32_t firstGroup,
+void replay_track_vkGetRayTracingCaptureReplayShaderGroupHandlesKHR(callback_context& cb, VkDevice device, VkPipeline pipeline, uint32_t firstGroup,
 	uint32_t groupCount, size_t dataSize, void* pData)
 {
 	if (!cb.reader.run || !pData || groupCount == 0 || dataSize == 0) return;
@@ -875,7 +852,7 @@ static void replay_fixup_commandbuffer_raytracing_instances(lava_file_reader& re
 	}
 }
 
-static void replay_fixup_vkCmdTraceRaysKHR(callback_context& cb, VkCommandBuffer commandBuffer, const VkStridedDeviceAddressRegionKHR* pRaygenShaderBindingTable,
+void replay_fixup_vkCmdTraceRaysKHR(callback_context& cb, VkCommandBuffer commandBuffer, const VkStridedDeviceAddressRegionKHR* pRaygenShaderBindingTable,
 	const VkStridedDeviceAddressRegionKHR* pMissShaderBindingTable, const VkStridedDeviceAddressRegionKHR* pHitShaderBindingTable,
 	const VkStridedDeviceAddressRegionKHR* pCallableShaderBindingTable, uint32_t width, uint32_t height, uint32_t depth)
 {
@@ -896,7 +873,7 @@ static void replay_fixup_vkCmdTraceRaysKHR(callback_context& cb, VkCommandBuffer
 	commandbuffer_data.raytracing_sbt_uses.push_back(use);
 }
 
-static void replay_fixup_vkCmdTraceRaysIndirectKHR(callback_context& cb, VkCommandBuffer commandBuffer, const VkStridedDeviceAddressRegionKHR* pRaygenShaderBindingTable,
+void replay_fixup_vkCmdTraceRaysIndirectKHR(callback_context& cb, VkCommandBuffer commandBuffer, const VkStridedDeviceAddressRegionKHR* pRaygenShaderBindingTable,
 	const VkStridedDeviceAddressRegionKHR* pMissShaderBindingTable, const VkStridedDeviceAddressRegionKHR* pHitShaderBindingTable,
 	const VkStridedDeviceAddressRegionKHR* pCallableShaderBindingTable, VkDeviceAddress indirectDeviceAddress)
 {
@@ -904,7 +881,7 @@ static void replay_fixup_vkCmdTraceRaysIndirectKHR(callback_context& cb, VkComma
 	replay_fixup_vkCmdTraceRaysKHR(cb, commandBuffer, pRaygenShaderBindingTable, pMissShaderBindingTable, pHitShaderBindingTable, pCallableShaderBindingTable, 0, 0, 0);
 }
 
-static void replay_fixup_vkCmdTraceRaysIndirect2KHR(callback_context& cb, VkCommandBuffer commandBuffer, VkDeviceAddress indirectDeviceAddress)
+void replay_fixup_vkCmdTraceRaysIndirect2KHR(callback_context& cb, VkCommandBuffer commandBuffer, VkDeviceAddress indirectDeviceAddress)
 {
 	(void)commandBuffer;
 	(void)indirectDeviceAddress;
@@ -1015,12 +992,16 @@ static void replay_pre_vkDestroySwapchainKHR(lava_file_reader& reader, VkDevice 
 	wrap_vkDestroySemaphore(device, t.virtual_semaphore, nullptr);
 }
 
-static void replay_post_vkSubmitDebugUtilsMessageEXT(lava_file_reader& reader,
-    VkInstance                                  instance,
-    VkDebugUtilsMessageSeverityFlagBitsEXT      messageSeverity,
-    VkDebugUtilsMessageTypeFlagsEXT             messageTypes,
-    const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData)
+void replay_callback_vkSubmitDebugUtilsMessageEXT(callback_context& cb,
+	VkInstance instance,
+	VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
+	VkDebugUtilsMessageTypeFlagsEXT messageTypes,
+	const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData)
 {
+	(void)cb;
+	(void)instance;
+	(void)messageSeverity;
+	(void)messageTypes;
 	if (!pCallbackData) return;
 	if (pCallbackData->pObjects && pCallbackData->objectCount > 0 && pCallbackData->pMessage)
 	{
@@ -1033,56 +1014,75 @@ static void replay_post_vkSubmitDebugUtilsMessageEXT(lava_file_reader& reader,
 	}
 }
 
-static void replay_post_vkGetAccelerationStructureDeviceAddressKHR(lava_file_reader& reader, VkDeviceAddress result, VkDevice device, const VkAccelerationStructureDeviceAddressInfoKHR* pInfo)
+static void replay_callback_vkGetBufferDeviceAddress_common(VkBuffer buffer, VkDeviceAddress result)
 {
+	if (buffer == VK_NULL_HANDLE) return;
+	const uint32_t buffer_index = index_to_VkBuffer.index(buffer);
+	if (buffer_index == CONTAINER_INVALID_INDEX) return;
+	VkBuffer_index.at(buffer_index).device_address = result;
+}
+
+void replay_callback_vkGetAccelerationStructureDeviceAddressKHR(callback_context& cb, VkDevice device, const VkAccelerationStructureDeviceAddressInfoKHR* pInfo)
+{
+	(void)device;
+	if (!pInfo || pInfo->accelerationStructure == VK_NULL_HANDLE) return;
 	const uint32_t as_index = index_to_VkAccelerationStructureKHR.index(pInfo->accelerationStructure);
-	VkAccelerationStructureKHR_index.at(as_index).device_address = result;
+	if (as_index == CONTAINER_INVALID_INDEX) return;
+	VkAccelerationStructureKHR_index.at(as_index).device_address = cb.result.address;
 }
 
-static void replay_post_vkGetBufferDeviceAddressKHR(lava_file_reader& reader, VkDeviceAddress result, VkDevice device, const VkBufferDeviceAddressInfoKHR* pInfo)
+void replay_callback_vkGetBufferDeviceAddressKHR(callback_context& cb, VkDevice device, const VkBufferDeviceAddressInfoKHR* pInfo)
 {
-	const uint32_t buffer_index = index_to_VkBuffer.index(pInfo->buffer);
-	VkBuffer_index.at(buffer_index).device_address = result;
+	(void)device;
+	if (!pInfo) return;
+	replay_callback_vkGetBufferDeviceAddress_common(pInfo->buffer, cb.result.address);
 }
 
-static void replay_post_vkGetBufferDeviceAddressEXT(lava_file_reader& reader, VkDeviceAddress result, VkDevice device, const VkBufferDeviceAddressInfo* pInfo)
+void replay_callback_vkGetBufferDeviceAddressEXT(callback_context& cb, VkDevice device, const VkBufferDeviceAddressInfo* pInfo)
 {
-	const uint32_t buffer_index = index_to_VkBuffer.index(pInfo->buffer);
-	VkBuffer_index.at(buffer_index).device_address = result;
+	(void)device;
+	if (!pInfo) return;
+	replay_callback_vkGetBufferDeviceAddress_common(pInfo->buffer, cb.result.address);
 }
 
-static void replay_post_vkGetBufferDeviceAddress(lava_file_reader& reader, VkDeviceAddress result, VkDevice device, const VkBufferDeviceAddressInfo* pInfo)
+void replay_callback_vkGetBufferDeviceAddress(callback_context& cb, VkDevice device, const VkBufferDeviceAddressInfo* pInfo)
 {
-	const uint32_t buffer_index = index_to_VkBuffer.index(pInfo->buffer);
-	VkBuffer_index.at(buffer_index).device_address = result;
+	(void)device;
+	if (!pInfo) return;
+	replay_callback_vkGetBufferDeviceAddress_common(pInfo->buffer, cb.result.address);
 }
 
-static void replay_post_vkGetAccelerationStructureBuildSizesKHR(lava_file_reader& reader, VkDevice device,
+void replay_callback_vkGetAccelerationStructureBuildSizesKHR(callback_context& cb, VkDevice device,
 	VkAccelerationStructureBuildTypeKHR buildType, const VkAccelerationStructureBuildGeometryInfoKHR* pBuildInfo,
 	const uint32_t* pMaxPrimitiveCounts, VkAccelerationStructureBuildSizesInfoKHR* pSizeInfo)
 {
-	if (!reader.run || !pBuildInfo || !pMaxPrimitiveCounts) return;
+	(void)pSizeInfo;
+	if (!cb.reader.run || !pBuildInfo || !pMaxPrimitiveCounts) return;
 	VkAccelerationStructureBuildSizesInfoKHR sizes = { VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR, nullptr };
 	wrap_vkGetAccelerationStructureBuildSizesKHR(device, buildType, pBuildInfo, pMaxPrimitiveCounts, &sizes);
-	reader.pending_as_build_sizes.push_back(sizes);
+	cb.reader.pending_as_build_sizes.push_back(sizes);
 }
 
-static void replay_post_vkCreateBuffer(lava_file_reader& reader, VkResult result, VkDevice device, const VkBufferCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkBuffer* pBuffer)
-{
-	if (result != VK_SUCCESS || !pBuffer || *pBuffer == VK_NULL_HANDLE) return;
-	const uint32_t buffer_index = index_to_VkBuffer.index(*pBuffer);
-	auto& buf = VkBuffer_index.at(buffer_index);
-	if (buf.capture_device_address == 0) return;
-	reader.parent->device_address_remapping.add(buf.capture_device_address, &buf);
-}
-
-static void replay_post_vkCreateDescriptorUpdateTemplate(lava_file_reader& reader, VkResult result, VkDevice device,
-	const VkDescriptorUpdateTemplateCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkDescriptorUpdateTemplate* pDescriptorUpdateTemplate)
+void replay_callback_vkCreateBuffer(callback_context& cb, VkDevice device, const VkBufferCreateInfo* pCreateInfo,
+	const VkAllocationCallbacks* pAllocator, VkBuffer* pBuffer)
 {
 	(void)device;
+	(void)pCreateInfo;
 	(void)pAllocator;
+	if (cb.result.vkresult != VK_SUCCESS || !pBuffer || *pBuffer == VK_NULL_HANDLE) return;
+	const uint32_t buffer_index = index_to_VkBuffer.index(*pBuffer);
+	if (buffer_index == CONTAINER_INVALID_INDEX) return;
+	auto& buf = VkBuffer_index.at(buffer_index);
+	if (buf.capture_device_address == 0) return;
+	cb.reader.parent->device_address_remapping.add(buf.capture_device_address, &buf);
+}
+
+static void replay_callback_vkCreateDescriptorUpdateTemplate_common(VkResult result, const VkDescriptorUpdateTemplateCreateInfo* pCreateInfo,
+	VkDescriptorUpdateTemplate* pDescriptorUpdateTemplate)
+{
 	if (result != VK_SUCCESS || !pCreateInfo || !pDescriptorUpdateTemplate || *pDescriptorUpdateTemplate == VK_NULL_HANDLE) return;
 	const uint32_t template_index = index_to_VkDescriptorUpdateTemplate.index(*pDescriptorUpdateTemplate);
+	if (template_index == CONTAINER_INVALID_INDEX) return;
 	auto& data = VkDescriptorUpdateTemplate_index.at(template_index);
 	data.entries.clear();
 	if (pCreateInfo->descriptorUpdateEntryCount && pCreateInfo->pDescriptorUpdateEntries)
@@ -1095,10 +1095,20 @@ static void replay_post_vkCreateDescriptorUpdateTemplate(lava_file_reader& reade
 	if (computed_size != 0 || data.data_size == 0) data.data_size = computed_size;
 }
 
-static void replay_post_vkCreateDescriptorUpdateTemplateKHR(lava_file_reader& reader, VkResult result, VkDevice device,
+void replay_callback_vkCreateDescriptorUpdateTemplate(callback_context& cb, VkDevice device,
 	const VkDescriptorUpdateTemplateCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkDescriptorUpdateTemplate* pDescriptorUpdateTemplate)
 {
-	replay_post_vkCreateDescriptorUpdateTemplate(reader, result, device, pCreateInfo, pAllocator, pDescriptorUpdateTemplate);
+	(void)device;
+	(void)pAllocator;
+	replay_callback_vkCreateDescriptorUpdateTemplate_common(cb.result.vkresult, pCreateInfo, pDescriptorUpdateTemplate);
+}
+
+void replay_callback_vkCreateDescriptorUpdateTemplateKHR(callback_context& cb, VkDevice device,
+	const VkDescriptorUpdateTemplateCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkDescriptorUpdateTemplate* pDescriptorUpdateTemplate)
+{
+	(void)device;
+	(void)pAllocator;
+	replay_callback_vkCreateDescriptorUpdateTemplate_common(cb.result.vkresult, pCreateInfo, pDescriptorUpdateTemplate);
 }
 
 static void replay_pre_vkCreateAccelerationStructureKHR(lava_file_reader& reader, VkDevice device,
@@ -1162,25 +1172,28 @@ static void replay_pre_vkDestroyBuffer(lava_file_reader& reader, VkDevice device
 	reader.parent->device_address_remapping.remove(buf.capture_device_address, &buf);
 }
 
-static void replay_post_vkCreateAccelerationStructureKHR(lava_file_reader& reader, VkResult result, VkDevice device, const VkAccelerationStructureCreateInfoKHR* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkAccelerationStructureKHR* pAccelerationStructure)
+void replay_callback_vkCreateAccelerationStructureKHR(callback_context& cb, VkDevice device, const VkAccelerationStructureCreateInfoKHR* pCreateInfo,
+	const VkAllocationCallbacks* pAllocator, VkAccelerationStructureKHR* pAccelerationStructure)
 {
+	(void)pAllocator;
 	internal_buffer replacement;
 	bool has_replacement = false;
 	{
-		if (!reader.pending_as_storage_buffers.empty())
+		if (!cb.reader.pending_as_storage_buffers.empty())
 		{
-			replacement = reader.pending_as_storage_buffers.front();
-			reader.pending_as_storage_buffers.pop_front();
+			replacement = cb.reader.pending_as_storage_buffers.front();
+			cb.reader.pending_as_storage_buffers.pop_front();
 			has_replacement = (replacement.buffer != VK_NULL_HANDLE);
 		}
 	}
 
-	if (result != VK_SUCCESS || !pAccelerationStructure || *pAccelerationStructure == VK_NULL_HANDLE)
+	if (cb.result.vkresult != VK_SUCCESS || !pAccelerationStructure || *pAccelerationStructure == VK_NULL_HANDLE)
 	{
-		if (reader.run && has_replacement) destroy_internal_buffer(device, replacement);
+		if (cb.reader.run && has_replacement) destroy_internal_buffer(device, replacement);
 		return;
 	}
 	const uint32_t as_index = index_to_VkAccelerationStructureKHR.index(*pAccelerationStructure);
+	if (as_index == CONTAINER_INVALID_INDEX) return;
 	auto& as = VkAccelerationStructureKHR_index.at(as_index);
 	if (has_replacement)
 	{
@@ -1191,7 +1204,7 @@ static void replay_post_vkCreateAccelerationStructureKHR(lava_file_reader& reade
 		as.buffer_index = CONTAINER_INVALID_INDEX;
 	}
 	if (as.capture_device_address == 0) return;
-	reader.parent->acceleration_structure_address_remapping.add(as.capture_device_address, &as);
+	cb.reader.parent->acceleration_structure_address_remapping.add(as.capture_device_address, &as);
 }
 
 static void replay_pre_vkDestroyAccelerationStructureKHR(lava_file_reader& reader, VkDevice device, VkAccelerationStructureKHR accelerationStructure, const VkAllocationCallbacks* pAllocator)
@@ -1207,22 +1220,29 @@ static void replay_pre_vkDestroyAccelerationStructureKHR(lava_file_reader& reade
 	reader.parent->acceleration_structure_address_remapping.remove(as.capture_device_address, &as);
 }
 
-void replay_post_vkAcquireNextImageKHR(lava_file_reader& reader, VkResult result, VkDevice device, VkSwapchainKHR swapchain, uint64_t timeout,
-                                     VkSemaphore semaphore, VkFence fence, uint32_t* pImageIndex)
+void replay_callback_vkAcquireNextImageKHR(callback_context& cb, VkDevice device, VkSwapchainKHR swapchain, uint64_t timeout,
+	VkSemaphore semaphore, VkFence fence, uint32_t* pImageIndex)
 {
-	if (result == VK_INCOMPLETE) return; // means we skipped it
+	(void)device;
+	(void)timeout;
+	(void)semaphore;
+	(void)fence;
+	if (cb.result.vkresult == VK_INCOMPLETE || !pImageIndex) return;
 	const uint32_t swapchainkhr_index = index_to_VkSwapchainKHR.index(swapchain);
+	if (swapchainkhr_index == CONTAINER_INVALID_INDEX) return;
 	const uint32_t next_image = VkSwapchainKHR_index.at(swapchainkhr_index).next_swapchain_image;
-	DLOG("Acquired next swapchain image index=%u (stored next image was %u), returned %s", next_image, *pImageIndex, errorString(result));
+	DLOG("Acquired next swapchain image index=%u (stored next image was %u), returned %s", next_image, *pImageIndex, errorString(cb.result.vkresult));
 	assert(is_virtualswapchain() || next_image == *pImageIndex);
 }
 
-void replay_post_vkAcquireNextImage2KHR(lava_file_reader& reader, VkResult result, VkDevice device, const VkAcquireNextImageInfoKHR* pAcquireInfo, uint32_t* pImageIndex)
+void replay_callback_vkAcquireNextImage2KHR(callback_context& cb, VkDevice device, const VkAcquireNextImageInfoKHR* pAcquireInfo, uint32_t* pImageIndex)
 {
-	if (result == VK_INCOMPLETE) return; // means we skipped it
+	(void)device;
+	if (cb.result.vkresult == VK_INCOMPLETE || !pAcquireInfo || !pImageIndex) return;
 	const uint32_t swapchainkhr_index = index_to_VkSwapchainKHR.index(pAcquireInfo->swapchain);
+	if (swapchainkhr_index == CONTAINER_INVALID_INDEX) return;
 	const uint32_t next_image = VkSwapchainKHR_index.at(swapchainkhr_index).next_swapchain_image;
-	DLOG("Acquired next swapchain image index=%u (stored next image was %u), returned %s", next_image, *pImageIndex, errorString(result));
+	DLOG("Acquired next swapchain image index=%u (stored next image was %u), returned %s", next_image, *pImageIndex, errorString(cb.result.vkresult));
 	assert(is_virtualswapchain() || next_image == *pImageIndex);
 }
 
@@ -1382,8 +1402,12 @@ static void cleanup_sync(VkQueue queue, uint32_t waitSemaphoreCount, const VkSem
 	assert(result == VK_SUCCESS);
 }
 
-void replay_post_vkQueuePresentKHR(lava_file_reader& reader, VkResult result, VkQueue queue, VkPresentInfoKHR* pPresentInfo)
+void replay_callback_vkQueuePresentKHR(callback_context& cb, VkQueue queue, const VkPresentInfoKHR* pPresentInfo_const)
 {
+	VkResult result = cb.result.vkresult;
+	lava_file_reader& reader = cb.reader;
+	VkPresentInfoKHR* pPresentInfo = const_cast<VkPresentInfoKHR*>(pPresentInfo_const);
+	if (!pPresentInfo) return;
 	if (is_virtualswapchain() && (result == VK_SUBOPTIMAL_KHR || result == VK_ERROR_OUT_OF_DATE_KHR))
 	{
 		ILOG("We got %s from vkQueuePresentKHR -- remaking the swapchain!", errorString(result));
@@ -1447,7 +1471,6 @@ void replay_pre_vkCreateSwapchainKHR(lava_file_reader& reader, VkDevice device, 
 void replay_initialize_vkCreateDevice(lava_file_reader& reader, uint32_t physicaldevice_index)
 {
 	(void)physicaldevice_index; // TBD use this later for multi-GPU support
-	replay_register_raytracing_callbacks(*reader.parent);
 
 	// Find the physical device we want to create, and point all physical device references to it
 	uint32_t num_phys_devices = 0;
@@ -1559,8 +1582,11 @@ void replay_pre_vkCreateInstance(lava_file_reader& reader, VkInstanceCreateInfo*
 	pCreateInfo->pApplicationInfo = pApplicationInfo;
 }
 
-void replay_post_vkCreateInstance(lava_file_reader& reader, VkResult result, const VkInstanceCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkInstance* pInstance)
+void replay_callback_vkCreateInstance(callback_context& cb, const VkInstanceCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkInstance* pInstance)
 {
+	VkResult result = cb.result.vkresult;
+	lava_file_reader& reader = cb.reader;
+	(void)pCreateInfo;
 	if (!pInstance || !*pInstance || *pInstance == VK_NULL_HANDLE)
 	{
 		ABORT("Failed to create a Vulkan instance: %s", errorString(result));
@@ -1866,8 +1892,10 @@ const char* const* instance_layers(lava_file_reader& reader, uint32_t& len)
 }
 
 /// 'instance' is not safe to use here, since it has already been destroyed
-void replay_post_vkDestroyInstance(lava_file_reader& reader, VkInstance instance, const VkAllocationCallbacks* pAllocator)
+void replay_callback_vkDestroyInstance(callback_context& cb, VkInstance instance, const VkAllocationCallbacks* pAllocator)
 {
+	lava_file_reader& reader = cb.reader;
+	(void)pAllocator;
 	if (instance != VK_NULL_HANDLE)
 	{
 		reader.parent->finalize(false);

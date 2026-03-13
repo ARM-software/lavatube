@@ -105,6 +105,7 @@ void read_test()
 	mCallNo.store(0);
 	read_tid = 0;
 	reader = new lava_reader(TEST_NAME_3 ".vk");
+	test_register_replay_callbacks();
 	std::vector<std::thread*> threads(THREADS + 1); // main thread + 20 helper threads
 	for (auto& t : threads)
 	{

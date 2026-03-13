@@ -1,7 +1,36 @@
 #include "tests/common.h"
+#include "replay_callbacks.h"
 #include "util.h"
 
 static VkPhysicalDeviceMemoryProperties memory_properties = {};
+
+void test_register_replay_callbacks()
+{
+#define CALLBACK(x) x ## _callbacks.push_back(replay_callback_ ## x)
+	CALLBACK(vkCreateInstance);
+	CALLBACK(vkDestroyInstance);
+	CALLBACK(vkQueuePresentKHR);
+	CALLBACK(vkAcquireNextImageKHR);
+	CALLBACK(vkAcquireNextImage2KHR);
+	CALLBACK(vkGetBufferDeviceAddress);
+	CALLBACK(vkGetBufferDeviceAddressKHR);
+	CALLBACK(vkGetBufferDeviceAddressEXT);
+	CALLBACK(vkGetAccelerationStructureDeviceAddressKHR);
+	CALLBACK(vkCreateBuffer);
+	CALLBACK(vkCreateAccelerationStructureKHR);
+	CALLBACK(vkSubmitDebugUtilsMessageEXT);
+	CALLBACK(vkGetAccelerationStructureBuildSizesKHR);
+	CALLBACK(vkCreateDescriptorUpdateTemplate);
+	CALLBACK(vkCreateDescriptorUpdateTemplateKHR);
+#undef CALLBACK
+
+	vkCmdBindPipeline_callbacks.push_back(replay_track_vkCmdBindPipeline);
+	vkGetRayTracingShaderGroupHandlesKHR_callbacks.push_back(replay_track_vkGetRayTracingShaderGroupHandlesKHR);
+	vkGetRayTracingCaptureReplayShaderGroupHandlesKHR_callbacks.push_back(replay_track_vkGetRayTracingCaptureReplayShaderGroupHandlesKHR);
+	vkCmdTraceRaysKHR_callbacks.push_back(replay_fixup_vkCmdTraceRaysKHR);
+	vkCmdTraceRaysIndirectKHR_callbacks.push_back(replay_fixup_vkCmdTraceRaysIndirectKHR);
+	vkCmdTraceRaysIndirect2KHR_callbacks.push_back(replay_fixup_vkCmdTraceRaysIndirect2KHR);
+}
 
 void test_marker(const vulkan_setup_t& vulkan, const std::string& text)
 {

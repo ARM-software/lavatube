@@ -1751,8 +1751,6 @@ def loadfunc(name, node, target, header):
 		z.do('auto& %s = VkSwapchainKHR_index.at(%s);' % (totrackable('VkSwapchainKHR'), toindex('VkSwapchainKHR')))
 		z.do('%s.next_stored_image = *pImageIndex;' % totrackable('VkSwapchainKHR'))
 	load_add_tracking(name)
-	if name in vk.replay_post_calls: # hard-coded post handling
-		z.do('if (reader.run) replay_post_%s(reader, %s%s);' % (name, 'retval, ' if retval != 'void' else '', ', '.join(call_list)))
 	# Flexible post-handling
 	if not name in spec.special_count_funcs and not name in vk.skip_post_calls and name != 'vkGetPhysicalDeviceWaylandPresentationSupportKHR':
 		z.do('callback_context cb_context{ reader };')

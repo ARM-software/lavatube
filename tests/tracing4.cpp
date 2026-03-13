@@ -515,6 +515,7 @@ static void retrace_4()
 	std::string name = filename() + ".vk";
 	printf("Running %s\n", name.c_str());
 	lava_reader r(name);
+	test_register_replay_callbacks();
 	lava_file_reader& t = r.file_reader(0);
 	vkCreateDevice_callbacks.push_back(vkCreateDevice_callback);
 	vkDestroyDevice_callbacks.push_back(vkDestroyDevice_callback);

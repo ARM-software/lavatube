@@ -67,8 +67,6 @@ public:
 	// pass they must be ordered by call number and split into one list for each thread.
 	std::list<address_rewrite> global_rewrite_queue REQUIRES(sync_mutex);
 
-	bool raytracing_callbacks_registered = false;
-
 	/// Current global frame (only use for logging)
 	std::atomic_int global_frame{ 0 };
 
