@@ -441,13 +441,18 @@ static void test_buffer(lava_file_reader& t, uint32_t device_index, uint32_t buf
 	assert(buffer_index % 2 == 0); // every second buffer is target, which is off-limits
 	suballoc_location loc = device_data.allocator->find_buffer_memory(buffer_index);
 	assert(loc.size >= buffer_size);
-	char* ptr = nullptr;
-	VkResult result = wrap_vkMapMemory(device, loc.memory, loc.offset, loc.size, 0, (void**)&ptr);
-	assert(result == VK_SUCCESS);
+	char* ptr = loc.mapped;
+	bool temporary_map = false;
+	if (ptr == nullptr)
+	{
+		VkResult result = wrap_vkMapMemory(device, loc.memory, loc.offset, loc.size, 0, (void**)&ptr);
+		assert(result == VK_SUCCESS);
+		temporary_map = true;
+	}
 	uint32_t changed = t.read_patch(ptr, loc.size);
 	if (changed == 0) spurious_checks++;
 	assert(changed == buffer_size || changed == 0);
-	wrap_vkUnmapMemory(device, loc.memory);
+	if (temporary_map) wrap_vkUnmapMemory(device, loc.memory);
 }
 
 static bool getnext(lava_file_reader& t)

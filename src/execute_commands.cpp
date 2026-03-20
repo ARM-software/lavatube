@@ -35,7 +35,8 @@ static bool run_spirv(const trackeddevice& device_data, const shader_stage& stag
 			if (!access.buffer_data) continue;
 			const uint32_t buffer_index = access.buffer_data->index;
 			suballoc_location loc = device_data.allocator->find_buffer_memory(buffer_index);
-			std::byte* base = (std::byte*)loc.memory;
+			assert(loc.mapped);
+			std::byte* base = (std::byte*)loc.mapped;
 			std::byte* binding_ptr = base + access.offset;
 			set_bindings[binding_pair.first] = binding_ptr;
 			binding_lookup.emplace(binding_ptr, std::make_pair(set_pair.first, binding_pair.first));
@@ -58,8 +59,9 @@ static bool run_spirv(const trackeddevice& device_data, const shader_stage& stag
 			if (access.image_data)
 			{
 				suballoc_location loc = device_data.allocator->find_image_memory(access.image_data->index);
-				std::byte* base = (std::byte*)loc.memory;
-				binding_ptr = base + loc.offset;
+				assert(loc.mapped);
+				std::byte* base = (std::byte*)loc.mapped;
+				binding_ptr = base;
 			}
 			else
 			{
@@ -129,7 +131,9 @@ static bool map_device_address_range(const lava_file_reader& reader, const track
 		return false;
 	}
 	suballoc_location loc = device_data.allocator->find_buffer_memory(buffer_data->index);
-	out.ptr = (std::byte*)loc.memory + offset;
+	assert(loc.mapped);
+	std::byte* base = (std::byte*)loc.mapped;
+	out.ptr = base + offset;
 	out.size = size;
 	out.buffer_data = buffer_data;
 	return true;

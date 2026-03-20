@@ -1990,12 +1990,11 @@ void retrace_vkAssertBufferARM(lava_file_reader& reader)
 	}
 	uint8_t* ptr = nullptr;
 	if (!reader.run) return;
-	VkResult result = wrap_vkMapMemory(device, loc.memory, loc.offset, tbuf.size, 0, (void**)&ptr);
-	assert(result == VK_SUCCESS);
+	ptr = (uint8_t*)loc.mapped;
+	assert(ptr != nullptr);
 	uint32_t checksum_new = adler32((unsigned char*)ptr + offset, size);
 	NEVER("buffer %s[%u] validation size=%u off=%u memoff=%u origchecksum=%u newchecksum=%u [first byte is %u, last byte is %u]", comment, buffer_index,
 	      (unsigned)size, (unsigned)offset, (unsigned)loc.offset, checksum, checksum_new, ptr[0], ptr[tbuf.size-1]);
-	wrap_vkUnmapMemory(device, loc.memory);
 	if (checksum != checksum_new && !is_blackhole_mode())
 	{
 		ABORT("Buffer checksum failed: %s", comment);
@@ -2432,12 +2431,12 @@ static char* mem_map(lava_file_reader& reader, VkDevice device, const suballoc_l
 	char* ptr = nullptr;
 	if (reader.run)
 	{
-		VkResult result = wrap_vkMapMemory(device, loc.memory, loc.offset, loc.size, 0, (void**)&ptr);
-		assert(result == VK_SUCCESS);
+		ptr = loc.mapped;
+		assert(ptr != nullptr);
 	}
 	else
 	{
-		ptr = (char*)loc.memory;
+		ptr = loc.mapped;
 	}
 	if (loc.needs_init)
 	{
@@ -2456,7 +2455,6 @@ static void mem_unmap(lava_file_reader& reader, VkDevice device, const suballoc_
 		flush.size = loc.size;
 		wrap_vkFlushMappedMemoryRanges(device, 1, &flush);
 	}
-	if (reader.run) wrap_vkUnmapMemory(device, loc.memory);
 }
 
 VKAPI_ATTR void retrace_vkThreadBarrierTRACETOOLTEST(lava_file_reader& reader)

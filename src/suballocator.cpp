@@ -52,6 +52,7 @@ struct heap
 	/// up deletes in this concurrency safe vector instead.
 	tbb::concurrent_vector<uint32_t> deletes;
 	lava_tiling tiling = TILING_LINEAR; // default assumed to be linear
+	char* mapped = nullptr;
 
 	void self_test() const
 	{
@@ -325,6 +326,7 @@ suballoc_location suballocator_private::allocate(uint16_t tid, uint32_t memoryTy
 	}
 	assert(info.allocationSize < 1024 * 1024 * 1024); // 1 gig max for sanity's sake
 	info.memoryTypeIndex = memoryTypeIndex;
+	const bool host_visible = (memory_properties.memoryTypes[memoryTypeIndex].propertyFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) != 0;
 	if (run)
 	{
 		VkResult result = wrap_vkAllocateMemory(device, &info, nullptr, &h.mem);
@@ -333,10 +335,21 @@ suballoc_location suballocator_private::allocate(uint16_t tid, uint32_t memoryTy
 			print_memory_usage();
 			SUBALLOC_ABORT(this, "Failed to allocate %lu bytes of memory for memory type %u and tiling %u", (unsigned long)info.allocationSize, (unsigned)memoryTypeIndex, (unsigned)tiling);
 		}
+		if (host_visible)
+		{
+			result = wrap_vkMapMemory(device, h.mem, 0, info.allocationSize, 0, (void**)&h.mapped);
+			if (result != VK_SUCCESS)
+			{
+				wrap_vkFreeMemory(device, h.mem, nullptr);
+				SUBALLOC_ABORT(this, "Failed to persistently map %lu bytes of memory for memory type %u and tiling %u", (unsigned long)info.allocationSize,
+				              (unsigned)memoryTypeIndex, (unsigned)tiling);
+			}
+		}
 	}
 	else
 	{
 		h.mem = (VkDeviceMemory)malloc(info.allocationSize);
+		h.mapped = (char*)h.mem;
 	}
 	allocated_bytes += info.allocationSize;
 	allocated_heaps++;
@@ -352,7 +365,7 @@ suballoc_location suballocator_private::allocate(uint16_t tid, uint32_t memoryTy
 	auto it = heaps.push_back(h);
 	s.offset = 0;
 	bind(*it, s);
-	return { h.mem, 0, s.size, true, needs_flush(memoryTypeIndex) };
+	return { h.mem, 0, s.size, true, needs_flush(memoryTypeIndex), h.mapped };
 }
 
 suballoc_location suballocator_private::suballocate(uint16_t tid, uint32_t memoryTypeIndex, suballocation &s, VkMemoryPropertyFlags flags, lava_tiling tiling, VkMemoryAllocateFlags allocflags)
@@ -401,7 +414,7 @@ suballoc_location suballocator_private::suballocate(uint16_t tid, uint32_t memor
 				h.subs.push_front(s);
 				h.free -= s.size;
 				DLOG3("inserting object into memory at the front size=%lu, alignment=%u, free is %lu", (unsigned long)s.size, (unsigned)s.alignment, (unsigned long)h.free);
-				return { h.mem, 0, s.size, true, needs_flush(h.memoryTypeIndex) };
+				return { h.mem, 0, s.size, true, needs_flush(h.memoryTypeIndex), h.mapped };
 			}
 			// Third case: scan for unused memory segment of the correct size. We need to make sure it is aligned correctly.
 			for (auto it = h.subs.begin(); it != h.subs.end(); ++it)
@@ -418,7 +431,7 @@ suballoc_location suballocator_private::suballocate(uint16_t tid, uint32_t memor
 						s.offset = (VkDeviceSize)start;
 						bind(h, s); // call to vkBind{Buffer|Image}Memory
 						h.subs.push_back(s);
-						return { h.mem, s.offset, s.size, true, needs_flush(h.memoryTypeIndex) };
+						return { h.mem, s.offset, s.size, true, needs_flush(h.memoryTypeIndex), h.mapped ? h.mapped + s.offset : nullptr };
 					}
 					break; // no space found
 				}
@@ -431,7 +444,7 @@ suballoc_location suballocator_private::suballocate(uint16_t tid, uint32_t memor
 					h.free -= s.size;
 					DLOG3("inserting object into memory in existing hole offset=%lu size=%lu, alignment=%u, free is %lu", (unsigned long)s.offset,
 					      (unsigned long)s.size, (unsigned)s.alignment, (unsigned long)h.free);
-					return { h.mem, s.offset, s.size, true, needs_flush(h.memoryTypeIndex) };
+					return { h.mem, s.offset, s.size, true, needs_flush(h.memoryTypeIndex), h.mapped ? h.mapped + s.offset : nullptr };
 				}
 			}
 		}
@@ -575,7 +588,7 @@ suballoc_location suballocator::find_image_memory(uint32_t image_index) const
 	if (!l.home) SUBALLOC_ABORT(priv, "Image %u is missing its memory!", image_index);
 	const bool needs_init = !l.initialized;
 	l.initialized = true;
-	return { l.home->mem, l.offset, l.size, needs_init, priv->needs_flush(l.home->memoryTypeIndex) };
+	return { l.home->mem, l.offset, l.size, needs_init, priv->needs_flush(l.home->memoryTypeIndex), l.home->mapped ? l.home->mapped + l.offset : nullptr };
 }
 
 suballoc_location suballocator::find_buffer_memory(uint32_t buffer_index) const
@@ -584,7 +597,7 @@ suballoc_location suballocator::find_buffer_memory(uint32_t buffer_index) const
 	if (!l.home) SUBALLOC_ABORT(priv, "Buffer %u is missing its memory!", buffer_index);
 	const bool needs_init = !l.initialized;
 	l.initialized = true;
-	return { l.home->mem, l.offset, l.size, needs_init, priv->needs_flush(l.home->memoryTypeIndex) };
+	return { l.home->mem, l.offset, l.size, needs_init, priv->needs_flush(l.home->memoryTypeIndex), l.home->mapped ? l.home->mapped + l.offset : nullptr };
 }
 
 suballoc_location suballocator::find_tensor_memory(uint32_t tensor_index) const
@@ -593,14 +606,18 @@ suballoc_location suballocator::find_tensor_memory(uint32_t tensor_index) const
 	if (!l.home) SUBALLOC_ABORT(priv, "Tensor %u is missing its memory!", tensor_index);
 	const bool needs_init = !l.initialized;
 	l.initialized = true;
-	return { l.home->mem, l.offset, l.size, needs_init, priv->needs_flush(l.home->memoryTypeIndex) };
+	return { l.home->mem, l.offset, l.size, needs_init, priv->needs_flush(l.home->memoryTypeIndex), l.home->mapped ? l.home->mapped + l.offset : nullptr };
 }
 
 void suballocator::destroy()
 {
 	for (heap& h : priv->heaps)
 	{
-		if (priv->run) wrap_vkFreeMemory(priv->device, h.mem, nullptr);
+		if (priv->run)
+		{
+			if (h.mapped) wrap_vkUnmapMemory(priv->device, h.mem);
+			wrap_vkFreeMemory(priv->device, h.mem, nullptr);
+		}
 		else free(h.mem);
 		h.deletes.clear();
 	}

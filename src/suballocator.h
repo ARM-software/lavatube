@@ -14,6 +14,7 @@ struct suballoc_location
 	VkDeviceSize size;
 	bool needs_init;
 	bool needs_flush;
+	char* mapped = nullptr;
 };
 
 struct suballocator_private;
