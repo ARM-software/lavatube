@@ -1033,11 +1033,6 @@ class parameter(spec.base_parameter):
 			z.brace_end()
 			z.do('else writer.parent->mem_allocated += pAllocateInfo->allocationSize;')
 			z.do('frame_mutex.unlock();')
-		if self.funcname == 'VkMemoryUnmapInfoKHR' and self.name == 'memory':
-			z.do('devicememory_data->ptr = nullptr;')
-			z.do('devicememory_data->offset = 0;')
-			z.do('devicememory_data->size = 0;')
-
 def get_create_params(name):
 	count = spec.functions_create[name][1]
 	if name in ['vkAllocateCommandBuffers', 'vkAllocateDescriptorSets']: # work around stupid design in XML
@@ -1059,9 +1054,6 @@ def save_add_pre(name): # need to include the resource-creating or resource-dest
 		elif name == 'vkWaitForFences':
 			z.do('if (tf->frame_delay > 0 && timeout != UINT32_MAX) { tf->frame_delay--; writer.write_uint32_t(VK_TIMEOUT); return VK_TIMEOUT; }')
 		z.brace_end()
-	elif name in ['vkUnmapMemory', 'vkUnmapMemory2KHR']:
-		z.do('writer.parent->memory_mutex.lock();')
-
 	if name == 'vkCreateSwapchainKHR': # TBD: also do vkCreateSharedSwapchainsKHR
 		z.init('pCreateInfo->minImageCount = num_swapchains();')
 	elif name == 'vkCreateDevice':
@@ -1079,12 +1071,6 @@ def save_add_tracking(name):
 		z.loop_begin()
 		z.do('commandbuffer_data->touch_index_buffer(pIndexInfo[ii].firstIndex, pIndexInfo[ii].indexCount);')
 		z.loop_end()
-	elif name in ['vkUnmapMemory', 'vkUnmapMemory2KHR']:
-		if name == 'vkUnmapMemory':
-			z.do('devicememory_data->ptr = nullptr;')
-			z.do('devicememory_data->offset = 0;')
-			z.do('devicememory_data->size = 0;')
-		z.do('writer.parent->memory_mutex.unlock();')
 	elif 'vkCmdDraw' in name and 'Indexed' in name and not 'Indirect' in name:
 		z.do('commandbuffer_data->touch_index_buffer(firstIndex, indexCount);')
 	elif name == 'vkResetCommandPool':

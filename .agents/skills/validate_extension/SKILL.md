@@ -24,4 +24,7 @@ metadata:
    `tracked`.
 6. Check if the extension has been promoted to core (e.g. "Promotion to Vulkan 1.3"). If it has been
    promoted, and we have any hardcoded functions, check if these also have core equivalents (ie function
-   name without the extension suffix). Warn if these are missing.
+   name without the extension suffix). Warn if these are missing. Check also if there are hardcoded core
+   functions that are missing extension variants.
+7. Check if there are any tests in either our `tests` directory or in `external/tracetooltests` that use
+   this extension. Make a note if there are no tests.

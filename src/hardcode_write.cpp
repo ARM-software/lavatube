@@ -2273,6 +2273,34 @@ void trace_post_vkMapMemory2(lava_file_writer& writer, VkResult result, VkDevice
 	trace_post_vkMapMemory(writer, result, device, pMemoryMapInfo->memory, pMemoryMapInfo->offset, pMemoryMapInfo->size, pMemoryMapInfo->flags, ppData);
 }
 
+static void trace_post_vkUnmapMemory_common(lava_file_writer& writer, VkDeviceMemory memory)
+{
+	if (memory == VK_NULL_HANDLE) return;
+
+	writer.parent->memory_mutex.lock();
+	auto* memory_data = writer.parent->records.VkDeviceMemory_index.at(memory);
+	memory_data->ptr = nullptr;
+	memory_data->offset = 0;
+	memory_data->size = 0;
+	writer.parent->memory_mutex.unlock();
+}
+
+void trace_post_vkUnmapMemory(lava_file_writer& writer, VkDevice device, VkDeviceMemory memory)
+{
+	trace_post_vkUnmapMemory_common(writer, memory);
+}
+
+void trace_post_vkUnmapMemory2KHR(lava_file_writer& writer, VkResult result, VkDevice device, const VkMemoryUnmapInfo* pMemoryUnmapInfo)
+{
+	if (result != VK_SUCCESS || !pMemoryUnmapInfo) return;
+	trace_post_vkUnmapMemory_common(writer, pMemoryUnmapInfo->memory);
+}
+
+void trace_post_vkUnmapMemory2(lava_file_writer& writer, VkResult result, VkDevice device, const VkMemoryUnmapInfo* pMemoryUnmapInfo)
+{
+	trace_post_vkUnmapMemory2KHR(writer, result, device, pMemoryUnmapInfo);
+}
+
 void trace_post_vkFlushMappedMemoryRanges(lava_file_writer& writer, VkResult result, VkDevice device, uint32_t memoryRangeCount, const VkMappedMemoryRange* pMemoryRanges)
 {
 	writer.parent->memory_mutex.lock();
