@@ -1435,6 +1435,11 @@ static void trace_post_vkGetPhysicalDeviceMemoryProperties2(lava_file_writer& wr
 	trace_post_vkGetPhysicalDeviceMemoryProperties(writer, physicalDevice, &pMemoryProperties->memoryProperties);
 }
 
+static void trace_post_vkGetPhysicalDeviceMemoryProperties2KHR(lava_file_writer& writer, VkPhysicalDevice physicalDevice, VkPhysicalDeviceMemoryProperties2KHR* pMemoryProperties)
+{
+	trace_post_vkGetPhysicalDeviceMemoryProperties(writer, physicalDevice, &pMemoryProperties->memoryProperties);
+}
+
 static void modify_instance_extensions() REQUIRES(frame_mutex)
 {
 	lava_writer& instance = lava_writer::instance();
