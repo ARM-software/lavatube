@@ -1555,6 +1555,8 @@ def loadfunc(name, node, target, header):
 		z.do('if (reader.run) replay_pre_%s(reader, %s);' % (name, ', '.join(call_list)))
 
 	if name in spec.special_count_funcs:
+		if retval == 'VkResult':
+			z.do('VkResult retval = VK_RESULT_MAX_ENUM;')
 		if name in vk.noscreen_calls:
 			z.do('if (do_call == 1 && !is_noscreen() && reader.run)')
 		else:
@@ -1568,7 +1570,7 @@ def loadfunc(name, node, target, header):
 		assert retval == 'void' or retval == 'VkResult'
 		z.decl(spec.special_count_funcs[name][1] + '*', spec.special_count_funcs[name][0])
 		z.do('%s = reader.pool.allocate<%s>(1);' % (spec.special_count_funcs[name][0], spec.special_count_funcs[name][1]))
-		z.do('%swrap_%s(%s);' % ('VkResult retval = ' if retval == 'VkResult' else '', name, ', '.join(call_list)))
+		z.do('%swrap_%s(%s);' % ('retval = ' if retval == 'VkResult' else '', name, ', '.join(call_list)))
 		if retval == 'VkResult': z.do('assert(retval == VK_SUCCESS);');
 		for vv in spec.special_count_funcs[name][2]:
 			z.do('%s.resize(*%s);' % (vv[0], spec.special_count_funcs[name][0]))
@@ -1584,7 +1586,8 @@ def loadfunc(name, node, target, header):
 			z.do('(void)retval; // ignore return value');
 		z.brace_end()
 		if retval == 'VkResult':
-			z.do('(void)reader.read_uint32_t(); // ignore stored return value')
+			z.do('VkResult stored_retval = static_cast<VkResult>(reader.read_uint32_t());')
+			z.do('if (retval == VK_RESULT_MAX_ENUM) retval = stored_retval;')
 		assert retval in ['VkResult', 'void'], 'Unhandled retval value'
 	elif name == "vkCreateInstance":
 		z.do('VkResult stored_retval = static_cast<VkResult>(reader.read_uint32_t());')
@@ -1738,7 +1741,7 @@ def loadfunc(name, node, target, header):
 		z.do('%s.next_stored_image = *pImageIndex;' % totrackable('VkSwapchainKHR'))
 	load_add_tracking(name)
 	# Flexible post-handling
-	if not name in spec.special_count_funcs and not name in vk.skip_post_calls and name != 'vkGetPhysicalDeviceWaylandPresentationSupportKHR':
+	if not name in vk.skip_post_calls and name != 'vkGetPhysicalDeviceWaylandPresentationSupportKHR':
 		z.do('callback_context cb_context{ reader };')
 		if retval == 'void' or name in vk.ignore_on_read: pass
 		elif retval == 'VkResult': z.do('cb_context.result.vkresult = retval;')

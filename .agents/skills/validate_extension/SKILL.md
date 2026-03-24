@@ -26,5 +26,7 @@ metadata:
    promoted, and we have any hardcoded functions, check if these also have core equivalents (ie function
    name without the extension suffix). Warn if these are missing. Check also if there are hardcoded core
    functions that are missing extension variants.
-7. Check if there are any tests in either our `tests` directory or in `external/tracetooltests` that use
-   this extension. Make a note if there are no tests.
+7. If the extension adds support for any new SPIRV opcodes, check if these are handled by the spirv-simulator
+   in `external/spirv-simulator/framework/spirv_simulator.cpp`.
+8. Check if there are any tests in either our `tests` directory or in `external/tracetooltests` that use
+   this extension. Make a short note if no tests were found.
