@@ -333,7 +333,7 @@ void postprocess_vkCmdUpdateBuffer(callback_context& cb, VkCommandBuffer command
 	cmdbuffer_data.commands.push_back(cmd);
 }
 
-void postprocess_vkCmdCopyBuffer(callback_context& cb, VkCommandBuffer commandBuffer, VkBuffer srcBuffer, VkBuffer dstBuffer, uint32_t regionCount, const VkBufferCopy* pRegions)
+static void postprocess_copy_buffer(callback_context& cb, VkCommandBuffer commandBuffer, VkBuffer srcBuffer, VkBuffer dstBuffer, uint32_t regionCount)
 {
 	uint32_t cmdbuffer_index = index_to_VkCommandBuffer.index(commandBuffer);
 	auto& cmdbuffer_data = VkCommandBuffer_index.at(cmdbuffer_index);
@@ -342,23 +342,31 @@ void postprocess_vkCmdCopyBuffer(callback_context& cb, VkCommandBuffer commandBu
 	cmd.data.copy_buffer.src_buffer_index = index_to_VkBuffer.index(srcBuffer);
 	cmd.data.copy_buffer.dst_buffer_index = index_to_VkBuffer.index(dstBuffer);
 	cmd.data.copy_buffer.regionCount = regionCount;
-	cmd.data.copy_buffer.pRegions = (VkBufferCopy*)malloc(regionCount * sizeof(VkBufferCopy));
-	memcpy(cmd.data.copy_buffer.pRegions, pRegions, regionCount * sizeof(VkBufferCopy));
+	cmd.data.copy_buffer.pRegions = regionCount ? (VkBufferCopy*)malloc(regionCount * sizeof(VkBufferCopy)) : nullptr;
 	cmdbuffer_data.commands.push_back(cmd);
+}
+
+void postprocess_vkCmdCopyBuffer(callback_context& cb, VkCommandBuffer commandBuffer, VkBuffer srcBuffer, VkBuffer dstBuffer, uint32_t regionCount, const VkBufferCopy* pRegions)
+{
+	postprocess_copy_buffer(cb, commandBuffer, srcBuffer, dstBuffer, regionCount);
+	if (regionCount) memcpy(VkCommandBuffer_index.at(index_to_VkCommandBuffer.index(commandBuffer)).commands.back().data.copy_buffer.pRegions, pRegions, regionCount * sizeof(VkBufferCopy));
 }
 
 void postprocess_vkCmdCopyBuffer2(callback_context& cb, VkCommandBuffer commandBuffer, const VkCopyBufferInfo2* pCopyBufferInfo)
 {
-	uint32_t cmdbuffer_index = index_to_VkCommandBuffer.index(commandBuffer);
-	auto& cmdbuffer_data = VkCommandBuffer_index.at(cmdbuffer_index);
-	trackedcommand cmd { VKCMDCOPYBUFFER };
-	cmd.source = cb.reader.current;
-	cmd.data.copy_buffer.src_buffer_index = index_to_VkBuffer.index(pCopyBufferInfo->srcBuffer);
-	cmd.data.copy_buffer.dst_buffer_index = index_to_VkBuffer.index(pCopyBufferInfo->dstBuffer);
-	cmd.data.copy_buffer.regionCount = pCopyBufferInfo->regionCount;
-	cmd.data.copy_buffer.pRegions = (VkBufferCopy*)malloc(pCopyBufferInfo->regionCount * sizeof(VkBufferCopy));
-	memcpy(cmd.data.copy_buffer.pRegions, pCopyBufferInfo->pRegions, pCopyBufferInfo->regionCount * sizeof(VkBufferCopy));
-	cmdbuffer_data.commands.push_back(cmd);
+	postprocess_copy_buffer(cb, commandBuffer, pCopyBufferInfo->srcBuffer, pCopyBufferInfo->dstBuffer, pCopyBufferInfo->regionCount);
+	VkBufferCopy* pRegions = VkCommandBuffer_index.at(index_to_VkCommandBuffer.index(commandBuffer)).commands.back().data.copy_buffer.pRegions;
+	for (uint32_t i = 0; i < pCopyBufferInfo->regionCount; i++)
+	{
+		pRegions[i].srcOffset = pCopyBufferInfo->pRegions[i].srcOffset;
+		pRegions[i].dstOffset = pCopyBufferInfo->pRegions[i].dstOffset;
+		pRegions[i].size = pCopyBufferInfo->pRegions[i].size;
+	}
+}
+
+void postprocess_vkCmdCopyBuffer2KHR(callback_context& cb, VkCommandBuffer commandBuffer, const VkCopyBufferInfo2* pCopyBufferInfo)
+{
+	postprocess_vkCmdCopyBuffer2(cb, commandBuffer, pCopyBufferInfo);
 }
 
 static void postprocess_push_constants(callback_context& cb, VkCommandBuffer commandBuffer, uint32_t offset, uint32_t size, const void* pValues)
