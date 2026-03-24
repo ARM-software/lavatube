@@ -1145,8 +1145,11 @@ def save_add_tracking(name):
 			z.do('add->device_index = device_data->index;');
 		elif type == 'VkRenderPass' and name == 'vkCreateRenderPass':
 			z.do('add->attachments.resize(pCreateInfo->attachmentCount);')
-			z.do('for (unsigned ii = 0; ii < pCreateInfo->attachmentCount; ii++) add->attachments[ii] = pCreateInfo->pAttachments[ii]; // struct copy')
-			z.do('assert(!(pCreateInfo->flags & VK_ATTACHMENT_DESCRIPTION_MAY_ALIAS_BIT)); // not supported yet')
+			z.do('for (unsigned ii = 0; ii < pCreateInfo->attachmentCount; ii++)')
+			z.brace_begin()
+			z.do('add->attachments[ii] = pCreateInfo->pAttachments[ii]; // struct copy')
+			z.do('assert(!(pCreateInfo->pAttachments[ii].flags & VK_ATTACHMENT_DESCRIPTION_MAY_ALIAS_BIT)); // not supported yet')
+			z.brace_end()
 		elif type == 'VkRenderPass' and name in ['vkCreateRenderPass2', 'vkCreateRenderPass2KHR']:
 			z.do('add->attachments.resize(pCreateInfo->attachmentCount);')
 			z.do('for (unsigned ii = 0; ii < pCreateInfo->attachmentCount; ii++)')
@@ -1160,8 +1163,8 @@ def save_add_tracking(name):
 			z.do('add->attachments[ii].stencilStoreOp = pCreateInfo->pAttachments[ii].stencilStoreOp;')
 			z.do('add->attachments[ii].initialLayout = pCreateInfo->pAttachments[ii].initialLayout;')
 			z.do('add->attachments[ii].finalLayout = pCreateInfo->pAttachments[ii].finalLayout;')
+			z.do('assert(!(pCreateInfo->pAttachments[ii].flags & VK_ATTACHMENT_DESCRIPTION_MAY_ALIAS_BIT)); // not supported yet')
 			z.brace_end()
-			z.do('assert(!(pCreateInfo->flags & VK_ATTACHMENT_DESCRIPTION_MAY_ALIAS_BIT)); // not supported yet')
 		elif type == 'VkFramebuffer':
 			z.do('add->imageviews.resize(pCreateInfo->attachmentCount);')
 			z.do('for (unsigned ii = 0; ii < pCreateInfo->attachmentCount; ii++)')
