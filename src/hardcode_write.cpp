@@ -494,10 +494,12 @@ static void trace_post_vkGetTensorMemoryRequirementsARM(lava_file_writer& writer
 {
 	auto* tensor_data = writer.parent->records.VkTensorARM_index.at(pInfo->tensor);
 	tensor_data->req = pMemoryRequirements->memoryRequirements;
+	tensor_data->size = pMemoryRequirements->memoryRequirements.size;
 }
 
 static void trace_post_vkBindTensorMemoryARM(lava_file_writer& writer, VkResult result, VkDevice device, uint32_t bindInfoCount, const VkBindTensorMemoryInfoARM* pBindInfos)
 {
+	if (result != VK_SUCCESS) return;
 	writer.parent->memory_mutex.lock();
 	for (unsigned i = 0; i < bindInfoCount; i++)
 	{
@@ -510,9 +512,11 @@ static void trace_post_vkBindTensorMemoryARM(lava_file_writer& writer, VkResult 
 		{
 			VkTensorMemoryRequirementsInfoARM tmr = { VK_STRUCTURE_TYPE_TENSOR_MEMORY_REQUIREMENTS_INFO_ARM, nullptr };
 			VkMemoryRequirements2 mr = { VK_STRUCTURE_TYPE_MEMORY_REQUIREMENTS_2, nullptr };
+			tmr.tensor = pBindInfos[i].tensor;
 			wrap_vkGetTensorMemoryRequirementsARM(device, &tmr, &mr);
 			tensor_data->req = mr.memoryRequirements;
 		}
+		tensor_data->size = tensor_data->req.size;
 		memory_data->bind(tensor_data);
 		tensor_data->enter_bound();
 	}

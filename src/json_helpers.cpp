@@ -75,7 +75,7 @@ Json::Value trackedtensor_json(const trackedtensor* t)
 	v["format"] = (unsigned)t->format;
 	v["usage"] = (unsigned)t->usage;
 	v["dimensions"] = Json::arrayValue;
-	for (unsigned i = 0; i < t->strides.size() ; i++)
+	for (unsigned i = 0; i < t->dimensions.size() ; i++)
 	{
 		v["dimensions"].append((Json::Value::UInt64)t->dimensions.at(i));
 	}
@@ -430,12 +430,13 @@ trackedtensor trackedtensor_json(const Json::Value& v)
 {
 	trackedtensor t;
 	trackable_helper(t, v);
+	t.size = (VkDeviceSize)v.get("size", 0).asUInt64();
 	t.flags = (VkTensorCreateFlagsARM)v["flags"].asUInt64();
 	t.sharingMode = (VkSharingMode)v["sharingMode"].asUInt();
 	t.object_type = VK_OBJECT_TYPE_TENSOR_ARM;
 	t.tiling = (lava_tiling)v["tiling"].asUInt();
 	t.format = (VkFormat)v["format"].asUInt();
-	t.usage = (VkTensorUsageFlagsARM)v["dimensions"].asUInt64();
+	t.usage = (VkTensorUsageFlagsARM)v.get("usage", 0).asUInt64();
 	if (v.isMember("device_address")) t.capture_device_address = v["device_address"].asUInt64();
 	for (const auto& val : v["dimensions"]) t.dimensions.push_back(val.asUInt64());
 	if (v.isMember("strides"))
