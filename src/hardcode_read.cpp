@@ -2401,6 +2401,8 @@ void replay_pre_vkCreateComputePipelines(lava_file_reader& reader, VkDevice devi
 {
 	for (uint32_t i = 0; i < createInfoCount; i++)
 	{
+		const_cast<VkComputePipelineCreateInfo&>(pCreateInfos[i]).flags &= ~VK_PIPELINE_CREATE_FAIL_ON_PIPELINE_COMPILE_REQUIRED_BIT;
+
 		const VkMarkedOffsetsARM* remap = (const VkMarkedOffsetsARM*)find_extension(&pCreateInfos[i].stage, VK_STRUCTURE_TYPE_MARKED_OFFSETS_ARM);
 		if (!remap) continue; // nothing to do here
 
@@ -2419,6 +2421,8 @@ void replay_pre_vkCreateGraphicsPipelines(lava_file_reader& reader, VkDevice dev
 {
 	for (uint32_t i = 0; i < createInfoCount; i++)
 	{
+		const_cast<VkGraphicsPipelineCreateInfo&>(pCreateInfos[i]).flags &= ~VK_PIPELINE_CREATE_FAIL_ON_PIPELINE_COMPILE_REQUIRED_BIT;
+
 		for (uint32_t stage = 0; stage < pCreateInfos[i].stageCount; stage++)
 		{
 			const VkMarkedOffsetsARM* remap = (const VkMarkedOffsetsARM*)find_extension(&pCreateInfos[i].pStages[stage], VK_STRUCTURE_TYPE_MARKED_OFFSETS_ARM);
@@ -2440,6 +2444,8 @@ void replay_pre_vkCreateRayTracingPipelinesKHR(lava_file_reader& reader, VkDevic
 {
 	for (uint32_t i = 0; i < createInfoCount; i++)
 	{
+		const_cast<VkRayTracingPipelineCreateInfoKHR&>(pCreateInfos[i]).flags &= ~VK_PIPELINE_CREATE_FAIL_ON_PIPELINE_COMPILE_REQUIRED_BIT;
+
 		for (uint32_t stage = 0; stage < pCreateInfos[i].stageCount; stage++)
 		{
 			const VkMarkedOffsetsARM* remap = (const VkMarkedOffsetsARM*)find_extension(&pCreateInfos[i].pStages[stage], VK_STRUCTURE_TYPE_MARKED_OFFSETS_ARM);
