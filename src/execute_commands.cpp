@@ -208,6 +208,7 @@ bool execute_commands(lava_file_reader& reader, const trackeddevice& device_data
 {
 	std::vector<std::byte> push_constants; // current state of the push constants
 	uint32_t compute_pipeline_bound = CONTAINER_INVALID_INDEX; // currently bound pipeline
+	uint32_t data_graph_pipeline_bound = CONTAINER_INVALID_INDEX; // currently bound pipeline
 	std::unordered_map<VkShaderStageFlagBits, uint32_t> shader_objects;
 	uint32_t graphics_pipeline_bound = CONTAINER_INVALID_INDEX; // currently bound pipeline
 	uint32_t raytracing_pipeline_bound = CONTAINER_INVALID_INDEX; // currently bound pipeline
@@ -287,6 +288,7 @@ bool execute_commands(lava_file_reader& reader, const trackeddevice& device_data
 			{
 				compute_pipeline_bound = c.data.bind_pipeline.pipeline_index;
 			}
+			else if (c.data.bind_pipeline.pipelineBindPoint == VK_PIPELINE_BIND_POINT_DATA_GRAPH_ARM) data_graph_pipeline_bound = c.data.bind_pipeline.pipeline_index;
 			else if (c.data.bind_pipeline.pipelineBindPoint == VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR) raytracing_pipeline_bound = c.data.bind_pipeline.pipeline_index;
 			break;
 		case VKCMDPUSHDESCRIPTORSETKHR:
@@ -315,6 +317,25 @@ bool execute_commands(lava_file_reader& reader, const trackeddevice& device_data
 				auto& shader_object_data = VkShaderEXT_index.at(shader_objects.at(VK_SHADER_STAGE_COMPUTE_BIT));
 				shader_object_data.stage.calls++;
 				run_spirv(device_data, shader_object_data.stage, push_constants, descriptorsets, imagesets);
+			}
+			break;
+		case VKCMDDISPATCHDATAGRAPHARM:
+			{
+				const uint32_t session_index = c.data.dispatch_data_graph.session_index;
+				if (session_index == CONTAINER_INVALID_INDEX) break;
+				auto& session_data = VkDataGraphPipelineSessionARM_index.at(session_index);
+				if (session_data.pipeline_index == CONTAINER_INVALID_INDEX) break;
+				if (data_graph_pipeline_bound != CONTAINER_INVALID_INDEX && data_graph_pipeline_bound != session_data.pipeline_index)
+				{
+					DLOG("Data graph session %u dispatch uses pipeline %u while %u is currently bound",
+						(unsigned)session_index, (unsigned)session_data.pipeline_index, (unsigned)data_graph_pipeline_bound);
+				}
+				auto& pipeline_data = VkPipeline_index.at(session_data.pipeline_index);
+				// Count invocations here; GraphARM SPIR-V execution is still handled separately.
+				for (auto& stage : pipeline_data.shader_stages)
+				{
+					stage.calls++;
+				}
 			}
 			break;
 		case VKCMDDRAW: // proxy for all draw commands

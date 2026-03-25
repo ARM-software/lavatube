@@ -203,11 +203,16 @@ static void add_callbacks_for_first_round()
 	CALLBACK(vkCmdPushConstants2KHR);
 	CALLBACK(vkCmdPushConstants2);
 	CALLBACK(vkCreateRayTracingPipelinesKHR);
+	CALLBACK(vkCreateDataGraphPipelineSessionARM);
+	CALLBACK(vkGetDataGraphPipelineSessionMemoryRequirementsARM);
+	CALLBACK(vkBindDataGraphPipelineSessionMemoryARM);
 	CALLBACK(vkGetRayTracingShaderGroupHandlesKHR);
 	CALLBACK(vkGetRayTracingCaptureReplayShaderGroupHandlesKHR);
 	CALLBACK(vkCreateGraphicsPipelines);
 	CALLBACK(vkCreateComputePipelines);
+	CALLBACK(vkCreateDataGraphPipelinesARM);
 	CALLBACK(vkCmdBindPipeline);
+	CALLBACK(vkCmdDispatchDataGraphARM);
 	CALLBACK(vkCmdTraceRaysKHR);
 	CALLBACK(vkCmdTraceRaysIndirectKHR);
 	CALLBACK(vkCmdTraceRaysIndirect2KHR);

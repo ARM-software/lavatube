@@ -22,8 +22,13 @@ void postprocess_vkCmdBindPipeline(callback_context& cb, VkCommandBuffer command
 void postprocess_vkCmdPushConstants(callback_context& cb, VkCommandBuffer commandBuffer, VkPipelineLayout layout, VkShaderStageFlags stageFlags, uint32_t offset, uint32_t size, const void* pValues);
 void postprocess_vkCmdPushConstants2KHR(callback_context& cb, VkCommandBuffer commandBuffer, const VkPushConstantsInfoKHR* pPushConstantsInfo);
 void postprocess_vkCmdPushConstants2(callback_context& cb, VkCommandBuffer commandBuffer, const VkPushConstantsInfo* pPushConstantsInfo);
+void postprocess_vkCreateDataGraphPipelineSessionARM(callback_context& cb, VkDevice device, const VkDataGraphPipelineSessionCreateInfoARM* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkDataGraphPipelineSessionARM* pSession);
+void postprocess_vkGetDataGraphPipelineSessionMemoryRequirementsARM(callback_context& cb, VkDevice device, const VkDataGraphPipelineSessionMemoryRequirementsInfoARM* pInfo, VkMemoryRequirements2* pMemoryRequirements);
+void postprocess_vkBindDataGraphPipelineSessionMemoryARM(callback_context& cb, VkDevice device, uint32_t bindInfoCount, const VkBindDataGraphPipelineSessionMemoryInfoARM* pBindInfos);
 void postprocess_vkCreateComputePipelines(callback_context& cb, VkDevice device, VkPipelineCache pipelineCache, uint32_t createInfoCount,
 	const VkComputePipelineCreateInfo* pCreateInfos, const VkAllocationCallbacks* pAllocator, VkPipeline* pPipelines);
+void postprocess_vkCreateDataGraphPipelinesARM(callback_context& cb, VkDevice device, VkDeferredOperationKHR deferredOperation, VkPipelineCache pipelineCache, uint32_t createInfoCount,
+	const VkDataGraphPipelineCreateInfoARM* pCreateInfos, const VkAllocationCallbacks* pAllocator, VkPipeline* pPipelines);
 void postprocess_vkCreateGraphicsPipelines(callback_context& cb, VkDevice device, VkPipelineCache pipelineCache, uint32_t createInfoCount,
 	const VkGraphicsPipelineCreateInfo* pCreateInfos, const VkAllocationCallbacks* pAllocator, VkPipeline* pPipelines);
 void postprocess_vkCreateRayTracingPipelinesKHR(callback_context& cb, VkDevice device, VkDeferredOperationKHR deferredOperation, VkPipelineCache pipelineCache,
@@ -41,6 +46,7 @@ void postprocess_vkSubmitDebugUtilsMessageEXT(callback_context& cb, VkInstance i
                                                   const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData);
 void postprocess_vkCreateShadersEXT(callback_context& cb, VkDevice device, uint32_t createInfoCount, const VkShaderCreateInfoEXT* pCreateInfos, const VkAllocationCallbacks* pAllocator, VkShaderEXT* pShaders);
 void postprocess_vkCmdBindShadersEXT(callback_context& cb, VkCommandBuffer commandBuffer, uint32_t stageCount, const VkShaderStageFlagBits* pStages, const VkShaderEXT* pShaders);
+void postprocess_vkCmdDispatchDataGraphARM(callback_context& cb, VkCommandBuffer commandBuffer, VkDataGraphPipelineSessionARM session, const VkDataGraphPipelineDispatchInfoARM* pInfo);
 
 // These three are special. They are called directly from the generated code. TBD: Should come up with a better interface for these.
 void postprocess_draw_command(callback_context& cb, uint32_t commandbuffer_index, trackedcmdbuffer& commandbuffer_data);

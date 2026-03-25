@@ -12,6 +12,17 @@
 #pragma GCC diagnostic ignored "-Wunused-but-set-variable"
 #endif
 
+static void copy_recorded_memory_requirements(memory_requirements& dst, const VkMemoryRequirements2* src)
+{
+	if (!src) return;
+	dst.requirements = src->memoryRequirements;
+	if (const auto* info = (const VkMemoryDedicatedRequirements*)find_extension(src, VK_STRUCTURE_TYPE_MEMORY_DEDICATED_REQUIREMENTS))
+	{
+		dst.dedicated.prefersDedicatedAllocation = info->prefersDedicatedAllocation;
+		dst.dedicated.requiresDedicatedAllocation = info->requiresDedicatedAllocation;
+	}
+}
+
 static void handle_VkWriteDescriptorSets(uint32_t descriptorWriteCount, const VkWriteDescriptorSet* pDescriptorWrites, bool clear)
 {
 	(void)clear;
@@ -314,6 +325,18 @@ void postprocess_raytracing_command(callback_context& cb, uint32_t commandbuffer
 
 void postprocess_compute_command(callback_context& cb, uint32_t commandbuffer_index, trackedcmdbuffer& commandbuffer_data)
 {
+	if (!commandbuffer_data.commands.empty())
+	{
+		const auto& last = commandbuffer_data.commands.back();
+		if (last.id == VKCMDDISPATCHDATAGRAPHARM &&
+			last.source.call == cb.reader.current.call &&
+			last.source.frame == cb.reader.current.frame &&
+			last.source.thread == cb.reader.current.thread &&
+			last.source.call_id == cb.reader.current.call_id)
+		{
+			return;
+		}
+	}
 	trackedcommand cmd { VKCMDDISPATCH };
 	cmd.source = cb.reader.current;
 	commandbuffer_data.commands.push_back(cmd);
@@ -434,6 +457,93 @@ static void copy_shader_stage(const trackedpipeline& pipeline_data, shader_stage
 	stage.self_test();
 }
 
+static const VkDataGraphPipelineShaderModuleCreateInfoARM* find_data_graph_shader_module_create_info(const VkDataGraphPipelineCreateInfoARM& info)
+{
+	return (const VkDataGraphPipelineShaderModuleCreateInfoARM*)find_extension(&info, VK_STRUCTURE_TYPE_DATA_GRAPH_PIPELINE_SHADER_MODULE_CREATE_INFO_ARM);
+}
+
+static void copy_data_graph_shader_stage(const trackedpipeline& pipeline_data, shader_stage& stage, const VkDataGraphPipelineShaderModuleCreateInfoARM& info)
+{
+	stage.device_index = pipeline_data.device_index;
+	stage.flags = (VkPipelineShaderStageCreateFlags)0;
+	stage.module = info.module;
+	if (stage.module == VK_NULL_HANDLE)
+	{
+		auto* smciext = (const VkShaderModuleCreateInfo*)find_extension(info.pNext, VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO);
+		assert(smciext); // must have this if no module is defined
+		if (smciext)
+		{
+			stage.code.resize(smciext->codeSize / sizeof(uint32_t));
+			memcpy(stage.code.data(), smciext->pCode, smciext->codeSize);
+		}
+	}
+	else
+	{
+		const uint32_t shader_index = index_to_VkShaderModule.index(stage.module);
+		const auto& shader_data = VkShaderModule_index.at(shader_index);
+		stage.code = shader_data.code;
+	}
+	stage.name = info.pName ? info.pName : "";
+	stage.stage = VK_SHADER_STAGE_COMPUTE_BIT; // Reuse the existing single-stage metadata path until GraphARM execution is modeled separately.
+	stage.unique_index = (uint64_t)pipeline_data.index | ((uint64_t)VK_PIPELINE_BIND_POINT_DATA_GRAPH_ARM << 32);
+	if (info.pSpecializationInfo)
+	{
+		stage.specialization_constants.resize(info.pSpecializationInfo->mapEntryCount);
+		memcpy(stage.specialization_constants.data(), info.pSpecializationInfo->pMapEntries,
+			info.pSpecializationInfo->mapEntryCount * sizeof(VkSpecializationMapEntry));
+		stage.specialization_data.resize(info.pSpecializationInfo->dataSize);
+		memcpy(stage.specialization_data.data(), info.pSpecializationInfo->pData, info.pSpecializationInfo->dataSize);
+	}
+	stage.self_test();
+}
+
+void postprocess_vkCreateDataGraphPipelineSessionARM(callback_context& cb, VkDevice device,
+	const VkDataGraphPipelineSessionCreateInfoARM* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkDataGraphPipelineSessionARM* pSession)
+{
+	(void)cb;
+	(void)pAllocator;
+	if (!pCreateInfo || !pSession || *pSession == VK_NULL_HANDLE) return;
+	const uint32_t session_index = index_to_VkDataGraphPipelineSessionARM.index(*pSession);
+	if (session_index == CONTAINER_INVALID_INDEX) return;
+	auto& session_data = VkDataGraphPipelineSessionARM_index.at(session_index);
+	session_data.parent_device_index = index_to_VkDevice.index(device);
+	session_data.object_type = VK_OBJECT_TYPE_DATA_GRAPH_PIPELINE_SESSION_ARM;
+	session_data.flags = pCreateInfo->flags;
+	session_data.pipeline_index = index_to_VkPipeline.index(pCreateInfo->dataGraphPipeline);
+	session_data.self_test();
+}
+
+void postprocess_vkGetDataGraphPipelineSessionMemoryRequirementsARM(callback_context& cb, VkDevice device,
+	const VkDataGraphPipelineSessionMemoryRequirementsInfoARM* pInfo, VkMemoryRequirements2* pMemoryRequirements)
+{
+	(void)cb;
+	(void)device;
+	if (!pInfo || !pMemoryRequirements || pInfo->session == VK_NULL_HANDLE) return;
+	const uint32_t session_index = index_to_VkDataGraphPipelineSessionARM.index(pInfo->session);
+	if (session_index == CONTAINER_INVALID_INDEX) return;
+	auto& session_data = VkDataGraphPipelineSessionARM_index.at(session_index);
+	auto& binding = session_data.get_binding(pInfo->bindPoint, pInfo->objectIndex);
+	copy_recorded_memory_requirements(binding.reqs, pMemoryRequirements);
+}
+
+void postprocess_vkBindDataGraphPipelineSessionMemoryARM(callback_context& cb, VkDevice device, uint32_t bindInfoCount,
+	const VkBindDataGraphPipelineSessionMemoryInfoARM* pBindInfos)
+{
+	(void)cb;
+	(void)device;
+	if (!pBindInfos) return;
+	for (uint32_t i = 0; i < bindInfoCount; i++)
+	{
+		if (pBindInfos[i].session == VK_NULL_HANDLE) continue;
+		const uint32_t session_index = index_to_VkDataGraphPipelineSessionARM.index(pBindInfos[i].session);
+		if (session_index == CONTAINER_INVALID_INDEX) continue;
+		auto& session_data = VkDataGraphPipelineSessionARM_index.at(session_index);
+		auto& binding = session_data.get_binding(pBindInfos[i].bindPoint, pBindInfos[i].objectIndex);
+		binding.backing = pBindInfos[i].memory;
+		binding.offset = pBindInfos[i].memoryOffset;
+	}
+}
+
 void postprocess_vkCreateComputePipelines(callback_context& cb, VkDevice device, VkPipelineCache pipelineCache, uint32_t createInfoCount,
 	const VkComputePipelineCreateInfo* pCreateInfos, const VkAllocationCallbacks* pAllocator, VkPipeline* pPipelines)
 {
@@ -444,6 +554,33 @@ void postprocess_vkCreateComputePipelines(callback_context& cb, VkDevice device,
 		pipeline_data.shader_stages.resize(1);
 		pipeline_data.shader_stages[0].index = 0;
 		copy_shader_stage(pipeline_data, pipeline_data.shader_stages[0], pCreateInfos[i].stage);
+	}
+}
+
+void postprocess_vkCreateDataGraphPipelinesARM(callback_context& cb, VkDevice device, VkDeferredOperationKHR deferredOperation, VkPipelineCache pipelineCache,
+	uint32_t createInfoCount, const VkDataGraphPipelineCreateInfoARM* pCreateInfos, const VkAllocationCallbacks* pAllocator, VkPipeline* pPipelines)
+{
+	(void)cb;
+	(void)device;
+	(void)deferredOperation;
+	(void)pipelineCache;
+	(void)pAllocator;
+	if (!pCreateInfos || !pPipelines) return;
+	for (uint32_t i = 0; i < createInfoCount; i++)
+	{
+		const uint32_t pipeline_index = index_to_VkPipeline.index(pPipelines[i]);
+		if (pipeline_index == CONTAINER_INVALID_INDEX) continue;
+		trackedpipeline& pipeline_data = VkPipeline_index.at(pipeline_index);
+		pipeline_data.type = VK_PIPELINE_BIND_POINT_DATA_GRAPH_ARM;
+		const auto* shader_info = find_data_graph_shader_module_create_info(pCreateInfos[i]);
+		if (!shader_info)
+		{
+			pipeline_data.shader_stages.clear();
+			continue;
+		}
+		pipeline_data.shader_stages.resize(1);
+		pipeline_data.shader_stages[0].index = 0;
+		copy_data_graph_shader_stage(pipeline_data, pipeline_data.shader_stages[0], *shader_info);
 	}
 }
 
@@ -583,6 +720,19 @@ void postprocess_vkCmdBindShadersEXT(callback_context& cb, VkCommandBuffer comma
 		cmd.data.bind_shaders_ext.shader_types = nullptr;
 		cmd.data.bind_shaders_ext.shader_objects = nullptr;
 	}
+	cmdbuffer_data.commands.push_back(cmd);
+}
+
+void postprocess_vkCmdDispatchDataGraphARM(callback_context& cb, VkCommandBuffer commandBuffer, VkDataGraphPipelineSessionARM session, const VkDataGraphPipelineDispatchInfoARM* pInfo)
+{
+	const uint32_t cmdbuffer_index = index_to_VkCommandBuffer.index(commandBuffer);
+	const uint32_t session_index = index_to_VkDataGraphPipelineSessionARM.index(session);
+	if (cmdbuffer_index == CONTAINER_INVALID_INDEX) return;
+	auto& cmdbuffer_data = VkCommandBuffer_index.at(cmdbuffer_index);
+	trackedcommand cmd { VKCMDDISPATCHDATAGRAPHARM };
+	cmd.source = cb.reader.current;
+	cmd.data.dispatch_data_graph.session_index = session_index;
+	cmd.data.dispatch_data_graph.flags = pInfo ? pInfo->flags : (VkDataGraphPipelineDispatchFlagsARM)0;
 	cmdbuffer_data.commands.push_back(cmd);
 }
 

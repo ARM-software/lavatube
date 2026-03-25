@@ -678,6 +678,11 @@ struct trackedcommand // does _not_ inherit trackable
 			VkShaderStageFlagBits* shader_types;
 			uint32_t* shader_objects;
 		} bind_shaders_ext;
+		struct dispatch_data_graph
+		{
+			uint32_t session_index;
+			VkDataGraphPipelineDispatchFlagsARM flags;
+		} dispatch_data_graph;
 		struct trace_rays
 		{
 			uint32_t mode;
