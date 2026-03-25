@@ -490,11 +490,31 @@ static void trace_post_vkBindBufferMemory2KHR(lava_file_writer& writer, VkResult
 	trace_post_vkBindBufferMemory2(writer, result, device, bindInfoCount, pBindInfos);
 }
 
+static void copy_recorded_memory_requirements(memory_requirements& dst, const VkMemoryRequirements2* src)
+{
+	dst.requirements = src->memoryRequirements;
+	dst.allocate_flags = 0;
+	dst.dedicated = { VK_STRUCTURE_TYPE_MEMORY_DEDICATED_REQUIREMENTS, nullptr };
+	if (const auto* info = (const VkMemoryDedicatedRequirements*)find_extension(src, VK_STRUCTURE_TYPE_MEMORY_DEDICATED_REQUIREMENTS))
+	{
+		dst.dedicated.prefersDedicatedAllocation = info->prefersDedicatedAllocation;
+		dst.dedicated.requiresDedicatedAllocation = info->requiresDedicatedAllocation;
+	}
+}
+
 static void trace_post_vkGetTensorMemoryRequirementsARM(lava_file_writer& writer, VkDevice device, const VkTensorMemoryRequirementsInfoARM* pInfo, VkMemoryRequirements2* pMemoryRequirements)
 {
 	auto* tensor_data = writer.parent->records.VkTensorARM_index.at(pInfo->tensor);
 	tensor_data->req = pMemoryRequirements->memoryRequirements;
 	tensor_data->size = pMemoryRequirements->memoryRequirements.size;
+}
+
+static void trace_post_vkGetDataGraphPipelineSessionMemoryRequirementsARM(lava_file_writer& writer, VkDevice device,
+	const VkDataGraphPipelineSessionMemoryRequirementsInfoARM* pInfo, VkMemoryRequirements2* pMemoryRequirements)
+{
+	auto* session_data = writer.parent->records.VkDataGraphPipelineSessionARM_index.at(pInfo->session);
+	auto& binding = session_data->get_binding(pInfo->bindPoint, pInfo->objectIndex);
+	copy_recorded_memory_requirements(binding.reqs, pMemoryRequirements);
 }
 
 static void trace_post_vkBindTensorMemoryARM(lava_file_writer& writer, VkResult result, VkDevice device, uint32_t bindInfoCount, const VkBindTensorMemoryInfoARM* pBindInfos)
@@ -519,6 +539,33 @@ static void trace_post_vkBindTensorMemoryARM(lava_file_writer& writer, VkResult 
 		tensor_data->size = tensor_data->req.size;
 		memory_data->bind(tensor_data);
 		tensor_data->enter_bound();
+	}
+	writer.parent->memory_mutex.unlock();
+}
+
+static void trace_post_vkBindDataGraphPipelineSessionMemoryARM(lava_file_writer& writer, VkResult result, VkDevice device, uint32_t bindInfoCount,
+	const VkBindDataGraphPipelineSessionMemoryInfoARM* pBindInfos)
+{
+	if (result != VK_SUCCESS) return;
+	writer.parent->memory_mutex.lock();
+	for (unsigned i = 0; i < bindInfoCount; i++)
+	{
+		auto* session_data = writer.parent->records.VkDataGraphPipelineSessionARM_index.at(pBindInfos[i].session);
+		auto* memory_data = writer.parent->records.VkDeviceMemory_index.at(pBindInfos[i].memory);
+		auto& binding = session_data->get_binding(pBindInfos[i].bindPoint, pBindInfos[i].objectIndex);
+		binding.memory_flags = memory_data->propertyFlags;
+		binding.backing = pBindInfos[i].memory;
+		binding.offset = pBindInfos[i].memoryOffset;
+		if (binding.reqs.requirements.size == 0)
+		{
+			VkDataGraphPipelineSessionMemoryRequirementsInfoARM info = { VK_STRUCTURE_TYPE_DATA_GRAPH_PIPELINE_SESSION_MEMORY_REQUIREMENTS_INFO_ARM, nullptr };
+			VkMemoryRequirements2 req = { VK_STRUCTURE_TYPE_MEMORY_REQUIREMENTS_2, nullptr };
+			info.session = pBindInfos[i].session;
+			info.bindPoint = pBindInfos[i].bindPoint;
+			info.objectIndex = pBindInfos[i].objectIndex;
+			wrap_vkGetDataGraphPipelineSessionMemoryRequirementsARM(device, &info, &req);
+			copy_recorded_memory_requirements(binding.reqs, &req);
+		}
 	}
 	writer.parent->memory_mutex.unlock();
 }

@@ -219,6 +219,18 @@ static bool create_internal_buffer(VkDevice device, VkPhysicalDevice physical_de
 	return true;
 }
 
+static void copy_recorded_memory_requirements(memory_requirements& dst, const VkMemoryRequirements2* src)
+{
+	dst.requirements = src->memoryRequirements;
+	dst.allocate_flags = 0;
+	dst.dedicated = { VK_STRUCTURE_TYPE_MEMORY_DEDICATED_REQUIREMENTS, nullptr };
+	if (const auto* info = (const VkMemoryDedicatedRequirements*)find_extension(src, VK_STRUCTURE_TYPE_MEMORY_DEDICATED_REQUIREMENTS))
+	{
+		dst.dedicated.prefersDedicatedAllocation = info->prefersDedicatedAllocation;
+		dst.dedicated.requiresDedicatedAllocation = info->requiresDedicatedAllocation;
+	}
+}
+
 static uint64_t debug_object_lookup(VkDebugReportObjectTypeEXT type, uint32_t index)
 {
 	switch (type)
@@ -1109,6 +1121,36 @@ void replay_callback_vkCreateDescriptorUpdateTemplateKHR(callback_context& cb, V
 	(void)device;
 	(void)pAllocator;
 	replay_callback_vkCreateDescriptorUpdateTemplate_common(cb.result.vkresult, pCreateInfo, pDescriptorUpdateTemplate);
+}
+
+void replay_callback_vkGetDataGraphPipelineSessionMemoryRequirementsARM(callback_context& cb, VkDevice device,
+	const VkDataGraphPipelineSessionMemoryRequirementsInfoARM* pInfo, VkMemoryRequirements2* pMemoryRequirements)
+{
+	(void)cb;
+	(void)device;
+	if (!pInfo || !pMemoryRequirements || pInfo->session == VK_NULL_HANDLE) return;
+	const uint32_t session_index = index_to_VkDataGraphPipelineSessionARM.index(pInfo->session);
+	if (session_index == CONTAINER_INVALID_INDEX) return;
+	auto& session_data = VkDataGraphPipelineSessionARM_index.at(session_index);
+	auto& binding = session_data.get_binding(pInfo->bindPoint, pInfo->objectIndex);
+	copy_recorded_memory_requirements(binding.reqs, pMemoryRequirements);
+}
+
+void replay_callback_vkBindDataGraphPipelineSessionMemoryARM(callback_context& cb, VkDevice device, uint32_t bindInfoCount,
+	const VkBindDataGraphPipelineSessionMemoryInfoARM* pBindInfos)
+{
+	(void)device;
+	if (cb.result.vkresult != VK_SUCCESS || !pBindInfos) return;
+	for (uint32_t i = 0; i < bindInfoCount; i++)
+	{
+		if (pBindInfos[i].session == VK_NULL_HANDLE) continue;
+		const uint32_t session_index = index_to_VkDataGraphPipelineSessionARM.index(pBindInfos[i].session);
+		if (session_index == CONTAINER_INVALID_INDEX) continue;
+		auto& session_data = VkDataGraphPipelineSessionARM_index.at(session_index);
+		auto& binding = session_data.get_binding(pBindInfos[i].bindPoint, pBindInfos[i].objectIndex);
+		binding.backing = pBindInfos[i].memory;
+		binding.offset = pBindInfos[i].memoryOffset;
+	}
 }
 
 static void replay_pre_vkCreateAccelerationStructureKHR(lava_file_reader& reader, VkDevice device,

@@ -87,6 +87,14 @@ Json::Value trackedtensor_json(const trackedtensor* t)
 	return v;
 }
 
+Json::Value trackeddatagraphpipelinesession_json(const trackeddatagraphpipelinesession* t)
+{
+	Json::Value v = trackedobject_json(t);
+	v["flags"] = (Json::Value::UInt64)t->flags;
+	v["pipeline_index"] = t->pipeline_index;
+	return v;
+}
+
 Json::Value trackedimage_json(const trackedimage* t)
 {
 	Json::Value v = trackedobject_json(t);
@@ -448,6 +456,24 @@ trackedtensor trackedtensor_json(const Json::Value& v)
 		t.alias_index = v["alias_index"].asUInt();
 		t.alias_type = (VkObjectType)v["alias_type"].asUInt();
 	}
+	if (v.isMember("memory_flags")) t.memory_flags = (VkMemoryPropertyFlags)v["memory_flags"].asUInt();
+
+	if (v.isMember("parent_device_index")) t.parent_device_index = v["parent_device_index"].asUInt();
+	else t.parent_device_index = 0; // use a default for old trace files, and pray we only have one VkDevice
+
+	t.enter_initialized();
+	return t;
+}
+
+trackeddatagraphpipelinesession trackeddatagraphpipelinesession_json(const Json::Value& v)
+{
+	trackeddatagraphpipelinesession t;
+	trackable_helper(t, v);
+	t.size = (VkDeviceSize)v.get("size", 0).asUInt64();
+	t.flags = (VkDataGraphPipelineSessionCreateFlagsARM)v["flags"].asUInt64();
+	t.pipeline_index = v["pipeline_index"].asUInt();
+	t.tiling = (lava_tiling)v.get("tiling", TILING_LINEAR).asUInt();
+	t.object_type = VK_OBJECT_TYPE_DATA_GRAPH_PIPELINE_SESSION_ARM;
 	if (v.isMember("memory_flags")) t.memory_flags = (VkMemoryPropertyFlags)v["memory_flags"].asUInt();
 
 	if (v.isMember("parent_device_index")) t.parent_device_index = v["parent_device_index"].asUInt();

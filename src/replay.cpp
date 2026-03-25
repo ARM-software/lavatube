@@ -38,6 +38,8 @@ static void register_replay_callbacks()
 	CALLBACK(vkGetAccelerationStructureBuildSizesKHR);
 	CALLBACK(vkCreateDescriptorUpdateTemplate);
 	CALLBACK(vkCreateDescriptorUpdateTemplateKHR);
+	CALLBACK(vkGetDataGraphPipelineSessionMemoryRequirementsARM);
+	CALLBACK(vkBindDataGraphPipelineSessionMemoryARM);
 #undef CALLBACK
 
 	vkCmdBindPipeline_callbacks.push_back(replay_track_vkCmdBindPipeline);

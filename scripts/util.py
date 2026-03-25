@@ -638,9 +638,25 @@ class parameter(spec.base_parameter):
 				z.decl(self.type, self.name)
 			z.do('%s = reader.read_%s();' % (varname, self.type))
 
-		if self.funcname in ['vkBindImageMemory', 'vkBindBufferMemory', 'VkBindBufferMemoryInfo', 'VkBindBufferMemoryInfoKHR', 'VkBindImageMemoryInfoKHR', 'VkBindImageMemoryInfo', 'VkBindTensorMemoryInfoARM']:
-			if self.name in ['image', 'buffer', 'tensor']:
-				if self.funcname in ['VkBindBufferMemoryInfo', 'VkBindBufferMemoryInfoKHR', 'VkBindImageMemoryInfoKHR', 'VkBindImageMemoryInfo', 'VkBindTensorMemoryInfoARM']:
+		if self.funcname == 'VkBindDataGraphPipelineSessionMemoryInfoARM':
+			if self.name == 'session':
+				z.do('const uint32_t device_index = index_to_VkDevice.index(reader.device);')
+				z.do('%s& %s = VkDevice_index.at(%s);' % (vk.trackable_type_map_replay['VkDevice'], totrackable('VkDevice'), toindex('VkDevice')))
+				z.do('%s& %s = %s_index.at(%s);' % (vk.trackable_type_map_replay[self.type], totrackable(self.type), self.type, toindex(self.type)))
+				z.decl('VkMemoryPropertyFlags', 'session_memory_flags')
+				z.do('session_memory_flags = static_cast<VkMemoryPropertyFlags>(reader.read_uint32_t()); // fetch memory flags especially added')
+			elif self.name == 'memory':
+				z.decl('suballoc_location', 'loc', struct=True)
+				z.do('auto& datagraph_binding = %s.get_binding(sptr->bindPoint, sptr->objectIndex);' % totrackable('VkDataGraphPipelineSessionARM'))
+				z.do('datagraph_binding.memory_flags = session_memory_flags;')
+				z.do('loc = device_data.allocator->add_datagraphpipelinesession(reader.thread_index(), (uint64_t)sptr->session, %s, sptr->bindPoint, sptr->objectIndex);' % totrackable('VkDataGraphPipelineSessionARM'))
+				z.do('assert(loc.memory != VK_NULL_HANDLE);')
+				z.do('%s = loc.memory;' % varname)
+			elif self.name == 'memoryOffset':
+				z.do('%s = loc.offset;' % varname)
+		elif self.funcname in ['vkBindImageMemory', 'vkBindBufferMemory', 'VkBindBufferMemoryInfo', 'VkBindBufferMemoryInfoKHR', 'VkBindImageMemoryInfoKHR', 'VkBindImageMemoryInfo', 'VkBindTensorMemoryInfoARM']:
+			if self.name in ['image', 'buffer', 'tensor', 'session']:
+				if self.funcname[0] == 'V': # is a struct type, commands have lowercase 'v'
 					z.do('const uint32_t device_index = index_to_VkDevice.index(reader.device);')
 				z.do('%s& %s = VkDevice_index.at(%s);' % (vk.trackable_type_map_replay['VkDevice'], totrackable('VkDevice'), toindex('VkDevice')))
 				z.do('%s& %s = %s_index.at(%s);' % (vk.trackable_type_map_replay[self.type], totrackable(self.type), self.type, toindex(self.type)))
@@ -660,7 +676,7 @@ class parameter(spec.base_parameter):
 		if self.funcname == 'vkDestroySurfaceKHR' and self.name == 'instance':
 			z.do('if (reader.parent->stored_version_patch < 2) (void)reader.read_uint8_t();') # TBD remove this hack one day
 
-		if self.funcname in ['vkDestroyBuffer', 'vkDestroyImage', 'vkDestroyTensorARM', 'vkDestroyDevice', 'VkCreateDevice'] and self.name == 'device':  #['image', 'buffer', 'tensor', 'device']:
+		if self.funcname in ['vkDestroyBuffer', 'vkDestroyImage', 'vkDestroyTensorARM', 'vkDestroyDataGraphPipelineSessionARM', 'vkDestroyDevice', 'VkCreateDevice'] and self.name == 'device':
 			z.do('%s& %s = %s_index.at(%s);' % (vk.trackable_type_map_replay['VkDevice'], totrackable('VkDevice'), self.type, toindex('VkDevice')))
 
 		if self.funcname == 'vkDestroyBuffer' and self.name == 'buffer':
@@ -669,6 +685,8 @@ class parameter(spec.base_parameter):
 			z.do('device_data.allocator->free_image(image_index);')
 		elif self.funcname == 'vkDestroyTensorARM' and self.name == 'tensor':
 			z.do('device_data.allocator->free_tensor(tensorarm_index);')
+		elif self.funcname == 'vkDestroyDataGraphPipelineSessionARM' and self.name == 'session':
+			z.do('device_data.allocator->free_datagraphpipelinesession(datagraphpipelinesessionarm_index);')
 		elif self.name == 'sType':
 			orig = z.struct_last()
 			stype = spec.type2sType[orig]
@@ -1001,7 +1019,7 @@ class parameter(spec.base_parameter):
 			z.do('writer.commandBuffer = %s;' % varname) # always earlier in the parameter list than images and buffers, fortunately
 			z.do('writer.device = commandbuffer_data->device;')
 			z.do('writer.physicalDevice = commandbuffer_data->physicalDevice;')
-		if self.funcname in ['vkBindImageMemory', 'vkBindBufferMemory', 'VkBindImageMemoryInfo', 'VkBindImageMemoryInfoKHR', 'VkBindBufferMemoryInfo', 'VkBindBufferMemoryInfoKHR', 'VkBindTensorMemoryInfoARM'] and self.name in ['image', 'buffer', 'tensor']:
+		if self.funcname in ['vkBindImageMemory', 'vkBindBufferMemory', 'VkBindImageMemoryInfo', 'VkBindImageMemoryInfoKHR', 'VkBindBufferMemoryInfo', 'VkBindBufferMemoryInfoKHR', 'VkBindTensorMemoryInfoARM', 'VkBindDataGraphPipelineSessionMemoryInfoARM'] and self.name in ['image', 'buffer', 'tensor', 'session']:
 			z.do('const auto* meminfo = writer.parent->records.VkDeviceMemory_index.at(%s);' % (owner + 'memory'))
 			z.do('%s->memory_flags = meminfo->propertyFlags;' % totrackable(self.type))
 			z.do('writer.write_uint32_t(static_cast<uint32_t>(meminfo->propertyFlags)); // save memory flags') # TBD remove
@@ -1104,6 +1122,11 @@ def save_add_tracking(name):
 			z.do('if (usageflags2) add->usage2 = usageflags2->usage;')
 			z.do('add->sharingMode = pCreateInfo->sharingMode;')
 			z.do('add->object_type = VK_OBJECT_TYPE_BUFFER;')
+		elif type == 'VkDataGraphPipelineSessionARM':
+			z.do('add->parent_device_index = device_data->index;')
+			z.do('add->object_type = VK_OBJECT_TYPE_DATA_GRAPH_PIPELINE_SESSION_ARM;')
+			z.do('add->flags = pCreateInfo->flags;')
+			z.do('add->pipeline_index = writer.parent->records.VkPipeline_index.at(pCreateInfo->dataGraphPipeline)->index;')
 		elif type == 'VkIndirectCommandsLayoutEXT':
 			z.do('add->flags = pCreateInfo->flags;')
 			z.do('add->stages = pCreateInfo->shaderStages;')
@@ -1362,7 +1385,7 @@ def load_add_tracking(name):
 			elif type == 'VkDevice':
 				z.do('data.physicalDevice = physicalDevice; // track parentage')
 				z.do('data.allocator = new suballocator();')
-				z.do('data.allocator->create(selected_physical_device, pDevice, VkImage_index, VkBuffer_index, VkTensorARM_index, reader.run);')
+				z.do('data.allocator->create(selected_physical_device, pDevice, VkImage_index, VkBuffer_index, VkTensorARM_index, VkDataGraphPipelineSessionARM_index, reader.run);')
 			elif type == 'VkBuffer':
 				z.do('data.size = pCreateInfo->size;')
 				z.do('data.flags = pCreateInfo->flags;')

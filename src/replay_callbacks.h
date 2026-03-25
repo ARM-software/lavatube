@@ -23,6 +23,10 @@ void replay_callback_vkCreateDescriptorUpdateTemplate(callback_context& cb, VkDe
 	const VkAllocationCallbacks* pAllocator, VkDescriptorUpdateTemplate* pDescriptorUpdateTemplate);
 void replay_callback_vkCreateDescriptorUpdateTemplateKHR(callback_context& cb, VkDevice device, const VkDescriptorUpdateTemplateCreateInfo* pCreateInfo,
 	const VkAllocationCallbacks* pAllocator, VkDescriptorUpdateTemplate* pDescriptorUpdateTemplate);
+void replay_callback_vkGetDataGraphPipelineSessionMemoryRequirementsARM(callback_context& cb, VkDevice device,
+	const VkDataGraphPipelineSessionMemoryRequirementsInfoARM* pInfo, VkMemoryRequirements2* pMemoryRequirements);
+void replay_callback_vkBindDataGraphPipelineSessionMemoryARM(callback_context& cb, VkDevice device, uint32_t bindInfoCount,
+	const VkBindDataGraphPipelineSessionMemoryInfoARM* pBindInfos);
 
 void replay_track_vkCmdBindPipeline(callback_context& cb, VkCommandBuffer commandBuffer, VkPipelineBindPoint pipelineBindPoint, VkPipeline pipeline);
 void replay_track_vkGetRayTracingShaderGroupHandlesKHR(callback_context& cb, VkDevice device, VkPipeline pipeline, uint32_t firstGroup, uint32_t groupCount,

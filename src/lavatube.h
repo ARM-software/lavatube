@@ -321,6 +321,61 @@ struct trackedtensor : trackedobject
 	}
 };
 
+struct datagraph_pipeline_session_binding
+{
+	VkDataGraphPipelineSessionBindPointARM bind_point = VK_DATA_GRAPH_PIPELINE_SESSION_BIND_POINT_MAX_ENUM_ARM;
+	uint32_t object_index = CONTAINER_INVALID_INDEX;
+	memory_requirements reqs;
+	VkMemoryPropertyFlags memory_flags = 0;
+	VkDeviceMemory backing = VK_NULL_HANDLE;
+	VkDeviceSize offset = 0;
+	bool dedicated_allocation = false;
+
+	void self_test() const
+	{
+		assert(bind_point != VK_DATA_GRAPH_PIPELINE_SESSION_BIND_POINT_MAX_ENUM_ARM);
+		assert(object_index != CONTAINER_INVALID_INDEX);
+		if (reqs.requirements.size != 0) assert(reqs.requirements.alignment != 0);
+	}
+};
+
+struct trackeddatagraphpipelinesession : trackedobject
+{
+	using trackedobject::trackedobject; // inherit constructor
+	VkDataGraphPipelineSessionCreateFlagsARM flags = UINT64_MAX; // 64bit flag
+	uint32_t pipeline_index = CONTAINER_INVALID_INDEX;
+	std::vector<datagraph_pipeline_session_binding> bindings;
+
+	datagraph_pipeline_session_binding& get_binding(VkDataGraphPipelineSessionBindPointARM bind_point, uint32_t object_index)
+	{
+		for (auto& binding : bindings)
+		{
+			if (binding.bind_point == bind_point && binding.object_index == object_index) return binding;
+		}
+		bindings.push_back({ bind_point, object_index });
+		return bindings.back();
+	}
+
+	const datagraph_pipeline_session_binding* find_binding(VkDataGraphPipelineSessionBindPointARM bind_point, uint32_t object_index) const
+	{
+		for (const auto& binding : bindings)
+		{
+			if (binding.bind_point == bind_point && binding.object_index == object_index) return &binding;
+		}
+		return nullptr;
+	}
+
+	void self_test() const
+	{
+		static_assert(offsetof(trackeddatagraphpipelinesession, magic) == 0, "ICD loader magic must be at offset zero!");
+		assert(flags != UINT64_MAX);
+		assert(pipeline_index != CONTAINER_INVALID_INDEX);
+		assert(object_type == VK_OBJECT_TYPE_DATA_GRAPH_PIPELINE_SESSION_ARM);
+		for (const auto& binding : bindings) binding.self_test();
+		trackedobject::self_test();
+	}
+};
+
 struct shader_stage
 {
 	uint32_t index = CONTAINER_INVALID_INDEX; // our position in our local array of stages

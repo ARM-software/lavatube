@@ -154,7 +154,8 @@ trace_post_calls = [ 'vkCreateInstance', 'vkCreateDevice', 'vkDestroyInstance', 
 		'vkGetPhysicalDeviceMemoryProperties2', 'vkGetDeviceImageSparseMemoryRequirementsKHR', 'vkGetDeviceImageSparseMemoryRequirements',
 		'vkCreateShaderModule', 'vkGetBufferDeviceAddress', 'vkGetBufferDeviceAddressKHR', 'vkGetBufferDeviceAddressEXT',
 		'vkGetAccelerationStructureDeviceAddressKHR', 'vkCmdBindDescriptorSets2KHR', 'vkCmdBindDescriptorSets2', 'vkGetTensorMemoryRequirementsARM',
-		'vkBindTensorMemoryARM', 'vkSubmitDebugUtilsMessageEXT', 'vkGetPhysicalDeviceProperties2', 'vkGetPhysicalDeviceProperties2KHR',
+		'vkBindTensorMemoryARM', 'vkGetDataGraphPipelineSessionMemoryRequirementsARM', 'vkBindDataGraphPipelineSessionMemoryARM',
+		'vkSubmitDebugUtilsMessageEXT', 'vkGetPhysicalDeviceProperties2', 'vkGetPhysicalDeviceProperties2KHR',
 		'vkGetPhysicalDeviceMemoryProperties2KHR' ]
 validate_funcs(trace_post_calls)
 skip_post_calls = [ 'vkGetQueryPoolResults', 'vkGetPhysicalDeviceXcbPresentationSupportKHR' ]
@@ -181,7 +182,8 @@ trackable_type_map_general = { 'VkBuffer': 'trackedbuffer', 'VkImage': 'trackedi
 	'VkDevice': 'trackeddevice', 'VkFramebuffer': 'trackedframebuffer', 'VkRenderPass': 'trackedrenderpass', 'VkQueue': 'trackedqueue', 'VkPhysicalDevice': 'trackedphysicaldevice',
 	'VkShaderModule': 'trackedshadermodule', 'VkAccelerationStructureKHR': 'trackedaccelerationstructure', 'VkPipelineLayout': 'trackedpipelinelayout',
 	'VkDescriptorSetLayout': 'trackeddescriptorsetlayout', 'VkTensorARM': 'trackedtensor', 'VkDescriptorUpdateTemplate': 'trackeddescriptorupdatetemplate', 'VkShaderEXT': 'trackedshaderobject',
-	'VkIndirectExecutionSetEXT': 'trackedindirectexecutionset', 'VkIndirectCommandsLayoutEXT': 'trackedindirectcommandslayout', 'VkSurfaceKHR': 'trackedsurface' }
+	'VkIndirectExecutionSetEXT': 'trackedindirectexecutionset', 'VkIndirectCommandsLayoutEXT': 'trackedindirectcommandslayout', 'VkSurfaceKHR': 'trackedsurface',
+	'VkDataGraphPipelineSessionARM': 'trackeddatagraphpipelinesession' }
 trackable_type_map_trace = trackable_type_map_general.copy()
 trackable_type_map_trace.update({ 'VkCommandBuffer': 'trackedcmdbuffer_trace', 'VkSwapchainKHR': 'trackedswapchain', 'VkDescriptorSet': 'trackeddescriptorset_trace',
 	'VkEvent': 'trackedevent_trace', 'VkDescriptorPool': 'trackeddescriptorpool_trace', 'VkCommandPool': 'trackedcommandpool_trace' })

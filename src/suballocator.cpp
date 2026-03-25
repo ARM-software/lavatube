@@ -29,11 +29,14 @@ struct suballocation
 		VkImage image;
 		VkBuffer buffer;
 		VkTensorARM tensor;
+		VkDataGraphPipelineSessionARM datagraphpipelinesession;
 	} handle;
 	VkDeviceSize size = 0;
 	VkDeviceSize offset = 0;
 	VkDeviceSize alignment = 0;
 	uint32_t index = 0;
+	VkDataGraphPipelineSessionBindPointARM bind_point = VK_DATA_GRAPH_PIPELINE_SESSION_BIND_POINT_MAX_ENUM_ARM;
+	uint32_t object_index = CONTAINER_INVALID_INDEX;
 };
 
 struct heap
@@ -70,6 +73,13 @@ struct lookup
 	lookup() {}
 };
 
+struct datagraph_lookup
+{
+	VkDataGraphPipelineSessionBindPointARM bind_point = VK_DATA_GRAPH_PIPELINE_SESSION_BIND_POINT_MAX_ENUM_ARM;
+	uint32_t object_index = CONTAINER_INVALID_INDEX;
+	lookup loc;
+};
+
 struct suballocator_private
 {
 	VkDevice device = VK_NULL_HANDLE;
@@ -81,6 +91,7 @@ struct suballocator_private
 	std::vector<lookup> image_lookup;
 	std::vector<lookup> buffer_lookup;
 	std::vector<lookup> tensor_lookup;
+	std::vector<std::vector<datagraph_lookup>> datagraphpipelinesession_lookup;
 	/// Does this device have the an annoying optimal-to-linear padding requirement? If so, put optimal and linear objects in different memory heaps
 	bool allow_mixed_tiling = true;
 	uint32_t max_allocations = 0;
@@ -187,7 +198,8 @@ suballocator::~suballocator()
 	delete priv;
 }
 
-void suballocator::create(VkPhysicalDevice physicaldevice, VkDevice device, std::vector<trackedimage>& images, std::vector<trackedbuffer>& buffers, std::vector<trackedtensor>& tensors, bool run)
+void suballocator::create(VkPhysicalDevice physicaldevice, VkDevice device, std::vector<trackedimage>& images, std::vector<trackedbuffer>& buffers,
+	std::vector<trackedtensor>& tensors, std::vector<trackeddatagraphpipelinesession>& sessions, bool run)
 {
 	// Step 1 - Initialize internal state
 
@@ -196,6 +208,7 @@ void suballocator::create(VkPhysicalDevice physicaldevice, VkDevice device, std:
 	priv->image_lookup.resize(images.size());
 	priv->buffer_lookup.resize(buffers.size());
 	priv->tensor_lookup.resize(tensors.size());
+	priv->datagraphpipelinesession_lookup.resize(sessions.size());
 	memset(&priv->memory_properties, 0, sizeof(priv->memory_properties));
 	if (p__suballocator_heap_size != -1) priv->min_heap_size = p__suballocator_heap_size;
 	assert(priv->memory_properties.memoryTypeCount == 0);
@@ -303,9 +316,9 @@ suballoc_location suballocator_private::allocate(uint16_t tid, uint32_t memoryTy
 	flaginfo.deviceMask = 0; // TBD
 	if (dedicated)
 	{
-		flaginfo.pNext = &dedinfo;
 		if (s.type == VK_OBJECT_TYPE_BUFFER)
 		{
+			flaginfo.pNext = &dedinfo;
 			dedinfo.buffer = s.handle.buffer;
 		}
 		else if (s.type == VK_OBJECT_TYPE_TENSOR_ARM)
@@ -313,9 +326,14 @@ suballoc_location suballocator_private::allocate(uint16_t tid, uint32_t memoryTy
 			tensorded.tensor = s.handle.tensor;
 			flaginfo.pNext = &tensorded;
 		}
+		else if (s.type == VK_OBJECT_TYPE_DATA_GRAPH_PIPELINE_SESSION_ARM)
+		{
+			flaginfo.pNext = nullptr;
+		}
 		else
 		{
 			assert(s.type == VK_OBJECT_TYPE_IMAGE);
+			flaginfo.pNext = &dedinfo;
 			dedinfo.image = s.handle.image;
 		}
 		info.allocationSize = s.size;
@@ -477,6 +495,30 @@ void suballocator_private::bind(heap& h, const suballocation& s)
 		DLOG3("adding tensor=%p|%u heap=%p size=%lu off=%lu mem=%p alignment=%lu", (void*)s.handle.tensor, s.index, &h, (unsigned long)s.size,
 		      (unsigned long)s.offset, (void*)h.mem, (unsigned long)s.alignment);
 	}
+	else if (s.type == VK_OBJECT_TYPE_DATA_GRAPH_PIPELINE_SESSION_ARM)
+	{
+		if (s.index >= datagraphpipelinesession_lookup.size())
+		{
+			SUBALLOC_ABORT(this, "Data graph pipeline session index %u out of range (lookup size=%zu)", s.index, datagraphpipelinesession_lookup.size());
+		}
+		auto& session_lookup = datagraphpipelinesession_lookup.at(s.index);
+		for (const auto& entry : session_lookup)
+		{
+			if (entry.bind_point == s.bind_point && entry.object_index == s.object_index)
+			{
+				SUBALLOC_ABORT(this, "Duplicate data graph pipeline session binding for session=%u bindPoint=%u objectIndex=%u",
+					s.index, (unsigned)s.bind_point, s.object_index);
+			}
+		}
+		datagraph_lookup entry;
+		entry.bind_point = s.bind_point;
+		entry.object_index = s.object_index;
+		entry.loc = lookup(&h, s.offset, s.size);
+		session_lookup.push_back(entry);
+		DLOG3("adding data graph session=%p|%u bindPoint=%u objectIndex=%u heap=%p size=%lu off=%lu mem=%p alignment=%lu",
+		      (void*)s.handle.datagraphpipelinesession, s.index, (unsigned)s.bind_point, s.object_index, &h, (unsigned long)s.size,
+		      (unsigned long)s.offset, (void*)h.mem, (unsigned long)s.alignment);
+	}
 	else
 	{
 		assert(s.type == VK_OBJECT_TYPE_BUFFER);
@@ -508,6 +550,47 @@ suballoc_location suballocator::add_trackedobject(uint16_t tid, uint64_t native,
 		return priv->allocate(tid, memoryTypeIndex, s, memory_flags, data.tiling, true, data.reqs.allocate_flags);
 	}
 	auto r = priv->suballocate(tid, memoryTypeIndex, s, memory_flags, data.tiling, data.reqs.allocate_flags);
+	assert(r.offset == s.offset);
+	return r;
+}
+
+suballoc_location suballocator::add_datagraphpipelinesession(uint16_t tid, uint64_t native, trackeddatagraphpipelinesession& data,
+	VkDataGraphPipelineSessionBindPointARM bind_point, uint32_t object_index)
+{
+	datagraph_pipeline_session_binding& binding = data.get_binding(bind_point, object_index);
+	if (binding.reqs.requirements.alignment == 0)
+	{
+		SUBALLOC_ABORT(priv, "Missing data graph pipeline session memory requirements for session=%u bindPoint=%u objectIndex=%u",
+			data.index, (unsigned)bind_point, object_index);
+	}
+
+	if (!binding.dedicated_allocation && binding.reqs.dedicated.requiresDedicatedAllocation == VK_TRUE)
+	{
+		binding.dedicated_allocation = true;
+	}
+	else if (!binding.dedicated_allocation && binding.reqs.dedicated.prefersDedicatedAllocation == VK_TRUE && priv->max_allocations)
+	{
+		binding.dedicated_allocation = true;
+		priv->max_allocations--;
+	}
+
+	const VkMemoryPropertyFlags memory_flags = prune_memory_flags(binding.memory_flags);
+	binding.reqs.memory_flags = binding.memory_flags;
+	const uint32_t memoryTypeIndex = priv->get_device_memory_type(binding.reqs.requirements.memoryTypeBits, memory_flags);
+	suballocation s;
+	s.type = VK_OBJECT_TYPE_DATA_GRAPH_PIPELINE_SESSION_ARM;
+	s.handle.datagraphpipelinesession = (VkDataGraphPipelineSessionARM)native;
+	s.size = binding.reqs.requirements.size;
+	s.offset = 0;
+	s.index = data.index;
+	s.alignment = binding.reqs.requirements.alignment;
+	s.bind_point = bind_point;
+	s.object_index = object_index;
+	if (binding.dedicated_allocation)
+	{
+		return priv->allocate(tid, memoryTypeIndex, s, memory_flags, TILING_LINEAR, true, binding.reqs.allocate_flags);
+	}
+	auto r = priv->suballocate(tid, memoryTypeIndex, s, memory_flags, TILING_LINEAR, binding.reqs.allocate_flags);
 	assert(r.offset == s.offset);
 	return r;
 }
@@ -582,6 +665,22 @@ void suballocator::free_tensor(uint32_t tensor_index)
 	}
 }
 
+void suballocator::free_datagraphpipelinesession(uint32_t session_index)
+{
+	if (session_index == CONTAINER_NULL_VALUE) return;
+	DLOG3("deleting data graph pipeline session=%u", session_index);
+	auto& session_lookup = priv->datagraphpipelinesession_lookup.at(session_index);
+	for (auto& entry : session_lookup)
+	{
+		if (entry.loc.home)
+		{
+			entry.loc.home->deletes.push_back(entry.loc.offset);
+			entry.loc.home = nullptr;
+		}
+	}
+	session_lookup.clear();
+}
+
 suballoc_location suballocator::find_image_memory(uint32_t image_index) const
 {
 	lookup& l = priv->image_lookup.at(image_index);
@@ -609,6 +708,23 @@ suballoc_location suballocator::find_tensor_memory(uint32_t tensor_index) const
 	return { l.home->mem, l.offset, l.size, needs_init, priv->needs_flush(l.home->memoryTypeIndex), l.home->mapped ? l.home->mapped + l.offset : nullptr };
 }
 
+suballoc_location suballocator::find_datagraphpipelinesession_memory(uint32_t session_index, VkDataGraphPipelineSessionBindPointARM bind_point, uint32_t object_index) const
+{
+	auto& session_lookup = priv->datagraphpipelinesession_lookup.at(session_index);
+	for (auto& entry : session_lookup)
+	{
+		if (entry.bind_point != bind_point || entry.object_index != object_index) continue;
+		lookup& l = entry.loc;
+		if (!l.home) SUBALLOC_ABORT(priv, "Data graph pipeline session %u bindPoint=%u objectIndex=%u is missing its memory!",
+			session_index, (unsigned)bind_point, object_index);
+		const bool needs_init = !l.initialized;
+		l.initialized = true;
+		return { l.home->mem, l.offset, l.size, needs_init, priv->needs_flush(l.home->memoryTypeIndex), l.home->mapped ? l.home->mapped + l.offset : nullptr };
+	}
+	SUBALLOC_ABORT(priv, "Failed to find data graph pipeline session %u bindPoint=%u objectIndex=%u", session_index, (unsigned)bind_point, object_index);
+	return {};
+}
+
 void suballocator::destroy()
 {
 	for (heap& h : priv->heaps)
@@ -625,6 +741,7 @@ void suballocator::destroy()
 	priv->image_lookup.clear();
 	priv->buffer_lookup.clear();
 	priv->tensor_lookup.clear();
+	priv->datagraphpipelinesession_lookup.clear();
 	for (auto v : priv->virtualswapmemory)
 	{
 		wrap_vkFreeMemory(priv->device, v, nullptr);
@@ -647,6 +764,16 @@ void suballocator_private::suballoc_print(FILE* fp)
 	{
 		if (l.home == nullptr && l.size == 0) continue;
 		fprintf(fp, "\t%d: home=%p offset=%lu size=%lu\n", i++, l.home, (unsigned long)l.offset, (unsigned long)l.size);
+	}
+	fprintf(fp, "Data graph pipeline sessions:\n");
+	i = 0; for (const auto& session_lookup : datagraphpipelinesession_lookup)
+	{
+		for (const auto& entry : session_lookup)
+		{
+			if (entry.loc.home == nullptr && entry.loc.size == 0) continue;
+			fprintf(fp, "\t%d: bindPoint=%u objectIndex=%u home=%p offset=%lu size=%lu\n", i++, (unsigned)entry.bind_point, entry.object_index,
+			        entry.loc.home, (unsigned long)entry.loc.offset, (unsigned long)entry.loc.size);
+		}
 	}
 	fprintf(fp, "Heaps:\n");
 	for (const heap& h : heaps)
@@ -683,7 +810,8 @@ int suballocator::self_test() const
 			used += it->size;
 			prev_end = it->offset + it->size;
 			//assert(it->size > 0); // TBD re-enable this test once we can check that it isn't a swapchain image, ie rely on it->is_swapchain_image
-			assert(it->type == VK_OBJECT_TYPE_IMAGE || it->type == VK_OBJECT_TYPE_BUFFER || it->type == VK_OBJECT_TYPE_TENSOR_ARM);
+			assert(it->type == VK_OBJECT_TYPE_IMAGE || it->type == VK_OBJECT_TYPE_BUFFER || it->type == VK_OBJECT_TYPE_TENSOR_ARM ||
+			       it->type == VK_OBJECT_TYPE_DATA_GRAPH_PIPELINE_SESSION_ARM);
 			if (deleted) continue; // looking this up in the lookup table is not valid in this case
 			// check that there isn't anything in the heaps that isn't also in the lookup tables
 			if (it->type == VK_OBJECT_TYPE_IMAGE)
@@ -697,6 +825,14 @@ int suballocator::self_test() const
 			else if (it->type == VK_OBJECT_TYPE_TENSOR_ARM)
 			{
 				suballoc_location loc = find_tensor_memory(it->index);
+				assert(loc.memory == h.mem);
+				assert(loc.offset == it->offset);
+				assert(loc.size == it->size);
+				(void)loc;
+			}
+			else if (it->type == VK_OBJECT_TYPE_DATA_GRAPH_PIPELINE_SESSION_ARM)
+			{
+				suballoc_location loc = find_datagraphpipelinesession_memory(it->index, it->bind_point, it->object_index);
 				assert(loc.memory == h.mem);
 				assert(loc.offset == it->offset);
 				assert(loc.size == it->size);
@@ -762,5 +898,25 @@ void suballocator_private::self_test() const
 		}
 		assert(found);
 		(void)found;
+	}
+	for (const auto& session_lookup : datagraphpipelinesession_lookup)
+	{
+		for (const auto& entry : session_lookup)
+		{
+			const lookup& l = entry.loc;
+			if (!l.home) continue;
+			assert(l.size != 0);
+			bool found = false;
+			for (auto it = l.home->subs.cbegin(); it != l.home->subs.cend(); ++it)
+			{
+				if (it->offset == l.offset && it->size == l.size && it->type == VK_OBJECT_TYPE_DATA_GRAPH_PIPELINE_SESSION_ARM &&
+				    it->bind_point == entry.bind_point && it->object_index == entry.object_index)
+				{
+					found = true;
+				}
+			}
+			assert(found);
+			(void)found;
+		}
 	}
 }

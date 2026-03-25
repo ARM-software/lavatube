@@ -23,6 +23,7 @@ struct trackedobject;
 struct trackedimage;
 struct trackedtensor;
 struct trackedbuffer;
+struct trackeddatagraphpipelinesession;
 
 struct suballoc_metrics
 {
@@ -37,7 +38,8 @@ struct suballocator
 {
 	/// Call this when our parent device object is created, and before calling any other suballoc function. Set `run` to false if we are not actually running the API, but instead
 	/// doing some post-processing.
-	void create(VkPhysicalDevice physicaldevice, VkDevice device, std::vector<trackedimage>& images, std::vector<trackedbuffer>& buffers, std::vector<trackedtensor>& tensors, bool run);
+	void create(VkPhysicalDevice physicaldevice, VkDevice device, std::vector<trackedimage>& images, std::vector<trackedbuffer>& buffers,
+		std::vector<trackedtensor>& tensors, std::vector<trackeddatagraphpipelinesession>& sessions, bool run);
 
 	/// Call when our parent device is destroyed.
 	void destroy();
@@ -52,6 +54,10 @@ struct suballocator
 	/// can modify. Other threads may access the objects stored inside subject to Vulkan external synchronization rules.
 	suballoc_location add_trackedobject(uint16_t tid, uint64_t native, const trackedobject& data);
 
+	/// Add a data graph pipeline session binding to our memory pools.
+	suballoc_location add_datagraphpipelinesession(uint16_t tid, uint64_t native, trackeddatagraphpipelinesession& data,
+		VkDataGraphPipelineSessionBindPointARM bind_point, uint32_t object_index);
+
 	/// Delete an image from our memory pools. Thread safe because the internal data structure is preallocated and never resized,
 	/// and deleted entries are never reused.
 	void free_image(uint32_t image_index);
@@ -61,6 +67,9 @@ struct suballocator
 
 	/// Delete a tensor from our memory pools. See above.
 	void free_tensor(uint32_t buffer_index);
+
+	/// Delete all bound memory objects for a data graph pipeline session.
+	void free_datagraphpipelinesession(uint32_t session_index);
 
 	/// Find an image based its index, and return its memory pool, offset and size. Thread safe as long as the usual Vulkan
 	/// external synchronization rules are followed in regards to object creation. Returns if an explicit flush is needed.
@@ -73,6 +82,8 @@ struct suballocator
 	suballoc_location find_buffer_memory(uint32_t buffer_index) const;
 
 	suballoc_location find_tensor_memory(uint32_t tensor_index) const;
+
+	suballoc_location find_datagraphpipelinesession_memory(uint32_t session_index, VkDataGraphPipelineSessionBindPointARM bind_point, uint32_t object_index) const;
 
 	/// Check that our internal structures are internally consistent and abort if not. (This is NOT thread-safe!)
 	int self_test() const;
