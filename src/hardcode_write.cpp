@@ -490,18 +490,6 @@ static void trace_post_vkBindBufferMemory2KHR(lava_file_writer& writer, VkResult
 	trace_post_vkBindBufferMemory2(writer, result, device, bindInfoCount, pBindInfos);
 }
 
-static void copy_recorded_memory_requirements(memory_requirements& dst, const VkMemoryRequirements2* src)
-{
-	dst.requirements = src->memoryRequirements;
-	dst.allocate_flags = 0;
-	dst.dedicated = { VK_STRUCTURE_TYPE_MEMORY_DEDICATED_REQUIREMENTS, nullptr };
-	if (const auto* info = (const VkMemoryDedicatedRequirements*)find_extension(src, VK_STRUCTURE_TYPE_MEMORY_DEDICATED_REQUIREMENTS))
-	{
-		dst.dedicated.prefersDedicatedAllocation = info->prefersDedicatedAllocation;
-		dst.dedicated.requiresDedicatedAllocation = info->requiresDedicatedAllocation;
-	}
-}
-
 static void trace_post_vkGetTensorMemoryRequirementsARM(lava_file_writer& writer, VkDevice device, const VkTensorMemoryRequirementsInfoARM* pInfo, VkMemoryRequirements2* pMemoryRequirements)
 {
 	auto* tensor_data = writer.parent->records.VkTensorARM_index.at(pInfo->tensor);

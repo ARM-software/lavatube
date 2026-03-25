@@ -219,18 +219,6 @@ static bool create_internal_buffer(VkDevice device, VkPhysicalDevice physical_de
 	return true;
 }
 
-static void copy_recorded_memory_requirements(memory_requirements& dst, const VkMemoryRequirements2* src)
-{
-	dst.requirements = src->memoryRequirements;
-	dst.allocate_flags = 0;
-	dst.dedicated = { VK_STRUCTURE_TYPE_MEMORY_DEDICATED_REQUIREMENTS, nullptr };
-	if (const auto* info = (const VkMemoryDedicatedRequirements*)find_extension(src, VK_STRUCTURE_TYPE_MEMORY_DEDICATED_REQUIREMENTS))
-	{
-		dst.dedicated.prefersDedicatedAllocation = info->prefersDedicatedAllocation;
-		dst.dedicated.requiresDedicatedAllocation = info->requiresDedicatedAllocation;
-	}
-}
-
 static uint64_t debug_object_lookup(VkDebugReportObjectTypeEXT type, uint32_t index)
 {
 	switch (type)

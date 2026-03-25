@@ -173,8 +173,11 @@ int STOI(const std::string& value) __attribute__((pure));
 static inline std::string version_to_string(uint32_t v) { return _to_string(VK_VERSION_MAJOR(v)) + "." + _to_string(VK_VERSION_MINOR(v)) + "." + _to_string(VK_VERSION_PATCH(v)); }
 const char* errorString(const VkResult errorCode);
 
+struct memory_requirements;
+
 void check_retval(VkResult stored_retval, VkResult retval);
 uint64_t host_image_copy_size(VkFormat format, const VkImageSubresourceLayers* subresource, const VkExtent3D* extent, uint32_t memory_row_length, uint32_t memory_image_height);
+void copy_recorded_memory_requirements(memory_requirements& dst, const VkMemoryRequirements2* src);
 
 static inline bool is_blackhole_mode() { return p__blackhole; }
 static inline bool is_debug() { return p__debug_level; }

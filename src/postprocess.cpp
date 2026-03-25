@@ -12,17 +12,6 @@
 #pragma GCC diagnostic ignored "-Wunused-but-set-variable"
 #endif
 
-static void copy_recorded_memory_requirements(memory_requirements& dst, const VkMemoryRequirements2* src)
-{
-	if (!src) return;
-	dst.requirements = src->memoryRequirements;
-	if (const auto* info = (const VkMemoryDedicatedRequirements*)find_extension(src, VK_STRUCTURE_TYPE_MEMORY_DEDICATED_REQUIREMENTS))
-	{
-		dst.dedicated.prefersDedicatedAllocation = info->prefersDedicatedAllocation;
-		dst.dedicated.requiresDedicatedAllocation = info->requiresDedicatedAllocation;
-	}
-}
-
 static void handle_VkWriteDescriptorSets(uint32_t descriptorWriteCount, const VkWriteDescriptorSet* pDescriptorWrites, bool clear)
 {
 	(void)clear;

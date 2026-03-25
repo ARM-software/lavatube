@@ -655,7 +655,7 @@ class parameter(spec.base_parameter):
 			elif self.name == 'memoryOffset':
 				z.do('%s = loc.offset;' % varname)
 		elif self.funcname in ['vkBindImageMemory', 'vkBindBufferMemory', 'VkBindBufferMemoryInfo', 'VkBindBufferMemoryInfoKHR', 'VkBindImageMemoryInfoKHR', 'VkBindImageMemoryInfo', 'VkBindTensorMemoryInfoARM']:
-			if self.name in ['image', 'buffer', 'tensor', 'session']:
+			if self.name in ['image', 'buffer', 'tensor']:
 				if self.funcname[0] == 'V': # is a struct type, commands have lowercase 'v'
 					z.do('const uint32_t device_index = index_to_VkDevice.index(reader.device);')
 				z.do('%s& %s = VkDevice_index.at(%s);' % (vk.trackable_type_map_replay['VkDevice'], totrackable('VkDevice'), toindex('VkDevice')))

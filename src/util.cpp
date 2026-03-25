@@ -1,4 +1,5 @@
 #include "util.h"
+#include "lavatube.h"
 #include "jsoncpp/json/writer.h"
 
 #include <string.h>
@@ -161,6 +162,18 @@ uint_fast16_t p__compression_level = get_env_int("LAVATUBE_COMPRESSION_LEVEL", 0
 uint_fast8_t p__sandbox_level = get_env_int("LAVATUBE_SANDBOX_LEVEL", 1);
 uint_fast8_t p__trust_host_flushes = get_env_int("LAVATUBE_TRUST_HOST_FLUSHING", 0); // disable active tracking
 int_fast32_t p__suballocator_heap_size = get_env_int("LAVATUBE_SUBALLOCATOR_HEAP_SIZE", -1);
+
+void copy_recorded_memory_requirements(memory_requirements& dst, const VkMemoryRequirements2* src)
+{
+	dst.requirements = src->memoryRequirements;
+	dst.allocate_flags = 0;
+	dst.dedicated = { VK_STRUCTURE_TYPE_MEMORY_DEDICATED_REQUIREMENTS, nullptr };
+	if (const auto* info = (const VkMemoryDedicatedRequirements*)find_extension(src, VK_STRUCTURE_TYPE_MEMORY_DEDICATED_REQUIREMENTS))
+	{
+		dst.dedicated.prefersDedicatedAllocation = info->prefersDedicatedAllocation;
+		dst.dedicated.requiresDedicatedAllocation = info->requiresDedicatedAllocation;
+	}
+}
 
 const char* errorString(const VkResult errorCode)
 {
