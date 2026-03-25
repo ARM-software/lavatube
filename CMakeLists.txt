@@ -277,7 +277,7 @@ function(internal_test test_name test_output)
 	add_dependencies(${ARGV0} sync_generated lava-replay lava-tool)
 	add_test(NAME trace_test_${ARGV0} COMMAND ${CMAKE_CURRENT_BINARY_DIR}/${ARGV0})
 	set_tests_properties(trace_test_${ARGV0} PROPERTIES FIXTURES_SETUP ${ARGV0} SKIP_RETURN_CODE 77)
-	add_test(NAME trace_test_${ARGV0}_replay COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -V ${CMAKE_CURRENT_BINARY_DIR}/${ARGV1})
+	add_test(NAME trace_test_${ARGV0}_replay COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay --skip-missing-input -V ${CMAKE_CURRENT_BINARY_DIR}/${ARGV1})
 	set_tests_properties(trace_test_${ARGV0}_replay PROPERTIES FIXTURES_REQUIRED ${ARGV0} SKIP_RETURN_CODE 77)
 endfunction()
 

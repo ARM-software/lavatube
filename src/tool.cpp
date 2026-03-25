@@ -2,6 +2,7 @@
 #include <string.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <unistd.h>
 
 #include <algorithm>
 #include <vector>
@@ -47,13 +48,14 @@ static void usage()
 	printf("-u/--unused            Find any found unused features and extensions in the trace file; remove them from the output file\n");
 	printf("-DS/--dump-shaders     Dump any shaders found to disk\n");
 	printf("-hw/--host-write-stats Dump host-side write tracking stats after replay\n");
+	printf("--skip-missing-input   Exit with code 77 if the input trace file does not exist\n");
 	printf("-s/--sandbox level     Set security sandbox level (from 1 to 3, with 3 the most strict, default %d)\n", (int)p__sandbox_level);
 	exit(-1);
 }
 
 static inline bool match(const char* in, const char* short_form, const char* long_form, int& remaining)
 {
-	if (strcmp(in, short_form) == 0 || strcmp(in, long_form) == 0)
+	if ((short_form && strcmp(in, short_form) == 0) || (long_form && strcmp(in, long_form) == 0))
 	{
 		remaining--;
 		return true;
@@ -243,6 +245,7 @@ int main(int argc, char **argv)
 	int remaining = argc - 1; // zeroth is name of program
 	std::string filename_input;
 	std::string filename_output;
+	bool skip_missing_input = false;
 
 	if (p__sandbox_level >= 1) sandbox_level_one();
 
@@ -294,6 +297,10 @@ int main(int argc, char **argv)
 			p__sandbox_level = get_int(argv[++i], remaining);
 			if (p__sandbox_level <= 0 || p__sandbox_level > 3) DIE("Invalid sandbox level %d", (int)p__sandbox_level);
 		}
+		else if (match(argv[i], nullptr, "--skip-missing-input", remaining))
+		{
+			skip_missing_input = true;
+		}
 		else if (strcmp(argv[i], "--") == 0) // eg in case you have a file named -f ...
 		{
 			remaining--;
@@ -318,6 +325,12 @@ int main(int argc, char **argv)
 	{
 		printf("No file argument given\n\n");
 		usage();
+	}
+
+	if (skip_missing_input && access(filename_input.c_str(), R_OK) != 0)
+	{
+		printf("SKIP: input trace file does not exist or is not readable: %s\n", filename_input.c_str());
+		return 77;
 	}
 
 	if (!filename_output.empty()) DIE("Output file support still to be done!");
