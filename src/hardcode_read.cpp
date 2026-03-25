@@ -1063,6 +1063,57 @@ void replay_callback_vkGetAccelerationStructureBuildSizesKHR(callback_context& c
 	cb.reader.pending_as_build_sizes.push_back(sizes);
 }
 
+static size_t descriptor_buffer_descriptor_size(VkPhysicalDevice physical_device, VkDescriptorType type)
+{
+	if (physical_device == VK_NULL_HANDLE) return 0;
+
+	VkPhysicalDeviceDescriptorBufferPropertiesEXT props = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_BUFFER_PROPERTIES_EXT, nullptr };
+	VkPhysicalDeviceProperties2 props2 = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2, &props };
+	wrap_vkGetPhysicalDeviceProperties2(physical_device, &props2);
+
+	switch (type)
+	{
+	case VK_DESCRIPTOR_TYPE_SAMPLER: return props.samplerDescriptorSize;
+	case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER: return props.combinedImageSamplerDescriptorSize;
+	case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE: return props.sampledImageDescriptorSize;
+	case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE: return props.storageImageDescriptorSize;
+	case VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER: return props.uniformTexelBufferDescriptorSize;
+	case VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER: return props.storageTexelBufferDescriptorSize;
+	case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER: return props.uniformBufferDescriptorSize;
+	case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER: return props.storageBufferDescriptorSize;
+	case VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT: return props.inputAttachmentDescriptorSize;
+	case VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR: return props.accelerationStructureDescriptorSize;
+	default: return 0;
+	}
+}
+
+void replay_callback_vkGetDescriptorEXT(callback_context& cb, VkDevice device, const VkDescriptorGetInfoEXT* pDescriptorInfo, size_t dataSize, void* pDescriptor)
+{
+	(void)pDescriptor;
+
+	if (!cb.reader.run || !pDescriptorInfo || device == VK_NULL_HANDLE) return;
+
+	VkPhysicalDevice physical_device = cb.reader.physicalDevice;
+	if (physical_device == VK_NULL_HANDLE)
+	{
+		const uint32_t device_index = index_to_VkDevice.index(device);
+		physical_device = VkDevice_index.at(device_index).physicalDevice;
+	}
+
+	size_t descriptor_size = descriptor_buffer_descriptor_size(physical_device, pDescriptorInfo->type);
+	if (descriptor_size == 0) descriptor_size = dataSize;
+	if (descriptor_size == 0) return;
+
+	descriptor_rewrite rewrite;
+	rewrite.type = pDescriptorInfo->type;
+	rewrite.bytes.resize(descriptor_size);
+	rewrite.source = cb.reader.current;
+	wrap_vkGetDescriptorEXT(device, pDescriptorInfo, descriptor_size, rewrite.bytes.data());
+
+	lava::lock_guard lock(sync_mutex);
+	cb.reader.parent->pending_descriptor_rewrites.push_back(std::move(rewrite));
+}
+
 void replay_callback_vkCreateBuffer(callback_context& cb, VkDevice device, const VkBufferCreateInfo* pCreateInfo,
 	const VkAllocationCallbacks* pAllocator, VkBuffer* pBuffer)
 {
@@ -2227,17 +2278,48 @@ static void translate_marked_offsets(lava_file_reader& reader, const VkMarkedOff
 	if (!markings->pOffsets || !markings->pMarkingTypes) return;
 	for (uint32_t i = 0; i < markings->count; i++)
 	{
-		if (markings->pMarkingTypes[i] != VK_MARKING_TYPE_DEVICE_ADDRESS_ARM) continue;
 		const uint64_t offset = markings->pOffsets[i];
-		assert(offset + sizeof(uint64_t) <= size); // extension does not allow offsets pointing outside of updated region
-		void* addr = (char*)ptr + offset;
-		uint64_t current = 0;
-		// Use memcpy to handle unaligned device address storage.
-		memcpy(&current, addr, sizeof(current));
-		const uint64_t newval = reader.parent->device_address_remapping.translate_address(current);
-		assert(newval != 0 || !reader.run);
-		DLOG("%u: Changing memory value at offset %lu from %lu to %lu", (unsigned)i, (unsigned long)offset, (unsigned long)current, (unsigned long)newval);
-		memcpy(addr, &newval, sizeof(newval));
+		switch (markings->pMarkingTypes[i])
+		{
+		case VK_MARKING_TYPE_DEVICE_ADDRESS_ARM:
+			{
+				assert(offset + sizeof(uint64_t) <= size); // extension does not allow offsets pointing outside of updated region
+				void* addr = (char*)ptr + offset;
+				uint64_t current = 0;
+				// Use memcpy to handle unaligned device address storage.
+				memcpy(&current, addr, sizeof(current));
+				const uint64_t newval = reader.parent->device_address_remapping.translate_address(current);
+				assert(newval != 0 || !reader.run);
+				DLOG("%u: Changing memory value at offset %lu from %lu to %lu", (unsigned)i, (unsigned long)offset, (unsigned long)current, (unsigned long)newval);
+				memcpy(addr, &newval, sizeof(newval));
+			}
+			break;
+		case VK_MARKING_TYPE_DESCRIPTOR_ARM:
+			{
+				const VkDescriptorType descriptor_type = markings->pSubTypes ? markings->pSubTypes[i].descriptorType : VK_DESCRIPTOR_TYPE_MAX_ENUM;
+				std::vector<uint8_t> descriptor_bytes;
+				{
+					lava::lock_guard lock(sync_mutex);
+					auto& queue = reader.parent->pending_descriptor_rewrites;
+					auto it = std::find_if(queue.begin(), queue.end(), [&](const descriptor_rewrite& candidate)
+					{
+						return candidate.type == descriptor_type;
+					});
+					if (it != queue.end())
+					{
+						descriptor_bytes = std::move(it->bytes);
+						queue.erase(it);
+					}
+				}
+				assert(!descriptor_bytes.empty() || !reader.run);
+				if (descriptor_bytes.empty()) break;
+				assert(offset + descriptor_bytes.size() <= size);
+				memcpy((char*)ptr + offset, descriptor_bytes.data(), descriptor_bytes.size());
+			}
+			break;
+		default:
+			break;
+		}
 	}
 }
 

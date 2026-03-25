@@ -471,7 +471,7 @@ class parameter(spec.base_parameter):
 				if self.type == 'VkPhysicalDevice':
 					if self.funcname == 'vkCreateDevice': z.do('if (reader.run) replay_initialize_vkCreateDevice(reader, physicaldevice_index);')
 					z.do('%s = selected_physical_device;' % varname)
-				elif self.type != 'VkDeviceMemory' and not self.funcname in vk.ignore_on_read:
+				elif self.type != 'VkDeviceMemory' and (not self.funcname in vk.ignore_on_read or self.type == 'VkDevice'):
 					z.do('%s = index_to_%s.at(%s);' % (varname, self.type, tmpname))
 		elif self.type == 'VkDeviceOrHostAddressKHR' or self.type == 'VkDeviceOrHostAddressConstKHR':
 			z.decl('uint64_t', 'stored_address')

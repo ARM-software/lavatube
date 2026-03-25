@@ -37,6 +37,7 @@ static void register_replay_callbacks()
 	CALLBACK(vkCreateAccelerationStructureKHR);
 	CALLBACK(vkSubmitDebugUtilsMessageEXT);
 	CALLBACK(vkGetAccelerationStructureBuildSizesKHR);
+	CALLBACK(vkGetDescriptorEXT);
 	CALLBACK(vkCreateDescriptorUpdateTemplate);
 	CALLBACK(vkCreateDescriptorUpdateTemplateKHR);
 	CALLBACK(vkGetDataGraphPipelineSessionMemoryRequirementsARM);

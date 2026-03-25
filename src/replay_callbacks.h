@@ -19,6 +19,7 @@ void replay_callback_vkSubmitDebugUtilsMessageEXT(callback_context& cb, VkInstan
 	VkDebugUtilsMessageTypeFlagsEXT messageTypes, const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData);
 void replay_callback_vkGetAccelerationStructureBuildSizesKHR(callback_context& cb, VkDevice device, VkAccelerationStructureBuildTypeKHR buildType,
 	const VkAccelerationStructureBuildGeometryInfoKHR* pBuildInfo, const uint32_t* pMaxPrimitiveCounts, VkAccelerationStructureBuildSizesInfoKHR* pSizeInfo);
+void replay_callback_vkGetDescriptorEXT(callback_context& cb, VkDevice device, const VkDescriptorGetInfoEXT* pDescriptorInfo, size_t dataSize, void* pDescriptor);
 void replay_callback_vkCreateDescriptorUpdateTemplate(callback_context& cb, VkDevice device, const VkDescriptorUpdateTemplateCreateInfo* pCreateInfo,
 	const VkAllocationCallbacks* pAllocator, VkDescriptorUpdateTemplate* pDescriptorUpdateTemplate);
 void replay_callback_vkCreateDescriptorUpdateTemplateKHR(callback_context& cb, VkDevice device, const VkDescriptorUpdateTemplateCreateInfo* pCreateInfo,
