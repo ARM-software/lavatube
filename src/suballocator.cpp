@@ -48,6 +48,7 @@ struct heap
 	VkDeviceSize total;
 	VkMemoryPropertyFlags flags;
 	VkMemoryAllocateFlags allocflags;
+	bool dedicated = false;
 	/// This one does not need to be concurrent safe, since each thread owns its own heap
 	/// and only it may iterate over and modify the allocations list.
 	std::list<suballocation> subs;
@@ -308,6 +309,7 @@ suballoc_location suballocator_private::allocate(uint16_t tid, uint32_t memoryTy
 {
 	heap h;
 	h.tid = tid;
+	h.dedicated = dedicated;
 	VkMemoryDedicatedAllocateInfoTensorARM tensorded = { VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO_TENSOR_ARM, nullptr };
 	VkMemoryDedicatedAllocateInfoKHR dedinfo = { VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO, nullptr };
 	VkMemoryAllocateFlagsInfo flaginfo = { VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_FLAGS_INFO, nullptr };
@@ -414,11 +416,30 @@ suballoc_location suballocator_private::suballocate(uint16_t tid, uint32_t memor
 				if (!erased) ++it;
 			}
 			h.deletes.clear();
+			if (h.dedicated && h.subs.empty() && h.mem != VK_NULL_HANDLE)
+			{
+				const VkDeviceSize total = h.total;
+				DLOG3("freeing retired dedicated allocation heap=%p mem=%p size=%lu", &h, (void*)h.mem, (unsigned long)total);
+				if (run)
+				{
+					if (h.mapped) wrap_vkUnmapMemory(device, h.mem);
+					wrap_vkFreeMemory(device, h.mem, nullptr);
+				}
+				else if (h.mem)
+				{
+					free(h.mem);
+				}
+				h.mem = VK_NULL_HANDLE;
+				h.mapped = nullptr;
+				h.free = 0;
+				h.total = 0;
+			}
 		}
 		// find suballocation
 		const bool requires_device_address = (allocflags & VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT_KHR) != 0;
 		const bool heap_has_device_address = (h.allocflags & VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT_KHR) != 0;
-		if (h.tid == tid && (flags & h.flags) == flags &&
+		if (h.mem != VK_NULL_HANDLE && !h.dedicated &&
+		    h.tid == tid && (flags & h.flags) == flags &&
 		    (!requires_device_address || heap_has_device_address) &&
 		    h.free >= s.size && h.memoryTypeIndex == memoryTypeIndex && (h.tiling == tiling || allow_mixed_tiling))
 		{
@@ -729,6 +750,7 @@ void suballocator::destroy()
 {
 	for (heap& h : priv->heaps)
 	{
+		if (h.mem == VK_NULL_HANDLE) continue;
 		if (priv->run)
 		{
 			if (h.mapped) wrap_vkUnmapMemory(priv->device, h.mem);

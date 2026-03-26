@@ -11,13 +11,14 @@
 #define VK_NO_PROTOTYPES
 #endif
 #include "vulkan/vulkan.h"
-#include "vk_wrapper_auto.h"
 #include "util.h"
 #include "rangetracking.h"
 #include "vulkan_ext.h"
 #include "containers.h"
-#include "util_auto.h"
-#include "tostring.h"
+
+#include "generated/util_auto.h"
+#include "generated/vk_wrapper_auto.h"
+#include "generated/tostring.h"
 
 #include <unordered_set>
 #include <list>

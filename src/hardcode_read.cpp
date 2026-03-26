@@ -135,6 +135,7 @@ static trackedbuffer* find_buffer_by_replay_address(VkDeviceAddress address, VkD
 	VkDeviceSize best_size = 0;
 	for (auto& buffer : VkBuffer_index)
 	{
+		if (!buffer.is_state(trackedobject::states::bound)) continue;
 		if (buffer.device_address == 0 || buffer.size == 0) continue;
 		if (address < buffer.device_address) continue;
 		const VkDeviceSize offset = address - buffer.device_address;
