@@ -2410,16 +2410,14 @@ static bool capture_clamp_mapped_flush_range(const VkMappedMemoryRange& range, c
 
 void trace_post_vkFlushMappedMemoryRanges(lava_file_writer& writer, VkResult result, VkDevice device, uint32_t memoryRangeCount, const VkMappedMemoryRange* pMemoryRanges)
 {
-	writer.parent->memory_mutex.lock();
+	lava::lock_guard guard(writer.parent->memory_mutex);
 	if (result != VK_SUCCESS)
 	{
 		WLOG("Ignoring vkFlushMappedMemoryRanges for capture bookkeeping after driver returned %s", errorString(result));
-		writer.parent->memory_mutex.unlock();
 		return;
 	}
 	if (!pMemoryRanges)
 	{
-		writer.parent->memory_mutex.unlock();
 		return;
 	}
 	const auto* device_data = writer.parent->records.VkDevice_index.at(device);
@@ -2488,7 +2486,6 @@ void trace_post_vkFlushMappedMemoryRanges(lava_file_writer& writer, VkResult res
 			}
 		}
 	}
-	writer.parent->memory_mutex.unlock();
 }
 
 void trace_pre_vkFreeMemory(VkDevice device, VkDeviceMemory memory, const VkAllocationCallbacks* pAllocator)
