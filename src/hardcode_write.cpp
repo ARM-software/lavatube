@@ -2294,6 +2294,8 @@ VKAPI_ATTR VkResult VKAPI_CALL trace_vkAssertBufferARM(VkDevice device, VkBuffer
 
 void trace_post_vkMapMemory(lava_file_writer& writer, VkResult result, VkDevice device, VkDeviceMemory memory, VkDeviceSize offset, VkDeviceSize size, VkMemoryMapFlags flags, void** ppData)
 {
+	if (result != VK_SUCCESS || !ppData || !*ppData) return;
+
 	writer.parent->memory_mutex.lock();
 	auto* memory_data = writer.parent->records.VkDeviceMemory_index.at(memory);
 	memory_data->ptr = (char*)*ppData;
@@ -2323,11 +2325,13 @@ void trace_post_vkMapMemory(lava_file_writer& writer, VkResult result, VkDevice 
 
 void trace_post_vkMapMemory2KHR(lava_file_writer& writer, VkResult result, VkDevice device, const VkMemoryMapInfoKHR* pMemoryMapInfo, void** ppData)
 {
+	if (!pMemoryMapInfo) return;
 	trace_post_vkMapMemory(writer, result, device, pMemoryMapInfo->memory, pMemoryMapInfo->offset, pMemoryMapInfo->size, pMemoryMapInfo->flags, ppData);
 }
 
 void trace_post_vkMapMemory2(lava_file_writer& writer, VkResult result, VkDevice device, const VkMemoryMapInfo* pMemoryMapInfo, void** ppData)
 {
+	if (!pMemoryMapInfo) return;
 	trace_post_vkMapMemory(writer, result, device, pMemoryMapInfo->memory, pMemoryMapInfo->offset, pMemoryMapInfo->size, pMemoryMapInfo->flags, ppData);
 }
 
@@ -2359,28 +2363,75 @@ void trace_post_vkUnmapMemory2(lava_file_writer& writer, VkResult result, VkDevi
 	trace_post_vkUnmapMemory2KHR(writer, result, device, pMemoryUnmapInfo);
 }
 
+static bool capture_clamp_mapped_flush_range(const VkMappedMemoryRange& range, const trackedmemory* memory_data, uint64_t& mapped_start, uint64_t& mapped_end)
+{
+	assert(memory_data);
+	if (memory_data->ptr == nullptr || memory_data->size == 0)
+	{
+		WLOG("Ignoring vkFlushMappedMemoryRanges for unmapped VkDeviceMemory[%u]", (unsigned)memory_data->index);
+		return false;
+	}
+
+	const uint64_t mapped_base = memory_data->offset;
+	const uint64_t mapped_limit = memory_data->offset + memory_data->size;
+	uint64_t requested_end = mapped_limit;
+	if (range.size != VK_WHOLE_SIZE)
+	{
+		requested_end = (range.size > UINT64_MAX - range.offset) ? UINT64_MAX : range.offset + range.size;
+	}
+
+	mapped_start = std::max<uint64_t>(range.offset, mapped_base);
+	mapped_end = std::min<uint64_t>(requested_end, mapped_limit);
+
+	if (range.offset < mapped_base || range.offset > mapped_limit || requested_end > mapped_limit)
+	{
+		WLOG("Clamping vkFlushMappedMemoryRanges for VkDeviceMemory[%u] from off=%llu size=%llu to off=%llu size=%llu because current map is off=%llu size=%llu",
+		     (unsigned)memory_data->index,
+		     (unsigned long long)range.offset,
+		     (range.size == VK_WHOLE_SIZE) ? (unsigned long long)VK_WHOLE_SIZE : (unsigned long long)range.size,
+		     (unsigned long long)mapped_start,
+		     (unsigned long long)(mapped_end > mapped_start ? mapped_end - mapped_start : 0),
+		     (unsigned long long)mapped_base,
+		     (unsigned long long)memory_data->size);
+	}
+
+	if (mapped_start >= mapped_end)
+	{
+		WLOG("Ignoring empty/out-of-range vkFlushMappedMemoryRanges for VkDeviceMemory[%u] off=%llu size=%llu with current map off=%llu size=%llu",
+		     (unsigned)memory_data->index,
+		     (unsigned long long)range.offset,
+		     (range.size == VK_WHOLE_SIZE) ? (unsigned long long)VK_WHOLE_SIZE : (unsigned long long)range.size,
+		     (unsigned long long)mapped_base,
+		     (unsigned long long)memory_data->size);
+		return false;
+	}
+	return true;
+}
+
 void trace_post_vkFlushMappedMemoryRanges(lava_file_writer& writer, VkResult result, VkDevice device, uint32_t memoryRangeCount, const VkMappedMemoryRange* pMemoryRanges)
 {
 	writer.parent->memory_mutex.lock();
-	assert(result == VK_SUCCESS);
+	if (result != VK_SUCCESS)
+	{
+		WLOG("Ignoring vkFlushMappedMemoryRanges for capture bookkeeping after driver returned %s", errorString(result));
+		writer.parent->memory_mutex.unlock();
+		return;
+	}
+	if (!pMemoryRanges)
+	{
+		writer.parent->memory_mutex.unlock();
+		return;
+	}
 	const auto* device_data = writer.parent->records.VkDevice_index.at(device);
 	// The memory must be memory mapped
 	for (unsigned i = 0; i < memoryRangeCount; i++)
 	{
 		const VkMappedMemoryRange& v = pMemoryRanges[i];
 		auto* memory_data = writer.parent->records.VkDeviceMemory_index.at(v.memory);
-		assert(memory_data->ptr != nullptr && memory_data->size != 0); // the memory must be memory mapped
-		const uint64_t mapped_base = memory_data->offset;
-		const uint64_t mapped_limit = memory_data->offset + memory_data->size;
-		assert(v.offset >= mapped_base && v.offset <= mapped_limit);
-		VkDeviceSize size = v.size;
-		if (v.size == VK_WHOLE_SIZE)
-		{
-			size = mapped_limit - v.offset;
-		}
-		assert(v.offset + size <= mapped_limit);
-		const uint64_t mapped_start = v.offset;
-		const uint64_t mapped_end = mapped_start + size;
+		uint64_t mapped_start = 0;
+		uint64_t mapped_end = 0;
+		if (!capture_clamp_mapped_flush_range(v, memory_data, mapped_start, mapped_end)) continue;
+		const VkDeviceSize size = mapped_end - mapped_start;
 		memory_data->exposed.add_os(mapped_start, size);
 		// Handle VK_ARM_trace_helpers
 		VkMarkedOffsetsARM* ar = (VkMarkedOffsetsARM*)find_extension(&v, VK_STRUCTURE_TYPE_MARKED_OFFSETS_ARM);
@@ -2411,6 +2462,11 @@ void trace_post_vkFlushMappedMemoryRanges(lava_file_writer& writer, VkResult res
 					for (uint32_t mark_i = 0; mark_i < ar->count; mark_i++)
 					{
 						const uint64_t mark_abs = v.offset + ar->pOffsets[mark_i];
+						if (mark_abs < mapped_start || mark_abs >= mapped_end)
+						{
+							WLOG("VkMarkedOffsetsARM entry %u ignored for being out of bounds!", (unsigned)mark_i);
+							continue;
+						}
 						if (mark_abs < object_data->offset || mark_abs >= object_data->offset + object_data->size) continue;
 						adjusted_offsets.push_back(mark_abs - object_data->offset);
 						adjusted_types.push_back(ar->pMarkingTypes[mark_i]);
@@ -2426,8 +2482,9 @@ void trace_post_vkFlushMappedMemoryRanges(lava_file_writer& writer, VkResult res
 					}
 				}
 				uint64_t written = write_out_object(writer, device_data, object_data, cloneptr, changedptr, start, end - start, ar_use);
-				ILOG("vkFlushMappedMemoryRanges[%u] flushing %s[%u] obj(%lu to %lu) object memory offset=%lu object size=%lu flush(off=%u, size=%u)", i, pretty_print_VkObjectType(object_data->object_type),
-				     (unsigned)object_data->index, (unsigned long)start, (unsigned long)end, (unsigned long)object_data->offset, (unsigned long)object_data->size, (unsigned)v.offset, (unsigned)v.size);
+				ILOG("vkFlushMappedMemoryRanges[%u] flushing %s[%u] obj(%lu to %lu) object memory offset=%lu object size=%lu flush(off=%u, size=%u) effective(off=%llu, size=%llu)", i, pretty_print_VkObjectType(object_data->object_type),
+				     (unsigned)object_data->index, (unsigned long)start, (unsigned long)end, (unsigned long)object_data->offset, (unsigned long)object_data->size, (unsigned)v.offset, (unsigned)v.size,
+				     (unsigned long long)mapped_start, (unsigned long long)size);
 			}
 		}
 	}
