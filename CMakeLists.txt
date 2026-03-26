@@ -535,8 +535,8 @@ function(layer_test test_name test_exe)
 		ENVIRONMENT "LAVATUBE_VIRTUAL_QUEUES=1;LAVATUBE_DESTINATION=vulkan_${ARGV0}_simulation;VK_LAYER_PATH=${CMAKE_CURRENT_BINARY_DIR}/implicit_layer.d;VK_INSTANCE_LAYERS=VK_LAYER_ARM_lavatube;LD_LIBRARY_PATH=${CMAKE_CURRENT_BINARY_DIR}/implicit_layer.d"
 		SKIP_RETURN_CODE 77
 	)
-	add_test(NAME layer_test_${ARGV0}_validate COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-tool -V vulkan_${ARGV0}.vk)
-	set_tests_properties(layer_test_${ARGV0}_validate PROPERTIES FIXTURES_REQUIRED ${ARGV0})
+	add_test(NAME layer_test_${ARGV0}_validate COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-tool -V --skip-missing-input vulkan_${ARGV0}.vk)
+	set_tests_properties(layer_test_${ARGV0}_validate PROPERTIES SKIP_RETURN_CODE 77 FIXTURES_REQUIRED ${ARGV0})
 	add_test(NAME layer_test_${ARGV0}_replay COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -V vulkan_${ARGV0}.vk)
 	set_tests_properties(layer_test_${ARGV0}_replay PROPERTIES FIXTURES_REQUIRED ${ARGV0})
 	add_test(NAME layer_test_${ARGV0}_replay_cpu COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -C -V vulkan_${ARGV0}.vk)
