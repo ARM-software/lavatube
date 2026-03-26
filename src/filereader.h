@@ -174,6 +174,9 @@ public:
 	/// Start measuring worker thread CPU usage
 	void start_measurement();
 
+	/// Bind our API runner CPU accounting to the current thread.
+	void bind_runner_thread();
+
 	/// Return spent CPU time in microseconds in worker thread
 	void stop_measurement(uint64_t& worker, uint64_t& runner);
 
@@ -189,14 +192,17 @@ private:
 	/// Name of compressed input file
 	std::string mFilename;
 	/// Start CPU usage for our worker thread
-	struct timespec worker_cpu_usage;
+	struct timespec worker_cpu_usage = {};
 	/// Start CPU usage for our runner thread
-	struct timespec runner_cpu_usage;
-	std::atomic_bool measurement_stopped{ false };
+	struct timespec runner_cpu_usage = {};
+	std::thread::native_handle_type runner_thread = {};
+	std::atomic_bool runner_thread_bound{ false };
+	std::atomic_bool measurement_stopped{ true };
 	uint64_t cached_worker_time = 0;
 	uint64_t cached_runner_time = 0;
 	/// Stop CPU usage for our worker thread
-	struct timespec stop_worker_cpu_usage;
+	struct timespec stop_worker_cpu_usage = {};
+	std::atomic_bool worker_measurement_ready{ false };
 	/// Amount of memory mapped compressed data
 	uint64_t mapped_size = 0;
 	/// Checkpoint position - from where we have last started reading, but need to preserve data from. Only updated from main thread.

@@ -122,6 +122,8 @@ static void replay_thread(lava_reader* replayer, int thread_id)
 {
 	if (p__sandbox_level >= 2) sandbox_level_three();
 	lava_file_reader& t = replayer->file_reader(thread_id);
+	t.bind_runner_thread();
+	t.start_measurement();
 	uint8_t instrtype;
 	assert(t.run == false);
 	if (verbose)

@@ -128,9 +128,16 @@ void lava_reader::finalize(bool terminate)
 	{
 		ELOG("Failed to get process CPU usage at stop time: %s", strerror(errno));
 	}
-	assert(stop_process_cpu_usage.tv_sec >= process_cpu_usage.tv_sec);
-	const uint64_t process_time = diff_timespec(&stop_process_cpu_usage, &process_cpu_usage);
-	ILOG("CPU time spent in ms - readhead workers %lu, API runners %lu, full process %lu", (long unsigned)worker, (long unsigned)runner, (long unsigned)process_time);
+	uint64_t process_time = 0;
+	if (timespec_less(&stop_process_cpu_usage, &process_cpu_usage))
+	{
+		ELOG("Failed to measure process CPU usage: stop time precedes start time");
+	}
+	else
+	{
+		process_time = diff_timespec(&stop_process_cpu_usage, &process_cpu_usage);
+	}
+	ILOG("CPU time spent in ms - readahead workers %lu, API runners %lu, full process %lu", (long unsigned)worker, (long unsigned)runner, (long unsigned)process_time);
 	out["readahead_workers_time"] = worker;
 	out["api_runners_time"] = runner;
 	out["process_time"] = process_time;

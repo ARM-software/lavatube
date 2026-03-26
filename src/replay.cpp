@@ -120,11 +120,16 @@ static std::string get_str(const char* in, int& remaining)
 static void replay_thread(int thread_id)
 {
 	lava_file_reader& t = replayer.file_reader(thread_id);
+	t.bind_runner_thread();
+	t.start_measurement();
 	uint8_t instrtype;
 	while ((instrtype = t.step()))
 	{
 		switchboard_packet(instrtype, t);
 	}
+	uint64_t worker_local = 0;
+	uint64_t runner_local = 0;
+	t.stop_measurement(worker_local, runner_local);
 }
 
 static void run_multithreaded()

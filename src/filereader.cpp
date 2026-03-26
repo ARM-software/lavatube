@@ -46,7 +46,6 @@ void file_reader::init(int fd, size_t uncompressed_size, size_t uncompressed_tar
 
 	done_decompressing = false;
 	decompressor_thread = std::thread(&file_reader::decompressor, this);
-	start_measurement();
 }
 
 file_reader::file_reader(const std::string& filename, unsigned mytid, size_t uncompressed_size, size_t uncompressed_target) : tid(mytid), mFilename(filename)
@@ -152,6 +151,10 @@ void file_reader::decompressor()
 	{
 		ELOG("Failed to get worker thread %u CPU usage: %s", tid, strerror(errno));
 	}
+	else
+	{
+		worker_measurement_ready.store(true, std::memory_order_release);
+	}
 }
 
 void file_reader::start_measurement()
@@ -159,8 +162,11 @@ void file_reader::start_measurement()
 	measurement_stopped.store(false, std::memory_order_release);
 	cached_worker_time = 0;
 	cached_runner_time = 0;
+	worker_measurement_ready.store(false, std::memory_order_release);
 	clockid_t id;
-	int r = pthread_getcpuclockid(pthread_self(), &id);
+	pthread_t runner = pthread_self();
+	if (runner_thread_bound.load(std::memory_order_acquire)) runner = runner_thread;
+	int r = pthread_getcpuclockid(runner, &id);
 	if (r != 0)
 	{
 		ELOG("Failed to get API runner thread %u ID: %s", tid, strerror(r));
@@ -191,6 +197,12 @@ void file_reader::start_measurement()
 	}
 }
 
+void file_reader::bind_runner_thread()
+{
+	runner_thread = pthread_self();
+	runner_thread_bound.store(true, std::memory_order_release);
+}
+
 void file_reader::stop_measurement(uint64_t& worker, uint64_t& runner)
 {
 	if (measurement_stopped.load(std::memory_order_acquire))
@@ -201,7 +213,9 @@ void file_reader::stop_measurement(uint64_t& worker, uint64_t& runner)
 	}
 	struct timespec stop_runner_cpu_usage;
 	clockid_t id;
-	int r = pthread_getcpuclockid(pthread_self(), &id);
+	pthread_t runner_handle = pthread_self();
+	if (runner_thread_bound.load(std::memory_order_acquire)) runner_handle = runner_thread;
+	int r = pthread_getcpuclockid(runner_handle, &id);
 	if (r != 0)
 	{
 		ELOG("Failed to get runner thread %u ID: %s", tid, strerror(r));
@@ -214,8 +228,15 @@ void file_reader::stop_measurement(uint64_t& worker, uint64_t& runner)
 	}
 	else
 	{
-		assert(stop_runner_cpu_usage.tv_sec >= runner_cpu_usage.tv_sec);
-		runner = diff_timespec(&stop_runner_cpu_usage, &runner_cpu_usage);
+		if (timespec_less(&stop_runner_cpu_usage, &runner_cpu_usage))
+		{
+			ELOG("Failed to measure runner thread %u CPU usage: stop time precedes start time", tid);
+			runner = 0;
+		}
+		else
+		{
+			runner = diff_timespec(&stop_runner_cpu_usage, &runner_cpu_usage);
+		}
 	}
 
 	if (!multithreaded_read)
@@ -230,9 +251,24 @@ void file_reader::stop_measurement(uint64_t& worker, uint64_t& runner)
 	r = pthread_getcpuclockid(t, &id);
 	if (r != 0)
 	{
-		// Read-ahead worker is already done. This is ok, if it stopped during frame range,
-		// we got data in stop_worker_cpu_usage already
-		worker = 0;
+		// Read-ahead worker is already done. This is ok if it stopped during frame range,
+		// in which case the worker thread saved its final CPU timestamp for us.
+		if (worker_measurement_ready.load(std::memory_order_acquire))
+		{
+			if (timespec_less(&stop_worker_cpu_usage, &worker_cpu_usage))
+			{
+				ELOG("Failed to measure worker thread %u CPU usage: stop time precedes start time", tid);
+				worker = 0;
+			}
+			else
+			{
+				worker = diff_timespec(&stop_worker_cpu_usage, &worker_cpu_usage);
+			}
+		}
+		else
+		{
+			worker = 0;
+		}
 	}
 	else if (clock_gettime(id, &stop_worker_cpu_usage) != 0)
 	{
@@ -241,8 +277,16 @@ void file_reader::stop_measurement(uint64_t& worker, uint64_t& runner)
 	}
 	else
 	{
-		assert(stop_worker_cpu_usage.tv_sec >= worker_cpu_usage.tv_sec);
-		worker = diff_timespec(&stop_worker_cpu_usage, &worker_cpu_usage);
+		worker_measurement_ready.store(true, std::memory_order_release);
+		if (timespec_less(&stop_worker_cpu_usage, &worker_cpu_usage))
+		{
+			ELOG("Failed to measure worker thread %u CPU usage: stop time precedes start time", tid);
+			worker = 0;
+		}
+		else
+		{
+			worker = diff_timespec(&stop_worker_cpu_usage, &worker_cpu_usage);
+		}
 	}
 	cached_worker_time = worker;
 	cached_runner_time = runner;

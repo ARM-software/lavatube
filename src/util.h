@@ -55,10 +55,23 @@
 
 static inline void clear_timespec(struct timespec *t) { t->tv_sec = 0; t->tv_nsec = 0; }
 
+static inline bool timespec_less(const struct timespec *t1, const struct timespec *t0)
+{
+	return t1->tv_sec < t0->tv_sec || (t1->tv_sec == t0->tv_sec && t1->tv_nsec < t0->tv_nsec);
+}
+
 /// Return the difference between two timespec structs in microseconds
 static inline uint64_t diff_timespec(const struct timespec *t1, const struct timespec *t0)
 {
-	return (t1->tv_sec - t0->tv_sec) * 1000000 + (t1->tv_nsec - t0->tv_nsec) / 1000;
+	time_t sec = t1->tv_sec - t0->tv_sec;
+	long nsec = t1->tv_nsec - t0->tv_nsec;
+	if (nsec < 0)
+	{
+		sec--;
+		nsec += 1000000000L;
+	}
+	assert(sec >= 0);
+	return (uint64_t)sec * 1000000ull + (uint64_t)nsec / 1000ull;
 }
 
 /// Implement support for naming threads, missing from c++11
