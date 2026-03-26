@@ -1087,6 +1087,29 @@ static size_t descriptor_buffer_descriptor_size(VkPhysicalDevice physical_device
 	}
 }
 
+[[noreturn]] static void skip_descriptor_buffer_portability(lava_file_reader& reader, VkDescriptorType descriptor_type, size_t capture_size,
+	size_t replay_size, uint64_t offset = 0, uint64_t region_size = 0)
+{
+	const std::string descriptor_name = VkDescriptorType_to_string(descriptor_type);
+	if (region_size != 0)
+	{
+		printf("SKIP: descriptor buffer portability unsupported while replaying %s at thread=%u call=%u frame=%u: replay device requires %zu bytes, "
+			"but the captured marked region only provides %zu bytes at offset %lu in a %lu-byte update.\n",
+			descriptor_name.c_str(), reader.current.thread, reader.current.call, reader.current.frame, replay_size, capture_size,
+			(unsigned long)offset, (unsigned long)region_size);
+	}
+	else
+	{
+		printf("SKIP: descriptor buffer portability unsupported while replaying %s at thread=%u call=%u frame=%u: replay device requires %zu bytes, "
+			"but the trace captured only %zu bytes.\n",
+			descriptor_name.c_str(), reader.current.thread, reader.current.call, reader.current.frame, replay_size, capture_size);
+	}
+	printf("SKIP: capture and replay across devices with different descriptor-buffer sizes is not supported for this trace.\n");
+	reader.parent->exit_status = 77;
+	reader.parent->finalize(true);
+	exit(77);
+}
+
 void replay_callback_vkGetDescriptorEXT(callback_context& cb, VkDevice device, const VkDescriptorGetInfoEXT* pDescriptorInfo, size_t dataSize, void* pDescriptor)
 {
 	(void)pDescriptor;
@@ -1103,6 +1126,10 @@ void replay_callback_vkGetDescriptorEXT(callback_context& cb, VkDevice device, c
 	size_t descriptor_size = descriptor_buffer_descriptor_size(physical_device, pDescriptorInfo->type);
 	if (descriptor_size == 0) descriptor_size = dataSize;
 	if (descriptor_size == 0) return;
+	if (dataSize != 0 && descriptor_size > dataSize)
+	{
+		skip_descriptor_buffer_portability(cb.reader, pDescriptorInfo->type, dataSize, descriptor_size);
+	}
 
 	descriptor_rewrite rewrite;
 	rewrite.type = pDescriptorInfo->type;
