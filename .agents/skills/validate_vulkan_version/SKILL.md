@@ -15,3 +15,5 @@ metadata:
    the file `scripts/vkconfig.py` for extension variants that are similarly missing a promoted variant.
 4. As above, for each new structure defined, check if we have an existing hardcoded KHR or EXT suffixed
    version of it and are missing handling of the promoted variant. Look in the same files as for commands.
+5. Check that our feature pruning code handles this version of the standard. This is tracked within the
+   `tracking.json` file that we bake into the capture file container.

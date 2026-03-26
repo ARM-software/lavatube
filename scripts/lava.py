@@ -20,7 +20,7 @@ fake_extension_structs = {
 }
 
 # Structs we want to save in our trace metadata as well
-extra_tracked_structs = [ 'VkPhysicalDeviceFeatures2', 'VkPhysicalDeviceVulkan11Features', 'VkPhysicalDeviceVulkan12Features', 'VkPhysicalDeviceVulkan13Features' ]
+extra_tracked_structs = [ 'VkPhysicalDeviceFeatures2', 'VkPhysicalDeviceVulkan11Features', 'VkPhysicalDeviceVulkan12Features', 'VkPhysicalDeviceVulkan13Features', 'VkPhysicalDeviceVulkan14Features' ]
 
 r = open('generated/read_auto.cpp', 'w')
 rh = open('generated/read_auto.h', 'w')

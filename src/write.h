@@ -54,6 +54,7 @@ struct trace_capabilities
 		delete stored_VkPhysicalDeviceVulkan11Features; stored_VkPhysicalDeviceVulkan11Features = nullptr;
 		delete stored_VkPhysicalDeviceVulkan12Features; stored_VkPhysicalDeviceVulkan12Features = nullptr;
 		delete stored_VkPhysicalDeviceVulkan13Features; stored_VkPhysicalDeviceVulkan13Features = nullptr;
+		delete stored_VkPhysicalDeviceVulkan14Features; stored_VkPhysicalDeviceVulkan14Features = nullptr;
 		delete stored_driver_properties; stored_driver_properties = nullptr;
 		stored_api_version = 0;
 		instance_extensions.clear();
@@ -67,6 +68,7 @@ struct trace_capabilities
 	VkPhysicalDeviceVulkan11Features* stored_VkPhysicalDeviceVulkan11Features = nullptr;
 	VkPhysicalDeviceVulkan12Features* stored_VkPhysicalDeviceVulkan12Features = nullptr;
 	VkPhysicalDeviceVulkan13Features* stored_VkPhysicalDeviceVulkan13Features = nullptr;
+	VkPhysicalDeviceVulkan14Features* stored_VkPhysicalDeviceVulkan14Features = nullptr;
 	VkPhysicalDeviceDriverProperties* stored_driver_properties = nullptr;
 	uint32_t stored_api_version = 0;
 

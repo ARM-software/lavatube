@@ -200,6 +200,7 @@ void lava_writer::serialize()
 	if (meta.app.stored_VkPhysicalDeviceVulkan11Features) f->adjust_VkPhysicalDeviceVulkan11Features(*meta.app.stored_VkPhysicalDeviceVulkan11Features);
 	if (meta.app.stored_VkPhysicalDeviceVulkan12Features) f->adjust_VkPhysicalDeviceVulkan12Features(*meta.app.stored_VkPhysicalDeviceVulkan12Features);
 	if (meta.app.stored_VkPhysicalDeviceVulkan13Features) f->adjust_VkPhysicalDeviceVulkan13Features(*meta.app.stored_VkPhysicalDeviceVulkan13Features);
+	if (meta.app.stored_VkPhysicalDeviceVulkan14Features) f->adjust_VkPhysicalDeviceVulkan14Features(*meta.app.stored_VkPhysicalDeviceVulkan14Features);
 	auto removed_device_exts = f->adjust_device_extensions(meta.app.device_extensions);
 	auto removed_instance_exts = f->adjust_instance_extensions(meta.app.instance_extensions);
 	Json::Value& r = mJson;

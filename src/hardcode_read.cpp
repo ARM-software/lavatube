@@ -16,11 +16,13 @@ static VkPhysicalDeviceFeatures2 stored_VkPhysicalDeviceFeatures2 = { VK_STRUCTU
 static VkPhysicalDeviceVulkan11Features stored_VkPhysicalDeviceVulkan11Features = {};
 static VkPhysicalDeviceVulkan12Features stored_VkPhysicalDeviceVulkan12Features = {};
 static VkPhysicalDeviceVulkan13Features stored_VkPhysicalDeviceVulkan13Features = {};
+static VkPhysicalDeviceVulkan14Features stored_VkPhysicalDeviceVulkan14Features = {};
 static std::vector<VkQueueFamilyProperties> device_VkQueueFamilyProperties;
 static bool has_VkPhysicalDeviceFeatures2 = false;
 static bool has_VkPhysicalDeviceVulkan11Features = false;
 static bool has_VkPhysicalDeviceVulkan12Features = false;
 static bool has_VkPhysicalDeviceVulkan13Features = false;
+static bool has_VkPhysicalDeviceVulkan14Features = false;
 static bool host_has_frame_boundary = false;
 
 // this is a big hack until we have something better
@@ -30,11 +32,13 @@ void reset_for_tools()
 	stored_VkPhysicalDeviceVulkan13Features = {};
 	stored_VkPhysicalDeviceVulkan12Features = {};
 	stored_VkPhysicalDeviceVulkan11Features = {};
+	stored_VkPhysicalDeviceVulkan14Features = {};
 	device_VkQueueFamilyProperties.clear();
 	has_VkPhysicalDeviceFeatures2 = false;
 	has_VkPhysicalDeviceVulkan11Features = false;
 	has_VkPhysicalDeviceVulkan12Features = false;
 	has_VkPhysicalDeviceVulkan13Features = false;
+	has_VkPhysicalDeviceVulkan14Features = false;
 	host_has_frame_boundary = false;
 	stored_instance = VK_NULL_HANDLE;
 	selected_physical_device = VK_NULL_HANDLE;
@@ -1657,6 +1661,12 @@ void replay_pre_vkCreateDevice(lava_file_reader& reader, VkPhysicalDevice physic
 	{
 		stored_VkPhysicalDeviceVulkan13Features.pNext = ext->pNext->pNext;
 		ext->pNext = (VkBaseOutStructure*)&stored_VkPhysicalDeviceVulkan13Features;
+	}
+	ext = (VkBaseOutStructure*)find_extension_parent(pCreateInfo, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_4_FEATURES);
+	if (ext && has_VkPhysicalDeviceVulkan14Features)
+	{
+		stored_VkPhysicalDeviceVulkan14Features.pNext = ext->pNext->pNext;
+		ext->pNext = (VkBaseOutStructure*)&stored_VkPhysicalDeviceVulkan14Features;
 	}
 	ext = (VkBaseOutStructure*)find_extension_parent(pCreateInfo, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2);
 	if (ext && has_VkPhysicalDeviceFeatures2)

@@ -2,6 +2,7 @@
 #include "jsoncpp/json/value.h"
 #include "util.h"
 
+bool readVkPhysicalDeviceVulkan14Features(const Json::Value& root, VkPhysicalDeviceVulkan14Features& in);
 bool readVkPhysicalDeviceVulkan13Features(const Json::Value& root, VkPhysicalDeviceVulkan13Features& in);
 bool readVkPhysicalDeviceVulkan12Features(const Json::Value& root, VkPhysicalDeviceVulkan12Features& in);
 bool readVkPhysicalDeviceVulkan11Features(const Json::Value& root, VkPhysicalDeviceVulkan11Features& in);
@@ -9,6 +10,7 @@ bool readVkPhysicalDeviceFeatures2(const Json::Value& root, VkPhysicalDeviceFeat
 bool readVkPhysicalDeviceSparseProperties(const Json::Value& root, VkPhysicalDeviceSparseProperties& in);
 bool readVkPhysicalDeviceLimits(const Json::Value& root, VkPhysicalDeviceLimits& in);
 
+Json::Value writeVkPhysicalDeviceVulkan14Features(const VkPhysicalDeviceVulkan14Features& in);
 Json::Value writeVkPhysicalDeviceVulkan13Features(const VkPhysicalDeviceVulkan13Features& in);
 Json::Value writeVkPhysicalDeviceVulkan12Features(const VkPhysicalDeviceVulkan12Features& in);
 Json::Value writeVkPhysicalDeviceVulkan11Features(const VkPhysicalDeviceVulkan11Features& in);

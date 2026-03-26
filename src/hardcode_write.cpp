@@ -1614,6 +1614,13 @@ static void trace_pre_vkCreateDevice(VkPhysicalDevice physicalDevice, VkDeviceCr
 		*instance.meta.app.stored_VkPhysicalDeviceVulkan13Features = *feat13; // struct copy
 		r["devicePresented"]["VkPhysicalDeviceVulkan13Features"] = writeVkPhysicalDeviceVulkan13Features(*feat13);
 	}
+	VkPhysicalDeviceVulkan14Features* feat14 = (VkPhysicalDeviceVulkan14Features*)find_extension(pCreateInfo, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_4_FEATURES);
+	if (feat14)
+	{
+		instance.meta.app.stored_VkPhysicalDeviceVulkan14Features = new VkPhysicalDeviceVulkan14Features();
+		*instance.meta.app.stored_VkPhysicalDeviceVulkan14Features = *feat14; // struct copy
+		r["devicePresented"]["VkPhysicalDeviceVulkan14Features"] = writeVkPhysicalDeviceVulkan14Features(*feat14);
+	}
 	r["deviceRequested"]["enabledExtensions"] = Json::arrayValue;
 	for (unsigned i = 0; i < pCreateInfo->enabledExtensionCount; i++)
 	{
@@ -1759,6 +1766,12 @@ static void trace_post_vkCreateDevice(lava_file_writer& writer, VkResult result,
 			instance.meta.device.stored_VkPhysicalDeviceVulkan13Features->sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
 			instance.meta.device.stored_VkPhysicalDeviceVulkan12Features->pNext = instance.meta.device.stored_VkPhysicalDeviceVulkan13Features;
 		}
+		if (VK_VERSION_MINOR(instance.meta.device.stored_api_version) >= 4)
+		{
+			instance.meta.device.stored_VkPhysicalDeviceVulkan14Features = new VkPhysicalDeviceVulkan14Features();
+			instance.meta.device.stored_VkPhysicalDeviceVulkan14Features->sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_4_FEATURES;
+			instance.meta.device.stored_VkPhysicalDeviceVulkan13Features->pNext = instance.meta.device.stored_VkPhysicalDeviceVulkan14Features;
+		}
 		instance.meta.device.stored_VkPhysicalDeviceVulkan11Features->sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES;
 		VkPhysicalDeviceFeatures2 feat2 = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2, instance.meta.device.stored_VkPhysicalDeviceVulkan11Features };
 		wrap_vkGetPhysicalDeviceFeatures2(physicalDevice, &feat2);
@@ -1766,6 +1779,7 @@ static void trace_post_vkCreateDevice(lava_file_writer& writer, VkResult result,
 		r["devicePresented"]["VkPhysicalDeviceVulkan11Features"] = writeVkPhysicalDeviceVulkan11Features(*instance.meta.device.stored_VkPhysicalDeviceVulkan11Features);
 		if (instance.meta.device.stored_VkPhysicalDeviceVulkan12Features) r["devicePresented"]["VkPhysicalDeviceVulkan12Features"] = writeVkPhysicalDeviceVulkan12Features(*instance.meta.device.stored_VkPhysicalDeviceVulkan12Features);
 		if (instance.meta.device.stored_VkPhysicalDeviceVulkan13Features) r["devicePresented"]["VkPhysicalDeviceVulkan13Features"] = writeVkPhysicalDeviceVulkan13Features(*instance.meta.device.stored_VkPhysicalDeviceVulkan13Features);
+		if (instance.meta.device.stored_VkPhysicalDeviceVulkan14Features) r["devicePresented"]["VkPhysicalDeviceVulkan14Features"] = writeVkPhysicalDeviceVulkan14Features(*instance.meta.device.stored_VkPhysicalDeviceVulkan14Features);
 	}
 	else if (!instance.meta.device.stored_VkPhysicalDeviceFeatures2) // 1.0 version
 	{

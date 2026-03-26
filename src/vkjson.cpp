@@ -2,6 +2,34 @@
 #include "vkjson.h"
 #include <string.h>
 
+bool readVkPhysicalDeviceVulkan14Features(const Json::Value& root, VkPhysicalDeviceVulkan14Features& in)
+{
+	in.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_4_FEATURES;
+	in.pNext = nullptr;
+	in.globalPriorityQuery = (VkBool32)root.get("globalPriorityQuery", false).asBool();
+	in.shaderSubgroupRotate = (VkBool32)root.get("shaderSubgroupRotate", false).asBool();
+	in.shaderSubgroupRotateClustered = (VkBool32)root.get("shaderSubgroupRotateClustered", false).asBool();
+	in.shaderFloatControls2 = (VkBool32)root.get("shaderFloatControls2", false).asBool();
+	in.shaderExpectAssume = (VkBool32)root.get("shaderExpectAssume", false).asBool();
+	in.rectangularLines = (VkBool32)root.get("rectangularLines", false).asBool();
+	in.bresenhamLines = (VkBool32)root.get("bresenhamLines", false).asBool();
+	in.smoothLines = (VkBool32)root.get("smoothLines", false).asBool();
+	in.stippledRectangularLines = (VkBool32)root.get("stippledRectangularLines", false).asBool();
+	in.stippledBresenhamLines = (VkBool32)root.get("stippledBresenhamLines", false).asBool();
+	in.stippledSmoothLines = (VkBool32)root.get("stippledSmoothLines", false).asBool();
+	in.vertexAttributeInstanceRateDivisor = (VkBool32)root.get("vertexAttributeInstanceRateDivisor", false).asBool();
+	in.vertexAttributeInstanceRateZeroDivisor = (VkBool32)root.get("vertexAttributeInstanceRateZeroDivisor", false).asBool();
+	in.indexTypeUint8 = (VkBool32)root.get("indexTypeUint8", false).asBool();
+	in.dynamicRenderingLocalRead = (VkBool32)root.get("dynamicRenderingLocalRead", false).asBool();
+	in.maintenance5 = (VkBool32)root.get("maintenance5", false).asBool();
+	in.maintenance6 = (VkBool32)root.get("maintenance6", false).asBool();
+	in.pipelineProtectedAccess = (VkBool32)root.get("pipelineProtectedAccess", false).asBool();
+	in.pipelineRobustness = (VkBool32)root.get("pipelineRobustness", false).asBool();
+	in.hostImageCopy = (VkBool32)root.get("hostImageCopy", false).asBool();
+	in.pushDescriptor = (VkBool32)root.get("pushDescriptor", false).asBool();
+	return true;
+}
+
 bool readVkPhysicalDeviceVulkan13Features(const Json::Value& root, VkPhysicalDeviceVulkan13Features& in)
 {
 	in.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
@@ -287,6 +315,33 @@ bool readVkPhysicalDeviceLimits(const Json::Value& root, VkPhysicalDeviceLimits&
 	in.optimalBufferCopyRowPitchAlignment = (VkDeviceSize)root["optimalBufferCopyRowPitchAlignment"].asUInt64();
 	in.nonCoherentAtomSize = (VkDeviceSize)root["nonCoherentAtomSize"].asUInt64();
 	return true;
+}
+
+Json::Value writeVkPhysicalDeviceVulkan14Features(const VkPhysicalDeviceVulkan14Features& in)
+{
+	Json::Value json;
+	json["globalPriorityQuery"] = (bool)in.globalPriorityQuery;
+	json["shaderSubgroupRotate"] = (bool)in.shaderSubgroupRotate;
+	json["shaderSubgroupRotateClustered"] = (bool)in.shaderSubgroupRotateClustered;
+	json["shaderFloatControls2"] = (bool)in.shaderFloatControls2;
+	json["shaderExpectAssume"] = (bool)in.shaderExpectAssume;
+	json["rectangularLines"] = (bool)in.rectangularLines;
+	json["bresenhamLines"] = (bool)in.bresenhamLines;
+	json["smoothLines"] = (bool)in.smoothLines;
+	json["stippledRectangularLines"] = (bool)in.stippledRectangularLines;
+	json["stippledBresenhamLines"] = (bool)in.stippledBresenhamLines;
+	json["stippledSmoothLines"] = (bool)in.stippledSmoothLines;
+	json["vertexAttributeInstanceRateDivisor"] = (bool)in.vertexAttributeInstanceRateDivisor;
+	json["vertexAttributeInstanceRateZeroDivisor"] = (bool)in.vertexAttributeInstanceRateZeroDivisor;
+	json["indexTypeUint8"] = (bool)in.indexTypeUint8;
+	json["dynamicRenderingLocalRead"] = (bool)in.dynamicRenderingLocalRead;
+	json["maintenance5"] = (bool)in.maintenance5;
+	json["maintenance6"] = (bool)in.maintenance6;
+	json["pipelineProtectedAccess"] = (bool)in.pipelineProtectedAccess;
+	json["pipelineRobustness"] = (bool)in.pipelineRobustness;
+	json["hostImageCopy"] = (bool)in.hostImageCopy;
+	json["pushDescriptor"] = (bool)in.pushDescriptor;
+	return json;
 }
 
 Json::Value writeVkPhysicalDeviceVulkan13Features(const VkPhysicalDeviceVulkan13Features& in)
