@@ -548,7 +548,7 @@ class parameter(spec.base_parameter):
 			storedtype = spec.type_mappings[self.type]
 			nativetype = self.type if self.type != 'void' else 'char'
 			if self.length and self.ptr:
-				vlen = z.tmp('uint32_t')
+				vlen = z.tmp('size_t')
 				z.do('%s = %s;' % (vlen, self.length))
 				z.do('if (%s > 0)' % vlen)
 				z.brace_begin()
@@ -1572,8 +1572,8 @@ def loadfunc(name, node, target, header):
 	if name == 'vkGetDescriptorEXT':
 		z.do('if (dataSize > 0)')
 		z.brace_begin()
-		z.do('pDescriptor_backing = reader.pool.allocate<char>(static_cast<uint32_t>(dataSize));')
-		z.do('memset(pDescriptor_backing, 0, static_cast<uint32_t>(dataSize) * sizeof(char));')
+		z.do('pDescriptor_backing = reader.pool.allocate<char>(dataSize);')
+		z.do('memset(pDescriptor_backing, 0, dataSize * sizeof(char));')
 		z.do('pDescriptor = pDescriptor_backing;')
 		z.brace_end()
 		z.do('else pDescriptor = nullptr;')

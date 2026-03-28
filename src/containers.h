@@ -606,11 +606,11 @@ public:
 	memory_pool(unsigned mbs = 4) : pool(mbs * 1024 * 1024) {}
 
 	template<typename T> __attribute__((alloc_size(2, 3)))
-	inline T* allocate(uint32_t _count, const uint32_t _size = sizeof(T))
+	inline T* allocate(size_t _count, const size_t _size = sizeof(T))
 	{
 		if (_count == 0) return nullptr;
 		const size_t alignment = std::max<size_t>(alignof(T), 2);
-		const uint_fast32_t allocsize = _count * sizeof(T);
+		const size_t allocsize = _count * sizeof(T);
 		size_t space = pool.size() - (index + allocsize);
 		void* retval = pool.data() + index;
 		if (!std::align(alignment, allocsize, retval, space))
@@ -622,10 +622,10 @@ public:
 	}
 
 	template<typename T> __attribute__((alloc_size(2, 4)))
-	inline T* allocate_aligned(uint32_t _count, size_t alignment, const uint32_t _size = sizeof(T))
+	inline T* allocate_aligned(size_t _count, size_t alignment, const size_t _size = sizeof(T))
 	{
 		if (_count == 0) return nullptr;
-		const uint_fast32_t allocsize = _count * sizeof(T);
+		const size_t allocsize = _count * sizeof(T);
 		size_t space = pool.size() - (index + allocsize);
 		void* retval = pool.data() + index;
 		if (!std::align(alignment, allocsize, retval, space))
@@ -638,7 +638,7 @@ public:
 
 	// these are useful for making custom utility functions; do not call directly
 	template<typename T> inline T* pointer() { return (T*)(pool.data() + index); }
-	inline void spend(uint32_t _count) { index += _count; }
+	inline void spend(size_t _count) { index += _count; }
 
 	inline void reset()
 	{
@@ -647,7 +647,7 @@ public:
 
 private:
 	std::vector<char> pool;
-	uint_fast32_t index = 0; // index to next allocation
+	size_t index = 0; // index to next allocation
 };
 
 template<typename T>
