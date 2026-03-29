@@ -3177,21 +3177,24 @@ VKAPI_ATTR VkBool32 VKAPI_CALL trace_vkGetPhysicalDeviceXlibPresentationSupportK
 
 #endif
 
-static void common_virtual_VkQueueFamilyProperties(VkPhysicalDevice physicalDevice, VkQueueFamilyProperties* pQueueFamilyProperties)
+static uint32_t common_virtual_VkQueueFamilyProperties(VkPhysicalDevice physicalDevice, VkQueueFamilyProperties* pQueueFamilyProperties)
 {
 	uint32_t timestampValidBits = 0;
 	uint32_t sparseBits = 0;
 	uint32_t count = 0;
+	uint32_t source_queue_family = UINT32_MAX;
 	wrap_vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice, &count, nullptr);
 	std::vector<VkQueueFamilyProperties> props(count);
 	wrap_vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice, &count, props.data());
-	for (const auto& f : props)
+	for (uint32_t i = 0; i < count; i++)
 	{
+		const VkQueueFamilyProperties& f = props.at(i);
 		if (f.queueFlags & VK_QUEUE_GRAPHICS_BIT)
 		{
 			assert(f.minImageTransferGranularity.width == 1 && f.minImageTransferGranularity.height == 1 && f.minImageTransferGranularity.depth == 1);
 			if ((f.queueFlags & VK_QUEUE_SPARSE_BINDING_BIT)) sparseBits = VK_QUEUE_SPARSE_BINDING_BIT;
 			timestampValidBits = f.timestampValidBits;
+			source_queue_family = i;
 			break; // both our virtual graphics queues are on the first queue family supporting graphics
 		}
 	}
@@ -3202,6 +3205,41 @@ static void common_virtual_VkQueueFamilyProperties(VkPhysicalDevice physicalDevi
 	pQueueFamilyProperties->minImageTransferGranularity.width = 1;
 	pQueueFamilyProperties->minImageTransferGranularity.height = 1;
 	pQueueFamilyProperties->minImageTransferGranularity.depth = 1;
+	return source_queue_family;
+}
+
+static void common_virtual_VkQueueFamilyProperties2(VkPhysicalDevice physicalDevice, VkQueueFamilyProperties2* pQueueFamilyProperties)
+{
+	const uint32_t source_queue_family = common_virtual_VkQueueFamilyProperties(physicalDevice, &pQueueFamilyProperties->queueFamilyProperties);
+	VkQueueFamilyGlobalPriorityProperties* global_priority = (VkQueueFamilyGlobalPriorityProperties*)find_extension(pQueueFamilyProperties, VK_STRUCTURE_TYPE_QUEUE_FAMILY_GLOBAL_PRIORITY_PROPERTIES);
+	assert(find_extension(pQueueFamilyProperties, VK_STRUCTURE_TYPE_QUEUE_FAMILY_VIDEO_PROPERTIES_KHR) == nullptr); // TBD later
+	assert(find_extension(pQueueFamilyProperties, VK_STRUCTURE_TYPE_QUEUE_FAMILY_QUERY_RESULT_STATUS_PROPERTIES_KHR) == nullptr); // TBD later
+	assert(find_extension(pQueueFamilyProperties, VK_STRUCTURE_TYPE_QUEUE_FAMILY_DATA_GRAPH_PROCESSING_ENGINE_PROPERTIES_ARM) == nullptr); // TBD later
+	assert(find_extension(pQueueFamilyProperties, VK_STRUCTURE_TYPE_QUEUE_FAMILY_DATA_GRAPH_PROPERTIES_ARM) == nullptr); // TBD later
+	assert(find_extension(pQueueFamilyProperties, VK_STRUCTURE_TYPE_QUEUE_FAMILY_OWNERSHIP_TRANSFER_PROPERTIES_KHR) == nullptr); // TBD later
+
+	if (global_priority)
+	{
+		assert(source_queue_family != UINT32_MAX);
+		uint32_t count = 0;
+		wrap_vkGetPhysicalDeviceQueueFamilyProperties2(physicalDevice, &count, nullptr);
+		std::vector<VkQueueFamilyProperties2> props(count);
+		std::vector<VkQueueFamilyGlobalPriorityProperties> priorities(count);
+		for (uint32_t i = 0; i < count; i++)
+		{
+			props.at(i).sType = VK_STRUCTURE_TYPE_QUEUE_FAMILY_PROPERTIES_2;
+			props.at(i).pNext = &priorities.at(i);
+			priorities.at(i).sType = VK_STRUCTURE_TYPE_QUEUE_FAMILY_GLOBAL_PRIORITY_PROPERTIES;
+			priorities.at(i).pNext = nullptr;
+		}
+		wrap_vkGetPhysicalDeviceQueueFamilyProperties2(physicalDevice, &count, props.data());
+		assert(source_queue_family < count);
+		global_priority->priorityCount = priorities.at(source_queue_family).priorityCount;
+		for (uint32_t i = 0; i < VK_MAX_GLOBAL_PRIORITY_SIZE; i++)
+		{
+			global_priority->priorities[i] = priorities.at(source_queue_family).priorities[i];
+		}
+	}
 }
 
 static void common_vkGetPhysicalDeviceQueueFamilyProperties2(lava_file_writer& writer, VkPhysicalDevice physicalDevice, uint32_t* pQueueFamilyPropertyCount,
@@ -3218,7 +3256,7 @@ static void common_vkGetPhysicalDeviceQueueFamilyProperties2(lava_file_writer& w
 	if (p__virtualqueues != 0)
 	{
 		*pQueueFamilyPropertyCount = 1;
-		if (pQueueFamilyProperties != nullptr) common_virtual_VkQueueFamilyProperties(physicalDevice, &pQueueFamilyProperties->queueFamilyProperties);
+		if (pQueueFamilyProperties != nullptr) common_virtual_VkQueueFamilyProperties2(physicalDevice, pQueueFamilyProperties);
 	}
 	writer.thaw();
 }
