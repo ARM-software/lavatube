@@ -10,6 +10,8 @@ import spec # from tracetooltests
 spec.init()
 import vkconfig as vk # local
 
+bypass_checks = False
+
 def typetmpname(root):
 	assert not '[' in root, 'Bad name %s' % root
 	return 'tmp_' + root[0] + root.translate(root.maketrans('', '', '_*-.:<> '))
@@ -291,9 +293,9 @@ class parameter(spec.base_parameter):
 			if self.name == 'pCounterAddresses': self.length = 'counterAddressCount'
 			elif self.name == 'pCounterIndices': self.length = 'counterIndexCount'
 
-		if not self.funcname in vk.noscreen_calls and not self.funcname in vk.virtualswap_calls and self.funcname[0] == 'v':
+		if not self.funcname in vk.noscreen_calls and not self.funcname in vk.virtualswap_calls and self.funcname[0] == 'v' and not bypass_checks:
 			assert self.type != 'VkSwapchainKHR', '%s has VkSwapchainKHR in %s' % (self.funcname, self.name)
-		if not self.funcname in vk.noscreen_calls and self.funcname[0] == 'v':
+		if not self.funcname in vk.noscreen_calls and self.funcname[0] == 'v' and not bypass_checks:
 			assert self.type != 'VkSurfaceKHR', '%s has VkSurfaceKHR in %s' % (self.funcname, self.name)
 
 		if self.optional and not self.name in vk.skip_opt_check:
@@ -871,8 +873,8 @@ class parameter(spec.base_parameter):
 			else:
 				z.decl(vk.trackable_type_map_trace.get(self.type, 'trackable') + '*', totrackable(self.type))
 				if self.type == 'VkQueue':
-					assert not self.ptr, '%s has pointer queues' % self.funcname
-					assert self.name == 'queue', '%s has queue not named queue' % self.funcname
+					assert bypass_checks or not self.ptr, '%s has pointer queues' % self.funcname
+					assert bypass_checks or self.name == 'queue', '%s has queue not named queue' % self.funcname
 					if not postprocess:
 						z.declarations.insert(0, 'queue = (p__virtualqueues && queue != VK_NULL_HANDLE) ? ((trackedqueue*)queue)->realQueue : queue;')
 						z.declarations.insert(0, 'VkQueue original_queue = queue;') # this goes first
@@ -1750,7 +1752,8 @@ def loadfunc(name, node, target, header):
 				z.do('assert(stored_retval == retval);')
 			elif retval in ['VkDeviceAddress', 'VkDeviceSize']:
 				pass
-			else: assert name == 'vkQueuePresentKHR', 'Unhandled return value type %s from %s' % (retval, name)
+			else:
+				assert name in ['vkQueuePresentKHR', 'vkGetDeviceProcAddr', 'vkGetInstanceProcAddr'], 'Unhandled return value type %s from %s' % (retval, name)
 			z.brace_end()
 		else:
 			if retval in ['VkResult', 'VkBool32']:
@@ -1778,7 +1781,8 @@ def loadfunc(name, node, target, header):
 		elif retval == 'uint32_t': z.do('cb_context.result.u32 = retval;')
 		elif retval == 'VkDeviceAddress': z.do('cb_context.result.address = retval;')
 		elif retval == 'VkDeviceSize': z.do('cb_context.result.size = retval;')
-		else: assert False, 'Unhandled callback result type %s' % retval
+		elif retval == 'PFN_vkVoidFunction': z.do('cb_context.result.address = retval;')
+		else: assert False, 'Unhandled callback result type %s from %s' % (retval, name)
 		z.do('for (auto* c : %s_callbacks) c(%s);' % (name, 'cb_context, ' + ', '.join(call_list)))
 	if name in spec.draw_commands:
 		z.do('if (!reader.run) postprocess_draw_command(cb_context, commandbuffer_index, commandbuffer_data);')
