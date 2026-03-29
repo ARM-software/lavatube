@@ -2888,21 +2888,30 @@ VKAPI_ATTR VkResult VKAPI_CALL trace_vkCreateAndroidSurfaceKHR(VkInstance instan
 {
 	// Declarations
 	lava_file_writer& writer = write_header("vkCreateAndroidSurfaceKHR", VKCREATEANDROIDSURFACEKHR);
+	const int32_t width = pCreateInfo->window ? ANativeWindow_getWidth(pCreateInfo->window) : 0;
+	const int32_t height = pCreateInfo->window ? ANativeWindow_getHeight(pCreateInfo->window) : 0;
+	const int32_t format = pCreateInfo->window ? ANativeWindow_getFormat(pCreateInfo->window) : 0;
 	writer.write_handle(writer.parent->records.VkInstance_index.at(instance));
 	writer.write_uint32_t(pCreateInfo->sType);
 	assert(pCreateInfo->sType == VK_STRUCTURE_TYPE_ANDROID_SURFACE_CREATE_INFO_KHR);
 	write_extension(writer, (VkBaseOutStructure*)pCreateInfo->pNext);
-	write_surface_data((uint32_t)pCreateInfo->flags, 0, 0, ANativeWindow_getWidth(pCreateInfo->window),
-	                   ANativeWindow_getHeight(pCreateInfo->window), 0, ANativeWindow_getFormat(pCreateInfo->window));
+	write_surface_data(writer, (uint32_t)pCreateInfo->flags, 0, 0, width, height, 0, format);
 	// Execute
 	VkResult retval = wrap_vkCreateAndroidSurfaceKHR(instance, pCreateInfo, pAllocator, pSurface);
 	writer.write_uint32_t(retval);
 	// Post
-	auto* surface_data = writer.parent->records.VkSurfaceKHR_index.add(*pSurface, writer.current);
-	surface_data->width = ANativeWindow_getWidth(pCreateInfo->window);
-	surface_data->height = ANativeWindow_getHeight(pCreateInfo->window);
-	surface_data->enter_created();
-	writer.write_handle(surface_data); // id tracking
+	if (retval == VK_SUCCESS)
+	{
+		auto* surface_data = writer.parent->records.VkSurfaceKHR_index.add(*pSurface, writer.current);
+		surface_data->width = width;
+		surface_data->height = height;
+		surface_data->enter_created();
+		writer.write_handle(surface_data); // id tracking
+	}
+	else
+	{
+		writer.write_handle(nullptr);
+	}
 	// Return
 	return retval;
 }

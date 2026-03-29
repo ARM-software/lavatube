@@ -2845,8 +2845,8 @@ static void common_vkCreateSurfaceKHR(lava_file_reader& reader, uint32_t stored_
 	(void)reader.read_int32_t(); // depth
 	(void)reader.read_int32_t(); // border
 	const uint32_t retval = reader.read_uint32_t();
-	(void)retval;
 	const uint32_t surface_index = reader.read_handle(DEBUGPARAM("VkSurfaceKHR"));
+	if (retval != VK_SUCCESS) return; // there was no window created, skip it
 	auto& data = VkSurfaceKHR_index.at(surface_index);
 	data.creation = reader.current;
 	data.last_modified = reader.current;
@@ -2870,6 +2870,7 @@ static void common_vkCreateSurfaceKHR(lava_file_reader& reader, uint32_t stored_
 	if (!is_noscreen() && reader.run) pSurface = window_create(instance, surface_index, x, y, width, height);
 	else pSurface = fake_handle<VkSurfaceKHR>(surface_index);
 	if (pSurface) index_to_VkSurfaceKHR.set(surface_index, pSurface);
+	// TBD we should create some window-common callback a user can attach to and trigger here
 }
 
 void retrace_vkCreateAndroidSurfaceKHR(lava_file_reader& reader)

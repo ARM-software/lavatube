@@ -374,11 +374,17 @@ void LavatubeConsumer::Process_vkCreateAndroidSurfaceKHR(const ApiCallInfo& call
 	writer.write_int32_t(0); // height
 	writer.write_int32_t(0); // border
 	writer.write_int32_t(0); // depth
-	// Post
-	const auto* surface_data = writer.parent->records.VkSurfaceKHR_index.add(*pSurface, writer.current);
-	surface_data->enter_created();
-	writer.write_handle(surface_data); // id tracking
-	// TBD write out return value??
+	writer.write_uint32_t(returnValue);
+	if (returnValue == VK_SUCCESS)
+	{
+		auto* surface_data = writer.parent->records.VkSurfaceKHR_index.add(*pSurface, writer.current);
+		surface_data->enter_created();
+		writer.write_handle(surface_data); // id tracking
+	}
+	else
+	{
+		writer.write_handle(nullptr);
+	}
 	finish(writer);
 }
 
