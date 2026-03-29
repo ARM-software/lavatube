@@ -2577,6 +2577,7 @@ VKAPI_ATTR VkResult VKAPI_CALL trace_vkGetSwapchainImagesKHR(VkDevice device, Vk
 	{
 		writer.write_handle(writer.parent->records.VkImage_index.at(pSwapchainImages[i]));
 	}
+	writer.thaw();
 	// Return
 	return retval;
 }
@@ -2609,6 +2610,7 @@ VKAPI_ATTR VkResult VKAPI_CALL trace_vkCreateHeadlessSurfaceEXT(VkInstance insta
 	DLOG("insert VkSurfaceKHR into vkCreateHeadlessSurfaceEXT index %u", (unsigned)surface_data->index);
 	surface_data->enter_created();
 	writer.write_handle(surface_data); // id tracking
+	writer.thaw();
 	// Return
 	return retval;
 }
@@ -2667,6 +2669,7 @@ VKAPI_ATTR VkResult VKAPI_CALL trace_vkCreateXlibSurfaceKHR(VkInstance instance,
 	surface_data->y = attr.y;
 	surface_data->enter_created();
 	writer.write_handle(surface_data); // id tracking
+	writer.thaw();
 	// -- Return --
 	return retval;
 }
@@ -2726,6 +2729,7 @@ VKAPI_ATTR VkResult VKAPI_CALL trace_vkCreateXcbSurfaceKHR(VkInstance instance, 
 	free(geom_reply);
 	free(tree_reply);
 	free(trans_reply);
+	writer.thaw();
 
 	// Return
 	return retval;
@@ -2753,6 +2757,7 @@ VKAPI_ATTR VkResult VKAPI_CALL trace_vkCreateWaylandSurfaceKHR(VkInstance instan
 	// just letting swapchain creation add our metadata, as wayland is too much of a brainrot API to handle here
 	surface_data->enter_created();
 	writer.write_handle(surface_data); // id tracking
+	writer.thaw();
 	// Return
 	return retval;
 }
@@ -2828,6 +2833,7 @@ VKAPI_ATTR void VKAPI_CALL trace_vkGetDeviceQueue2(VkDevice device, const VkDevi
 	if (p__virtualqueues != 0) *pQueue = (VkQueue)queue_data;
 	queue_data->self_test();
 	writer.write_handle(queue_data);
+	writer.thaw();
 }
 
 VKAPI_ATTR void VKAPI_CALL trace_vkGetDeviceQueue(VkDevice device, uint32_t queueFamilyIndex, uint32_t queueIndex, VkQueue* pQueue)
@@ -2878,6 +2884,7 @@ VKAPI_ATTR void VKAPI_CALL trace_vkGetDeviceQueue(VkDevice device, uint32_t queu
 	if (p__virtualqueues != 0) *pQueue = (VkQueue)queue_data;
 	queue_data->self_test();
 	writer.write_handle(queue_data);
+	writer.thaw();
 }
 
 #ifdef VK_USE_PLATFORM_ANDROID_KHR // vkCreateAndroidSurfaceKHR
@@ -2912,6 +2919,7 @@ VKAPI_ATTR VkResult VKAPI_CALL trace_vkCreateAndroidSurfaceKHR(VkInstance instan
 	{
 		writer.write_handle(nullptr);
 	}
+	writer.thaw();
 	// Return
 	return retval;
 }
@@ -2980,6 +2988,7 @@ VKAPI_ATTR VkResult VKAPI_CALL trace_vkGetAndroidHardwareBufferPropertiesANDROID
 	write_extension(writer, (VkBaseOutStructure*)pProperties->pNext);
 	writer.write_uint64_t(pProperties->allocationSize);
 	writer.write_uint32_t(pProperties->memoryTypeBits);
+	writer.thaw();
 	// Return
 	return retval;
 }
@@ -3000,6 +3009,7 @@ VKAPI_ATTR VkResult VKAPI_CALL trace_vkGetMemoryAndroidHardwareBufferANDROID(VkD
 	// Post
 	// Store metadata for debug purposes
 	save_hw_buffer(*pBuffer);
+	writer.thaw();
 	return retval;
 }
 
@@ -3029,6 +3039,7 @@ VKAPI_ATTR VkResult VKAPI_CALL trace_vkEnumerateInstanceLayerProperties(uint32_t
 
 	writer.write_uint32_t(retval);
 	// Post
+	writer.thaw();
 	// Return
 	return retval;
 }
@@ -3044,6 +3055,7 @@ VKAPI_ATTR VkResult VKAPI_CALL trace_vkEnumerateInstanceExtensionProperties(cons
 	{
 		*pPropertyCount = 0;
 		writer.write_uint32_t(VK_SUCCESS);
+		writer.thaw();
 		return VK_SUCCESS;
 	}
 #endif
@@ -3067,6 +3079,7 @@ VKAPI_ATTR VkResult VKAPI_CALL trace_vkEnumerateInstanceExtensionProperties(cons
 	}
 	frame_mutex.unlock();
 	writer.write_uint32_t(retval);
+	writer.thaw();
 	return retval;
 }
 
@@ -3099,6 +3112,7 @@ VKAPI_ATTR VkResult VKAPI_CALL trace_vkEnumerateDeviceLayerProperties(VkPhysical
 	VkResult retval = wrap_vkEnumerateDeviceLayerProperties(physicalDevice, pPropertyCount, pProperties);
 #endif
 	writer.write_uint32_t(retval);
+	writer.thaw();
 	return retval;
 }
 
@@ -3120,6 +3134,7 @@ VKAPI_ATTR VkResult VKAPI_CALL trace_vkEnumerateDeviceExtensionProperties(VkPhys
 	{
 		*pPropertyCount = 0;
 		writer.write_uint32_t(VK_SUCCESS);
+		writer.thaw();
 		return VK_SUCCESS;
 	}
 #endif
@@ -3145,7 +3160,8 @@ VKAPI_ATTR VkResult VKAPI_CALL trace_vkEnumerateDeviceExtensionProperties(VkPhys
 	}
 	frame_mutex.unlock();
 	writer.write_uint32_t(retval);
-	return VK_SUCCESS;
+	writer.thaw();
+	return retval;
 }
 
 // Following RenderDoc we enforce a randomly generated UUID each run, which should force the app to discard any stored shader cache data.
@@ -3172,6 +3188,7 @@ VKAPI_ATTR VkBool32 VKAPI_CALL trace_vkGetPhysicalDeviceXlibPresentationSupportK
 	writer.write_uint32_t(virtual_family ? LAVATUBE_VIRTUAL_QUEUE : queueFamilyIndex);
 	VkBool32 retval = wrap_vkGetPhysicalDeviceXlibPresentationSupportKHR(physicalDevice, queueFamilyIndex, dpy, visualID);
 	writer.write_uint32_t(retval);
+	writer.thaw();
 	return retval;
 }
 

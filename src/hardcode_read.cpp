@@ -2917,6 +2917,8 @@ void retrace_vkGetDeviceQueue2(lava_file_reader& reader)
 {
 	const uint32_t device_index = reader.read_handle(DEBUGPARAM("VkDevice"));
 	VkDevice device = index_to_VkDevice.at(device_index);
+	reader.device = device;
+	reader.physicalDevice = VkDevice_index.at(device_index).physicalDevice;
 	VkDeviceQueueInfo2 info_real = {};
 	read_VkDeviceQueueInfo2(reader, &info_real);
 	bool virtual_family = false;
@@ -2961,12 +2963,16 @@ void retrace_vkGetDeviceQueue2(lava_file_reader& reader)
 		}
 		queue_data.physicalDevice = VkDevice_index.at(device_index).physicalDevice;
 	}
+	callback_context cb_context{ reader };
+	for (auto* c : vkGetDeviceQueue2_callbacks) c(cb_context, device, &info_real, &queue);
 }
 
 void retrace_vkGetDeviceQueue(lava_file_reader& reader)
 {
 	const uint32_t device_index = reader.read_handle(DEBUGPARAM("VkDevice"));
 	VkDevice device = index_to_VkDevice.at(device_index);
+	reader.device = device;
+	reader.physicalDevice = VkDevice_index.at(device_index).physicalDevice;
 	uint32_t queueFamilyIndex = reader.read_uint32_t();
 	uint32_t queueIndex = reader.read_uint32_t();
 	VkQueue queue = fake_handle<VkQueue>((queueFamilyIndex << 16) + queueIndex);
@@ -3011,6 +3017,8 @@ void retrace_vkGetDeviceQueue(lava_file_reader& reader)
 		}
 		queue_data.physicalDevice = VkDevice_index.at(device_index).physicalDevice;
 	}
+	callback_context cb_context{ reader };
+	for (auto* c : vkGetDeviceQueue_callbacks) c(cb_context, device, queueFamilyIndex, queueIndex, &queue);
 }
 
 void read_hw_buffer(lava_file_reader& reader)
@@ -3080,17 +3088,23 @@ void retrace_vkEnumerateInstanceLayerProperties(lava_file_reader& reader)
 	// Load
 	uint8_t do_call = reader.read_uint8_t();
 	// Execute
+	VkResult retval = VK_RESULT_MAX_ENUM;
 	if (do_call == 1 && reader.run)
 	{
-		VkResult retval = wrap_vkEnumerateInstanceLayerProperties(&pPropertyCount, nullptr);
+		retval = wrap_vkEnumerateInstanceLayerProperties(&pPropertyCount, nullptr);
 		assert(retval == VK_SUCCESS);
 		pProperties.resize(pPropertyCount);
 		retval = wrap_vkEnumerateInstanceLayerProperties(&pPropertyCount, pProperties.data());
 		assert(retval == VK_SUCCESS);
 		(void)retval; // ignore return value
 	}
-	(void)reader.read_uint32_t(); // ignore stored return value
+	VkResult stored_retval = static_cast<VkResult>(reader.read_uint32_t());
+	if (retval == VK_RESULT_MAX_ENUM) retval = stored_retval;
 	// Post
+	callback_context cb_context{ reader };
+	cb_context.result.vkresult = retval;
+	uint32_t* pPropertyCount_ptr = (do_call == 1 && reader.run) ? &pPropertyCount : nullptr;
+	for (auto* c : vkEnumerateInstanceLayerProperties_callbacks) c(cb_context, pPropertyCount_ptr, pProperties.data());
 }
 
 void retrace_vkEnumerateInstanceExtensionProperties(lava_file_reader& reader)
@@ -3103,74 +3117,98 @@ void retrace_vkEnumerateInstanceExtensionProperties(lava_file_reader& reader)
 	pLayerName = reader.read_string();
 	uint8_t do_call = reader.read_uint8_t();
 	// Execute
+	VkResult retval = VK_RESULT_MAX_ENUM;
 	if (do_call == 1 && reader.run)
 	{
-		VkResult retval = wrap_vkEnumerateInstanceExtensionProperties(pLayerName, &pPropertyCount, nullptr);
+		retval = wrap_vkEnumerateInstanceExtensionProperties(pLayerName, &pPropertyCount, nullptr);
 		assert(retval == VK_SUCCESS);
 		pProperties.resize(pPropertyCount);
 		retval = wrap_vkEnumerateInstanceExtensionProperties(pLayerName, &pPropertyCount, pProperties.data());
 		assert(retval == VK_SUCCESS);
 		(void)retval; // ignore return value
 	}
-	(void)reader.read_uint32_t(); // ignore stored return value
+	VkResult stored_retval = static_cast<VkResult>(reader.read_uint32_t());
+	if (retval == VK_RESULT_MAX_ENUM) retval = stored_retval;
 	// Post
+	callback_context cb_context{ reader };
+	cb_context.result.vkresult = retval;
+	uint32_t* pPropertyCount_ptr = (do_call == 1 && reader.run) ? &pPropertyCount : nullptr;
+	for (auto* c : vkEnumerateInstanceExtensionProperties_callbacks) c(cb_context, pLayerName, pPropertyCount_ptr, pProperties.data());
 }
 
 void retrace_vkEnumerateDeviceLayerProperties(lava_file_reader& reader)
 {
 	// Declarations
+	VkPhysicalDevice physicalDevice = selected_physical_device;
 	std::vector<VkLayerProperties> pProperties;
 	uint32_t pPropertyCount = 0;
 	// Load
 	const uint8_t initialized = reader.read_uint8_t();
-	uint32_t physicalDevice_index;
+	uint32_t physicalDevice_index = 0;
 	if (initialized)
 	{
 		physicalDevice_index = reader.read_handle(DEBUGPARAM("VkPhysicalDevice"));
 	}
+	(void)physicalDevice_index;
+	reader.physicalDevice = physicalDevice;
 
 	const uint8_t do_call = reader.read_uint8_t();
 	// Execute
+	VkResult retval = VK_RESULT_MAX_ENUM;
 	if (do_call == 1 && reader.run)
 	{
-		VkResult retval = wrap_vkEnumerateDeviceLayerProperties(selected_physical_device, &pPropertyCount, nullptr);
+		retval = wrap_vkEnumerateDeviceLayerProperties(physicalDevice, &pPropertyCount, nullptr);
 		assert(retval == VK_SUCCESS);
 		pProperties.resize(pPropertyCount);
-		retval = wrap_vkEnumerateDeviceLayerProperties(selected_physical_device, &pPropertyCount, pProperties.data());
+		retval = wrap_vkEnumerateDeviceLayerProperties(physicalDevice, &pPropertyCount, pProperties.data());
 		assert(retval == VK_SUCCESS);
 		(void)retval; // ignore return value
 	}
-	(void)reader.read_uint32_t(); // ignore stored return value
+	VkResult stored_retval = static_cast<VkResult>(reader.read_uint32_t());
+	if (retval == VK_RESULT_MAX_ENUM) retval = stored_retval;
 	// Post
+	callback_context cb_context{ reader };
+	cb_context.result.vkresult = retval;
+	uint32_t* pPropertyCount_ptr = (do_call == 1 && reader.run) ? &pPropertyCount : nullptr;
+	for (auto* c : vkEnumerateDeviceLayerProperties_callbacks) c(cb_context, physicalDevice, pPropertyCount_ptr, pProperties.data());
 }
 
 void retrace_vkEnumerateDeviceExtensionProperties(lava_file_reader& reader)
 {
 	// Declarations
+	VkPhysicalDevice physicalDevice = selected_physical_device;
 	const char* pLayerName = nullptr;
 	std::vector<VkExtensionProperties> pProperties;
 	uint32_t pPropertyCount = 0;
 	// Load
 	const uint8_t initialized = reader.read_uint8_t();
-	uint32_t physicalDevice_index;
+	uint32_t physicalDevice_index = 0;
 	if (initialized)
 	{
 		physicalDevice_index = reader.read_handle(DEBUGPARAM("VkPhysicalDevice"));
 	}
+	(void)physicalDevice_index;
+	reader.physicalDevice = physicalDevice;
 	pLayerName = reader.read_string();
 	const uint8_t do_call = reader.read_uint8_t();
 	// Execute
+	VkResult retval = VK_RESULT_MAX_ENUM;
 	if (do_call == 1 && reader.run)
 	{
-		VkResult retval = wrap_vkEnumerateDeviceExtensionProperties(selected_physical_device, pLayerName, &pPropertyCount, nullptr);
+		retval = wrap_vkEnumerateDeviceExtensionProperties(physicalDevice, pLayerName, &pPropertyCount, nullptr);
 		assert(retval == VK_SUCCESS);
 		pProperties.resize(pPropertyCount);
-		retval = wrap_vkEnumerateDeviceExtensionProperties(selected_physical_device, pLayerName, &pPropertyCount, pProperties.data());
+		retval = wrap_vkEnumerateDeviceExtensionProperties(physicalDevice, pLayerName, &pPropertyCount, pProperties.data());
 		assert(retval == VK_SUCCESS);
 		(void)retval; // ignore return value
 	}
-	(void)reader.read_uint32_t(); // ignore stored return value
+	VkResult stored_retval = static_cast<VkResult>(reader.read_uint32_t());
+	if (retval == VK_RESULT_MAX_ENUM) retval = stored_retval;
 	// Post
+	callback_context cb_context{ reader };
+	cb_context.result.vkresult = retval;
+	uint32_t* pPropertyCount_ptr = (do_call == 1 && reader.run) ? &pPropertyCount : nullptr;
+	for (auto* c : vkEnumerateDeviceExtensionProperties_callbacks) c(cb_context, physicalDevice, pLayerName, pPropertyCount_ptr, pProperties.data());
 }
 
 void retrace_vkGetPhysicalDeviceXlibPresentationSupportKHR(lava_file_reader& reader)
