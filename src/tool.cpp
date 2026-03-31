@@ -118,6 +118,27 @@ static void dump_host_write_stats_report(const char* label)
 		(unsigned long)accel.max_segments, accel.max_index == CONTAINER_INVALID_INDEX ? "n/a" : std::to_string(buffers.max_index).c_str());
 }
 
+static void print_removed_json_list(const char* heading, const Json::Value& values)
+{
+	if (!values.isArray() || values.empty()) return;
+	printf("%s\n", heading);
+	for (const Json::Value& value : values) printf("\t%s\n", value.asString().c_str());
+}
+
+static void print_removed_feature_lists(const Json::Value& removed_features)
+{
+	if (!removed_features.isObject()) return;
+	std::vector<std::string> names = removed_features.getMemberNames();
+	std::sort(names.begin(), names.end());
+	for (const std::string& name : names)
+	{
+		const Json::Value& values = removed_features[name];
+		if (!values.isArray() || values.empty()) continue;
+		printf("Already removed device features from %s:\n", name.c_str());
+		for (const Json::Value& value : values) printf("\t%s\n", value.asString().c_str());
+	}
+}
+
 static void replay_thread(lava_reader* replayer, int thread_id)
 {
 	if (p__sandbox_level >= 2) sandbox_level_three();
@@ -344,15 +365,12 @@ int main(int argc, char **argv)
 	Json::Value meta = packed_json("metadata.json", filename_input);
 	Json::Value instance_removed_json = meta["instanceRequested"]["removedExtensions"];
 	Json::Value device_removed_json = meta["deviceRequested"]["removedExtensions"];
-	if ((verbose || report_unused) && instance_removed_json.size())
+	Json::Value device_removed_features_json = meta["deviceRequested"]["removedFeatures"];
+	if (verbose || report_unused)
 	{
-		printf("Already removed instance extensions:\n");
-		for (auto v : instance_removed_json) printf("\t%s\n", v.asString().c_str());
-	}
-	if ((verbose || report_unused) && device_removed_json.size())
-	{
-		printf("Already removed device extensions:\n");
-		for (auto v : device_removed_json) printf("\t%s\n", v.asString().c_str());
+		print_removed_json_list("Already removed instance extensions:", instance_removed_json);
+		print_removed_json_list("Already removed device extensions:", device_removed_json);
+		print_removed_feature_lists(device_removed_features_json);
 	}
 
 	// run first round

@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <fstream>
 #include <errno.h>
 #include <unistd.h>
@@ -20,6 +21,49 @@ static inline void sntimef(char *str, size_t bufSize, const char *format)
 	time_t utcTime = time(nullptr);
 	tm *tmv = localtime(&utcTime);
 	strftime(str, bufSize, format, tmv);
+}
+
+static void append_sorted_strings(Json::Value& array, const std::unordered_set<std::string>& values)
+{
+	std::vector<std::string> sorted(values.begin(), values.end());
+	std::sort(sorted.begin(), sorted.end());
+	for (const std::string& value : sorted) array.append(value);
+}
+
+static void write_removed_strings(Json::Value& parent, const char* key, const std::unordered_set<std::string>& values)
+{
+	parent[key] = Json::arrayValue;
+	append_sorted_strings(parent[key], values);
+}
+
+static void rewrite_enabled_extensions(Json::Value& target, const Json::Value& original, const std::unordered_set<std::string>& enabled)
+{
+	target = Json::arrayValue;
+
+	std::unordered_set<std::string> seen;
+	if (original.isArray())
+	{
+		for (const Json::Value& value : original)
+		{
+			const std::string name = value.asString();
+			if (enabled.count(name) == 0 || seen.count(name)) continue;
+			target.append(name);
+			seen.insert(name);
+		}
+	}
+
+	std::unordered_set<std::string> remainder = enabled;
+	for (const std::string& name : seen) remainder.erase(name);
+	append_sorted_strings(target, remainder);
+}
+
+static void log_removed_strings(const char* heading, const std::unordered_set<std::string>& values)
+{
+	if (values.empty()) return;
+	ILOG("%s", heading);
+	std::vector<std::string> sorted(values.begin(), values.end());
+	std::sort(sorted.begin(), sorted.end());
+	for (const std::string& value : sorted) ILOG("\t%s", value.c_str());
 }
 
 // --- trace file writer
@@ -196,18 +240,58 @@ void lava_writer::serialize()
 
 	// over-write these in case something was not used
 	feature_detection* f = vulkan_feature_detection_get();
-	if (meta.app.stored_VkPhysicalDeviceFeatures2) f->adjust_VkPhysicalDeviceFeatures(meta.app.stored_VkPhysicalDeviceFeatures2->features);
-	if (meta.app.stored_VkPhysicalDeviceVulkan11Features) f->adjust_VkPhysicalDeviceVulkan11Features(*meta.app.stored_VkPhysicalDeviceVulkan11Features);
-	if (meta.app.stored_VkPhysicalDeviceVulkan12Features) f->adjust_VkPhysicalDeviceVulkan12Features(*meta.app.stored_VkPhysicalDeviceVulkan12Features);
-	if (meta.app.stored_VkPhysicalDeviceVulkan13Features) f->adjust_VkPhysicalDeviceVulkan13Features(*meta.app.stored_VkPhysicalDeviceVulkan13Features);
-	if (meta.app.stored_VkPhysicalDeviceVulkan14Features) f->adjust_VkPhysicalDeviceVulkan14Features(*meta.app.stored_VkPhysicalDeviceVulkan14Features);
+	std::unordered_set<std::string> removed_features10;
+	std::unordered_set<std::string> removed_features11;
+	std::unordered_set<std::string> removed_features12;
+	std::unordered_set<std::string> removed_features13;
+	std::unordered_set<std::string> removed_features14;
+	if (meta.app.stored_VkPhysicalDeviceFeatures2) removed_features10 = f->adjust_VkPhysicalDeviceFeatures(meta.app.stored_VkPhysicalDeviceFeatures2->features);
+	if (meta.app.stored_VkPhysicalDeviceVulkan11Features) removed_features11 = f->adjust_VkPhysicalDeviceVulkan11Features(*meta.app.stored_VkPhysicalDeviceVulkan11Features);
+	if (meta.app.stored_VkPhysicalDeviceVulkan12Features) removed_features12 = f->adjust_VkPhysicalDeviceVulkan12Features(*meta.app.stored_VkPhysicalDeviceVulkan12Features);
+	if (meta.app.stored_VkPhysicalDeviceVulkan13Features) removed_features13 = f->adjust_VkPhysicalDeviceVulkan13Features(*meta.app.stored_VkPhysicalDeviceVulkan13Features);
+	if (meta.app.stored_VkPhysicalDeviceVulkan14Features) removed_features14 = f->adjust_VkPhysicalDeviceVulkan14Features(*meta.app.stored_VkPhysicalDeviceVulkan14Features);
 	auto removed_device_exts = f->adjust_device_extensions(meta.app.device_extensions);
 	auto removed_instance_exts = f->adjust_instance_extensions(meta.app.instance_extensions);
 	Json::Value& r = mJson;
-	r["instanceRequested"]["removedExtensions"] = Json::arrayValue;
-	for (const std::string& name : removed_instance_exts) r["instanceRequested"]["removedExtensions"].append(name);
-	r["deviceRequested"]["removedExtensions"] = Json::arrayValue;
-	for (const std::string& name : removed_device_exts) r["deviceRequested"]["removedExtensions"].append(name);
+	Json::Value instance_requested_extensions = r["instanceRequested"]["enabledExtensions"];
+	Json::Value device_requested_extensions = r["deviceRequested"]["enabledExtensions"];
+	rewrite_enabled_extensions(r["instanceRequested"]["enabledExtensions"], instance_requested_extensions, meta.app.instance_extensions);
+	rewrite_enabled_extensions(r["deviceRequested"]["enabledExtensions"], device_requested_extensions, meta.app.device_extensions);
+	write_removed_strings(r["instanceRequested"], "removedExtensions", removed_instance_exts);
+	write_removed_strings(r["deviceRequested"], "removedExtensions", removed_device_exts);
+	r["deviceRequested"]["removedFeatures"] = Json::objectValue;
+	if (meta.app.stored_VkPhysicalDeviceFeatures2)
+	{
+		r["deviceRequested"]["VkPhysicalDeviceFeatures"] = writeVkPhysicalDeviceFeatures2(*meta.app.stored_VkPhysicalDeviceFeatures2);
+		write_removed_strings(r["deviceRequested"]["removedFeatures"], "VkPhysicalDeviceFeatures", removed_features10);
+	}
+	if (meta.app.stored_VkPhysicalDeviceVulkan11Features)
+	{
+		r["deviceRequested"]["VkPhysicalDeviceVulkan11Features"] = writeVkPhysicalDeviceVulkan11Features(*meta.app.stored_VkPhysicalDeviceVulkan11Features);
+		write_removed_strings(r["deviceRequested"]["removedFeatures"], "VkPhysicalDeviceVulkan11Features", removed_features11);
+	}
+	if (meta.app.stored_VkPhysicalDeviceVulkan12Features)
+	{
+		r["deviceRequested"]["VkPhysicalDeviceVulkan12Features"] = writeVkPhysicalDeviceVulkan12Features(*meta.app.stored_VkPhysicalDeviceVulkan12Features);
+		write_removed_strings(r["deviceRequested"]["removedFeatures"], "VkPhysicalDeviceVulkan12Features", removed_features12);
+	}
+	if (meta.app.stored_VkPhysicalDeviceVulkan13Features)
+	{
+		r["deviceRequested"]["VkPhysicalDeviceVulkan13Features"] = writeVkPhysicalDeviceVulkan13Features(*meta.app.stored_VkPhysicalDeviceVulkan13Features);
+		write_removed_strings(r["deviceRequested"]["removedFeatures"], "VkPhysicalDeviceVulkan13Features", removed_features13);
+	}
+	if (meta.app.stored_VkPhysicalDeviceVulkan14Features)
+	{
+		r["deviceRequested"]["VkPhysicalDeviceVulkan14Features"] = writeVkPhysicalDeviceVulkan14Features(*meta.app.stored_VkPhysicalDeviceVulkan14Features);
+		write_removed_strings(r["deviceRequested"]["removedFeatures"], "VkPhysicalDeviceVulkan14Features", removed_features14);
+	}
+	log_removed_strings("Feature detection removed unused instance extensions:", removed_instance_exts);
+	log_removed_strings("Feature detection removed unused device extensions:", removed_device_exts);
+	log_removed_strings("Feature detection removed unused device features from VkPhysicalDeviceFeatures:", removed_features10);
+	log_removed_strings("Feature detection removed unused device features from VkPhysicalDeviceVulkan11Features:", removed_features11);
+	log_removed_strings("Feature detection removed unused device features from VkPhysicalDeviceVulkan12Features:", removed_features12);
+	log_removed_strings("Feature detection removed unused device features from VkPhysicalDeviceVulkan13Features:", removed_features13);
+	log_removed_strings("Feature detection removed unused device features from VkPhysicalDeviceVulkan14Features:", removed_features14);
 
 	// write metadata to JSON file
 	mJson["vulkan_header_version"] = version_to_string(VK_HEADER_VERSION);
