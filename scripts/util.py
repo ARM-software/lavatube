@@ -634,6 +634,8 @@ class parameter(spec.base_parameter):
 		elif self.ptr:
 			if is_root or iscount(self): # need to store temporary in case used by other variables as size
 				z.decl('%s%s' % (self.type, self.inline_ptrstr), self.name)
+				if is_root and self.inparam:
+					z.do('%s = reader.pool.allocate<%s>(1);' % (self.name, self.type))
 			z.do('*%s = reader.read_%s();' % (varname, self.type))
 		else:
 			if is_root or iscount(self): # need to store temporary in case used by other variables as size
