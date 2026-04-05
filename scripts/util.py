@@ -1063,6 +1063,13 @@ def get_create_params(name):
 		count = 'pAllocateInfo->%s' % count
 	return (spec.functions_create[name][0], count, spec.functions_create[name][2])
 
+def add_multi_draw_stride_check(name):
+	z = getspool()
+	if name == 'vkCmdDrawMultiEXT':
+		z.do('if (drawCount > 1 && stride != sizeof(VkMultiDrawInfoEXT)) ABORT("vkCmdDrawMultiEXT does not support stride %u for drawCount %u yet; expected %zu", stride, drawCount, sizeof(VkMultiDrawInfoEXT));')
+	elif name == 'vkCmdDrawMultiIndexedEXT':
+		z.do('if (drawCount > 1 && stride != sizeof(VkMultiDrawIndexedInfoEXT)) ABORT("vkCmdDrawMultiIndexedEXT does not support stride %u for drawCount %u yet; expected %zu", stride, drawCount, sizeof(VkMultiDrawIndexedInfoEXT));')
+
 def save_add_pre(name): # need to include the resource-creating or resource-destroying command to avoid a race-condition
 	z = getspool()
 	if name in ['vkGetFenceStatus', 'vkWaitForFences']:
@@ -1338,6 +1345,7 @@ def save_add_tracking(name):
 # Run before execute
 def load_add_pre(name):
 	z = getspool()
+	add_multi_draw_stride_check(name)
 	if name in spec.functions_create and spec.functions_create[name][1] == '1':
 		(param, count, type) = get_create_params(name)
 		z.decl(type, param)
@@ -1829,6 +1837,7 @@ def savefunc(name, node, target, header):
 	z.declarations.insert(0, 'lava_file_writer& writer = write_header(\"%s\", %s%s);' % (name, name.upper(), ', true' if name in spec.functions_destroy or name in vk.thread_barrier_funcs else ''))
 	if name in vk.trace_pre_calls: # this must be called before we start serializing our packet, as ...
 		z.declarations.insert(0, 'trace_pre_%s(%s);' % (name, ', '.join(call_list))) # ... we may generate our own packets here
+	add_multi_draw_stride_check(name)
 	for param in params:
 		if param.inparam:
 			param.print_save(param.name, '')
@@ -1960,6 +1969,7 @@ def convertfunc(name, node, target, header):
 		if x.ptr:
 			z.first('%s* %s = gfxr_%s->GetPointer();' % (x.type, x.name, x.name))
 
+	add_multi_draw_stride_check(name)
 	for param in params:
 		if param.inparam:
 			param.print_save(param.name, '', postprocess=True)
