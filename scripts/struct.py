@@ -77,13 +77,10 @@ def struct_impl_read(r, selected = None):
 		if name in spec.protected_types:
 			print('#ifdef %s' % spec.protected_types[name], file=r)
 		accessor = '%s* sptr' % name
-		special = ''
-		if name == 'VkDeviceCreateInfo': special = ', VkPhysicalDevice physicalDevice'
-		print('static void read_%s(lava_file_reader& reader, %s%s)' % (name, accessor, special), file=r)
+		print('static void read_%s(lava_file_reader& reader, %s)' % (name, accessor), file=r)
 		print('{', file=r)
 		if v.attrib.get('alias'):
-			if 'VkDeviceCreateInfo' in name: special = ', physicalDevice'
-			print('\tread_%s(reader, sptr%s);' % (v.attrib.get('alias'), special), file=r)
+			print('\tread_%s(reader, sptr);' % (v.attrib.get('alias')), file=r)
 		else:
 			z.target(r)
 			z.read = True

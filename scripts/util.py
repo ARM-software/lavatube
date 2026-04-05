@@ -263,7 +263,6 @@ class parameter(spec.base_parameter):
 		elif mytype == 'VkCommandBufferBeginInfo' and not self.read: accessor += ', commandbuffer_data'
 		elif 'vkCmdPushDescriptorSet' in self.funcname and mytype == 'VkWriteDescriptorSet' and not self.read: accessor += ', true'
 		elif mytype == 'VkWriteDescriptorSet' and not self.read: accessor += ', false'
-		elif mytype == 'VkDeviceCreateInfo' and self.read: accessor += ', physicalDevice'
 
 		if self.funcname[0] == 'V' and mytype in vk.deconst_struct and not self.read: # we cannot modify passed in memory when writing
 			if size:
@@ -288,10 +287,6 @@ class parameter(spec.base_parameter):
 
 		varname = owner + name
 		is_root = not isptr(varname)
-
-		if self.funcname == 'VkRenderPassPerformanceCountersByRegionBeginInfoARM': # temprary workaround until it gets fixed in Khronos xml
-			if self.name == 'pCounterAddresses': self.length = 'counterAddressCount'
-			elif self.name == 'pCounterIndices': self.length = 'counterIndexCount'
 
 		if not self.funcname in vk.noscreen_calls and not self.funcname in vk.virtualswap_calls and self.funcname[0] == 'v' and not bypass_checks:
 			assert self.type != 'VkSwapchainKHR', '%s has VkSwapchainKHR in %s' % (self.funcname, self.name)
@@ -408,7 +403,7 @@ class parameter(spec.base_parameter):
 			elif self.funcname == 'VkInstanceCreateInfo' and self.name == 'ppEnabledLayerNames':
 				z.do('%s = instance_layers(reader, sptr->%s);' % (varname, strlen))
 			elif self.funcname == 'VkDeviceCreateInfo' and self.name == 'ppEnabledExtensionNames':
-				z.do('%s = device_extensions(sptr, reader, physicalDevice, sptr->%s);' % (varname, strlen))
+				z.do('%s = device_extensions(sptr, reader, reader.physicalDevice, sptr->%s);' % (varname, strlen))
 			elif self.funcname == 'VkDeviceCreateInfo' and self.name == 'ppEnabledLayerNames':
 				z.do('%s = device_layers(reader, sptr->%s);' % (varname, strlen))
 			else:
@@ -578,6 +573,9 @@ class parameter(spec.base_parameter):
 				z.do('for (size_t k3 = 0; k3 < %d; k3++) %s[k3] = static_cast<%s>(%s[k3]);' % (self.length, varname, self.type, storedname))
 			else:
 				if self.type == 'void':
+					if is_root:
+						z.decl(self.type + '*', self.name)
+						z.access(self.name, self.name)
 					z.do('%s = reader.read_%s(); // for %s' % (z.tmp(storedtype), storedtype, varname))
 					z.do('%s = nullptr;' % varname)
 				elif is_root and self.ptr:
@@ -725,10 +723,6 @@ class parameter(spec.base_parameter):
 
 		varname = owner + name
 		is_root = not isptr(varname)
-
-		if self.funcname == 'VkRenderPassPerformanceCountersByRegionBeginInfoARM': # temprary workaround until it gets fixed in Khronos xml
-			if self.name == 'pCounterAddresses': self.length = 'counterAddressCount'
-			elif self.name == 'pCounterIndices': self.length = 'counterIndexCount'
 
 		if not is_root and iscount(self):
 			z.decl('%s%s%s' % (self.mod if self.structure else '', self.type, self.param_ptrstr), self.name)
@@ -977,7 +971,10 @@ class parameter(spec.base_parameter):
 			storedtype = spec.type_mappings[self.type]
 			z.do('writer.write_%s_t((%s)%s);' % (storedtype, storedtype, varname))
 		elif self.ptr and self.type in spec.type_mappings:
-			z.do('writer.write_%s(*%s);' % (spec.type_mappings[self.type], varname))
+			if self.type == 'void':
+				z.do('writer.write_uint8_t(*reinterpret_cast<const uint8_t*>(%s));' % varname)
+			else:
+				z.do('writer.write_%s(*%s);' % (spec.type_mappings[self.type], varname))
 		elif self.ptr:
 			z.do('writer.write_%s(*%s);' % (self.type, varname))
 		elif self.type in spec.type_mappings and self.length and self.length.isalpha(): # type mapped array
@@ -1057,6 +1054,7 @@ class parameter(spec.base_parameter):
 			z.brace_end()
 			z.do('else writer.parent->mem_allocated += pAllocateInfo->allocationSize;')
 			z.do('frame_mutex.unlock();')
+
 def get_create_params(name):
 	count = spec.functions_create[name][1]
 	if name in ['vkAllocateCommandBuffers', 'vkAllocateDescriptorSets']: # work around stupid design in XML
@@ -1258,10 +1256,19 @@ def save_add_tracking(name):
 			z.do('add->parent_device_index = device_data->index;')
 			z.do('add->flags = pCreateInfo->createFlags;')
 			z.do('add->type = pCreateInfo->type;')
-			z.do('add->offset = pCreateInfo->offset;')
-			z.do('add->buffer = pCreateInfo->buffer;')
-			z.do('add->buffer_index = writer.parent->records.VkBuffer_index.at(pCreateInfo->buffer)->index;')
-			z.do('add->size = pCreateInfo->size;')
+			if name == 'vkCreateAccelerationStructure2KHR':
+				z.do('VkDeviceSize as_offset = 0;')
+				z.do('trackedbuffer* as_buffer_data = find_buffer_by_device_address(writer.parent->records, pCreateInfo->addressRange.address, pCreateInfo->addressRange.size ? pCreateInfo->addressRange.size : 1, as_offset);')
+				z.do('if (!as_buffer_data) ABORT("vkCreateAccelerationStructure2KHR storage address 0x%llx (size=%llu) is not mapped to a buffer", (unsigned long long)pCreateInfo->addressRange.address, (unsigned long long)pCreateInfo->addressRange.size);')
+				z.do('add->offset = as_offset;')
+				z.do('add->buffer = VK_NULL_HANDLE;')
+				z.do('add->buffer_index = as_buffer_data->index;')
+				z.do('add->size = pCreateInfo->addressRange.size;')
+			else:
+				z.do('add->offset = pCreateInfo->offset;')
+				z.do('add->buffer = pCreateInfo->buffer;')
+				z.do('add->buffer_index = writer.parent->records.VkBuffer_index.at(pCreateInfo->buffer)->index;')
+				z.do('add->size = pCreateInfo->size;')
 			z.do('add->object_type = VK_OBJECT_TYPE_ACCELERATION_STRUCTURE_KHR;')
 		z.do('DLOG2("insert %s into %s index %%u at call=%%d", (unsigned)add->index, (int)writer.current.call);' % (type, name))
 		z.do('add->enter_created();')

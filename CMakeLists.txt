@@ -129,8 +129,8 @@ set(COMMON_SRC
     ${PROJECT_SOURCE_DIR}/external/jsoncpp/src/lib_json/json_writer.cpp
     ${PROJECT_SOURCE_DIR}/external/jsoncpp/src/lib_json/json_reader.cpp
     ${PROJECT_SOURCE_DIR}/external/jsoncpp/src/lib_json/json_value.cpp
-    ${PROJECT_SOURCE_DIR}/external/tracetooltests/include/vulkan_feature_detect.cpp
-    ${PROJECT_SOURCE_DIR}/external/tracetooltests/include/vulkan_feature_detect.h
+    ${PROJECT_SOURCE_DIR}/external/tracetooltests/src/usagetracker/vulkan_feature_detect.cpp
+    ${PROJECT_SOURCE_DIR}/external/tracetooltests/src/usagetracker/vulkan_feature_detect.h
     ${PROJECT_SOURCE_DIR}/src/vk_wrapper.cpp
     ${PROJECT_SOURCE_DIR}/src/util.cpp
     ${PROJECT_SOURCE_DIR}/src/util.h
@@ -677,4 +677,8 @@ layer_test(anki_scene2 anki_scene2)
 #layer_test(display display)
 #layer_test(headless_surface headless_surface)
 layer_test(compute_device_generated compute_device_generated)
-layer_test(graphics_multi_draw graphics_multi_draw)
+layer_test(graphics_multi_draw graphics_multi_draw --multi-draw-mode alternate)
+
+# The two below will fail as we lack support for interleaved data for VK_EXT_multi_draw for now
+#layer_test(graphics_multi_draw_stride16 graphics_multi_draw --multi-draw-mode indexed --stride-mode aligned16)
+#layer_test(graphics_multi_draw_stride32 graphics_multi_draw --multi-draw-mode draw --stride-mode aligned32)

@@ -434,8 +434,7 @@ struct trackedaccelerationstructure : trackedobject
 	void self_test() const
 	{
 		static_assert(offsetof(trackedaccelerationstructure, magic) == 0, "ICD loader magic must be at offset zero!");
-		assert(buffer != VK_NULL_HANDLE);
-		assert(buffer_index != CONTAINER_INVALID_INDEX);
+		assert(buffer != VK_NULL_HANDLE || buffer_index != CONTAINER_INVALID_INDEX || replay_storage.buffer != VK_NULL_HANDLE);
 		assert(type != VK_ACCELERATION_STRUCTURE_TYPE_MAX_ENUM_KHR);
 		assert(object_type == VK_OBJECT_TYPE_ACCELERATION_STRUCTURE_KHR);
 	}

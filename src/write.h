@@ -14,7 +14,7 @@
 #include <stdio.h>
 #include <functional>
 
-#include "vulkan_feature_detect.h"
+#include "external/tracetooltests/src/usagetracker/vulkan_feature_detect.h"
 #include "containers.h"
 #include "lavamutex.h"
 #include "filewriter.h"

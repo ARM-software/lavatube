@@ -455,6 +455,7 @@ const char* pretty_print_VkObjectType(VkObjectType val)
 	case VK_OBJECT_TYPE_TENSOR_VIEW_ARM: return "Tensor view";
 	case VK_OBJECT_TYPE_DATA_GRAPH_PIPELINE_SESSION_ARM: return "Data graph pipeline session";
 	case VK_OBJECT_TYPE_EXTERNAL_COMPUTE_QUEUE_NV: return "External compute queue";
+	case VK_OBJECT_TYPE_SHADER_INSTRUMENTATION_ARM: return "Shader instrumentation";
 	case VK_OBJECT_TYPE_MAX_ENUM: assert(false); return "Error";
 	}
 	return "Error";

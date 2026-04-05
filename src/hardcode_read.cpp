@@ -318,6 +318,7 @@ static uint64_t object_lookup(VkObjectType type, uint32_t index)
 	case VK_OBJECT_TYPE_VIDEO_SESSION_KHR: return (uint64_t)index_to_VkVideoSessionKHR.at(index);
 	case VK_OBJECT_TYPE_VIDEO_SESSION_PARAMETERS_KHR: return (uint64_t)index_to_VkVideoSessionParametersKHR.at(index);
 	case VK_OBJECT_TYPE_SHADER_EXT: return (uint64_t)index_to_VkShaderEXT.at(index);
+	case VK_OBJECT_TYPE_SHADER_INSTRUMENTATION_ARM: return (uint64_t)index_to_VkShaderInstrumentationARM.at(index);
 	case VK_OBJECT_TYPE_DEBUG_REPORT_CALLBACK_EXT: return (uint64_t)index_to_VkDebugReportCallbackEXT.at(index);
 	case VK_OBJECT_TYPE_DEBUG_UTILS_MESSENGER_EXT: return (uint64_t)index_to_VkDebugUtilsMessengerEXT.at(index);
 	case VK_OBJECT_TYPE_TENSOR_ARM: return (uint64_t)index_to_VkTensorARM.at(index);
@@ -386,6 +387,7 @@ trackable& object_trackable(VkObjectType type, uint64_t handle)
 	case VK_OBJECT_TYPE_VIDEO_SESSION_KHR: return VkVideoSessionKHR_index.at(index_to_VkVideoSessionKHR.index((VkVideoSessionKHR)handle));
 	case VK_OBJECT_TYPE_VIDEO_SESSION_PARAMETERS_KHR: return VkVideoSessionParametersKHR_index.at(index_to_VkVideoSessionParametersKHR.index((VkVideoSessionParametersKHR)handle));
 	case VK_OBJECT_TYPE_SHADER_EXT: return VkShaderEXT_index.at(index_to_VkShaderEXT.index((VkShaderEXT)handle));
+	case VK_OBJECT_TYPE_SHADER_INSTRUMENTATION_ARM: return VkShaderInstrumentationARM_index.at(index_to_VkShaderInstrumentationARM.index((VkShaderInstrumentationARM)handle));
 	case VK_OBJECT_TYPE_DEBUG_REPORT_CALLBACK_EXT: return VkDebugReportCallbackEXT_index.at(index_to_VkDebugReportCallbackEXT.index((VkDebugReportCallbackEXT)handle));
 	case VK_OBJECT_TYPE_DEBUG_UTILS_MESSENGER_EXT: return VkDebugUtilsMessengerEXT_index.at(index_to_VkDebugUtilsMessengerEXT.index((VkDebugUtilsMessengerEXT)handle));
 	case VK_OBJECT_TYPE_TENSOR_ARM: return VkTensorARM_index.at(index_to_VkTensorARM.index((VkTensorARM)handle));

@@ -127,6 +127,7 @@ static trackable* object_trackable(const trace_records& r, VkObjectType type, ui
 	case VK_OBJECT_TYPE_TENSOR_VIEW_ARM: return r.VkTensorViewARM_index.at((const VkTensorViewARM)object);
 	case VK_OBJECT_TYPE_TENSOR_ARM: return r.VkTensorARM_index.at((const VkTensorARM)object);
 	case VK_OBJECT_TYPE_DATA_GRAPH_PIPELINE_SESSION_ARM: return r.VkDataGraphPipelineSessionARM_index.at((const VkDataGraphPipelineSessionARM)object);
+	case VK_OBJECT_TYPE_SHADER_INSTRUMENTATION_ARM: return r.VkShaderInstrumentationARM_index.at((const VkShaderInstrumentationARM)object);
 	// not supported:
 	case VK_OBJECT_TYPE_EXTERNAL_COMPUTE_QUEUE_NV:
 	case VK_OBJECT_TYPE_CU_MODULE_NVX:
