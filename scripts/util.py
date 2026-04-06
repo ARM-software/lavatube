@@ -1091,6 +1091,9 @@ def save_add_pre(name): # need to include the resource-creating or resource-dest
 		z.declarations.insert(2, 'bool explicit_host_updates = p__trust_host_flushes;')
 		z.declarations.insert(3, 'VkPhysicalDeviceExplicitHostUpdatesFeaturesARM* pdehuf = (VkPhysicalDeviceExplicitHostUpdatesFeaturesARM*)find_extension(pCreateInfo, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXPLICIT_HOST_UPDATES_FEATURES_ARM);')
 		z.declarations.insert(4, 'if (requested_device_extensions.count(VK_ARM_EXPLICIT_HOST_UPDATES_EXTENSION_NAME) && pdehuf && pdehuf->explicitHostUpdates == VK_TRUE) explicit_host_updates = true;')
+		z.declarations.insert(5, 'bool internally_synchronized_queues = false;')
+		z.declarations.insert(6, 'VkPhysicalDeviceInternallySynchronizedQueuesFeaturesKHR* pdisqf = (VkPhysicalDeviceInternallySynchronizedQueuesFeaturesKHR*)find_extension(pCreateInfo, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_INTERNALLY_SYNCHRONIZED_QUEUES_FEATURES_KHR);')
+		z.declarations.insert(7, 'if (pdisqf && pdisqf->internallySynchronizedQueues == VK_TRUE) internally_synchronized_queues = true;')
 
 def save_add_tracking(name):
 	z = getspool()
@@ -1239,6 +1242,7 @@ def save_add_tracking(name):
 		elif type == 'VkDevice':
 			z.do('add->physicalDevice = physicalDevice;')
 			z.do('add->explicit_host_updates = explicit_host_updates;')
+			z.do('add->internally_synchronized_queues = internally_synchronized_queues;')
 			z.do('add->requested_device_extensions = requested_device_extensions;')
 		elif type == 'VkTensorARM':
 			z.do('add->parent_device_index = device_data->index;')
@@ -1405,6 +1409,8 @@ def load_add_tracking(name):
 				z.do('data.device = device;')
 			elif type == 'VkDevice':
 				z.do('data.physicalDevice = physicalDevice; // track parentage')
+				z.do('const VkPhysicalDeviceInternallySynchronizedQueuesFeaturesKHR* pdisqf = (const VkPhysicalDeviceInternallySynchronizedQueuesFeaturesKHR*)find_extension(pCreateInfo, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_INTERNALLY_SYNCHRONIZED_QUEUES_FEATURES_KHR);')
+				z.do('data.internally_synchronized_queues = (pdisqf && pdisqf->internallySynchronizedQueues == VK_TRUE);')
 				z.do('data.allocator = new suballocator();')
 				z.do('data.allocator->create(selected_physical_device, pDevice, VkImage_index, VkBuffer_index, VkTensorARM_index, VkDataGraphPipelineSessionARM_index, reader.run);')
 			elif type == 'VkBuffer':
@@ -1584,6 +1590,9 @@ def loadfunc(name, node, target, header):
 	z.do('// -- Execute --')
 	if name in vk.extra_sync:
 		z.do('sync_mutex.lock();')
+	elif name in ['vkQueuePresentKHR', 'vkQueueBeginDebugUtilsLabelEXT', 'vkQueueEndDebugUtilsLabelEXT', 'vkQueueInsertDebugUtilsLabelEXT']:
+		z.do('const bool internally_synchronized_queue = queue_data.internally_synchronized_queues;')
+		z.do('if (internally_synchronized_queue) sync_mutex.lock();')
 	for param in params:
 		if not param.inparam and param.ptr and param.type != 'void' and not name in vk.ignore_on_read and not name in spec.special_count_funcs and not name in spec.functions_create:
 			vname = z.backing(param.type, param.name, size=param.length, struct=param.structure)
@@ -1779,6 +1788,8 @@ def loadfunc(name, node, target, header):
 
 	if name in vk.extra_sync:
 		z.do('sync_mutex.unlock();')
+	elif name in ['vkQueuePresentKHR', 'vkQueueBeginDebugUtilsLabelEXT', 'vkQueueEndDebugUtilsLabelEXT', 'vkQueueInsertDebugUtilsLabelEXT']:
+		z.do('if (internally_synchronized_queue) sync_mutex.unlock();')
 	z.do('// -- Post --')
 	if not name in spec.special_count_funcs and not name in vk.skip_post_calls:
 		for param in params:
@@ -1856,6 +1867,9 @@ def savefunc(name, node, target, header):
 	z.do('// -- Execute --')
 	if name in vk.extra_sync:
 		z.do('frame_mutex.lock();')
+	elif name in ['vkQueuePresentKHR', 'vkQueueBeginDebugUtilsLabelEXT', 'vkQueueEndDebugUtilsLabelEXT', 'vkQueueInsertDebugUtilsLabelEXT']:
+		z.do('const bool internally_synchronized_queue = queue_data && queue_data->internally_synchronized_queues;')
+		z.do('if (internally_synchronized_queue) frame_mutex.lock();')
 	save_add_pre(name)
 	if name == "vkCreateInstance":
 		assert retval == 'VkResult'
@@ -1903,6 +1917,8 @@ def savefunc(name, node, target, header):
 			z.do('if (writer.run%s) wrap_%s(%s);' % (extra, name, ', '.join(call_list)))
 	if name in vk.extra_sync:
 		z.do('frame_mutex.unlock();')
+	elif name in ['vkQueuePresentKHR', 'vkQueueBeginDebugUtilsLabelEXT', 'vkQueueEndDebugUtilsLabelEXT', 'vkQueueInsertDebugUtilsLabelEXT']:
+		z.do('if (internally_synchronized_queue) frame_mutex.unlock();')
 	z.do('// -- Post --')
 	save_add_tracking(name)
 	if retval == 'VkBool32' or retval == 'VkResult' or retval == 'uint32_t':

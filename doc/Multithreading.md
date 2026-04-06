@@ -44,7 +44,11 @@ This prevents us from destroying or resetting an object before all users are don
 with it.
 
 This is used before all destroy commands, pool reset commands, queue submits,
-memory unmaps, and queue presents.
+queue presents, and memory unmaps. More specifically, the current generated
+list covers `vkQueueSubmit`, `vkQueueSubmit2`, `vkQueueSubmit2KHR`,
+`vkResetDescriptorPool`, `vkResetCommandPool`, `vkUnmapMemory`,
+`vkFlushMappedMemoryRanges`, `vkResetQueryPool`, `vkResetQueryPoolEXT`,
+`vkQueuePresentKHR`, `vkUnmapMemory2KHR`, and `vkUnmapMemory2`.
 
 For example, we cannot destroy a Vulkan object without being sure that no other
 thread will use it, and the only feasible way of making sure of this is to wait
@@ -73,13 +77,20 @@ assume it can have changed anything, so we must do a full barrier.
 ## The sync mutex
 
 Lavatube also has a special mutex around a few Vulkan commands:
-vkQueueSubmit, vkQueueSubmit2, vkQueueWaitIdle, vkQueueBindSparse, and
-vkDestroyDevice.
+`vkQueueSubmit`, `vkQueueSubmit2`, `vkQueueSubmit2KHR`, `vkQueueWaitIdle`,
+`vkQueueBindSparse`, and `vkDestroyDevice`.
+
+In addition, when `VK_KHR_internally_synchronized_queues` is enabled for a
+device, replay also uses this mutex for `vkQueuePresentKHR` and the queue debug
+label commands `vkQueueBeginDebugUtilsLabelEXT`,
+`vkQueueEndDebugUtilsLabelEXT`, and `vkQueueInsertDebugUtilsLabelEXT`.
 
 This extra synchronization is not needed for multithreading support, but
 rather for increased flexibility of virtualization and portability. Once these
 commands are serialized, we can rewrite the way we submit jobs across queues
-and present virtual queues to the application.
+and present virtual queues to the application. The feature-gated
+`VK_KHR_internally_synchronized_queues` path is an exception, where we also use
+this coarse lock to keep same-queue host access safe.
 
 ## Special considerations
 

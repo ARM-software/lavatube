@@ -207,6 +207,7 @@ struct trackeddevice : trackable
 
 	/// capture only: Trust host to notify us about memory updates?
 	bool explicit_host_updates = false;
+	bool internally_synchronized_queues = false;
 
 	/// Only used on replay
 	suballocator* allocator = nullptr;
@@ -874,6 +875,7 @@ struct trackedqueue : trackable
 
 	/// capture only: Trust host to notify us about memory updates? (Propagated from VkDevice)
 	bool explicit_host_updates = false;
+	bool internally_synchronized_queues = false;
 
 	void self_test() const
 	{

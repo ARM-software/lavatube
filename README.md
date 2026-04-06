@@ -20,6 +20,7 @@ Features
 * Implements the experimental [Common Benchmark Standard](external/tracetooltests/doc/BenchmarkingStandard.md)
 * Uses API usage analysis rather than a page guard to detect host-side changes (this was a mistake that
   needs to be undone).
+* Aims to reproduce similar performance workload from capture to replay, not exactly identical behaviour.
 
 Generally faster, uses less CPU resources and produces smaller trace files than gfxreconstruct.
 

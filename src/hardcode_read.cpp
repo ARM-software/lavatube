@@ -452,6 +452,13 @@ void replay_pre_vkQueueSubmit(lava_file_reader& reader, VkQueue queue, uint32_t 
 	}
 }
 
+static inline bool replay_queue_requires_sync(VkQueue queue)
+{
+	const uint32_t queue_index = index_to_VkQueue.index(queue);
+	if (queue_index == CONTAINER_INVALID_INDEX) return false;
+	return VkQueue_index.at(queue_index).internally_synchronized_queues;
+}
+
 void replay_pre_vkBeginCommandBuffer(lava_file_reader& reader, VkCommandBuffer commandBuffer, VkCommandBufferBeginInfo* pBeginInfo)
 {
 	(void)reader;
@@ -1522,7 +1529,13 @@ void replay_callback_vkQueuePresentKHR(callback_context& cb, VkQueue queue, cons
 	VkResult result = cb.result.vkresult;
 	lava_file_reader& reader = cb.reader;
 	VkPresentInfoKHR* pPresentInfo = const_cast<VkPresentInfoKHR*>(pPresentInfo_const);
-	if (!pPresentInfo) return;
+	const bool lock_queue = replay_queue_requires_sync(queue);
+	if (lock_queue) sync_mutex.lock();
+	if (!pPresentInfo)
+	{
+		if (lock_queue) sync_mutex.unlock();
+		return;
+	}
 	if (is_virtualswapchain() && (result == VK_SUBOPTIMAL_KHR || result == VK_ERROR_OUT_OF_DATE_KHR))
 	{
 		ILOG("We got %s from vkQueuePresentKHR -- remaking the swapchain!", errorString(result));
@@ -1557,6 +1570,7 @@ void replay_callback_vkQueuePresentKHR(callback_context& cb, VkQueue queue, cons
 		assert(result == VK_SUCCESS);
 	}
 	else if (!is_virtualswapchain()) assert(result == VK_SUCCESS || result == VK_SUBOPTIMAL_KHR);
+	if (lock_queue) sync_mutex.unlock();
 }
 
 void replay_pre_vkCreateSharedSwapchainsKHR(lava_file_reader& reader, VkDevice device, uint32_t swapchainCount, VkSwapchainCreateInfoKHR* pCreateInfos, VkAllocationCallbacks* pAllocator, VkSwapchainKHR* pSwapchains)
@@ -2968,6 +2982,7 @@ void retrace_vkGetDeviceQueue2(lava_file_reader& reader)
 			queue_data.queueFlags = props.queueFlags;
 		}
 		queue_data.physicalDevice = VkDevice_index.at(device_index).physicalDevice;
+		queue_data.internally_synchronized_queues = VkDevice_index.at(device_index).internally_synchronized_queues;
 	}
 	callback_context cb_context{ reader };
 	for (auto* c : vkGetDeviceQueue2_callbacks) c(cb_context, device, &info_real, &queue);
@@ -3022,6 +3037,7 @@ void retrace_vkGetDeviceQueue(lava_file_reader& reader)
 			queue_data.queueFlags = props.queueFlags;
 		}
 		queue_data.physicalDevice = VkDevice_index.at(device_index).physicalDevice;
+		queue_data.internally_synchronized_queues = VkDevice_index.at(device_index).internally_synchronized_queues;
 	}
 	callback_context cb_context{ reader };
 	for (auto* c : vkGetDeviceQueue_callbacks) c(cb_context, device, queueFamilyIndex, queueIndex, &queue);
