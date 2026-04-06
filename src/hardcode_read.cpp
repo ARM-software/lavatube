@@ -561,6 +561,137 @@ void replay_pre_vkCmdBuildAccelerationStructuresKHR(lava_file_reader& reader, Vk
 	}
 }
 
+void replay_pre_vkCmdBuildAccelerationStructuresIndirectKHR(lava_file_reader& reader, VkCommandBuffer commandBuffer, uint32_t infoCount,
+	VkAccelerationStructureBuildGeometryInfoKHR* pInfos, VkDeviceAddress* pIndirectDeviceAddresses, uint32_t* pIndirectStrides,
+	uint32_t* const* ppMaxPrimitiveCounts)
+{
+	if (!reader.run || !pInfos || !ppMaxPrimitiveCounts || commandBuffer == VK_NULL_HANDLE) return;
+	const uint32_t commandbuffer_index = index_to_VkCommandBuffer.index(commandBuffer);
+	if (commandbuffer_index == CONTAINER_INVALID_INDEX) return;
+	trackedcmdbuffer& commandbuffer_data = VkCommandBuffer_index.at(commandbuffer_index);
+	const VkDevice device = commandbuffer_data.device;
+	const VkPhysicalDevice physical_device = commandbuffer_data.physicalDevice;
+
+	auto load_ranges = [&](uint32_t info_idx, std::vector<VkAccelerationStructureBuildRangeInfoKHR>& ranges) -> bool
+	{
+		if (!pIndirectDeviceAddresses || !pIndirectStrides) return false;
+		const VkAccelerationStructureBuildGeometryInfoKHR& info = pInfos[info_idx];
+		if (info.geometryCount == 0 || pIndirectDeviceAddresses[info_idx] == 0) return false;
+		const uint32_t stride = pIndirectStrides[info_idx];
+		if (stride < sizeof(VkAccelerationStructureBuildRangeInfoKHR))
+		{
+			ABORT("vkCmdBuildAccelerationStructuresIndirectKHR replay got invalid indirect stride %u for build info %u",
+				(unsigned)stride, (unsigned)info_idx);
+		}
+
+		const VkDeviceSize size = (VkDeviceSize)(info.geometryCount - 1) * stride + sizeof(VkAccelerationStructureBuildRangeInfoKHR);
+		VkDeviceSize buffer_offset = 0;
+		trackedbuffer* buffer_data = find_buffer_by_replay_address(pIndirectDeviceAddresses[info_idx], size, buffer_offset);
+		if (!buffer_data)
+		{
+			ABORT("vkCmdBuildAccelerationStructuresIndirectKHR indirect build range address 0x%llx is not mapped to a buffer",
+				(unsigned long long)pIndirectDeviceAddresses[info_idx]);
+		}
+
+		suballoc_location loc = VkDevice_index.at(commandbuffer_data.device_index).allocator->find_buffer_memory(buffer_data->index);
+		if (!loc.mapped) return false;
+		char* mapped = mem_map(reader, device, loc);
+		const char* base = mapped + buffer_offset;
+		ranges.resize(info.geometryCount);
+		for (uint32_t g = 0; g < info.geometryCount; g++)
+		{
+			memcpy(&ranges[g], base + (VkDeviceSize)g * stride, sizeof(VkAccelerationStructureBuildRangeInfoKHR));
+		}
+		mem_unmap(reader, device, loc, mapped);
+		return true;
+	};
+
+	auto has_instance_geometry = [](const VkAccelerationStructureBuildGeometryInfoKHR& info)
+	{
+		for (uint32_t g = 0; g < info.geometryCount; g++)
+		{
+			const VkAccelerationStructureGeometryKHR* geometry = nullptr;
+			if (info.pGeometries) geometry = &info.pGeometries[g];
+			else if (info.ppGeometries) geometry = info.ppGeometries[g];
+			if (!geometry) continue;
+			if (geometry->geometryType != VK_GEOMETRY_TYPE_INSTANCES_KHR) continue;
+			if (geometry->geometry.instances.arrayOfPointers)
+			{
+				ABORT("Acceleration structure instance remap does not support arrayOfPointers on replay");
+			}
+			return true;
+		}
+		return false;
+	};
+
+	auto record_instance_uses = [&](const VkAccelerationStructureBuildGeometryInfoKHR& info, const std::vector<VkAccelerationStructureBuildRangeInfoKHR>& ranges)
+	{
+		if (ranges.empty() || info.geometryCount == 0) return;
+		for (uint32_t g = 0; g < info.geometryCount; g++)
+		{
+			const VkAccelerationStructureGeometryKHR* geometry = nullptr;
+			if (info.pGeometries) geometry = &info.pGeometries[g];
+			else if (info.ppGeometries) geometry = info.ppGeometries[g];
+			if (!geometry) continue;
+			if (geometry->geometryType != VK_GEOMETRY_TYPE_INSTANCES_KHR) continue;
+
+			const VkAccelerationStructureGeometryInstancesDataKHR& instances = geometry->geometry.instances;
+			if (instances.data.deviceAddress == 0) continue;
+			const VkDeviceSize instance_count = ranges[g].primitiveCount;
+			if (instance_count == 0) continue;
+			trackedcmdbuffer::raytracing_instance_use use = {};
+			use.device_address = instances.data.deviceAddress;
+			use.primitive_offset = ranges[g].primitiveOffset;
+			use.primitive_count = (uint32_t)instance_count;
+			commandbuffer_data.raytracing_instance_uses.push_back(use);
+		}
+	};
+
+	for (uint32_t i = 0; i < infoCount; i++)
+	{
+		if (pInfos[i].geometryCount == 0) continue;
+		std::vector<VkAccelerationStructureBuildRangeInfoKHR> ranges;
+		const bool need_ranges = has_instance_geometry(pInfos[i]);
+		if (need_ranges)
+		{
+			if (!load_ranges(i, ranges))
+			{
+				ABORT("vkCmdBuildAccelerationStructuresIndirectKHR replay needs a host-visible indirect parameter buffer when instances are used");
+			}
+			record_instance_uses(pInfos[i], ranges);
+		}
+
+		VkAccelerationStructureBuildSizesInfoKHR sizes = { VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR, nullptr };
+		wrap_vkGetAccelerationStructureBuildSizesKHR(device,
+			VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR,
+			&pInfos[i],
+			ppMaxPrimitiveCounts[i],
+			&sizes);
+
+		VkDeviceSize scratch_size = sizes.buildScratchSize;
+		if (pInfos[i].mode == VK_BUILD_ACCELERATION_STRUCTURE_MODE_UPDATE_KHR)
+		{
+			scratch_size = sizes.updateScratchSize;
+		}
+		if (scratch_size == 0) continue;
+
+		if (commandbuffer_data.scratch_buffer.buffer == VK_NULL_HANDLE || commandbuffer_data.scratch_buffer.size < scratch_size)
+		{
+			if (commandbuffer_data.scratch_buffer.buffer != VK_NULL_HANDLE)
+			{
+				destroy_internal_buffer(device, commandbuffer_data.scratch_buffer);
+			}
+			const VkBufferUsageFlags usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+			if (!create_internal_buffer(device, physical_device, scratch_size, usage, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, commandbuffer_data.scratch_buffer))
+			{
+				ABORT("Failed to allocate scratch buffer for acceleration structure build (size=%lu)", (unsigned long)scratch_size);
+			}
+		}
+
+		pInfos[i].scratchData.deviceAddress = commandbuffer_data.scratch_buffer.device_address;
+	}
+}
+
 void replay_track_vkCmdBindPipeline(callback_context& cb, VkCommandBuffer commandBuffer, VkPipelineBindPoint pipelineBindPoint, VkPipeline pipeline)
 {
 	if (!cb.reader.run) return;

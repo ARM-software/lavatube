@@ -1137,30 +1137,34 @@ static void trace_post_vkCmdBuildAccelerationStructuresKHR(lava_file_writer& wri
 					if (tri.indexType == VK_INDEX_TYPE_UINT16) index_size = 2;
 					else if (tri.indexType == VK_INDEX_TYPE_UINT32) index_size = 4;
 					else if (tri.indexType == VK_INDEX_TYPE_UINT8_EXT) index_size = 1;
+					VkDeviceAddress address = tri.indexData.deviceAddress;
 					VkDeviceSize size = 0;
 					if (index_size != 0 && ranges)
 					{
-						const VkDeviceSize primitive_end = ranges[g].primitiveOffset + ranges[g].primitiveCount;
-						size = primitive_end * 3 * index_size;
+						address += ranges[g].primitiveOffset;
+						size = (VkDeviceSize)ranges[g].primitiveCount * 3 * index_size;
 					}
-					trace_touch_buffer_by_address(writer, cmdbuf_data, tri.indexData.deviceAddress, size, "triangles index");
+					trace_touch_buffer_by_address(writer, cmdbuf_data, address, size, "triangles index");
 				}
 				if (tri.transformData.deviceAddress != 0)
 				{
-					trace_touch_buffer_by_address(writer, cmdbuf_data, tri.transformData.deviceAddress, sizeof(VkTransformMatrixKHR), "triangles transform");
+					VkDeviceAddress address = tri.transformData.deviceAddress;
+					if (ranges) address += ranges[g].transformOffset;
+					trace_touch_buffer_by_address(writer, cmdbuf_data, address, sizeof(VkTransformMatrixKHR), "triangles transform");
 				}
 				break;
 			}
 			case VK_GEOMETRY_TYPE_AABBS_KHR:
 			{
 				const VkAccelerationStructureGeometryAabbsDataKHR& aabb = geometry->geometry.aabbs;
+				VkDeviceAddress address = aabb.data.deviceAddress;
 				VkDeviceSize size = 0;
 				if (ranges && aabb.stride > 0)
 				{
-					const VkDeviceSize primitive_end = ranges[g].primitiveOffset + ranges[g].primitiveCount;
-					size = primitive_end * aabb.stride;
+					address += ranges[g].primitiveOffset;
+					size = (VkDeviceSize)ranges[g].primitiveCount * aabb.stride;
 				}
-				trace_touch_buffer_by_address(writer, cmdbuf_data, aabb.data.deviceAddress, size, "aabbs");
+				trace_touch_buffer_by_address(writer, cmdbuf_data, address, size, "aabbs");
 				break;
 			}
 			case VK_GEOMETRY_TYPE_INSTANCES_KHR:
@@ -1174,10 +1178,90 @@ static void trace_post_vkCmdBuildAccelerationStructuresKHR(lava_file_writer& wri
 				VkDeviceSize size = 0;
 				if (ranges)
 				{
-					addr += ranges[g].primitiveOffset * sizeof(VkAccelerationStructureInstanceKHR);
-					size = ranges[g].primitiveCount * sizeof(VkAccelerationStructureInstanceKHR);
+					addr += ranges[g].primitiveOffset;
+					size = (VkDeviceSize)ranges[g].primitiveCount * sizeof(VkAccelerationStructureInstanceKHR);
 				}
 				trace_touch_buffer_by_address(writer, cmdbuf_data, addr, size, "instances");
+				break;
+			}
+			default:
+				break;
+			}
+		}
+	}
+}
+
+static void trace_post_vkCmdBuildAccelerationStructuresIndirectKHR(lava_file_writer& writer, VkCommandBuffer commandBuffer,
+	uint32_t infoCount, const VkAccelerationStructureBuildGeometryInfoKHR* pInfos, const VkDeviceAddress* pIndirectDeviceAddresses,
+	const uint32_t* pIndirectStrides, const uint32_t* const* ppMaxPrimitiveCounts)
+{
+	auto* cmdbuf_data = writer.parent->records.VkCommandBuffer_index.at(commandBuffer);
+	if (!cmdbuf_data || !pInfos || infoCount == 0) return;
+	cmdbuf_data->self_test();
+
+	for (uint32_t info_idx = 0; info_idx < infoCount; info_idx++)
+	{
+		const VkAccelerationStructureBuildGeometryInfoKHR& info = pInfos[info_idx];
+		if (pIndirectDeviceAddresses && pIndirectDeviceAddresses[info_idx] != 0)
+		{
+			VkDeviceSize size = 0;
+			if (info.geometryCount > 0 && pIndirectStrides && pIndirectStrides[info_idx] >= sizeof(VkAccelerationStructureBuildRangeInfoKHR))
+			{
+				size = (VkDeviceSize)(info.geometryCount - 1) * pIndirectStrides[info_idx] + sizeof(VkAccelerationStructureBuildRangeInfoKHR);
+			}
+			trace_touch_buffer_by_address(writer, cmdbuf_data, pIndirectDeviceAddresses[info_idx], size, "indirect build ranges");
+		}
+
+		const uint32_t* max_primitive_counts = (ppMaxPrimitiveCounts) ? ppMaxPrimitiveCounts[info_idx] : nullptr;
+		for (uint32_t g = 0; g < info.geometryCount; g++)
+		{
+			const VkAccelerationStructureGeometryKHR* geometry = nullptr;
+			if (info.pGeometries) geometry = &info.pGeometries[g];
+			else if (info.ppGeometries) geometry = info.ppGeometries[g];
+			if (!geometry) continue;
+
+			const uint32_t primitive_count = (max_primitive_counts) ? max_primitive_counts[g] : 0;
+
+			switch (geometry->geometryType)
+			{
+			case VK_GEOMETRY_TYPE_TRIANGLES_KHR:
+			{
+				const VkAccelerationStructureGeometryTrianglesDataKHR& tri = geometry->geometry.triangles;
+				if (tri.vertexData.deviceAddress != 0 && tri.vertexStride > 0)
+				{
+					const VkDeviceSize vertex_count = tri.maxVertex + 1;
+					const VkDeviceSize size = vertex_count * tri.vertexStride;
+					trace_touch_buffer_by_address(writer, cmdbuf_data, tri.vertexData.deviceAddress, size, "triangles vertex");
+				}
+				if (tri.indexData.deviceAddress != 0 && tri.indexType != VK_INDEX_TYPE_NONE_KHR && primitive_count > 0)
+				{
+					trace_touch_buffer_by_address(writer, cmdbuf_data, tri.indexData.deviceAddress, 0, "triangles index");
+				}
+				if (tri.transformData.deviceAddress != 0 && primitive_count > 0)
+				{
+					trace_touch_buffer_by_address(writer, cmdbuf_data, tri.transformData.deviceAddress, 0, "triangles transform");
+				}
+				break;
+			}
+			case VK_GEOMETRY_TYPE_AABBS_KHR:
+			{
+				if (geometry->geometry.aabbs.data.deviceAddress != 0 && primitive_count > 0)
+				{
+					trace_touch_buffer_by_address(writer, cmdbuf_data, geometry->geometry.aabbs.data.deviceAddress, 0, "aabbs");
+				}
+				break;
+			}
+			case VK_GEOMETRY_TYPE_INSTANCES_KHR:
+			{
+				const VkAccelerationStructureGeometryInstancesDataKHR& instances = geometry->geometry.instances;
+				if (instances.arrayOfPointers)
+				{
+					ABORT("vkCmdBuildAccelerationStructuresIndirectKHR capture does not support arrayOfPointers");
+				}
+				if (instances.data.deviceAddress != 0 && primitive_count > 0)
+				{
+					trace_touch_buffer_by_address(writer, cmdbuf_data, instances.data.deviceAddress, 0, "instances");
+				}
 				break;
 			}
 			default:

@@ -135,6 +135,7 @@ replay_pre_calls = [ 'vkDestroyInstance', 'vkDestroyDevice', 'vkCreateDevice', '
 	'vkCmdPushConstants2', 'vkQueueSubmit', 'vkQueueSubmit2', 'vkQueueSubmit2KHR', 'vkDestroyPipelineCache', 'vkDestroySwapchainKHR', 'vkDestroyBuffer',
 	'vkBeginCommandBuffer', 'vkResetCommandBuffer', 'vkDestroySurfaceKHR',
 	'vkDestroyAccelerationStructureKHR', 'vkCreateInstance', 'vkCreateAccelerationStructureKHR', 'vkCmdBuildAccelerationStructuresKHR',
+	'vkCmdBuildAccelerationStructuresIndirectKHR',
 	'vkUpdateDescriptorSetWithTemplate', 'vkUpdateDescriptorSetWithTemplateKHR', 'vkCmdPushDescriptorSetWithTemplate', 'vkCmdPushDescriptorSetWithTemplateKHR' ]
 validate_funcs(replay_pre_calls)
 trace_pre_calls = [ 'vkQueueSubmit', 'vkCreateInstance', 'vkCreateDevice', 'vkFreeMemory', 'vkQueueSubmit2', 'vkQueueSubmit2KHR' ]
@@ -144,7 +145,7 @@ trace_post_calls = [ 'vkCreateInstance', 'vkCreateDevice', 'vkDestroyInstance', 
 		'vkBindBufferMemory2', 'vkUpdateDescriptorSets', 'vkUpdateDescriptorSetWithTemplate', 'vkUpdateDescriptorSetWithTemplateKHR',
 		'vkFlushMappedMemoryRanges', 'vkQueuePresentKHR', 'vkMapMemory2KHR', 'vkMapMemory2', 'vkMapMemory', 'vkUnmapMemory', 'vkUnmapMemory2KHR',
 		'vkUnmapMemory2', 'vkCmdBindDescriptorSets',
-		'vkCmdBuildAccelerationStructuresKHR', 'vkCmdTraceRaysKHR', 'vkBindBufferMemory2KHR', 'vkCmdPushDescriptorSet2KHR', 'vkCmdPushDescriptorSet2', 'vkCmdPushDescriptorSetWithTemplate',
+		'vkCmdBuildAccelerationStructuresKHR', 'vkCmdBuildAccelerationStructuresIndirectKHR', 'vkCmdTraceRaysKHR', 'vkBindBufferMemory2KHR', 'vkCmdPushDescriptorSet2KHR', 'vkCmdPushDescriptorSet2', 'vkCmdPushDescriptorSetWithTemplate',
 		'vkCmdPushDescriptorSetWithTemplateKHR', 'vkCreateDescriptorUpdateTemplate', 'vkCreateDescriptorUpdateTemplateKHR',
 		'vkGetImageMemoryRequirements', 'vkGetPipelineCacheData', 'vkAcquireNextImageKHR', 'vkAcquireNextImage2KHR',
 		'vkGetBufferMemoryRequirements', 'vkGetBufferMemoryRequirements2', 'vkGetImageMemoryRequirements2', 'vkGetPhysicalDeviceMemoryProperties',
