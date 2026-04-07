@@ -2174,6 +2174,9 @@ static void write_VkMarkedOffsetsARM(lava_file_writer& writer, const VkMarkedOff
 {
 	writer.write_uint32_t(sptr->sType);
 	assert(sptr->sType == VK_STRUCTURE_TYPE_MARKED_OFFSETS_ARM);
+	assert(sptr->pMarkingTypes);
+	assert(sptr->pSubTypes);
+	assert(sptr->pOffsets);
 	write_extension(writer, (VkBaseOutStructure*)sptr->pNext);
 	writer.write_uint32_t(sptr->count);
 	bool pMarkingTypes_opt = (sptr->pMarkingTypes != 0 && sptr->count > 0);

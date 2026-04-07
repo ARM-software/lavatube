@@ -2279,7 +2279,8 @@ static void assert_marked_offsets_equal(const VkMarkedOffsetsARM* a, const VkMar
 
 static void track_marked_offsets(lava_file_reader& reader, const VkMarkedOffsetsARM* markings)
 {
-	if (!markings) return;
+	assert(markings);
+	assert(reader.parent->pass == 0 || reader.parent->pass == 1);
 
 	if (reader.parent->pass == 0)
 	{
@@ -2291,8 +2292,6 @@ static void track_marked_offsets(lava_file_reader& reader, const VkMarkedOffsets
 		reader.parent->global_rewrite_queue.push_back(entry);
 		return;
 	}
-
-	if (reader.parent->pass != 1) return;
 
 	lava::lock_guard lock(sync_mutex);
 	auto& queue = reader.parent->global_rewrite_queue;
@@ -2313,9 +2312,12 @@ static void track_marked_offsets(lava_file_reader& reader, const VkMarkedOffsets
 /// `size` is the size of the modified region of memory
 static void translate_marked_offsets(lava_file_reader& reader, const VkMarkedOffsetsARM* markings, void* ptr, uint64_t size)
 {
-	if (!markings) return;
+	assert(markings);
+	assert(markings->pOffsets);
+	assert(markings->pSubTypes);
+	assert(markings->pMarkingTypes);
+
 	track_marked_offsets(reader, markings);
-	if (!markings->pOffsets || !markings->pMarkingTypes) return;
 	for (uint32_t i = 0; i < markings->count; i++)
 	{
 		const uint64_t offset = markings->pOffsets[i];
@@ -2323,6 +2325,8 @@ static void translate_marked_offsets(lava_file_reader& reader, const VkMarkedOff
 		{
 		case VK_MARKING_TYPE_DEVICE_ADDRESS_ARM:
 			{
+				const VkDeviceAddressTypeARM address_type = markings->pSubTypes[i].deviceAddressType;
+				assert(address_type == VK_DEVICE_ADDRESS_TYPE_BUFFER_ARM || address_type == VK_DEVICE_ADDRESS_TYPE_ACCELERATION_STRUCTURE_ARM);
 				assert(offset + sizeof(uint64_t) <= size); // extension does not allow offsets pointing outside of updated region
 				void* addr = (char*)ptr + offset;
 				uint64_t current = 0;
@@ -2330,34 +2334,34 @@ static void translate_marked_offsets(lava_file_reader& reader, const VkMarkedOff
 				memcpy(&current, addr, sizeof(current));
 				const uint64_t newval = reader.parent->device_address_remapping.translate_address(current);
 				assert(newval != 0 || !reader.run);
-				DLOG("%u: Changing memory value at offset %lu from %lu to %lu", (unsigned)i, (unsigned long)offset, (unsigned long)current, (unsigned long)newval);
+				DLOG("%u: Changing %s address value at offset %lu from %lu to %lu", (unsigned)i, (address_type == VK_DEVICE_ADDRESS_TYPE_BUFFER_ARM) ? "buffer" : "acceleration structure",
+				     (unsigned long)offset, (unsigned long)current, (unsigned long)newval);
 				memcpy(addr, &newval, sizeof(newval));
 			}
 			break;
 		case VK_MARKING_TYPE_DESCRIPTOR_ARM:
 			{
-				const VkDescriptorType descriptor_type = markings->pSubTypes ? markings->pSubTypes[i].descriptorType : VK_DESCRIPTOR_TYPE_MAX_ENUM;
+				const VkDescriptorType descriptor_type = markings->pSubTypes[i].descriptorType;
 				std::vector<uint8_t> descriptor_bytes;
+				lava::lock_guard lock(sync_mutex);
+				auto& queue = reader.parent->pending_descriptor_rewrites;
+				auto it = std::find_if(queue.begin(), queue.end(), [&](const descriptor_rewrite& candidate)
 				{
-					lava::lock_guard lock(sync_mutex);
-					auto& queue = reader.parent->pending_descriptor_rewrites;
-					auto it = std::find_if(queue.begin(), queue.end(), [&](const descriptor_rewrite& candidate)
-					{
-						return candidate.type == descriptor_type;
-					});
-					if (it != queue.end())
-					{
-						descriptor_bytes = std::move(it->bytes);
-						queue.erase(it);
-					}
+					return candidate.type == descriptor_type;
+				});
+				if (it != queue.end())
+				{
+					descriptor_bytes = std::move(it->bytes);
+					queue.erase(it);
 				}
 				assert(!descriptor_bytes.empty() || !reader.run);
-				if (descriptor_bytes.empty()) break;
 				assert(offset + descriptor_bytes.size() <= size);
+				DLOG("%u: Changing descriptor value at offset %lu", (unsigned)i, (unsigned long)offset);
 				memcpy((char*)ptr + offset, descriptor_bytes.data(), descriptor_bytes.size());
 			}
 			break;
 		default:
+			assert(false); // not supported yet!
 			break;
 		}
 	}
