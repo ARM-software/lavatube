@@ -1,12 +1,114 @@
 #include "tests/common.h"
 #include "util_auto.h"
 #include "external/tracetooltests/include/vulkan_ext.h"
+#include <cstring>
 
 #define TEST_NAME_1 "tracing_remap_noncoherent"
 #define BUFFER_SIZE (1024 * 1024)
 #define MAX_VALUES 8
 
 #pragma GCC diagnostic ignored "-Wunused-variable"
+
+static VkDeviceAddress capture_address = 0;
+static VkDeviceSize capture_address_offset = 40;
+static VkDeviceSize unaligned_address_location = 0;
+static VkDeviceSize capture_address_offset_location = 0;
+static std::string replay_marker;
+
+static trackedbuffer& replay_address_buffer()
+{
+	for (auto& buffer : VkBuffer_index)
+	{
+		if (buffer.capture_device_address == capture_address) return buffer;
+	}
+	ABORT("Failed to find replay buffer for capture address %llu", (unsigned long long)capture_address);
+	__builtin_unreachable();
+}
+
+static void record_replay_marker(callback_context& cb, VkInstance instance, VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
+	VkDebugUtilsMessageTypeFlagsEXT messageTypes, const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData)
+{
+	(void)cb;
+	(void)instance;
+	(void)messageSeverity;
+	(void)messageTypes;
+	if (!pCallbackData || !pCallbackData->pMessage) return;
+	replay_marker = pCallbackData->pMessage;
+}
+
+static suballoc_location replay_buffer_location(const trackedbuffer& buffer)
+{
+	const trackeddevice& device_data = VkDevice_index.at(buffer.parent_device_index);
+	return device_data.allocator->find_buffer_memory(buffer.index);
+}
+
+static char* map_replay_buffer(const trackedbuffer& buffer, VkDevice& device, suballoc_location& loc, bool& temporary_map)
+{
+	device = index_to_VkDevice.at(buffer.parent_device_index);
+	loc = replay_buffer_location(buffer);
+	char* ptr = loc.mapped;
+	temporary_map = false;
+	if (ptr == nullptr)
+	{
+		VkResult result = wrap_vkMapMemory(device, loc.memory, loc.offset, loc.size, 0, (void**)&ptr);
+		check(result);
+		temporary_map = true;
+	}
+	return ptr;
+}
+
+static void unmap_replay_buffer(VkDevice device, const suballoc_location& loc, bool temporary_map)
+{
+	if (temporary_map) wrap_vkUnmapMemory(device, loc.memory);
+}
+
+static uint64_t load_u64(const char* ptr, VkDeviceSize offset)
+{
+	uint64_t value = 0;
+	memcpy(&value, ptr + offset, sizeof(value));
+	return value;
+}
+
+static void verify_replay_buffer_update(lava_file_reader& t, uint32_t buffer_index)
+{
+	trackedbuffer& address_buffer = replay_address_buffer();
+	trackedbuffer& buffer_data = VkBuffer_index.at(buffer_index);
+	assert(&buffer_data == &address_buffer);
+	const VkDeviceAddress replay_address = t.parent->device_address_remapping.translate_address(capture_address);
+	assert(replay_address != 0);
+	assert(replay_address == address_buffer.device_address);
+	assert(t.parent->device_address_remapping.get_by_address(capture_address) == &address_buffer);
+	assert(t.parent->device_address_remapping.translate_address(capture_address + capture_address_offset) == replay_address + capture_address_offset);
+	assert(t.parent->device_address_remapping.get_by_address(capture_address + capture_address_offset) == &address_buffer);
+
+	VkDevice device = VK_NULL_HANDLE;
+	suballoc_location loc = {};
+	bool temporary_map = false;
+	char* ptr = map_replay_buffer(buffer_data, device, loc, temporary_map);
+
+	if (replay_marker == "Aligned flush at start")
+	{
+		assert(load_u64(ptr, 0) == replay_address);
+	}
+	else if (replay_marker == "Unaligned offset flush")
+	{
+		assert(load_u64(ptr, unaligned_address_location) == replay_address);
+	}
+	else if (replay_marker == "4-byte aligned address")
+	{
+		assert(load_u64(ptr, 4) == replay_address);
+	}
+	else if (replay_marker == "Device address with non-zero in-buffer offset")
+	{
+		assert(load_u64(ptr, capture_address_offset_location) == replay_address + capture_address_offset);
+	}
+	else
+	{
+		ABORT("Unexpected replay marker while validating noncoherent remap test: %s", replay_marker.c_str());
+	}
+
+	unmap_replay_buffer(device, loc, temporary_map);
+}
 
 struct aligned_range
 {
@@ -141,6 +243,7 @@ static bool trace()
 	bdainfo.buffer = buf;
 	VkDeviceAddress address = trace_vkGetBufferDeviceAddress(vulkan.device, &bdainfo);
 	assert(address != 0);
+	capture_address = address;
 
 	VkMarkedOffsetsARM ar = { VK_STRUCTURE_TYPE_MARKED_OFFSETS_ARM, nullptr };
 	std::vector<VkDeviceSize> offsets(MAX_VALUES, 0);
@@ -166,6 +269,7 @@ static bool trace()
 	if (unaligned_offset + 64 >= pAllocateMemInfo.allocationSize) unaligned_offset = 8;
 	map_noncoherent(vulkan, memory, unaligned_offset, 64, pAllocateMemInfo.allocationSize, non_coherent_atom, &ptr);
 	*((uint64_t*)ptr) = address;
+	unaligned_address_location = unaligned_offset;
 	ar.count = 1;
 	offsets[0] = 0;
 	flush_noncoherent(vulkan, memory, unaligned_offset, 64, pAllocateMemInfo.allocationSize, non_coherent_atom, &ar);
@@ -178,6 +282,19 @@ static bool trace()
 	ar.count = 1;
 	offsets[0] = 4;
 	flush_noncoherent(vulkan, memory, 0, 128, pAllocateMemInfo.allocationSize, non_coherent_atom, &ar);
+	trace_vkUnmapMemory(vulkan.device, memory);
+
+	test_marker(vulkan, "Device address with non-zero in-buffer offset");
+	VkDeviceSize offset_location = (non_coherent_atom > 1) ? (non_coherent_atom / 2) : 3;
+	offset_location += 16;
+	if (offset_location + 64 >= pAllocateMemInfo.allocationSize) offset_location = 32;
+	map_noncoherent(vulkan, memory, offset_location, 64, pAllocateMemInfo.allocationSize, non_coherent_atom, &ptr);
+	uint64_t* offset_ptr = (uint64_t*)(ptr + 4);
+	offset_ptr[0] = address + capture_address_offset;
+	capture_address_offset_location = offset_location + 4;
+	ar.count = 1;
+	offsets[0] = 4;
+	flush_noncoherent(vulkan, memory, offset_location, 64, pAllocateMemInfo.allocationSize, non_coherent_atom, &ar);
 	trace_vkUnmapMemory(vulkan.device, memory);
 
 	trace_vkDestroyBuffer(vulkan.device, buf, nullptr);
@@ -203,8 +320,7 @@ static bool getnext(lava_file_reader& t)
 	else if (instrtype == PACKET_BUFFER_UPDATE || instrtype == PACKET_BUFFER_UPDATE2)
 	{
 		uint32_t buffer_index = update_buffer_packet(instrtype, t);
-		trackedbuffer& buffer_data = VkBuffer_index.at(buffer_index);
-		(void)buffer_data; // TBD test data sanity here
+		verify_replay_buffer_update(t, buffer_index);
 	}
 	else if (instrtype == PACKET_TENSOR_UPDATE)
 	{
@@ -223,8 +339,12 @@ static void retrace()
 {
 	lava_reader r(TEST_NAME_1 ".vk");
 	test_register_replay_callbacks();
+	vkSubmitDebugUtilsMessageEXT_callbacks.push_back(record_replay_marker);
+	replay_marker.clear();
 	lava_file_reader& t = r.file_reader(0);
 	while (getnext(t)) {}
+	assert(r.device_address_remapping.translate_address(capture_address) == 0);
+	assert(r.device_address_remapping.get_by_address(capture_address) == nullptr);
 }
 
 int main()
