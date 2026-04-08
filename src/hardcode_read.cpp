@@ -1782,9 +1782,15 @@ void replay_pre_vkCreateDevice(lava_file_reader& reader, VkPhysicalDevice physic
 	for (uint32_t i = 0; i < pCreateInfo->queueCreateInfoCount; i++)
 	{
 		queueinfo[i] = pCreateInfo->pQueueCreateInfos[i]; // struct copy
+		if (pCreateInfo->queueCreateInfoCount == 1 && queueinfo[i].queueFamilyIndex != selected_queue_family_index)
+		{
+			ILOG("Changing queue family %u to %u", queueinfo[i].queueFamilyIndex, selected_queue_family_index);
+			queueinfo[i].queueFamilyIndex = selected_queue_family_index;
+		}
 		if (queueinfo[i].queueFamilyIndex == selected_queue_family_index
 		    && queueinfo[i].queueCount > device_VkQueueFamilyProperties.at(selected_queue_family_index).queueCount)
 		{
+			ILOG("Changing queue count %u to %u for family %u", queueinfo[i].queueCount, device_VkQueueFamilyProperties.at(selected_queue_family_index).queueCount, selected_queue_family_index);
 			queueinfo[i].queueCount = device_VkQueueFamilyProperties.at(selected_queue_family_index).queueCount;
 		}
 	}
@@ -3080,6 +3086,10 @@ void retrace_vkGetDeviceQueue2(lava_file_reader& reader)
 	{
 		info_real.queueFamilyIndex = selected_queue_family_index;
 		virtual_family = true;
+		if (info_real.queueIndex > 0)
+		{
+			info_real.queueIndex = 0; // virtual queues always alias to one real queue on replay
+		}
 		const VkQueueFamilyProperties& props = device_VkQueueFamilyProperties.at(info_real.queueFamilyIndex);
 		if (info_real.queueIndex >= props.queueCount) // we don't have enough queues
 		{
@@ -3135,6 +3145,10 @@ void retrace_vkGetDeviceQueue(lava_file_reader& reader)
 	{
 		queueFamilyIndex = selected_queue_family_index;
 		virtual_family = true;
+		if (queueIndex > 0)
+		{
+			queueIndex = 0; // virtual queues always alias to one real queue on replay
+		}
 		const VkQueueFamilyProperties& props = device_VkQueueFamilyProperties.at(queueFamilyIndex);
 		if (queueIndex >= props.queueCount) // we don't have enough queues
 		{

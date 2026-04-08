@@ -1642,6 +1642,18 @@ static void modify_device_extensions(VkPhysicalDevice physicalDevice) REQUIRES(f
 	physicaldevice_data->device_extension_properties = presented_extensions;
 }
 
+static uint32_t find_virtual_graphics_queue_family(const std::vector<VkQueueFamilyProperties>& props)
+{
+	for (uint32_t i = 0; i < props.size(); i++)
+	{
+		if (props.at(i).queueFlags & VK_QUEUE_GRAPHICS_BIT)
+		{
+			return i;
+		}
+	}
+	return UINT32_MAX;
+}
+
 static void trace_pre_vkCreateDevice(VkPhysicalDevice physicalDevice, VkDeviceCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkDevice* pDevice)
 {
 	lava_writer& instance = lava_writer::instance();
@@ -1775,6 +1787,34 @@ static void trace_pre_vkCreateDevice(VkPhysicalDevice physicalDevice, VkDeviceCr
 	frame_mutex.unlock();
 	pCreateInfo->ppEnabledExtensionNames = nameptrs;
 	pCreateInfo->enabledExtensionCount = newcount;
+
+	if (p__virtualqueues != 0 && pCreateInfo->queueCreateInfoCount > 0)
+	{
+		const uint32_t real_queue_family = find_virtual_graphics_queue_family(physicaldevice_data->queueFamilyProperties);
+		assert(real_queue_family != UINT32_MAX);
+		const uint32_t real_queue_count = physicaldevice_data->queueFamilyProperties.at(real_queue_family).queueCount;
+		assert(real_queue_count > 0);
+
+		VkDeviceQueueCreateInfo* queueinfo = writer.pool.allocate<VkDeviceQueueCreateInfo>(pCreateInfo->queueCreateInfoCount);
+		for (uint32_t i = 0; i < pCreateInfo->queueCreateInfoCount; i++)
+		{
+			queueinfo[i] = pCreateInfo->pQueueCreateInfos[i]; // struct copy
+			if (queueinfo[i].queueFamilyIndex == 0)
+			{
+				if (queueinfo[i].queueFamilyIndex != real_queue_family)
+				{
+					DLOG("Remapping virtual queue family %u to real queue family %u for vkCreateDevice", queueinfo[i].queueFamilyIndex, real_queue_family);
+					queueinfo[i].queueFamilyIndex = real_queue_family;
+				}
+				if (queueinfo[i].queueCount > real_queue_count)
+				{
+					DLOG("Clamping virtual queue request from %u to %u for vkCreateDevice", queueinfo[i].queueCount, real_queue_count);
+					queueinfo[i].queueCount = real_queue_count;
+				}
+			}
+		}
+		pCreateInfo->pQueueCreateInfos = queueinfo;
+	}
 }
 
 static void trace_post_vkCreateDevice(lava_file_writer& writer, VkResult result, VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkDevice* pDevice)
@@ -3290,18 +3330,12 @@ static uint32_t common_virtual_VkQueueFamilyProperties(VkPhysicalDevice physical
 	wrap_vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice, &count, nullptr);
 	std::vector<VkQueueFamilyProperties> props(count);
 	wrap_vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice, &count, props.data());
-	for (uint32_t i = 0; i < count; i++)
-	{
-		const VkQueueFamilyProperties& f = props.at(i);
-		if (f.queueFlags & VK_QUEUE_GRAPHICS_BIT)
-		{
-			assert(f.minImageTransferGranularity.width == 1 && f.minImageTransferGranularity.height == 1 && f.minImageTransferGranularity.depth == 1);
-			if ((f.queueFlags & VK_QUEUE_SPARSE_BINDING_BIT)) sparseBits = VK_QUEUE_SPARSE_BINDING_BIT;
-			timestampValidBits = f.timestampValidBits;
-			source_queue_family = i;
-			break; // both our virtual graphics queues are on the first queue family supporting graphics
-		}
-	}
+	source_queue_family = find_virtual_graphics_queue_family(props);
+	assert(source_queue_family < count);
+	const VkQueueFamilyProperties& f = props.at(source_queue_family);
+	assert(f.minImageTransferGranularity.width == 1 && f.minImageTransferGranularity.height == 1 && f.minImageTransferGranularity.depth == 1);
+	if ((f.queueFlags & VK_QUEUE_SPARSE_BINDING_BIT)) sparseBits = VK_QUEUE_SPARSE_BINDING_BIT;
+	timestampValidBits = f.timestampValidBits;
 
 	pQueueFamilyProperties->queueFlags = VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT | VK_QUEUE_TRANSFER_BIT | sparseBits;
 	pQueueFamilyProperties->queueCount = 2;

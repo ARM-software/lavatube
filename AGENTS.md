@@ -12,6 +12,7 @@
 - The loader manifest is `VkLayer_lavatube.json`.
 - Use separate build directories (e.g. `build/`) to keep the tree clean.
 - Files and classes with `write` in the name are related to trace capture, while `read` is related to trace replay.
+- Vulkan headers: `external/tracetooltests/external/Vulkan-Headers/include/vulkan/` (do not use the system headers)
 
 ## Build, Test, and Development Commands
 - Bootstrap deps: `git submodule update --init --recursive`.
