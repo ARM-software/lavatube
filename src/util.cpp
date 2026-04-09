@@ -131,8 +131,8 @@ FILE* get_env_file(const char* name, FILE* fallback)
 uint_fast8_t p__virtualqueues = get_env_bool("LAVATUBE_VIRTUAL_QUEUES", 0);
 FILE* p__debug_destination = get_env_file("LAVATUBE_DEBUG_FILE", stdout); // must be defined first here
 uint_fast8_t p__blackhole = get_env_bool("LAVATUBE_BLACKHOLE", 0);
-uint_fast8_t p__dedicated_buffer = get_env_bool("LAVATUBE_DEDICATED_BUFFER", 0);
-uint_fast8_t p__dedicated_image = get_env_bool("LAVATUBE_DEDICATED_IMAGE", 0);
+uint_fast8_t p__dedicated_buffer = get_env_int("LAVATUBE_DEDICATED_BUFFER", 0);
+uint_fast8_t p__dedicated_image = get_env_int("LAVATUBE_DEDICATED_IMAGE", 0);
 uint_fast8_t p__cpu = get_env_int("LAVATUBE_CPU", 0); // zero means do not enforce
 uint_fast8_t p__gpu = get_env_int("LAVATUBE_GPU", 0); // zero means do not enforce
 int_fast8_t p__device = get_env_int("LAVATUBE_DEVICE", -1); // -1 means do not force pick one

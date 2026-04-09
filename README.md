@@ -130,9 +130,9 @@ sudo make install
 Debug
 =====
 
-To enable layer debugging, set VK_LOADER_DEBUG=warning
+To enable layer debugging, set `VK_LOADER_DEBUG=warning`.
 
-To enable lavatube debug output, set LAVATUBE_DEBUG to one of 1, 2 or 3.
+To enable lavatube debug output, set `LAVATUBE_DEBUG` to one of 1, 2 or 3.
 
 Files
 =====
@@ -148,7 +148,7 @@ When tracing, the following files will be created in a separate directory:
 Replay security
 ===============
 
-You can set the environment variable LAVATUBE_SANDBOX_LEVEL to set your desired
+You can set the environment variable `LAVATUBE_SANDBOX_LEVEL` to set your desired
 level of security paranoia. Levels are zero to four, from lowest to highest
 security, where zero means the security sandbox is completely turned off. High
 levels may interfere with other tools or layers. The security level may also be
@@ -159,47 +159,49 @@ Also see our [SECURITY.md](SECURITY.md).
 Tracing options
 ===============
 
-LAVATUBE_DESTINATION can be used to set the name of the output trace file.
+`LAVATUBE_DESTINATION` can be used to set the name of the output trace file.
 
-LAVATUBE_DEDICATED_BUFFER and LAVATUBE_DEDICATED_IMAGE can be used to override
+`LAVATUBE_DEDICATED_BUFFER` and `LAVATUBE_DEDICATED_IMAGE` can be used to override
 or inject dedicate allocation hints to the application. If set to 1, all buffers
 or images will have the preferred hint set. If set to 2, all buffers or images
 will have the required hint set.
 
-LAVATUBE_DELAY_FENCE_SUCCESS_FRAMES will delay the returned success of vkGetFenceStatus
+`LAVATUBE_DELAY_FENCE_SUCCESS_FRAMES` will delay the returned success of vkGetFenceStatus
 and vkWaitForFences for the given number of frames to try to stagger the reuse of
 content assets.
 
-LAVATUBE_GPU lets you pick which GPU to use, by index. See vulkaninfo to see which
+`LAVATUBE_GPU` lets you pick which GPU to use, by index. See vulkaninfo to see which
 index value to use.
 
-LAVATUBE_CHUNK_SIZE lets you choose the compression chunk size, by default it is 64mb.
+`LAVATUBE_CHUNK_SIZE` lets you choose the compression chunk size, by default it is 64mb.
 
-LAVATUBE_EXTERNAL_MEMORY set it to 1 to experiment with replacing your GPU host memory
+`LAVATUBE_EXTERNAL_MEMORY` set it to 1 to experiment with replacing your GPU host memory
 allocations with external memory allocations.
 
-LAVATUBE_VIRTUAL_QUEUES if set to 1 will enable a virtualized memory system with only
+`LAVATUBE_VIRTUAL_QUEUES` if set to 1 will enable a virtualized memory system with only
 one graphics queue family containing two queues. If the host system does not support
 two queues, work for the second queue will be passed to the first queue. All other
 queue families and queues will be hidden.
 
-LAVATUBE_TRUST_HOST_FLUSHING can be set to 1 to disable active tracking of bindings,
+`LAVATUBE_TRUST_HOST_FLUSHING` can be set to 1 to disable active tracking of bindings,
 and instead trust the application to flush all host memory before using it on the GPU
 device.
 
 Lavatube uses separate threads for both compression and writeout to disk with their
 own queues, which may cause you to run out of memory. To disable this, you can set
-the environment variables LAVATUBE_DISABLE_MULTITHREADED_WRITEOUT and
-LAVATUBE_DISABLE_MULTITHREADED_COMPRESS.
+the environment variables `LAVATUBE_DISABLE_MULTITHREADED_WRITEOUT` and
+`LAVATUBE_DISABLE_MULTITHREADED_COMPRESS`.
 
 Compression
 ===========
 
 You can modify the compression algorithm and compression level used during tracing
-with the environment variables LAVATUBE_COMPRESSION_TYPE and LAVATUBE_COMPRESSION_LEVEL.
+with the environment variables `LAVATUBE_COMPRESSION_TYPE` and `LAVATUBE_COMPRESSION_LEVEL`.
+The `scripts/lava-capture.py` helper also supports `--compression-type {LZ4,DENSITY,NONE}`.
 
-The types are (value zero is reserved for now, density is the default)
-1. Density
+The types are
+0. Uncompressed
+1. Density (default)
 2. LZ4
 
 For Density, the possible levels are (zero means use default, which is Cheetah)
@@ -211,6 +213,8 @@ For Density, the possible levels are (zero means use default, which is Cheetah)
 For LZ4, higher levels means less compression and faster execution. Zero means
 use the default, which is level one (best compression, worst performance). See LZ4
 documentation for the exact meaning of this value.
+
+For uncompressed traces, set `LAVATUBE_COMPRESSION_TYPE` to 0.
 
 Further reading
 ===============

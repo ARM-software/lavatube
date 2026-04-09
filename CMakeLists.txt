@@ -555,6 +555,7 @@ layer_test(general general)
 #layer_test(fence_delay fence_delay) # Disabling -- too many intermittent errors
 add_test(NAME script_test_copying_1 COMMAND ${PROJECT_SOURCE_DIR}/scripts/lava-capture.py -o script_test_copying_1.vk --dedicated-buffer --gpu 0 --layer-path ${CMAKE_CURRENT_BINARY_DIR}/implicit_layer.d ${CMAKE_CURRENT_BINARY_DIR}/tracetooltests/vulkan_copying_1 -V 2)
 add_test(NAME script_test_copying_nomp COMMAND ${PROJECT_SOURCE_DIR}/scripts/lava-capture.py -o script_test_copying_nomp.vk --no-multithread --automate --layer-path ${CMAKE_CURRENT_BINARY_DIR}/implicit_layer.d ${CMAKE_CURRENT_BINARY_DIR}/tracetooltests/vulkan_copying_1 -V 3)
+add_test(NAME script_test_copying_nocomp COMMAND ${PROJECT_SOURCE_DIR}/scripts/lava-capture.py -o script_test_copying_nocomp.vk --compression-type NONE --capture-layer ${CMAKE_CURRENT_BINARY_DIR}/implicit_layer.d ${CMAKE_CURRENT_BINARY_DIR}/tracetooltests/vulkan_copying_1 -V 4)
 layer_test(general_vulkan13 general -V 3)
 layer_test(copying_1 copying_1)
 layer_test(copying_1_q1 copying_1 -q 1)

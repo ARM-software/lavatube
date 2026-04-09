@@ -9,6 +9,14 @@ import argparse
 import subprocess
 import json
 
+compression_type_choices = ('LZ4', 'DENSITY', 'NONE')
+
+compression_types = {
+	'NONE': '0',
+	'DENSITY': '1',
+	'LZ4': '2',
+}
+
 def args():
 	parser = argparse.ArgumentParser(prog=os.path.basename(sys.argv[0]), description='Trace a Vulkan application', allow_abbrev=False)
 	parser.add_argument('--working-dir', dest='dir', metavar='<dir>', help='Run out of this directory')
@@ -16,7 +24,9 @@ def args():
 	parser.add_argument('--gdb', dest='gdb', action='store_true', help='Run under gdb')
 	parser.add_argument('--log-level', dest='debug', help='Debug log level, higher is more verbose')
 	parser.add_argument('--log-file', dest='log', metavar='<logfile>', help='Output logs to specified file')
-	parser.add_argument('--layer-path', dest='layer', metavar='<path>', help='Path to the capture layer')
+	parser.add_argument('--capture-layer', dest='layer', metavar='<path>', help='Path to the capture layer')
+	parser.add_argument('--layer-path', dest='layer', metavar='<path>', help=argparse.SUPPRESS)
+	parser.add_argument('--compression-type', dest='compression_type', choices=compression_type_choices, metavar='{LZ4,DENSITY,NONE}', help='Compression algorithm to use for trace data')
 	parser.add_argument('--dedicated-buffer', dest='dedbuf', action='store_true', help='Request dedicated memory allocation for buffers')
 	parser.add_argument('--dedicated-image', dest='dedimg', action='store_true', help='Request dedicated memory allocation for images')
 	parser.add_argument('--delayfence', dest='delayfence', metavar='<times>', help='Delay successful fence waits the given number of times')
@@ -82,6 +92,7 @@ if __name__ == '__main__':
 	if args.debug: os.environ['LAVATUBE_DEBUG'] = args.debug
 	if args.file: os.environ['LAVATUBE_DESTINATION'] = os.path.abspath(args.file)
 	if args.log: os.environ['LAVATUBE_DEBUG_FILE'] = args.log
+	if args.compression_type: os.environ['LAVATUBE_COMPRESSION_TYPE'] = compression_types[args.compression_type]
 	if args.explicit: os.environ['LAVATUBE_TRUST_HOST_FLUSHING'] = '1'
 	if args.layer: os.environ['VK_LAYER_PATH'] = args.layer
 	else: os.environ['VK_LAYER_PATH'] = '/opt/lavatube'
