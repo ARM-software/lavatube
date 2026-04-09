@@ -2457,7 +2457,7 @@ static void track_marked_offsets(lava_file_reader& reader, const VkMarkedOffsets
 /// `size` is the size of the modified region of memory
 static void translate_marked_offsets(lava_file_reader& reader, const VkMarkedOffsetsARM* markings, void* ptr, uint64_t size)
 {
-	assert(markings);
+	assert(markings && ptr);
 	assert(markings->pOffsets);
 	assert(markings->pSubTypes);
 	assert(markings->pMarkingTypes);

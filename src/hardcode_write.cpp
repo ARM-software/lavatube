@@ -2505,10 +2505,6 @@ void trace_post_vkFlushMappedMemoryRanges(lava_file_writer& writer, VkResult res
 		WLOG("Ignoring vkFlushMappedMemoryRanges for capture bookkeeping after driver returned %s", errorString(result));
 		return;
 	}
-	if (!pMemoryRanges)
-	{
-		return;
-	}
 	const auto* device_data = writer.parent->records.VkDevice_index.at(device);
 	// The memory must be memory mapped
 	for (unsigned i = 0; i < memoryRangeCount; i++)
