@@ -185,6 +185,7 @@ private:
 	void init(int fd, size_t uncompressed_size, size_t uncompressed_target);
 
 	bool multithreaded_read = true;
+	size_t last_chunk_uncompressed_size = 0;
 	unsigned tid = -1; // only used for logging
 	/// Pointer to mapped memory of compressed file
 	char* compressed_data = nullptr; // current position in compressed buffer

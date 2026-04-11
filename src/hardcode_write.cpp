@@ -1695,6 +1695,7 @@ static void trace_pre_vkCreateDevice(VkPhysicalDevice physicalDevice, VkDeviceCr
 
 static void trace_post_vkCreateDevice(lava_file_writer& writer, VkResult result, VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkDevice* pDevice)
 {
+	if (result != VK_SUCCESS) return;
 	lava_writer& instance = lava_writer::instance();
 	auto* device_data = instance.records.VkDevice_index.at(*pDevice);
 	auto* physicaldevice_data = instance.records.VkPhysicalDevice_index.at(physicalDevice);

@@ -67,7 +67,7 @@ static void usage()
 	printf("-f/--frames start end  Select a measurement frame range\n");
 	printf("-w/--wsi wsi           Use the given windowing system [xcb, headless, none]\n");
 	printf("-i/--info              Output information about the trace file and exit (affected by debug level)\n");
-	printf("-p/--preload size      The amount of file data to preload before starting replay (default %d)\n", (int)p__preload);
+	printf("-p/--preload size      The size of our readahead buffer and amount of data to preload before starting replay (default %d)\n", (int)p__preload);
 	printf("-a/--allow-stalls      Allow stalls if we run out of input data from our readahead thread while in measurement frame range\n");
 	printf("-S/--save-cache dir    Save cached objects to the specified directory\n");
 	printf("-L/--load-cache dir    Load cached objects from the specified directory\n");

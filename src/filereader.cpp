@@ -124,6 +124,7 @@ void file_reader::decompress_chunk()
 	}
 	compressed_data += compressed_size;
 	write_position += uncompressed_size;
+	last_chunk_uncompressed_size = uncompressed_size;
 	total_left -= compressed_size + header_size;
 	uncompressed_bytes += uncompressed_size;
 	if (total_left == 0 || write_position >= uncompressed_wanted) done_decompressing = true;  // all done!
@@ -134,9 +135,10 @@ void file_reader::decompressor()
 {
 	set_thread_name("decompressor");
 
-	const size_t preload_size = p__preload * 1024 * 1024; // TBD move to framerange start
+	const size_t fixed_preload = p__preload * 1024 * 1024; // TBD move to framerange start
 	while (!done_decompressing)
 	{
+		const size_t preload_size = fixed_preload > 0 ? fixed_preload : last_chunk_uncompressed_size;
 		while (preload_size > 0 && write_position.load(std::memory_order_relaxed) > read_position + preload_size) usleep(10000); // we're too far ahead
 		decompress_chunk();
 	}
