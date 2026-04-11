@@ -24,7 +24,7 @@ protected:
 		while (unlikely(size > write_position.load(std::memory_order_relaxed) - read_position))
 		{
 			assert(write_position.load(std::memory_order_relaxed) + size < total_uncompressed);
-			if (!p__allow_stalls) ABORT("We caught up with our file read thread! Performance data may become unreliable, so aborting!");
+			if (!p__allow_stalls && preload_activated.load(std::memory_order_relaxed) && p__preload > 0) ABORT("We caught up with our file read thread! Performance data may become unreliable, so aborting!");
 			if (multithreaded_read) usleep(10000); // wait for more data
 			else decompress_chunk(); // generate new data
 		}
@@ -160,6 +160,8 @@ public:
 	/// awaiting to be read from uncompressed buffer).
 	inline bool done() const { return unlikely(done_decompressing && write_position.load(std::memory_order_relaxed) - read_position == 0); }
 
+	void delay_preload() { preload_activated.store(false, std::memory_order_relaxed); }
+
 	void disable_multithreaded_read() // we can only disable on the fly, enable makes less sense
 	{
 		done_decompressing = true;
@@ -186,6 +188,8 @@ private:
 
 	bool multithreaded_read = true;
 	size_t last_chunk_uncompressed_size = 0;
+	std::atomic<bool> preload_activated{ true };
+
 	unsigned tid = -1; // only used for logging
 	/// Pointer to mapped memory of compressed file
 	char* compressed_data = nullptr; // current position in compressed buffer

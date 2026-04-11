@@ -447,6 +447,17 @@ add_test(NAME replayer_vkcube COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -B
 add_test(NAME replayer_vulkan_demo_cpu COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -C -B -w none ${PROJECT_SOURCE_DIR}/traces/demo_computeraytracing.vk)
 add_test(NAME replayer_samples_cpu COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -C -B -w none ${PROJECT_SOURCE_DIR}/traces/sample_hello_triangle.vk)
 add_test(NAME replayer_vkcube_cpu COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -C -B -w none ${PROJECT_SOURCE_DIR}/traces/lunarg_vkcube.vk)
+# -p/--preload, --frames, and --allow-stalls coverage
+add_test(NAME replayer_samples_preload0 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -B -w none -p 0 ${PROJECT_SOURCE_DIR}/traces/sample_hello_triangle.vk)
+add_test(NAME replayer_vkcube_preload0 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -B -w none -p 0 ${PROJECT_SOURCE_DIR}/traces/lunarg_vkcube.vk)
+add_test(NAME replayer_samples_frames_preload0 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -B -w none -f 5 9 -p 0 ${PROJECT_SOURCE_DIR}/traces/sample_hello_triangle.vk)
+add_test(NAME replayer_vkcube_frames_preload0 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -B -w none -f 5 9 -p 0 ${PROJECT_SOURCE_DIR}/traces/lunarg_vkcube.vk)
+add_test(NAME replayer_demo_frames_preload0 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -B -w none -f 10 20 -p 0 ${PROJECT_SOURCE_DIR}/traces/demo_computeraytracing.vk)
+add_test(NAME replayer_demo_frames_preload1 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -B -w none -f 10 20 -p 1 ${PROJECT_SOURCE_DIR}/traces/demo_computeraytracing.vk)
+add_test(NAME replayer_samples_frames_nostalls COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -B -w none -f 5 9 -p 1 ${PROJECT_SOURCE_DIR}/traces/sample_hello_triangle.vk)
+set_tests_properties(replayer_samples_frames_nostalls PROPERTIES ENVIRONMENT "LAVATUBE_ALLOW_STALLS=0")
+add_test(NAME trace_test_1_0_replay_preload0 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay --skip-missing-input -p 0 ${CMAKE_CURRENT_BINARY_DIR}/tracing_1_2_0.vk)
+set_tests_properties(trace_test_1_0_replay_preload0 PROPERTIES FIXTURES_REQUIRED tracing1 SKIP_RETURN_CODE 77)
 install(TARGETS lava-replay RUNTIME)
 
 # --- lava-tool ---

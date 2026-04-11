@@ -135,10 +135,11 @@ void file_reader::decompressor()
 {
 	set_thread_name("decompressor");
 
-	const size_t fixed_preload = p__preload * 1024 * 1024; // TBD move to framerange start
+	const size_t fixed_preload = p__preload * 1024 * 1024;
 	while (!done_decompressing)
 	{
-		const size_t preload_size = fixed_preload > 0 ? fixed_preload : last_chunk_uncompressed_size;
+		const size_t active_preload = preload_activated.load(std::memory_order_relaxed) ? fixed_preload : 0;
+		const size_t preload_size = active_preload > 0 ? active_preload : last_chunk_uncompressed_size;
 		while (preload_size > 0 && write_position.load(std::memory_order_relaxed) > read_position + preload_size) usleep(10000); // we're too far ahead
 		decompress_chunk();
 	}
@@ -161,6 +162,7 @@ void file_reader::decompressor()
 
 void file_reader::start_measurement()
 {
+	preload_activated.store(true, std::memory_order_release);
 	measurement_stopped.store(false, std::memory_order_release);
 	cached_worker_time = 0;
 	cached_runner_time = 0;
