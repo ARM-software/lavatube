@@ -46,6 +46,9 @@ packed packed_open(const std::string& inside, const std::string& pack);
 /// Convenience function to get a file inside a pack file as a JSON value
 Json::Value packed_json(const std::string& inside, const std::string& pack);
 
+/// Delete all files in the given directory and then the directory itself
+void erase_directory(const std::string& directory);
+
 /// Collapse all files in the given directory into a pack file, optionally erasing it afterward
 bool pack_directory(const std::string& inside, const std::string& directory, bool erase = true);
 

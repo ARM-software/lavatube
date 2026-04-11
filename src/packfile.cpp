@@ -196,6 +196,26 @@ Json::Value packed_json(const std::string& inside, const std::string& pack)
 	return value;
 }
 
+void erase_directory(const std::string& directory)
+{
+	struct dirent **namelist;
+	int n = scandir(directory.c_str(), &namelist, NULL, alphasort);
+	if (n < 0) { ELOG("Failed to scan \"%s\": %s", directory.c_str(), strerror(errno)); return; }
+	for (int i = 0; i < n; i++)
+	{
+		if (namelist[i]->d_name[0] != '.')
+		{
+			std::string name = directory + "/" + std::string(namelist[i]->d_name);
+			int res = remove(name.c_str());
+			if (res == -1) ELOG("Could not remove %s: %s", name.c_str(), strerror(errno));
+		}
+		free(namelist[i]);
+	}
+	free(namelist);
+	int res = rmdir(directory.c_str());
+	if (res == -1) ELOG("Could not remove %s: %s", directory.c_str(), strerror(errno));
+}
+
 bool pack_directory(const std::string& pack, const std::string& directory, bool erase)
 {
 	struct dirent **namelist;

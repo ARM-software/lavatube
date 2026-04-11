@@ -537,28 +537,31 @@ function(layer_test test_name test_exe)
 	add_test(NAME layer_test_${ARGV0} COMMAND ${CMAKE_CURRENT_BINARY_DIR}/tracetooltests/vulkan_${ARGV1} --gpu ${ARGV2} ${ARGV3} ${ARGV4} ${ARGV5} ${ARGV6} ${ARGV7})
 	set_tests_properties(layer_test_${ARGV0} PROPERTIES
 		FIXTURES_SETUP ${ARGV0}
-		ENVIRONMENT "LAVATUBE_VIRTUAL_QUEUES=1;LAVATUBE_DESTINATION=vulkan_${ARGV0};VK_LAYER_PATH=${CMAKE_CURRENT_BINARY_DIR}/implicit_layer.d;VK_INSTANCE_LAYERS=VK_LAYER_ARM_lavatube;LD_LIBRARY_PATH=${CMAKE_CURRENT_BINARY_DIR}/implicit_layer.d"
+		ENVIRONMENT "LAVATUBE_VIRTUAL_QUEUES=1;LAVATUBE_DELETE_EMPTY_TRACE=1;LAVATUBE_DESTINATION=vulkan_${ARGV0};VK_LAYER_PATH=${CMAKE_CURRENT_BINARY_DIR}/implicit_layer.d;VK_INSTANCE_LAYERS=VK_LAYER_ARM_lavatube;LD_LIBRARY_PATH=${CMAKE_CURRENT_BINARY_DIR}/implicit_layer.d"
 		SKIP_RETURN_CODE 77
 	)
 	add_test(NAME layer_test_${ARGV0}_simulation COMMAND ${CMAKE_CURRENT_BINARY_DIR}/tracetooltests/vulkan_${ARGV1} --cpu ${ARGV2} ${ARGV3} ${ARGV4} ${ARGV5} ${ARGV6} ${ARGV7})
 	set_tests_properties(layer_test_${ARGV0}_simulation PROPERTIES
 		FIXTURES_SETUP ${ARGV0}_simulation
-		ENVIRONMENT "LAVATUBE_VIRTUAL_QUEUES=1;LAVATUBE_DESTINATION=vulkan_${ARGV0}_simulation;VK_LAYER_PATH=${CMAKE_CURRENT_BINARY_DIR}/implicit_layer.d;VK_INSTANCE_LAYERS=VK_LAYER_ARM_lavatube;LD_LIBRARY_PATH=${CMAKE_CURRENT_BINARY_DIR}/implicit_layer.d"
+		ENVIRONMENT "LAVATUBE_VIRTUAL_QUEUES=1;LAVATUBE_DELETE_EMPTY_TRACE=1;LAVATUBE_DESTINATION=vulkan_${ARGV0}_simulation;VK_LAYER_PATH=${CMAKE_CURRENT_BINARY_DIR}/implicit_layer.d;VK_INSTANCE_LAYERS=VK_LAYER_ARM_lavatube;LD_LIBRARY_PATH=${CMAKE_CURRENT_BINARY_DIR}/implicit_layer.d"
 		SKIP_RETURN_CODE 77
 	)
-	add_test(NAME layer_test_${ARGV0}_validate COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-tool -V --skip-missing-input vulkan_${ARGV0}.vk)
+	set(RUN_IF_EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/cmake/run_if_exists.sh)
+	set(TRACE_FILE ${CMAKE_CURRENT_BINARY_DIR}/vulkan_${ARGV0}.vk)
+	set(SIM_TRACE_FILE ${CMAKE_CURRENT_BINARY_DIR}/vulkan_${ARGV0}_simulation.vk)
+	add_test(NAME layer_test_${ARGV0}_validate COMMAND ${RUN_IF_EXISTS} ${TRACE_FILE} ${CMAKE_CURRENT_BINARY_DIR}/lava-tool -V --skip-missing-input vulkan_${ARGV0}.vk)
 	set_tests_properties(layer_test_${ARGV0}_validate PROPERTIES SKIP_RETURN_CODE 77 FIXTURES_REQUIRED ${ARGV0})
-	add_test(NAME layer_test_${ARGV0}_replay COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -V vulkan_${ARGV0}.vk)
-	set_tests_properties(layer_test_${ARGV0}_replay PROPERTIES FIXTURES_REQUIRED ${ARGV0})
-	add_test(NAME layer_test_${ARGV0}_replay_cpu COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -C -V vulkan_${ARGV0}.vk)
+	add_test(NAME layer_test_${ARGV0}_replay COMMAND ${RUN_IF_EXISTS} ${TRACE_FILE} ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -V vulkan_${ARGV0}.vk)
+	set_tests_properties(layer_test_${ARGV0}_replay PROPERTIES SKIP_RETURN_CODE 77 FIXTURES_REQUIRED ${ARGV0})
+	add_test(NAME layer_test_${ARGV0}_replay_cpu COMMAND ${RUN_IF_EXISTS} ${TRACE_FILE} ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -C -V vulkan_${ARGV0}.vk)
 	set_tests_properties(layer_test_${ARGV0}_replay_cpu PROPERTIES FIXTURES_REQUIRED ${ARGV0} SKIP_RETURN_CODE 77)
-	add_test(NAME layer_test_${ARGV0}_replay_blackhole COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -V -B vulkan_${ARGV0}.vk)
-	set_tests_properties(layer_test_${ARGV0}_replay_blackhole PROPERTIES FIXTURES_REQUIRED ${ARGV0})
-	add_test(NAME layer_test_${ARGV0}_replay_blackhole_nonewsi COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -V -B -w none vulkan_${ARGV0}.vk)
-	set_tests_properties(layer_test_${ARGV0}_replay_blackhole_nonewsi PROPERTIES FIXTURES_REQUIRED ${ARGV0})
-	add_test(NAME layer_test_${ARGV0}_replay_nonewsi COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -V -w none vulkan_${ARGV0}.vk)
-	set_tests_properties(layer_test_${ARGV0}_replay_nonewsi PROPERTIES FIXTURES_REQUIRED ${ARGV0})
-	add_test(NAME layer_test_${ARGV0}_replay_from_simulation COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -V vulkan_${ARGV0}_simulation.vk)
+	add_test(NAME layer_test_${ARGV0}_replay_blackhole COMMAND ${RUN_IF_EXISTS} ${TRACE_FILE} ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -V -B vulkan_${ARGV0}.vk)
+	set_tests_properties(layer_test_${ARGV0}_replay_blackhole PROPERTIES SKIP_RETURN_CODE 77 FIXTURES_REQUIRED ${ARGV0})
+	add_test(NAME layer_test_${ARGV0}_replay_blackhole_nonewsi COMMAND ${RUN_IF_EXISTS} ${TRACE_FILE} ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -V -B -w none vulkan_${ARGV0}.vk)
+	set_tests_properties(layer_test_${ARGV0}_replay_blackhole_nonewsi PROPERTIES SKIP_RETURN_CODE 77 FIXTURES_REQUIRED ${ARGV0})
+	add_test(NAME layer_test_${ARGV0}_replay_nonewsi COMMAND ${RUN_IF_EXISTS} ${TRACE_FILE} ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -V -w none vulkan_${ARGV0}.vk)
+	set_tests_properties(layer_test_${ARGV0}_replay_nonewsi PROPERTIES SKIP_RETURN_CODE 77 FIXTURES_REQUIRED ${ARGV0})
+	add_test(NAME layer_test_${ARGV0}_replay_from_simulation COMMAND ${RUN_IF_EXISTS} ${SIM_TRACE_FILE} ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -V vulkan_${ARGV0}_simulation.vk)
 	set_tests_properties(layer_test_${ARGV0}_replay_from_simulation PROPERTIES FIXTURES_REQUIRED "${ARGV0}_simulation;${ARGV0}" SKIP_RETURN_CODE 77)
 endfunction()
 

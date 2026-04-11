@@ -162,6 +162,7 @@ uint_fast16_t p__compression_level = get_env_int("LAVATUBE_COMPRESSION_LEVEL", 0
 uint_fast8_t p__sandbox_level = get_env_int("LAVATUBE_SANDBOX_LEVEL", 1);
 uint_fast8_t p__trust_host_flushes = get_env_int("LAVATUBE_TRUST_HOST_FLUSHING", 0); // disable active tracking
 int_fast32_t p__suballocator_heap_size = get_env_int("LAVATUBE_SUBALLOCATOR_HEAP_SIZE", -1);
+uint_fast8_t p__delete_empty_trace = get_env_bool("LAVATUBE_DELETE_EMPTY_TRACE", 0);
 
 void copy_recorded_memory_requirements(memory_requirements& dst, const VkMemoryRequirements2* src)
 {

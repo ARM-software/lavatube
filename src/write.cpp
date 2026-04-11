@@ -328,7 +328,12 @@ void lava_writer::finish()
 	thread_streams.clear();
 	if (!mPath.empty())
 	{
-		if (!pack_directory(mPack, mPath, true))
+		if (p__delete_empty_trace && records.VkDevice_index.size() == 0)
+		{
+			ILOG("No device was created; deleting empty trace %s", mPack.c_str());
+			erase_directory(mPath);
+		}
+		else if (!pack_directory(mPack, mPath, true))
 		{
 			ELOG("Failed to pack result files!");
 		}
