@@ -46,6 +46,7 @@ public:
 	void insert(T key, U value) { map[key] = value; }
 	int count(T key) const { return map.count(key); }
 	unsigned size() const { return map.size(); }
+	void reserve(size_t count) { map.reserve(count); }
 
 private:
 	tbb::concurrent_unordered_map<T, U> map;
@@ -658,6 +659,7 @@ public:
 	inline void resize(uint32_t _size)
 	{
 		remapping.resize(_size);
+		reverse.reserve(_size);
 	}
 
 	/// Will only be called once for each index. Caller must make sure nobody else calls
