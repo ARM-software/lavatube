@@ -67,6 +67,7 @@ Json::Value allocators_json()
 	return v;
 }
 
+#ifndef __ANDROID__
 static void* debug_alloc(void* pUserData, size_t size, size_t alignment, VkSystemAllocationScope allocationScope)
 {
 	__atomic_add_fetch(&allocator_alloc_bytes, size, __ATOMIC_RELAXED);
@@ -139,6 +140,7 @@ static void debug_internal_alloc(void* pUserData, size_t size, VkInternalAllocat
 static void debug_internal_free(void* pUserData, size_t size, VkInternalAllocationType allocationType, VkSystemAllocationScope allocationScope)
 {
 }
+#endif
 
 void allocators_set(VkAllocationCallbacks*& callbacks)
 {

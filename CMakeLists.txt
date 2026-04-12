@@ -15,7 +15,7 @@ if(CCACHE_PROGRAM AND DEFINED ENV{CCACHE_DIR})
     message(STATUS "We will build using ccache -- very good!")
 endif()
 
-cmake_minimum_required(VERSION 3.7)
+cmake_minimum_required(VERSION 3.11)
 project(lavatube VERSION 0.0.1 DESCRIPTION "Vulkan tracer designed for multi-threaded replay with minimum overhead" HOMEPAGE_URL "https://github.com/ARM-software/lavatube" LANGUAGES C CXX)
 enable_testing()
 
@@ -44,6 +44,10 @@ if(NOT ${NO_XCB})
     set(XCB_LIBRARIES ${XCB_LIBRARIES} ${X11_LIBRARIES} ${WAYLAND_LIBRARY})
     message(STATUS "Wayland, XCB and X11 enabled, using ${XCB_LIBRARIES} ${X11_LIBRARIES} ${WAYLAND_LIBRARY}")
     set(XCB_ENABLE -DVK_USE_PLATFORM_XCB_KHR -DVK_USE_PLATFORM_XLIB_KHR -DVK_USE_PLATFORM_WAYLAND_KHR)
+elseif(ANDROID)
+    set(XCB_ENABLE -DVK_USE_PLATFORM_ANDROID_KHR)
+    set(ANDROID_LIBRARIES android log)
+    message(STATUS "Android build enabled")
 else()
     set(XCB_ENABLE "")
     message(STATUS "XCB, X11 and Wayland support not added")
@@ -84,6 +88,26 @@ message(STATUS "Configuring density")
 add_subdirectory(external/density ${CMAKE_BINARY_DIR}/density)
 message(STATUS "Configuring lz4")
 find_package(LZ4)
+if (NOT LZ4_FOUND)
+    message(STATUS "LZ4 not found, using FetchContent to build it from source")
+    include(FetchContent)
+    FetchContent_Declare(
+        lz4
+        GIT_REPOSITORY https://github.com/lz4/lz4.git
+        GIT_TAG v1.9.4
+        SOURCE_SUBDIR build/cmake
+    )
+    set(LZ4_BUILD_CLI OFF CACHE BOOL "Build lz4 CLI" FORCE)
+    set(LZ4_BUILD_SHARED OFF CACHE BOOL "Build lz4 shared library" FORCE)
+    FetchContent_MakeAvailable(lz4)
+    if (NOT TARGET LZ4::LZ4)
+        if (TARGET lz4_static)
+            add_library(LZ4::LZ4 ALIAS lz4_static)
+        elseif (TARGET lz4_shared)
+            add_library(LZ4::LZ4 ALIAS lz4_shared)
+        endif()
+    endif()
+endif()
 
 # --- unordered_dense ---
 
@@ -106,7 +130,11 @@ endif()
 if ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
 	set(COMMON_FLAGS ${COMMON_FLAGS} -Wthread-safety -Wno-error=thread-safety-analysis -Wno-error=unused-but-set-variable)
 endif()
-set(MOST_COMMON_LIBRARIES ${SANITIZER} stdc++ dl pthread)
+if(ANDROID)
+    set(MOST_COMMON_LIBRARIES ${SANITIZER} stdc++ dl ${ANDROID_LIBRARIES})
+else()
+    set(MOST_COMMON_LIBRARIES ${SANITIZER} stdc++ dl pthread ${ANDROID_LIBRARIES})
+endif()
 set(COMMON_LIBRARIES ${MOST_COMMON_LIBRARIES} unordered_dense::unordered_dense atomic density LZ4::LZ4 ${XCB_LIBRARIES} spirv_simulator_lib)
 
 set(COMMON_INCLUDE
@@ -138,6 +166,7 @@ set(COMMON_SRC
     ${PROJECT_SOURCE_DIR}/src/util.h
     ${PROJECT_SOURCE_DIR}/src/vkjson.cpp
     ${PROJECT_SOURCE_DIR}/src/vkjson.h
+    ${PROJECT_SOURCE_DIR}/src/android_utils.cpp
     ${PROJECT_SOURCE_DIR}/src/packfile.cpp
     ${PROJECT_SOURCE_DIR}/src/packfile.h
     ${PROJECT_SOURCE_DIR}/src/lavamutex.h
@@ -231,9 +260,9 @@ install(PROGRAMS scripts/lava-capture.py TYPE BIN)
 
 # --- unit tests ---
 
-add_executable(mprotect tests/mprotect.cpp src/util.cpp src/util.h)
+add_executable(mprotect tests/mprotect.cpp src/util.cpp src/util.h src/android_utils.cpp)
 target_include_directories(mprotect ${COMMON_INCLUDE})
-target_link_libraries(mprotect ${MOST_COMMON_LIBRARIES} pthread)
+target_link_libraries(mprotect ${MOST_COMMON_LIBRARIES})
 target_compile_options(mprotect PRIVATE ${COMMON_FLAGS})
 add_dependencies(mprotect sync_generated)
 
@@ -244,21 +273,21 @@ add_dependencies(mprotect sync_generated)
 
 add_executable(containers tests/container_test.cpp)
 target_include_directories(containers ${COMMON_INCLUDE})
-target_link_libraries(containers ${MOST_COMMON_LIBRARIES} unordered_dense::unordered_dense pthread)
+target_link_libraries(containers ${MOST_COMMON_LIBRARIES} unordered_dense::unordered_dense)
 target_compile_options(containers PRIVATE ${COMMON_FLAGS})
 add_test(NAME container_test COMMAND ${CMAKE_CURRENT_BINARY_DIR}/containers)
 add_dependencies(containers sync_generated)
 
 add_executable(containers2 tests/container_test2.cpp)
 target_include_directories(containers2 ${COMMON_INCLUDE})
-target_link_libraries(containers2 ${MOST_COMMON_LIBRARIES} unordered_dense::unordered_dense pthread)
+target_link_libraries(containers2 ${MOST_COMMON_LIBRARIES} unordered_dense::unordered_dense)
 target_compile_options(containers2 PRIVATE ${COMMON_FLAGS})
 add_test(NAME container_test2 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/containers2)
 add_dependencies(containers sync_generated)
 
 add_executable(host_write_regions_test tests/host_write_regions.cpp)
 target_include_directories(host_write_regions_test ${COMMON_INCLUDE})
-target_link_libraries(host_write_regions_test ${MOST_COMMON_LIBRARIES} unordered_dense::unordered_dense pthread)
+target_link_libraries(host_write_regions_test ${MOST_COMMON_LIBRARIES} unordered_dense::unordered_dense)
 target_compile_options(host_write_regions_test PRIVATE ${COMMON_FLAGS})
 add_test(NAME host_write_regions_test COMMAND ${CMAKE_CURRENT_BINARY_DIR}/host_write_regions_test)
 add_dependencies(host_write_regions_test sync_generated)
@@ -405,32 +434,35 @@ target_compile_options(write3-2 PRIVATE ${COMMON_FLAGS})
 add_dependencies(write3-2 sync_generated)
 add_test(NAME write_test_3-2 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/write3-2)
 
-add_executable(write4 tests/write4.cpp src/filewriter.cpp src/util.cpp)
+add_executable(write4 tests/write4.cpp src/filewriter.cpp src/util.cpp src/android_utils.cpp)
 target_include_directories(write4 ${COMMON_INCLUDE})
-target_link_libraries(write4 ${MOST_COMMON_LIBRARIES} density LZ4::LZ4 pthread)
+target_link_libraries(write4 ${MOST_COMMON_LIBRARIES} density LZ4::LZ4)
+
 target_compile_options(write4 PRIVATE ${COMMON_FLAGS})
 add_dependencies(write4 sync_generated)
 add_test(NAME write_test_4 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/write4)
 
-add_executable(read4 tests/read4.cpp src/filereader.cpp src/util.cpp)
+add_executable(read4 tests/read4.cpp src/filereader.cpp src/util.cpp src/android_utils.cpp)
 target_include_directories(read4 ${COMMON_INCLUDE})
-target_link_libraries(read4 ${MOST_COMMON_LIBRARIES} density LZ4::LZ4 pthread)
+target_link_libraries(read4 ${MOST_COMMON_LIBRARIES} density LZ4::LZ4)
+
 target_compile_options(read4 PRIVATE ${COMMON_FLAGS})
 add_dependencies(read4 sync_generated)
 add_test(NAME read_test_4 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/read4)
 set_property(TEST read_test_4 APPEND PROPERTY DEPENDS write_test_4)
 
-add_executable(read_preload tests/read_preload.cpp src/filewriter.cpp src/filereader.cpp src/util.cpp)
+add_executable(read_preload tests/read_preload.cpp src/filewriter.cpp src/filereader.cpp src/util.cpp src/android_utils.cpp)
 target_include_directories(read_preload ${COMMON_INCLUDE})
-target_link_libraries(read_preload ${MOST_COMMON_LIBRARIES} density LZ4::LZ4 pthread)
+target_link_libraries(read_preload ${MOST_COMMON_LIBRARIES} density LZ4::LZ4)
 target_compile_options(read_preload PRIVATE ${COMMON_FLAGS})
 add_dependencies(read_preload sync_generated)
 add_test(NAME read_test_preload COMMAND ${CMAKE_CURRENT_BINARY_DIR}/read_preload)
 set_tests_properties(read_test_preload PROPERTIES TIMEOUT 10)
 
-add_executable(write5 tests/write5.cpp src/filewriter.cpp src/filereader.cpp src/util.cpp)
+add_executable(write5 tests/write5.cpp src/filewriter.cpp src/filereader.cpp src/util.cpp src/android_utils.cpp)
 target_include_directories(write5 ${COMMON_INCLUDE})
-target_link_libraries(write5 ${MOST_COMMON_LIBRARIES} density LZ4::LZ4 pthread)
+target_link_libraries(write5 ${MOST_COMMON_LIBRARIES} density LZ4::LZ4)
+
 target_compile_options(write5 PRIVATE ${COMMON_FLAGS})
 add_dependencies(write5 sync_generated)
 add_test(NAME write_test_5 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/write5)
@@ -510,6 +542,7 @@ add_executable(packtool src/packtool.cpp
 	${PROJECT_SOURCE_DIR}/src/packfile.h
 	${PROJECT_SOURCE_DIR}/src/util.cpp
 	${PROJECT_SOURCE_DIR}/src/util.h
+	${PROJECT_SOURCE_DIR}/src/android_utils.cpp
 )
 target_include_directories(packtool ${COMMON_INCLUDE})
 target_link_libraries(packtool ${MOST_COMMON_LIBRARIES})

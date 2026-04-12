@@ -88,7 +88,21 @@ make test
 To build for android:
 --------------------
 
-(To be done.)
+Fist install required dependencies for local Android building. These are the
+recommended packages:
+
+```
+sudo apt-get install google-android-ndk-r28-installer
+sudo apt-get install google-android-cmdline-tools-19.0-installer
+sudo apt-get install android-sdk-platform-tools
+sudo sdkmanager "emulator" "system-images;android-33;google_apis;x86_64"
+```
+
+Then build by running
+
+```
+scripts/build-android.sh
+```
 
 Linux cross-compile
 -------------------

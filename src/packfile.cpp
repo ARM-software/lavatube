@@ -98,13 +98,13 @@ bool pack_add(const std::string& newfile, const std::string& pack)
 	assert(last_idx_ptr_pos > 0);
 	const uint64_t last_byte = pfread.size();
 	pfread.close();
-	int filedesc = open(pack.c_str(), O_WRONLY | O_NOATIME, S_IRWXU | S_IRGRP | S_IROTH);
+	int filedesc = open(pack.c_str(), O_WRONLY | O_NOATIME);
 	if (filedesc == -1) FAIL("Failed to open for editing \"%s\": %s", pack.c_str(), strerror(errno));
 	unsigned long r2 = lseek(filedesc, last_idx_ptr_pos, SEEK_SET);
 	assert(r2 > 0);
 	(void)r2;
 	packwrite(filedesc, &last_byte, sizeof(last_byte));
-	int readdesc = open(newfile.c_str(), O_RDONLY | O_NOATIME, S_IRWXU | S_IRGRP | S_IROTH);
+	int readdesc = open(newfile.c_str(), O_RDONLY | O_NOATIME);
 	if (readdesc == -1) FAIL("Failed to open for reading \"%s\": %s", pack.c_str(), strerror(errno));
 	struct stat st;
 	fstat(readdesc, &st);

@@ -250,13 +250,13 @@ VkSurfaceKHR window_create(VkInstance instance, uint32_t index, int32_t x, int32
 	if (context.winsys == "android")
 	{
 #if VK_USE_PLATFORM_ANDROID_KHR
-		w.android.window = AndroidGlobs::G_STATE->pendingWindow;
 		if (AndroidGlobs::G_STATE == nullptr)
 		{
 			ABORT("Global android state not initialized");
 		} else if (AndroidGlobs::G_STATE->pendingWindow == nullptr) {
 			ABORT("Android window not initialized");
 		}
+		w.android.window = AndroidGlobs::G_STATE->pendingWindow;
 
 		VkAndroidSurfaceCreateInfoKHR pInfo = {};
 		pInfo.sType = VK_STRUCTURE_TYPE_ANDROID_SURFACE_CREATE_INFO_KHR;

@@ -302,6 +302,8 @@ class parameter(spec.base_parameter):
 			z.decl('VkAllocationCallbacks', 'allocator', struct=True)
 			z.decl('VkAllocationCallbacks*', 'pAllocator', custom='&allocator')
 			z.do('allocators_set(pAllocator);')
+		elif self.type in ['AHardwareBuffer', 'ANativeWindow']:
+			pass
 		elif self.name in ['pUserData']:
 			pass
 		elif self.funcname in ['VkDebugMarkerObjectNameInfoEXT', 'VkDebugMarkerObjectTagInfoEXT', 'vkDebugReportMessageEXT'] and self.name == 'object':
@@ -749,6 +751,8 @@ class parameter(spec.base_parameter):
 			z.brace_begin()
 
 		if self.name in ['pAllocator', 'pUserData', 'pfnCallback', 'pfnUserCallback']:
+			pass
+		elif self.type in ['AHardwareBuffer', 'ANativeWindow']:
 			pass
 		elif (self.name == 'initialDataSize' and self.funcname == 'VkPipelineCacheCreateInfo'):
 			z.do('writer.write_uint64_t(0); // initialDataSize : never write pipeline cache data into the trace itself')
