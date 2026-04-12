@@ -179,6 +179,21 @@ void file_reader::start_measurement()
 	cached_worker_time = 0;
 	cached_runner_time = 0;
 	worker_measurement_ready.store(false, std::memory_order_release);
+
+	if (multithreaded_read && p__preload > 0)
+	{
+		const size_t fixed_preload = p__preload * 1024 * 1024;
+		uint64_t target = read_position + fixed_preload;
+		if (target > total_uncompressed) target = total_uncompressed;
+
+		uint64_t current_write = write_position.load(std::memory_order_acquire);
+		while (current_write < target && !done_decompressing.load(std::memory_order_relaxed))
+		{
+			write_position.wait(current_write, std::memory_order_acquire);
+			current_write = write_position.load(std::memory_order_acquire);
+		}
+	}
+
 	clockid_t id;
 	pthread_t runner = pthread_self();
 	if (runner_thread_bound.load(std::memory_order_acquire)) runner = runner_thread;
