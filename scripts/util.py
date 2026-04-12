@@ -1412,7 +1412,7 @@ def load_add_tracking(name):
 				z.do('const VkPhysicalDeviceInternallySynchronizedQueuesFeaturesKHR* pdisqf = (const VkPhysicalDeviceInternallySynchronizedQueuesFeaturesKHR*)find_extension(pCreateInfo, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_INTERNALLY_SYNCHRONIZED_QUEUES_FEATURES_KHR);')
 				z.do('data.internally_synchronized_queues = (pdisqf && pdisqf->internallySynchronizedQueues == VK_TRUE);')
 				z.do('data.allocator = new suballocator();')
-				z.do('data.allocator->create(selected_physical_device, pDevice, VkImage_index, VkBuffer_index, VkTensorARM_index, VkDataGraphPipelineSessionARM_index, reader.run);')
+				z.do('data.allocator->create(selected_physical_device, pDevice, VkImage_index, VkBuffer_index, VkTensorARM_index, VkDataGraphPipelineSessionARM_index, reader.parent->threads.size(), reader.run);')
 			elif type == 'VkBuffer':
 				z.do('data.size = pCreateInfo->size;')
 				z.do('data.flags = pCreateInfo->flags;')

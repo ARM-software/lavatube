@@ -39,7 +39,7 @@ struct suballocator
 	/// Call this when our parent device object is created, and before calling any other suballoc function. Set `run` to false if we are not actually running the API, but instead
 	/// doing some post-processing.
 	void create(VkPhysicalDevice physicaldevice, VkDevice device, std::vector<trackedimage>& images, std::vector<trackedbuffer>& buffers,
-		std::vector<trackedtensor>& tensors, std::vector<trackeddatagraphpipelinesession>& sessions, bool run);
+		std::vector<trackedtensor>& tensors, std::vector<trackeddatagraphpipelinesession>& sessions, size_t thread_count, bool run);
 
 	/// Call when our parent device is destroyed.
 	void destroy();
@@ -58,8 +58,8 @@ struct suballocator
 	suballoc_location add_datagraphpipelinesession(uint16_t tid, uint64_t native, trackeddatagraphpipelinesession& data,
 		VkDataGraphPipelineSessionBindPointARM bind_point, uint32_t object_index);
 
-	/// Delete an image from our memory pools. Thread safe because the internal data structure is preallocated and never resized,
-	/// and deleted entries are never reused.
+	/// Delete an image from our memory pools. Thread safe because lookups are preallocated and frees only enqueue work onto
+	/// the owning thread's heap.
 	void free_image(uint32_t image_index);
 
 	/// Delete a buffer from our memory pools. See above.

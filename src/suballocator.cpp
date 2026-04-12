@@ -1,10 +1,11 @@
 #include "suballocator.h"
 
+#include <algorithm>
 #include <memory>
 #include <vector>
 #include <functional>
-#include "tbb/concurrent_vector.h"
 #include "containers.h"
+#include "lavamutex.h"
 
 #include "lavatube.h"
 #include "memory.h"
@@ -52,9 +53,10 @@ struct heap
 	/// This one does not need to be concurrent safe, since each thread owns its own heap
 	/// and only it may iterate over and modify the allocations list.
 	std::list<suballocation> subs;
-	/// We cannot allow other threads to delete anything in our list, so they can queue
-	/// up deletes in this concurrency safe vector instead.
-	tbb::concurrent_vector<uint32_t> deletes;
+	/// Other threads can queue delete offsets here; the owning thread drains them
+	/// before its next allocation attempt.
+	mutable lava::mutex deletes_mutex;
+	std::vector<uint32_t> deletes;
 	lava_tiling tiling = TILING_LINEAR; // default assumed to be linear
 	char* mapped = nullptr;
 
@@ -87,7 +89,7 @@ struct suballocator_private
 	uint64_t min_heap_size = 1024 * 1024 * 32; // default 32mb size heaps
 	std::vector<VkDeviceMemory> virtualswapmemory;
 	bool run = true; // whether we actually run things or just fake it
-	tbb::concurrent_vector<heap> heaps;
+	std::vector<std::vector<std::unique_ptr<heap>>> heaps_by_thread;
 	VkPhysicalDeviceMemoryProperties memory_properties;
 	std::vector<lookup> image_lookup;
 	std::vector<lookup> buffer_lookup;
@@ -104,14 +106,42 @@ struct suballocator_private
 	void print_memory_usage();
 	uint32_t get_device_memory_type(uint32_t type_filter, VkMemoryPropertyFlags properties);
 	suballoc_location allocate(uint16_t tid, uint32_t memoryTypeIndex, suballocation &s, VkMemoryPropertyFlags flags, lava_tiling tiling, bool dedicated, VkMemoryAllocateFlags allocflags);
-	void suballoc_print(FILE* fp);
+	void suballoc_print(FILE* fp) const;
 	suballoc_location suballocate(uint16_t tid, uint32_t memoryTypeIndex, suballocation &s, VkMemoryPropertyFlags flags, lava_tiling tiling, VkMemoryAllocateFlags allocflags);
 	void self_test() const;
 	void bind(heap& h, const suballocation& s);
 	suballoc_metrics performance() const;
+	std::vector<std::unique_ptr<heap>>& thread_heaps(uint16_t tid);
+	const std::vector<std::unique_ptr<heap>>& thread_heaps(uint16_t tid) const;
 
 	inline bool needs_flush(unsigned memoryTypeIndex) { return !(memory_properties.memoryTypes[memoryTypeIndex].propertyFlags & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT); }
 };
+
+static void queue_delete(heap& h, uint32_t offset)
+{
+	lava::lock_guard lock(h.deletes_mutex);
+	h.deletes.push_back(offset);
+}
+
+static std::vector<uint32_t> take_pending_deletes(heap& h)
+{
+	lava::lock_guard lock(h.deletes_mutex);
+	std::vector<uint32_t> pending;
+	pending.swap(h.deletes);
+	return pending;
+}
+
+static size_t pending_delete_count(const heap& h)
+{
+	lava::lock_guard lock(h.deletes_mutex);
+	return h.deletes.size();
+}
+
+static bool has_pending_delete(const heap& h, uint32_t offset)
+{
+	lava::lock_guard lock(h.deletes_mutex);
+	return std::find(h.deletes.begin(), h.deletes.end(), offset) != h.deletes.end();
+}
 
 // helpers
 
@@ -127,6 +157,24 @@ static VkMemoryPropertyFlags prune_memory_flags(VkMemoryPropertyFlags flags)
 suballoc_metrics suballocator::performance() const
 {
 	return priv->performance();
+}
+
+std::vector<std::unique_ptr<heap>>& suballocator_private::thread_heaps(uint16_t tid)
+{
+	if (tid >= heaps_by_thread.size())
+	{
+		SUBALLOC_ABORT(this, "Thread index %u out of range (heaps_by_thread size=%zu)", (unsigned)tid, heaps_by_thread.size());
+	}
+	return heaps_by_thread.at(tid);
+}
+
+const std::vector<std::unique_ptr<heap>>& suballocator_private::thread_heaps(uint16_t tid) const
+{
+	if (tid >= heaps_by_thread.size())
+	{
+		SUBALLOC_ABORT(this, "Thread index %u out of range (heaps_by_thread size=%zu)", (unsigned)tid, heaps_by_thread.size());
+	}
+	return heaps_by_thread.at(tid);
 }
 
 suballoc_metrics suballocator_private::performance() const
@@ -146,14 +194,18 @@ void suballocator_private::print_memory_usage()
 	int i = 0;
 	uint64_t total = 0;
 	uint64_t waste = 0;
-	for (const heap& h : heaps)
+	for (const auto& heaps : heaps_by_thread)
 	{
-		printf("Heap %d : tid=%u memorytype=%u tiling=%u free=%lu total=%lu allocs=%u pending deletes=%u\n",
-		       i, (unsigned)h.tid, (unsigned)h.memoryTypeIndex, (unsigned)h.tiling, (unsigned long)h.free, (unsigned long)h.total,
-		       (unsigned)h.subs.size(), (unsigned)h.deletes.size());
-		total += h.total;
-		waste += h.free;
-		i++;
+		for (const auto& heap_ptr : heaps)
+		{
+			const heap& h = *heap_ptr;
+			printf("Heap %d : tid=%u memorytype=%u tiling=%u free=%lu total=%lu allocs=%u pending deletes=%u\n",
+			       i, (unsigned)h.tid, (unsigned)h.memoryTypeIndex, (unsigned)h.tiling, (unsigned long)h.free, (unsigned long)h.total,
+			       (unsigned)h.subs.size(), (unsigned)pending_delete_count(h));
+			total += h.total;
+			waste += h.free;
+			i++;
+		}
 	}
 	printf("Total memory used:   %10lu\n", (unsigned long)total);
 	printf("Total memory wasted: %10lu\n", (unsigned long)waste);
@@ -200,12 +252,13 @@ suballocator::~suballocator()
 }
 
 void suballocator::create(VkPhysicalDevice physicaldevice, VkDevice device, std::vector<trackedimage>& images, std::vector<trackedbuffer>& buffers,
-	std::vector<trackedtensor>& tensors, std::vector<trackeddatagraphpipelinesession>& sessions, bool run)
+	std::vector<trackedtensor>& tensors, std::vector<trackeddatagraphpipelinesession>& sessions, size_t thread_count, bool run)
 {
 	// Step 1 - Initialize internal state
 
 	priv = new suballocator_private;
 	priv->run = run;
+	priv->heaps_by_thread.resize(thread_count);
 	priv->image_lookup.resize(images.size());
 	priv->buffer_lookup.resize(buffers.size());
 	priv->tensor_lookup.resize(tensors.size());
@@ -307,9 +360,9 @@ void suballocator::create(VkPhysicalDevice physicaldevice, VkDevice device, std:
 suballoc_location suballocator_private::allocate(uint16_t tid, uint32_t memoryTypeIndex, suballocation &s, VkMemoryPropertyFlags flags,
         lava_tiling tiling, bool dedicated, VkMemoryAllocateFlags allocflags)
 {
-	heap h;
-	h.tid = tid;
-	h.dedicated = dedicated;
+	auto h = std::make_unique<heap>();
+	h->tid = tid;
+	h->dedicated = dedicated;
 	VkMemoryDedicatedAllocateInfoTensorARM tensorded = { VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO_TENSOR_ARM, nullptr };
 	VkMemoryDedicatedAllocateInfoKHR dedinfo = { VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO, nullptr };
 	VkMemoryAllocateFlagsInfo flaginfo = { VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_FLAGS_INFO, nullptr };
@@ -349,7 +402,7 @@ suballoc_location suballocator_private::allocate(uint16_t tid, uint32_t memoryTy
 	const bool host_visible = (memory_properties.memoryTypes[memoryTypeIndex].propertyFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) != 0;
 	if (run)
 	{
-		VkResult result = wrap_vkAllocateMemory(device, &info, nullptr, &h.mem);
+		VkResult result = wrap_vkAllocateMemory(device, &info, nullptr, &h->mem);
 		if (result != VK_SUCCESS)
 		{
 			print_memory_usage();
@@ -357,10 +410,10 @@ suballoc_location suballocator_private::allocate(uint16_t tid, uint32_t memoryTy
 		}
 		if (host_visible)
 		{
-			result = wrap_vkMapMemory(device, h.mem, 0, info.allocationSize, 0, (void**)&h.mapped);
+			result = wrap_vkMapMemory(device, h->mem, 0, info.allocationSize, 0, (void**)&h->mapped);
 			if (result != VK_SUCCESS)
 			{
-				wrap_vkFreeMemory(device, h.mem, nullptr);
+				wrap_vkFreeMemory(device, h->mem, nullptr);
 				SUBALLOC_ABORT(this, "Failed to persistently map %lu bytes of memory for memory type %u and tiling %u", (unsigned long)info.allocationSize,
 				              (unsigned)memoryTypeIndex, (unsigned)tiling);
 			}
@@ -368,24 +421,25 @@ suballoc_location suballocator_private::allocate(uint16_t tid, uint32_t memoryTy
 	}
 	else
 	{
-		h.mem = (VkDeviceMemory)malloc(info.allocationSize);
-		h.mapped = (char*)h.mem;
+		h->mem = (VkDeviceMemory)malloc(info.allocationSize);
+		h->mapped = (char*)h->mem;
 	}
 	allocated_bytes += info.allocationSize;
 	allocated_heaps++;
-	h.free = info.allocationSize - s.size;
-	h.total = info.allocationSize;
-	h.memoryTypeIndex = memoryTypeIndex;
-	h.tiling = tiling;
-	h.allocflags = allocflags;
-	h.subs.push_back(s);
-	h.flags = flags;
+	h->free = info.allocationSize - s.size;
+	h->total = info.allocationSize;
+	h->memoryTypeIndex = memoryTypeIndex;
+	h->tiling = tiling;
+	h->allocflags = allocflags;
+	h->subs.push_back(s);
+	h->flags = flags;
 	DLOG2("allocating new memory pool with size = %lu, free = %lu (memoryTypeIndex=%u, tiling=%u)", (unsigned long)info.allocationSize,
-	      (unsigned long)h.free, (unsigned)memoryTypeIndex, (unsigned)tiling);
-	auto it = heaps.push_back(h);
+	      (unsigned long)h->free, (unsigned)memoryTypeIndex, (unsigned)tiling);
+	heap* heap_ptr = h.get();
+	thread_heaps(tid).push_back(std::move(h));
 	s.offset = 0;
-	bind(*it, s);
-	return { h.mem, 0, s.size, true, needs_flush(memoryTypeIndex), h.mapped };
+	bind(*heap_ptr, s);
+	return { heap_ptr->mem, 0, s.size, true, needs_flush(memoryTypeIndex), heap_ptr->mapped };
 }
 
 suballoc_location suballocator_private::suballocate(uint16_t tid, uint32_t memoryTypeIndex, suballocation &s, VkMemoryPropertyFlags flags, lava_tiling tiling, VkMemoryAllocateFlags allocflags)
@@ -393,15 +447,17 @@ suballoc_location suballocator_private::suballocate(uint16_t tid, uint32_t memor
 	used_count++;
 	used_bytes += s.size;
 	assert(s.alignment != 0);
-	for (heap& h : heaps)
+	for (const auto& heap_ptr : thread_heaps(tid))
 	{
+		heap& h = *heap_ptr;
 		// this is a safe time to actually delete things
-		if (!h.deletes.empty())
+		std::vector<uint32_t> deletes = take_pending_deletes(h);
+		if (!deletes.empty())
 		{
 			for (auto it = h.subs.begin(); it != h.subs.end(); )
 			{
 				bool erased = false;
-				for (auto d = h.deletes.cbegin(); d != h.deletes.cend(); ++d)
+				for (auto d = deletes.cbegin(); d != deletes.cend(); ++d)
 				{
 					if (it->offset == *d)
 					{
@@ -415,7 +471,6 @@ suballoc_location suballocator_private::suballocate(uint16_t tid, uint32_t memor
 				}
 				if (!erased) ++it;
 			}
-			h.deletes.clear();
 			if (h.dedicated && h.subs.empty() && h.mem != VK_NULL_HANDLE)
 			{
 				const VkDeviceSize total = h.total;
@@ -657,7 +712,7 @@ void suballocator::free_image(uint32_t image_index)
 	lookup& l = priv->image_lookup.at(image_index);
 	if (l.home) // it is possible to delete something that has not been bound yet
 	{
-		l.home->deletes.push_back(l.offset);
+		queue_delete(*l.home, l.offset);
 		l.home = nullptr;
 	}
 }
@@ -669,7 +724,7 @@ void suballocator::free_buffer(uint32_t buffer_index)
 	lookup& l = priv->buffer_lookup.at(buffer_index);
 	if (l.home) // it is possible to delete something that has not been bound yet
 	{
-		l.home->deletes.push_back(l.offset);
+		queue_delete(*l.home, l.offset);
 		l.home = nullptr;
 	}
 }
@@ -681,7 +736,7 @@ void suballocator::free_tensor(uint32_t tensor_index)
 	lookup& l = priv->tensor_lookup.at(tensor_index);
 	if (l.home) // it is possible to delete something that has not been bound yet
 	{
-		l.home->deletes.push_back(l.offset);
+		queue_delete(*l.home, l.offset);
 		l.home = nullptr;
 	}
 }
@@ -695,7 +750,7 @@ void suballocator::free_datagraphpipelinesession(uint32_t session_index)
 	{
 		if (entry.loc.home)
 		{
-			entry.loc.home->deletes.push_back(entry.loc.offset);
+			queue_delete(*entry.loc.home, entry.loc.offset);
 			entry.loc.home = nullptr;
 		}
 	}
@@ -748,18 +803,23 @@ suballoc_location suballocator::find_datagraphpipelinesession_memory(uint32_t se
 
 void suballocator::destroy()
 {
-	for (heap& h : priv->heaps)
+	for (auto& heaps : priv->heaps_by_thread)
 	{
-		if (h.mem == VK_NULL_HANDLE) continue;
-		if (priv->run)
+		for (auto& heap_ptr : heaps)
 		{
-			if (h.mapped) wrap_vkUnmapMemory(priv->device, h.mem);
-			wrap_vkFreeMemory(priv->device, h.mem, nullptr);
+			heap& h = *heap_ptr;
+			if (h.mem == VK_NULL_HANDLE) continue;
+			if (priv->run)
+			{
+				if (h.mapped) wrap_vkUnmapMemory(priv->device, h.mem);
+				wrap_vkFreeMemory(priv->device, h.mem, nullptr);
+			}
+			else free(h.mem);
+			lava::lock_guard lock(h.deletes_mutex);
+			h.deletes.clear();
 		}
-		else free(h.mem);
-		h.deletes.clear();
+		heaps.clear();
 	}
-	priv->heaps.clear();
 	priv->image_lookup.clear();
 	priv->buffer_lookup.clear();
 	priv->tensor_lookup.clear();
@@ -772,7 +832,7 @@ void suballocator::destroy()
 }
 
 // for debugging, print the contents of the suballocator
-void suballocator_private::suballoc_print(FILE* fp)
+void suballocator_private::suballoc_print(FILE* fp) const
 {
 	fprintf(fp, "SUBALLOCATOR CONTENTS\n");
 	fprintf(fp, "Images:\n");
@@ -798,10 +858,14 @@ void suballocator_private::suballoc_print(FILE* fp)
 		}
 	}
 	fprintf(fp, "Heaps:\n");
-	for (const heap& h : heaps)
+	for (const auto& heaps : heaps_by_thread)
 	{
-		fprintf(fp, "\t%p tid=%u type=%u mem=%lu free=%lu total=%lu subs=%u deletes=%u\n", &h, (unsigned)h.tid, (unsigned)h.memoryTypeIndex,
-		        (unsigned long)h.mem, (unsigned long)h.free, (unsigned long)h.total, (unsigned)h.subs.size(), (unsigned)h.deletes.size());
+		for (const auto& heap_ptr : heaps)
+		{
+			const heap& h = *heap_ptr;
+			fprintf(fp, "\t%p tid=%u type=%u mem=%lu free=%lu total=%lu subs=%u deletes=%u\n", &h, (unsigned)h.tid, (unsigned)h.memoryTypeIndex,
+			        (unsigned long)h.mem, (unsigned long)h.free, (unsigned long)h.total, (unsigned)h.subs.size(), (unsigned)pending_delete_count(h));
+		}
 	}
 }
 
@@ -813,70 +877,70 @@ int suballocator::self_test() const
 	priv->self_test();
 
 	// walk the heaps to check consistency
-	for (const heap& h : priv->heaps)
+	for (const auto& heaps : priv->heaps_by_thread)
 	{
-		h.self_test();
-		uint64_t freed = 0;
-		if (h.subs.size() > 0) freed = h.subs.front().offset;
-		uint64_t used = 0;
-		int64_t prev_end = -1; // end of previous allocation
-		for (auto it = h.subs.cbegin(); it != h.subs.cend(); ++it)
+		for (const auto& heap_ptr : heaps)
 		{
-			bool deleted = false;
-			for (uint32_t deleted_offset : h.deletes)
+			const heap& h = *heap_ptr;
+			h.self_test();
+			uint64_t freed = 0;
+			if (h.subs.size() > 0) freed = h.subs.front().offset;
+			uint64_t used = 0;
+			int64_t prev_end = -1; // end of previous allocation
+			for (auto it = h.subs.cbegin(); it != h.subs.cend(); ++it)
 			{
-				if (deleted_offset == it->offset) deleted = true;
+				const bool deleted = has_pending_delete(h, it->offset);
+				assert((int64_t)it->offset >= prev_end);
+				if (prev_end >= 0) freed += it->offset - prev_end;
+				used += it->size;
+				prev_end = it->offset + it->size;
+				//assert(it->size > 0); // TBD re-enable this test once we can check that it isn't a swapchain image, ie rely on it->is_swapchain_image
+				assert(it->type == VK_OBJECT_TYPE_IMAGE || it->type == VK_OBJECT_TYPE_BUFFER || it->type == VK_OBJECT_TYPE_TENSOR_ARM ||
+				       it->type == VK_OBJECT_TYPE_DATA_GRAPH_PIPELINE_SESSION_ARM);
+				if (deleted) continue; // looking this up in the lookup table is not valid in this case
+				// check that there isn't anything in the heaps that isn't also in the lookup tables
+				if (it->type == VK_OBJECT_TYPE_IMAGE)
+				{
+					suballoc_location loc = find_image_memory(it->index);
+					assert(loc.memory == h.mem);
+					assert(loc.offset == it->offset);
+					assert(loc.size == it->size);
+					(void)loc;
+				}
+				else if (it->type == VK_OBJECT_TYPE_TENSOR_ARM)
+				{
+					suballoc_location loc = find_tensor_memory(it->index);
+					assert(loc.memory == h.mem);
+					assert(loc.offset == it->offset);
+					assert(loc.size == it->size);
+					(void)loc;
+				}
+				else if (it->type == VK_OBJECT_TYPE_DATA_GRAPH_PIPELINE_SESSION_ARM)
+				{
+					suballoc_location loc = find_datagraphpipelinesession_memory(it->index, it->bind_point, it->object_index);
+					assert(loc.memory == h.mem);
+					assert(loc.offset == it->offset);
+					assert(loc.size == it->size);
+					(void)loc;
+				}
+				else
+				{
+					assert(it->type == VK_OBJECT_TYPE_BUFFER);
+					suballoc_location loc = find_buffer_memory(it->index);
+					assert(loc.memory == h.mem);
+					assert(loc.offset == it->offset);
+					assert(loc.size == it->size);
+					(void)loc;
+				}
+				if (!deleted) retval++;
 			}
-			assert((int64_t)it->offset >= prev_end);
-			if (prev_end >= 0) freed += it->offset - prev_end;
-			used += it->size;
-			prev_end = it->offset + it->size;
-			//assert(it->size > 0); // TBD re-enable this test once we can check that it isn't a swapchain image, ie rely on it->is_swapchain_image
-			assert(it->type == VK_OBJECT_TYPE_IMAGE || it->type == VK_OBJECT_TYPE_BUFFER || it->type == VK_OBJECT_TYPE_TENSOR_ARM ||
-			       it->type == VK_OBJECT_TYPE_DATA_GRAPH_PIPELINE_SESSION_ARM);
-			if (deleted) continue; // looking this up in the lookup table is not valid in this case
-			// check that there isn't anything in the heaps that isn't also in the lookup tables
-			if (it->type == VK_OBJECT_TYPE_IMAGE)
-			{
-				suballoc_location loc = find_image_memory(it->index);
-				assert(loc.memory == h.mem);
-				assert(loc.offset == it->offset);
-				assert(loc.size == it->size);
-				(void)loc;
-			}
-			else if (it->type == VK_OBJECT_TYPE_TENSOR_ARM)
-			{
-				suballoc_location loc = find_tensor_memory(it->index);
-				assert(loc.memory == h.mem);
-				assert(loc.offset == it->offset);
-				assert(loc.size == it->size);
-				(void)loc;
-			}
-			else if (it->type == VK_OBJECT_TYPE_DATA_GRAPH_PIPELINE_SESSION_ARM)
-			{
-				suballoc_location loc = find_datagraphpipelinesession_memory(it->index, it->bind_point, it->object_index);
-				assert(loc.memory == h.mem);
-				assert(loc.offset == it->offset);
-				assert(loc.size == it->size);
-				(void)loc;
-			}
-			else
-			{
-				assert(it->type == VK_OBJECT_TYPE_BUFFER);
-				suballoc_location loc = find_buffer_memory(it->index);
-				assert(loc.memory == h.mem);
-				assert(loc.offset == it->offset);
-				assert(loc.size == it->size);
-				(void)loc;
-			}
-			if (!deleted) retval++;
+			if (prev_end >= 0) freed += h.total - prev_end;
+			else freed = h.total;
+			assert(h.free == freed);
+			assert(freed + used == h.total);
+			(void)freed;
+			(void)used;
 		}
-		if (prev_end >= 0) freed += h.total - prev_end;
-		else freed = h.total;
-		assert(h.free == freed);
-		assert(freed + used == h.total);
-		(void)freed;
-		(void)used;
 	}
 
 	return retval;
