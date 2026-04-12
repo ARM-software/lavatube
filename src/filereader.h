@@ -65,8 +65,8 @@ protected:
 
 public:
 	/// Initialize one thread of replay.
-	file_reader(const std::string& filename, unsigned mytid, size_t uncompressed_size, size_t uncompressed_target);
-	file_reader(packed pf, unsigned mytid, size_t uncompressed_size, size_t uncompressed_target);
+	file_reader(const std::string& filename, unsigned mytid, size_t uncompressed_size, size_t uncompressed_target, bool preload_active = true);
+	file_reader(packed pf, unsigned mytid, size_t uncompressed_size, size_t uncompressed_target, bool preload_active = true);
 	~file_reader();
 
 	inline uint8_t read_uint8_t() { uint8_t t; read_value(&t); return t; }
@@ -173,8 +173,6 @@ public:
 	/// Return true if we are done processing input data (no more data to be read from file, and more data
 	/// awaiting to be read from uncompressed buffer).
 	inline bool done() const { return unlikely(done_decompressing && write_position.load(std::memory_order_relaxed) - read_position == 0); }
-
-	void delay_preload() { preload_activated.store(false, std::memory_order_relaxed); }
 
 	void disable_multithreaded_read() // we can only disable on the fly, enable makes less sense
 	{

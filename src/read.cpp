@@ -16,9 +16,8 @@ lava::mutex sync_mutex;
 // --- file reader
 
 lava_file_reader::lava_file_reader(lava_reader* _parent, const std::string& path, int mytid, int frames, const Json::Value& frameinfo, size_t uncompressed_size, size_t uncompressed_target, int start, int end)
-	: file_reader(packed_open("thread_" + std::to_string(mytid) + ".bin", path), mytid, uncompressed_size, uncompressed_target)
+	: file_reader(packed_open("thread_" + std::to_string(mytid) + ".bin", path), mytid, uncompressed_size, uncompressed_target, start == 0)
 {
-	if (start > 0) delay_preload();
 	parent = _parent;
 	run = parent->run;
 	global_frames = frames;
@@ -33,6 +32,7 @@ lava_file_reader::lava_file_reader(lava_reader* _parent, const std::string& path
 	}
 
 	// Translate global frames to local frames and set our measurement window
+	mUseFrameRange = end != -1;
 	if (end != -1)
 	{
 		for (const auto& i : frameinfo["frames"])

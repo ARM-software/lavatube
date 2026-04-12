@@ -48,7 +48,8 @@ void file_reader::init(int fd, size_t uncompressed_size, size_t uncompressed_tar
 	decompressor_thread = std::thread(&file_reader::decompressor, this);
 }
 
-file_reader::file_reader(const std::string& filename, unsigned mytid, size_t uncompressed_size, size_t uncompressed_target) : tid(mytid), mFilename(filename)
+file_reader::file_reader(const std::string& filename, unsigned mytid, size_t uncompressed_size, size_t uncompressed_target, bool preload_active)
+	: preload_activated(preload_active), tid(mytid), mFilename(filename)
 {
 	int fd = open(filename.c_str(), O_RDONLY);
 	if (fd == -1) ABORT("Cannot open \"%s\": %s", filename.c_str(), strerror(errno));
@@ -61,7 +62,8 @@ file_reader::file_reader(const std::string& filename, unsigned mytid, size_t unc
 	DLOG("%s opened for reading (size %lu) and decompressor thread %u launched!", filename.c_str(), (unsigned long)total_left, tid);
 }
 
-file_reader::file_reader(packed pf, unsigned mytid, size_t uncompressed_size, size_t uncompressed_target) : tid(mytid), mFilename(pf.inside)
+file_reader::file_reader(packed pf, unsigned mytid, size_t uncompressed_size, size_t uncompressed_target, bool preload_active)
+	: preload_activated(preload_active), tid(mytid), mFilename(pf.inside)
 {
 	assert(pf.fd != -1);
 	total_left = pf.filesize;
@@ -184,10 +186,11 @@ void file_reader::start_measurement()
 	{
 		const size_t fixed_preload = p__preload * 1024 * 1024;
 		uint64_t target = read_position + fixed_preload;
+		if (target > uncompressed_wanted) target = uncompressed_wanted;
 		if (target > total_uncompressed) target = total_uncompressed;
 
 		uint64_t current_write = write_position.load(std::memory_order_acquire);
-		while (current_write < target && !done_decompressing.load(std::memory_order_relaxed))
+		while (current_write < target)
 		{
 			write_position.wait(current_write, std::memory_order_acquire);
 			current_write = write_position.load(std::memory_order_acquire);

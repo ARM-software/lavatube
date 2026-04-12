@@ -147,6 +147,11 @@ public:
 	inline void read_barrier();
 	uint16_t read_apicall();
 
+	bool start_measurement_on_thread_entry() const
+	{
+		return !mUseFrameRange;
+	}
+
 	/// Read patch update and track host side changes
 	uint32_t read_patch_tracking(char* buf, uint64_t maxsize, host_write_regions& regions)
 	{
@@ -234,7 +239,8 @@ public:
 	}
 
 private:
-	int mStart = 0;	///< Local start frame
+	bool mUseFrameRange = false;
+	int mStart = -1; ///< Local start frame
 	int mEnd = -1; ///< Local end frame
 	/// Do we own the final global frame?
 	bool mHaveFinalFrame = false;

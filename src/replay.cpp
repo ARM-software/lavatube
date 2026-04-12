@@ -121,7 +121,7 @@ static void replay_thread(int thread_id)
 {
 	lava_file_reader& t = replayer.file_reader(thread_id);
 	t.bind_runner_thread();
-	t.start_measurement();
+	if (t.start_measurement_on_thread_entry()) t.start_measurement();
 	uint8_t instrtype;
 	while ((instrtype = t.step()))
 	{
