@@ -194,6 +194,7 @@ void file_reader::start_measurement()
 		{
 			write_position.wait(current_write, std::memory_order_acquire);
 			current_write = write_position.load(std::memory_order_acquire);
+			assert(current_write >= target || !done_decompressing.load(std::memory_order_relaxed));
 		}
 	}
 
