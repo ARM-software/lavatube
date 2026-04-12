@@ -123,7 +123,8 @@ void file_reader::decompress_chunk()
 		memcpy(destination, compressed_data, uncompressed_size);
 	}
 	compressed_data += compressed_size;
-	write_position += uncompressed_size;
+	write_position.fetch_add(uncompressed_size, std::memory_order_release);
+	write_position.notify_one();
 	last_chunk_uncompressed_size = uncompressed_size;
 	total_left -= compressed_size + header_size;
 	uncompressed_bytes += uncompressed_size;
@@ -138,15 +139,19 @@ void file_reader::decompressor()
 	const size_t fixed_preload = p__preload * 1024 * 1024;
 	while (!done_decompressing)
 	{
-		const size_t active_preload = preload_activated.load(std::memory_order_relaxed) ? fixed_preload : 0;
-		const size_t preload_size = active_preload > 0 ? active_preload : last_chunk_uncompressed_size;
 		// Throttle unless the replayer is blocked waiting for data (needed_write_position > write_position),
 		// which can happen when a packet spans more than one chunk in one-chunk-ahead mode.
-		while (preload_size > 0
-		       && write_position.load(std::memory_order_relaxed) > read_position + preload_size
-		       && write_position.load(std::memory_order_relaxed) >= needed_write_position.load(std::memory_order_relaxed))
+		while (true)
 		{
-			usleep(10000); // we're too far ahead and replayer is not blocked
+			const size_t active_preload = preload_activated.load(std::memory_order_relaxed) ? fixed_preload : 0;
+			const size_t preload_size = active_preload > 0 ? active_preload : last_chunk_uncompressed_size;
+			if (!(preload_size > 0
+			      && write_position.load(std::memory_order_relaxed) > read_position + preload_size
+			      && write_position.load(std::memory_order_relaxed) >= needed_write_position.load(std::memory_order_relaxed)))
+			{
+				break;
+			}
+			usleep(1000); // we're too far ahead and replayer is not blocked
 		}
 		decompress_chunk();
 	}

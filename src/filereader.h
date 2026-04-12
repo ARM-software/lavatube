@@ -21,22 +21,26 @@ class file_reader
 protected:
 	inline void check_space(unsigned size)
 	{
-		if (unlikely(size > write_position.load(std::memory_order_relaxed) - read_position))
+		uint64_t current_write = write_position.load(std::memory_order_acquire);
+		if (unlikely(size > current_write - read_position))
 		{
 			// Publish the position we need so the decompressor skips its throttle sleep while we're blocked.
-			needed_write_position.store(read_position + size, std::memory_order_relaxed);
-			while (size > write_position.load(std::memory_order_relaxed) - read_position)
+			needed_write_position.store(read_position + size, std::memory_order_release);
+			while (size > current_write - read_position)
 			{
-				assert(write_position.load(std::memory_order_relaxed) + size < total_uncompressed);
-				if (multithreaded_read) usleep(10000); // wait for more data
-				else decompress_chunk(); // generate new data
-				// Check abort after sleeping: this gives the decompressor thread (which also sleeps 10ms)
-				// time to wake and fill data before we declare a stall. Without this delay, there is a race
-				// where start_measurement() sets preload_activated=true while the decompressor is mid-sleep,
-				// and check_space() fires the abort before it can catch up.
-				if (!p__allow_stalls && preload_activated.load(std::memory_order_relaxed) && p__preload > 0) ABORT("We caught up with our file read thread! Performance data may become unreliable, so aborting!");
+				assert(current_write + size < total_uncompressed);
+
+				if (multithreaded_read) write_position.wait(current_write, std::memory_order_acquire);
+				else decompress_chunk();
+
+				current_write = write_position.load(std::memory_order_acquire);
+
+				if (!p__allow_stalls && preload_activated.load(std::memory_order_relaxed) && p__preload > 0)
+				{
+					ABORT("We caught up with our file read thread! Performance data may become unreliable, so aborting!");
+				}
 			}
-			needed_write_position.store(0, std::memory_order_relaxed);
+			needed_write_position.store(0, std::memory_order_release);
 		}
 	}
 
