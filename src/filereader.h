@@ -183,6 +183,25 @@ public:
 
 	void self_test() const
 	{
+		const uint64_t write = write_position.load(std::memory_order_acquire);
+		const uint64_t needed = needed_write_position.load(std::memory_order_acquire);
+		const bool checkpoint_valid = checkpoint_position != UINT64_MAX;
+
+		assert(uncompressed_wanted <= total_uncompressed);
+		assert(read_position <= write);
+		assert(write <= total_uncompressed);
+		assert(freed_position <= read_position);
+		assert(last_chunk_uncompressed_size <= total_uncompressed);
+		if (checkpoint_valid)
+		{
+			assert(freed_position <= checkpoint_position);
+			assert(checkpoint_position <= read_position);
+		}
+		if (needed != 0)
+		{
+			assert(needed >= read_position);
+			assert(needed <= total_uncompressed);
+		}
 	}
 
 	/// Start measuring worker thread CPU usage
