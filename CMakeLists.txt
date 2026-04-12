@@ -85,9 +85,11 @@ add_subdirectory(external/density ${CMAKE_BINARY_DIR}/density)
 message(STATUS "Configuring lz4")
 find_package(LZ4)
 
-# --- common ---
+# --- unordered_dense ---
 
-find_package(TBB REQUIRED HINTS /usr/lib/x86_64-linux-gnu/cmake/TBB /usr/aarch64-linux-gnu/lib/cmake/TBB /usr/arm-linux-gnueabihf/lib/cmake/TBB)
+add_subdirectory(external/unordered_dense)
+
+# --- common ---
 
 # Debug Release RelWithDebInfo MinSizeRel
 set(COMMON_FLAGS ${SANITIZER} -Werror -Wall -fvisibility=hidden ${XCB_ENABLE} -Wshadow)
@@ -105,7 +107,7 @@ if ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
 	set(COMMON_FLAGS ${COMMON_FLAGS} -Wthread-safety -Wno-error=thread-safety-analysis -Wno-error=unused-but-set-variable)
 endif()
 set(MOST_COMMON_LIBRARIES ${SANITIZER} stdc++ dl pthread)
-set(COMMON_LIBRARIES ${MOST_COMMON_LIBRARIES} TBB::tbb atomic density LZ4::LZ4 ${XCB_LIBRARIES} spirv_simulator_lib)
+set(COMMON_LIBRARIES ${MOST_COMMON_LIBRARIES} unordered_dense::unordered_dense atomic density LZ4::LZ4 ${XCB_LIBRARIES} spirv_simulator_lib)
 
 set(COMMON_INCLUDE
     PUBLIC ${SRC_ROOT}
@@ -242,30 +244,24 @@ add_dependencies(mprotect sync_generated)
 
 add_executable(containers tests/container_test.cpp)
 target_include_directories(containers ${COMMON_INCLUDE})
-target_link_libraries(containers ${MOST_COMMON_LIBRARIES} tbb pthread)
+target_link_libraries(containers ${MOST_COMMON_LIBRARIES} unordered_dense::unordered_dense pthread)
 target_compile_options(containers PRIVATE ${COMMON_FLAGS})
 add_test(NAME container_test COMMAND ${CMAKE_CURRENT_BINARY_DIR}/containers)
 add_dependencies(containers sync_generated)
 
 add_executable(containers2 tests/container_test2.cpp)
 target_include_directories(containers2 ${COMMON_INCLUDE})
-target_link_libraries(containers2 ${MOST_COMMON_LIBRARIES} tbb pthread)
+target_link_libraries(containers2 ${MOST_COMMON_LIBRARIES} unordered_dense::unordered_dense pthread)
 target_compile_options(containers2 PRIVATE ${COMMON_FLAGS})
 add_test(NAME container_test2 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/containers2)
 add_dependencies(containers sync_generated)
 
 add_executable(host_write_regions_test tests/host_write_regions.cpp)
 target_include_directories(host_write_regions_test ${COMMON_INCLUDE})
-target_link_libraries(host_write_regions_test ${MOST_COMMON_LIBRARIES} tbb pthread)
+target_link_libraries(host_write_regions_test ${MOST_COMMON_LIBRARIES} unordered_dense::unordered_dense pthread)
 target_compile_options(host_write_regions_test PRIVATE ${COMMON_FLAGS})
 add_test(NAME host_write_regions_test COMMAND ${CMAKE_CURRENT_BINARY_DIR}/host_write_regions_test)
 add_dependencies(host_write_regions_test sync_generated)
-
-add_executable(containers_perf tests/container_perf.cpp)
-target_include_directories(containers_perf ${COMMON_INCLUDE})
-target_link_libraries(containers_perf ${MOST_COMMON_LIBRARIES} tbb pthread)
-target_compile_options(containers_perf PRIVATE ${COMMON_FLAGS})
-add_dependencies(containers_perf sync_generated)
 
 add_executable(rangetrack tests/rangetrack.cpp)
 target_include_directories(rangetrack ${COMMON_INCLUDE})

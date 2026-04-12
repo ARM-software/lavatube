@@ -18,7 +18,8 @@
 #include <map>
 #include <algorithm>
 
-#include "tbb/concurrent_unordered_map.h"
+#include "lavamutex.h"
+#include "unordered_dense/include/ankerl/unordered_dense.h"
 
 struct change_source
 {
@@ -40,16 +41,46 @@ struct change_source
 template<typename T, typename U>
 struct concurrent_unordered_map
 {
-public:
-	U at(T key) const { return map.at(key); } // must be fast
-	void clear() { map.clear(); } // can be unsafe
-	void insert(T key, U value) { map[key] = value; }
-	int count(T key) const { return map.count(key); }
-	unsigned size() const { return map.size(); }
-	void reserve(size_t count) { map.reserve(count); }
+	concurrent_unordered_map() = default;
+
+	concurrent_unordered_map(const concurrent_unordered_map& other)
+	{
+		std::lock_guard<std::mutex> lock(other.mutex);
+		map = other.map;
+	}
+
+	concurrent_unordered_map& operator=(const concurrent_unordered_map& other)
+	{
+		if (this == &other) return *this;
+		std::scoped_lock lock(mutex, other.mutex);
+		map = other.map;
+		return *this;
+	}
+
+	concurrent_unordered_map(concurrent_unordered_map&& other) noexcept
+	{
+		std::lock_guard<std::mutex> lock(other.mutex);
+		map = std::move(other.map);
+	}
+
+	concurrent_unordered_map& operator=(concurrent_unordered_map&& other) noexcept
+	{
+		if (this == &other) return *this;
+		std::scoped_lock lock(mutex, other.mutex);
+		map = std::move(other.map);
+		return *this;
+	}
+
+	U at(T key) const { std::lock_guard<std::mutex> lock(mutex); return map.at(key); } // must be fast
+	void clear() { std::lock_guard<std::mutex> lock(mutex); map.clear(); } // can be unsafe
+	void insert(T key, U value) { std::lock_guard<std::mutex> lock(mutex); map.insert_or_assign(key, value); }
+	void reserve(size_t count) { std::lock_guard<std::mutex> lock(mutex); map.reserve(count); }
+	int count(T key) const { std::lock_guard<std::mutex> lock(mutex); return map.count(key); }
+	unsigned size() const { std::lock_guard<std::mutex> lock(mutex); return static_cast<unsigned>(map.size()); }
 
 private:
-	tbb::concurrent_unordered_map<T, U> map;
+	mutable std::mutex mutex;
+	ankerl::unordered_dense::map<T, U> map;
 };
 
 /// Track host write regions for post-process analysis

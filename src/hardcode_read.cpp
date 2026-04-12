@@ -3506,7 +3506,7 @@ void switchboard_packet(uint8_t instrtype, lava_file_reader& reader)
 // -- terminate everything cleanly
 
 template<typename T, typename U, typename V>
-void terminate(T vec, U owner, V destroyer)
+void terminate(const T& vec, U owner, V destroyer)
 {
 	VkAllocationCallbacks allocator = {};
 	VkAllocationCallbacks* pAllocator = &allocator;

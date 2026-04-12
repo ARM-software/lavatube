@@ -394,6 +394,10 @@ class parameter(spec.base_parameter):
 			z.do('%s = memory_report_callback; // hijacking this pointer with our own callback function' % varname)
 		elif self.name == 'pfnCallback':
 			z.do('%s = debug_report_callback; // hijacking this pointer with our own callback function' % varname)
+		elif self.type == 'VkBaseOutStructure':
+			if is_root:
+				z.decl('%s%s%s' % (self.mod, self.type, self.param_ptrstr), self.name)
+			z.do('read_extension(reader, (VkBaseOutStructure**)&%s);' % varname)
 		elif self.name == 'pNext':
 			z.do('read_extension(reader, (VkBaseOutStructure**)&%s);' % varname)
 		elif self.string_array:
@@ -788,6 +792,8 @@ class parameter(spec.base_parameter):
 		elif self.funcname in ['VkDebugUtilsObjectNameInfoEXT', 'VkDebugUtilsObjectTagInfoEXT', 'vkSetPrivateData', 'vkSetPrivateDataEXT', 'vkGetPrivateData', 'vkGetPrivateDataEXT'] and self.name == 'objectHandle':
 			z.do('auto* object_data = object_trackable(writer.parent->records, %sobjectType, %s);' % (owner, varname))
 			z.do('writer.write_handle(object_data);')
+		elif self.type == 'VkBaseOutStructure':
+			z.do('write_extension(writer, (VkBaseOutStructure*)%s);' % varname)
 		elif self.name == 'pNext':
 			z.do('write_extension(writer, (VkBaseOutStructure*)%s);' % varname)
 		elif self.name == 'ppMaxPrimitiveCounts':
@@ -1594,7 +1600,7 @@ def loadfunc(name, node, target, header):
 		z.do('const bool internally_synchronized_queue = queue_data.internally_synchronized_queues;')
 		z.do('if (internally_synchronized_queue) sync_mutex.lock();')
 	for param in params:
-		if not param.inparam and param.ptr and param.type != 'void' and not name in vk.ignore_on_read and not name in spec.special_count_funcs and not name in spec.functions_create:
+		if not param.inparam and param.ptr and param.type not in ['void', 'VkBaseOutStructure'] and not name in vk.ignore_on_read and not name in spec.special_count_funcs and not name in spec.functions_create:
 			vname = z.backing(param.type, param.name, size=param.length, struct=param.structure)
 			z.do('%s = %s;' % (param.name, vname))
 	if name == 'vkGetDescriptorEXT':
@@ -1744,6 +1750,9 @@ def loadfunc(name, node, target, header):
 			prefix = 'if (reader.run && stored_retval == VK_SUCCESS) '
 
 		if retval == 'void' and not name in vk.ignore_on_read:
+			for param in params:
+				if not param.inparam and param.type == 'VkBaseOutStructure':
+					param.print_load(param.name, '')
 			z.do('%swrap_%s(%s);' % (prefix, name, ', '.join(call_list)))
 		elif not name in vk.ignore_on_read:
 			# stored
@@ -1763,6 +1772,9 @@ def loadfunc(name, node, target, header):
 				z.do('if (stored_retval == VK_SUCCESS) { flags |= VK_QUERY_RESULT_WAIT_BIT; flags &= ~VK_QUERY_RESULT_PARTIAL_BIT; }')
 
 			z.do('%s retval = stored_retval;' % retval)
+			for param in params:
+				if not param.inparam and param.type == 'VkBaseOutStructure':
+					param.print_load(param.name, '')
 
 			# current
 			z.do(prefix.strip())
@@ -1793,7 +1805,7 @@ def loadfunc(name, node, target, header):
 	z.do('// -- Post --')
 	if not name in spec.special_count_funcs and not name in vk.skip_post_calls:
 		for param in params:
-			if not param.inparam:
+			if not param.inparam and param.type != 'VkBaseOutStructure':
 				param.print_load(param.name, '')
 	if name in ['vkAcquireNextImageKHR', 'vkAcquireNextImage2KHR']:
 		z.do('auto& %s = VkSwapchainKHR_index.at(%s);' % (totrackable('VkSwapchainKHR'), toindex('VkSwapchainKHR')))
