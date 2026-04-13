@@ -473,8 +473,7 @@ suballoc_location suballocator_private::suballocate(uint16_t tid, uint32_t memor
 			}
 			if (h.dedicated && h.subs.empty() && h.mem != VK_NULL_HANDLE)
 			{
-				const VkDeviceSize total = h.total;
-				DLOG3("freeing retired dedicated allocation heap=%p mem=%p size=%lu", &h, (void*)h.mem, (unsigned long)total);
+				DLOG3("freeing retired dedicated allocation heap=%p mem=%p size=%lu", &h, (void*)h.mem, (unsigned long)h.total);
 				if (run)
 				{
 					if (h.mapped) wrap_vkUnmapMemory(device, h.mem);

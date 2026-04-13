@@ -8,6 +8,7 @@
 #define MAX_VALUES 10
 
 #pragma GCC diagnostic ignored "-Wunused-variable"
+#pragma GCC diagnostic ignored "-Wunused-function"
 
 static VkDeviceAddress capture_address = 0;
 static VkDeviceSize capture_address_offset = 96;

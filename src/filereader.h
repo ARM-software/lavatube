@@ -187,6 +187,7 @@ public:
 		const uint64_t needed = needed_write_position.load(std::memory_order_acquire);
 		const bool checkpoint_valid = checkpoint_position != UINT64_MAX;
 
+		(void)write;
 		assert(uncompressed_wanted <= total_uncompressed);
 		assert(read_position <= write);
 		assert(write <= total_uncompressed);
