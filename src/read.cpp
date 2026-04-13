@@ -90,6 +90,7 @@ uint16_t lava_file_reader::read_apicall()
 	DLOG2("[t%02u f%u %06d] %s", current.thread, current.frame, (int)parent->thread_call_numbers->at(current.thread).load(std::memory_order_relaxed) + 1, get_function_name(apicall));
 	lava_replay_func func = retrace_getcall(apicall);
 	current.call_id = apicall;
+	// replay_stop_requested may unwind out of this call before the normal per-call epilogue runs.
 	func(*this);
 	current.call++;
 	parent->thread_call_numbers->at(current.thread).fetch_add(1, std::memory_order_relaxed);

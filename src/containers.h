@@ -769,7 +769,7 @@ public:
 	/// Might be called simultaneously with itself and at() but never with the same key.
 	inline U* add(T key, const change_source& current)
 	{
-		mutex.lock();
+		std::lock_guard<std::mutex> lock(mutex);
 		assert(key != 0);
 		U* p = new U;
 		p->index = _size++;
@@ -777,7 +777,6 @@ public:
 		p->last_modified = current;
 		lookup.insert(key, p);
 		storage.push_back(p);
-		mutex.unlock();
 		return p;
 	}
 
@@ -814,13 +813,12 @@ public:
 	/// Must not be called simultaneously with any other function in this API.
 	inline void clear()
 	{
-		mutex.lock();
+		std::lock_guard<std::mutex> lock(mutex);
 		lookup.clear();
 		for (auto* p : storage) delete p;
 		storage.clear();
 		_size.store(0);
 		lookup.insert(0, nullptr); // special case VK_NULL_HANDLE
-		mutex.unlock();
 	}
 
 	/// This is _not_ thread-safe, only use once all other threads have stopped running.

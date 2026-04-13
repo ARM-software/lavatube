@@ -226,7 +226,7 @@ lava_writer::~lava_writer()
 
 void lava_writer::serialize()
 {
-	frame_mutex.lock();
+	lava::lock_guard lock(frame_mutex);
 	assert(!mPath.empty());
 
 	// write dictionary to JSON file
@@ -305,12 +305,11 @@ void lava_writer::serialize()
 	// write out tracking info for each object
 	write_json(mPath + "/tracking.json", trackable_json(this));
 
-	frame_mutex.unlock();
 }
 
 void lava_writer::finish()
 {
-	frame_mutex.lock();
+	lava::lock_guard lock(frame_mutex);
 
 	if ((p__external_memory || p__debug_level >= 1) && mem_allocated > 0)
 	{
@@ -343,12 +342,11 @@ void lava_writer::finish()
 	global_frame.exchange(0);
 	tid = -1;
 	vulkan_feature_detection_reset();
-	frame_mutex.unlock();
 }
 
 void lava_writer::make_writer()
 {
-	frame_mutex.lock();
+	lava::lock_guard lock(frame_mutex);
 	tid = thread_streams.size();
 	lava_file_writer* f = new lava_file_writer(tid, this);
 	if (!mPath.empty())
@@ -358,7 +356,6 @@ void lava_writer::make_writer()
 	f->inject_thread_barrier();
 	thread_streams.emplace_back(std::move(f));
 	DLOG("Created thread %d, currently %d threads", (int)tid, (int)thread_streams.size());
-	frame_mutex.unlock();
 }
 
 lava_file_writer& lava_writer::file_writer()

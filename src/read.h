@@ -39,6 +39,7 @@ struct descriptor_rewrite
 	change_source source;
 };
 
+// Only used to unwind replay threads out of stop-aware wait paths during shutdown.
 struct replay_stop_requested
 {
 };
@@ -232,6 +233,7 @@ public:
 	lava_reader* parent;
 	VkDevice device = VK_NULL_HANDLE;
 	VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
+	// Keep throw sites tightly scoped to cooperative replay shutdown waits.
 	[[noreturn]] void throw_stop_requested() const { throw replay_stop_requested{}; }
 
 	/// Whether we should actually call into Vulkan or if we are just processing the data

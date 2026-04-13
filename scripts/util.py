@@ -1592,10 +1592,9 @@ def loadfunc(name, node, target, header):
 		z.do('uint8_t do_call = reader.read_uint8_t();')
 	z.do('// -- Execute --')
 	if name in vk.extra_sync:
-		z.do('sync_mutex.lock();')
+		z.do('lava::lock_guard sync_lock(sync_mutex);')
 	elif name in ['vkQueuePresentKHR', 'vkQueueBeginDebugUtilsLabelEXT', 'vkQueueEndDebugUtilsLabelEXT', 'vkQueueInsertDebugUtilsLabelEXT']:
-		z.do('const bool internally_synchronized_queue = queue_data.internally_synchronized_queues;')
-		z.do('if (internally_synchronized_queue) sync_mutex.lock();')
+		z.do('lava::lock_guard sync_lock(sync_mutex);')
 	for param in params:
 		if not param.inparam and param.ptr and param.type not in ['void', 'VkBaseOutStructure'] and not name in vk.ignore_on_read and not name in spec.special_count_funcs and not name in spec.functions_create:
 			vname = z.backing(param.type, param.name, size=param.length, struct=param.structure)
@@ -1795,10 +1794,8 @@ def loadfunc(name, node, target, header):
 				z.do('// this function is ignored on replay')
 				z.do('(void)reader.read_uint32_t(); // also ignore result return value')
 
-	if name in vk.extra_sync:
-		z.do('sync_mutex.unlock();')
-	elif name in ['vkQueuePresentKHR', 'vkQueueBeginDebugUtilsLabelEXT', 'vkQueueEndDebugUtilsLabelEXT', 'vkQueueInsertDebugUtilsLabelEXT']:
-		z.do('if (internally_synchronized_queue) sync_mutex.unlock();')
+	if name in vk.extra_sync or name in ['vkQueuePresentKHR', 'vkQueueBeginDebugUtilsLabelEXT', 'vkQueueEndDebugUtilsLabelEXT', 'vkQueueInsertDebugUtilsLabelEXT']:
+		z.do('sync_lock.unlock();')
 	z.do('// -- Post --')
 	if not name in spec.special_count_funcs and not name in vk.skip_post_calls:
 		for param in params:

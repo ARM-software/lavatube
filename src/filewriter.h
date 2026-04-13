@@ -28,18 +28,16 @@ class file_writer
 		}
 		else if (multithreaded_compress)
 		{
-			chunk_mutex.lock();
+			lava::lock_guard lock(chunk_mutex);
 			uncompressed_chunks.push_front(chunk);
-			chunk_mutex.unlock();
 		}
 		else
 		{
 			buffer compressed = compress_chunk(chunk);
 			if (multithreaded_write)
 			{
-				chunk_mutex.lock();
+				lava::lock_guard lock(chunk_mutex);
 				compressed_chunks.push_front(compressed);
-				chunk_mutex.unlock();
 			}
 			else write_chunk(compressed);
 		}
@@ -190,10 +188,9 @@ public:
 
 	void self_test()
 	{
-		chunk_mutex.lock();
+		lava::lock_guard lock(chunk_mutex);
 		if (done_compressing.load()) assert(done_feeding.load());
 		if (!holding) assert(held_chunks.size() == 0);
-		chunk_mutex.unlock();
 	}
 
 protected:
@@ -216,9 +213,9 @@ public:
 	}
 
 	// These are for test writing
-	int count_held_chunks() { int r; chunk_mutex.lock(); r = held_chunks.size(); chunk_mutex.unlock(); return r; }
-	int count_uncompressed_chunks() { int r; chunk_mutex.lock(); r = uncompressed_chunks.size(); chunk_mutex.unlock(); return r; }
-	int count_compressed_chunks() { int r; chunk_mutex.lock(); r = compressed_chunks.size(); chunk_mutex.unlock(); return r; }
+	int count_held_chunks() { lava::lock_guard lock(chunk_mutex); return held_chunks.size(); }
+	int count_uncompressed_chunks() { lava::lock_guard lock(chunk_mutex); return uncompressed_chunks.size(); }
+	int count_compressed_chunks() { lava::lock_guard lock(chunk_mutex); return compressed_chunks.size(); }
 
 	uint64_t uncompressed_bytes = 0; // total amount of uncompressed bytes written so far
 
