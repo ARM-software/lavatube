@@ -18,5 +18,9 @@ if(NOT DEFINED ANDROID_PLATFORM)
     set(ANDROID_PLATFORM "android-26" CACHE STRING "Android Platform")
 endif()
 
+if(NOT DEFINED ANDROID_STL)
+    set(ANDROID_STL "c++_static" CACHE STRING "Android STL")
+endif()
+
 # Include the official NDK toolchain
 include($ENV{ANDROID_NDK_HOME}/build/cmake/android.toolchain.cmake)

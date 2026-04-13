@@ -3831,6 +3831,8 @@ void retrace_vkEnumerateDeviceExtensionProperties(lava_file_reader& reader)
 	for (auto* c : vkEnumerateDeviceExtensionProperties_callbacks) c(cb_context, physicalDevice, pLayerName, pPropertyCount_ptr, pProperties_ptr);
 }
 
+#ifdef VK_USE_PLATFORM_XLIB_KHR
+
 void retrace_vkGetPhysicalDeviceXlibPresentationSupportKHR(lava_file_reader& reader)
 {
 	uint32_t physicaldevice_index = reader.read_handle(DEBUGPARAM("VkPhysicalDevice"));
@@ -3851,6 +3853,15 @@ void retrace_vkGetPhysicalDeviceXlibPresentationSupportKHR(lava_file_reader& rea
 	cb_context.result.vkbool = retval;
 	for (auto* c : vkGetPhysicalDeviceXlibPresentationSupportKHR_callbacks) c(cb_context, physicalDevice, queueFamilyIndex, nullptr, 0);
 }
+
+#else
+
+void retrace_vkGetPhysicalDeviceXlibPresentationSupportKHR(lava_file_reader& reader)
+{
+	ABORT("Attempt to call unimplemented protected function: vkGetPhysicalDeviceXlibPresentationSupportKHR");
+}
+
+#endif
 
 #ifdef VK_USE_PLATFORM_XCB_KHR
 
@@ -3874,6 +3885,13 @@ void retrace_vkGetPhysicalDeviceXcbPresentationSupportKHR(lava_file_reader& read
 	callback_context cb_context{ reader };
 	cb_context.result.vkbool = retval;
 	for (auto* c : vkGetPhysicalDeviceXcbPresentationSupportKHR_callbacks) c(cb_context, physicalDevice, queueFamilyIndex, nullptr, visual_id);
+}
+
+#else
+
+void retrace_vkGetPhysicalDeviceXcbPresentationSupportKHR(lava_file_reader& reader)
+{
+	ABORT("Attempt to call unimplemented protected function: vkGetPhysicalDeviceXcbPresentationSupportKHR");
 }
 
 #endif

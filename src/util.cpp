@@ -6,6 +6,10 @@
 #include <vulkan/vulkan_format_traits.hpp>
 #include <spirv/unified1/spirv.h>
 
+#ifdef VK_USE_PLATFORM_ANDROID_KHR
+#include <sys/system_properties.h>
+#endif
+
 #if defined(_GNU_SOURCE) || defined(__BIONIC__)
 #include <pthread.h>
 #else
@@ -308,6 +312,11 @@ const std::string join(const std::vector<std::string>& tokens, char joiner)
 std::string get_trace_path(const std::string& base)
 {
 #ifdef VK_USE_PLATFORM_ANDROID_KHR
+	char value[PROP_VALUE_MAX];
+	if (__system_property_get("debug.vulkan.lavatube.destination", value) > 0)
+	{
+		return std::string(value);
+	}
 	std::string dir = AndroidGlobs::ANDROID_OUT_TRACE_PATH;
 	return dir;
 #else
