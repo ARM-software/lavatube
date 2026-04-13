@@ -123,10 +123,17 @@ static void replay_thread(int thread_id)
 	t.bind_runner_thread();
 	if (t.start_measurement_on_thread_entry()) t.start_measurement();
 	uint8_t instrtype;
-	while ((instrtype = t.step()))
+	try
 	{
-		switchboard_packet(instrtype, t);
+		while ((instrtype = t.step()))
+		{
+			switchboard_packet(instrtype, t);
+		}
 	}
+	catch (const replay_stop_requested&)
+	{
+	}
+	t.terminated.store(true, std::memory_order_release);
 	uint64_t worker_local = 0;
 	uint64_t runner_local = 0;
 	t.stop_measurement(worker_local, runner_local);
@@ -393,8 +400,9 @@ int main(int argc, char **argv)
 	}
 
 	run_multithreaded();
+	replayer.finalize();
 	if (p__custom_allocator) allocators_print(stdout);
-	cleanup_xcb_wsi_objects();
+	if (!replayer.cleanup_after_stop()) cleanup_xcb_wsi_objects();
 	vkuDestroyWrapper(library);
 	wsi_shutdown();
 	if (p__debug_destination) fclose(p__debug_destination);

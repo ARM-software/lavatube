@@ -62,9 +62,14 @@ lava_file_reader::lava_file_reader(lava_reader* _parent, const std::string& path
 
 uint8_t lava_file_reader::step()
 {
+	if (parent->stop_requested())
+	{
+		terminated.store(true);
+		return 0;
+	}
 	if (file_reader::done())
 	{
-		terminated.store(true); // prevent us from calling pthread_cancel on this thread later
+		terminated.store(true);
 		return 0; // done
 	}
 	release_checkpoint();
@@ -104,7 +109,7 @@ lava_reader::~lava_reader()
 	thread_streams.clear();
 }
 
-void lava_reader::finalize(bool terminate)
+void lava_reader::finalize()
 {
 	const double total_time_ms = ((gettime() - mStartTime.load()) / 1000000UL);
 	const double fps = (double)mGlobalFrames / (total_time_ms / 1000.0);
@@ -142,17 +147,18 @@ void lava_reader::finalize(bool terminate)
 	out["readahead_workers_time"] = worker;
 	out["api_runners_time"] = runner;
 	out["process_time"] = process_time;
-	if (terminate)
-	{
-		if (p__debug_destination) fflush(p__debug_destination);
-		for (auto& v : *thread_call_numbers) v = 0; // stop waiting threads from progressing
-		for (unsigned i = 0; i < threads.size(); i++)
-		{
-			if (!thread_streams[i]->terminated.load()) pthread_cancel(threads[i].native_handle());
-		}
-	}
 	write_json(out_fptr, out);
 	fclose(out_fptr);
+}
+
+bool lava_reader::cleanup_after_stop()
+{
+	if (!stop_requested() || !run || thread_streams.empty()) return false;
+	const VkDevice cleanup_device = reinterpret_cast<VkDevice>(mCleanupDevice.load(std::memory_order_acquire));
+	if (cleanup_device == VK_NULL_HANDLE) return false;
+	wrap_vkDeviceWaitIdle(cleanup_device);
+	terminate_all(*thread_streams.front(), cleanup_device);
+	return true;
 }
 
 lava_file_reader& lava_reader::file_reader(uint16_t thread_id)

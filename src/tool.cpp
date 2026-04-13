@@ -164,11 +164,18 @@ static void replay_thread(lava_reader* replayer, int thread_id)
 			}
 		}
 	}
-	while ((instrtype = t.step()))
+	try
 	{
-		switchboard_packet(instrtype, t);
-		t.self_test();
+		while ((instrtype = t.step()))
+		{
+			switchboard_packet(instrtype, t);
+			t.self_test();
+		}
 	}
+	catch (const replay_stop_requested&)
+	{
+	}
+	t.terminated.store(true, std::memory_order_release);
 	uint64_t worker_local = 0;
 	uint64_t runner_local = 0;
 	t.stop_measurement(worker_local, runner_local);
@@ -408,7 +415,7 @@ int main(int argc, char **argv)
 
 		if (dump_host_write_stats) dump_host_write_stats_report("pass1");
 		reset_for_tools();
-		replayer.finalize(false);
+		replayer.finalize();
 	}
 
 	if (!filename_output.empty() || validate) // run second round to write out or test all changes
@@ -463,7 +470,7 @@ int main(int argc, char **argv)
 
 		if (dump_host_write_stats) dump_host_write_stats_report("pass2");
 		reset_for_tools();
-		replayer.finalize(false);
+		replayer.finalize();
 	}
 
 	printf("%d shader invokations executed\n", invokation_count);

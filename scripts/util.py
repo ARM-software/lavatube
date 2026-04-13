@@ -1507,11 +1507,8 @@ def load_add_tracking(name):
 	elif name == 'vkQueuePresentKHR':
 		z.do('if (reader.new_frame()) // if it returns true, then we have hit the end of our global frame range, so terminate everything')
 		z.brace_begin()
-		z.do('if (reader.run) wrap_vkDeviceWaitIdle(queue_data.device);')
-		z.do('reader.parent->finalize(true);')
-		z.do('usleep(100); // hack to ensure all other, in-progress threads are completed or waiting forever before we destroy everything below')
-		z.do('if (reader.run) terminate_all(reader, queue_data.device);')
-		z.do('if (p__debug_destination) fclose(p__debug_destination);')
+		z.do('if (reader.run) reader.parent->request_stop(queue_data.device);')
+		z.do('else reader.parent->request_stop();')
 		z.do('return; // make sure we now do not run anything below this point')
 		z.brace_end()
 	elif name in ['vkBindImageMemory', 'VkBindImageMemoryInfoKHR', 'VkBindImageMemoryInfo']:
@@ -1668,8 +1665,8 @@ def loadfunc(name, node, target, header):
 		z.do('if (retval == VK_ERROR_FEATURE_NOT_PRESENT || retval == VK_ERROR_EXTENSION_NOT_PRESENT)')
 		z.brace_begin()
 		z.do('reader.parent->exit_status = 77;')
-		z.do('reader.parent->finalize(true);') # this actually exits now, since we cancel our own thread
-		z.do('exit(77);')
+		z.do('reader.parent->request_stop();')
+		z.do('reader.throw_stop_requested();')
 		z.brace_end()
 		z.do('check_retval(stored_retval, retval);')
 		z.brace_end()

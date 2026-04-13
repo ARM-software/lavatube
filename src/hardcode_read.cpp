@@ -1251,8 +1251,8 @@ static size_t descriptor_buffer_descriptor_size(VkPhysicalDevice physical_device
 	}
 	printf("SKIP: capture and replay across devices with different descriptor-buffer sizes is not supported for this trace.\n");
 	reader.parent->exit_status = 77;
-	reader.parent->finalize(true);
-	exit(77);
+	reader.parent->request_stop(reader.device);
+	reader.throw_stop_requested();
 }
 
 void replay_callback_vkGetDescriptorEXT(callback_context& cb, VkDevice device, const VkDescriptorGetInfoEXT* pDescriptorInfo, size_t dataSize, void* pDescriptor)
@@ -2170,7 +2170,6 @@ void replay_callback_vkDestroyInstance(callback_context& cb, VkInstance instance
 	(void)pAllocator;
 	if (instance != VK_NULL_HANDLE)
 	{
-		reader.parent->finalize(false);
 		callback_initialized = false;
 		stored_instance = VK_NULL_HANDLE;
 		reset_all();
@@ -2777,7 +2776,11 @@ VKAPI_ATTR void retrace_vkThreadBarrierTRACETOOLTEST(lava_file_reader& reader)
 	{
 		const unsigned call = reader.read_uint32_t();
 		DLOG3("Thread barrier on thread %d, waiting for call %u on thread %d / %u", reader.thread_index(), call, i, size - 1);
-		while (i != reader.thread_index() && call > reader.parent->thread_call_numbers->at(i).load(std::memory_order_relaxed)) usleep(1);
+		while (i != reader.thread_index() && call > reader.parent->thread_call_numbers->at(i).load(std::memory_order_relaxed))
+		{
+			if (reader.parent->stop_requested()) reader.throw_stop_requested();
+			usleep(1);
+		}
 	}
 	DLOG2("Passed thread barrier on thread %d, waited for %u threads", reader.thread_index(), size);
 }

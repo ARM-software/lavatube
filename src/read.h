@@ -39,6 +39,10 @@ struct descriptor_rewrite
 	change_source source;
 };
 
+struct replay_stop_requested
+{
+};
+
 class lava_reader
 {
 	friend lava_file_reader;
@@ -62,7 +66,19 @@ public:
 	/// Dump trace information to stdout
 	void dump_info();
 
-	void finalize(bool terminate);
+	void finalize();
+	void request_stop(VkDevice cleanup_device = VK_NULL_HANDLE)
+	{
+		mStopRequested.store(true, std::memory_order_release);
+		if (cleanup_device != VK_NULL_HANDLE)
+		{
+			const uintptr_t requested = reinterpret_cast<uintptr_t>(cleanup_device);
+			uintptr_t expected = 0;
+			mCleanupDevice.compare_exchange_strong(expected, requested, std::memory_order_acq_rel);
+		}
+	}
+	bool stop_requested() const { return mStopRequested.load(std::memory_order_acquire); }
+	bool cleanup_after_stop();
 
 	std::vector<std::atomic_uint_fast32_t>* thread_call_numbers; // thread local call numbers
 
@@ -107,6 +123,8 @@ public:
 private:
 	/// Start time of frame range
 	std::atomic_uint64_t mStartTime{ 0 };
+	std::atomic_bool mStopRequested{ false };
+	std::atomic_uintptr_t mCleanupDevice{ 0 };
 	/// Start CPU usage for whole process
 	struct timespec process_cpu_usage;
 	std::string mPackedFile;
@@ -214,6 +232,7 @@ public:
 	lava_reader* parent;
 	VkDevice device = VK_NULL_HANDLE;
 	VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
+	[[noreturn]] void throw_stop_requested() const { throw replay_stop_requested{}; }
 
 	/// Whether we should actually call into Vulkan or if we are just processing the data
 	bool run = true;
@@ -259,7 +278,11 @@ inline void lava_file_reader::read_barrier()
 		const unsigned call = read_uint32_t();
 		assert(call != UINT32_MAX);
 		DLOG3("Thread barrier on thread %d, waiting for call %u on thread %d / %u", current.thread, call, i, size - 1);
-		while (i != current.thread && call > parent->thread_call_numbers->at(i).load(std::memory_order_relaxed)) usleep(1);
+		while (i != current.thread && call > parent->thread_call_numbers->at(i).load(std::memory_order_relaxed))
+		{
+			if (parent->stop_requested()) throw_stop_requested();
+			usleep(1);
+		}
 	}
 	DLOG2("[t%02d] Passed thread barrier, waited for %u threads", (int)current.thread, size);
 }
@@ -282,6 +305,7 @@ inline uint32_t lava_file_reader::read_handle(DEBUGPARAM(const char* name))
 #endif
 	while (req_call > currentcall)
 	{
+		if (parent->stop_requested()) throw_stop_requested();
 		usleep(1);
 		currentcall = parent->thread_call_numbers->at(req_thread).load(std::memory_order_relaxed);
 	}
