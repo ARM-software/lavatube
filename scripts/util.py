@@ -1877,9 +1877,6 @@ def savefunc(name, node, target, header):
 	z.do('// -- Execute --')
 	if name in vk.extra_sync:
 		z.do('frame_mutex.lock();')
-	elif name in ['vkQueuePresentKHR', 'vkQueueBeginDebugUtilsLabelEXT', 'vkQueueEndDebugUtilsLabelEXT', 'vkQueueInsertDebugUtilsLabelEXT']:
-		z.do('const bool internally_synchronized_queue = queue_data && queue_data->internally_synchronized_queues;')
-		z.do('if (internally_synchronized_queue) frame_mutex.lock();')
 	save_add_pre(name)
 	if name == "vkCreateInstance":
 		assert retval == 'VkResult'
@@ -1927,8 +1924,6 @@ def savefunc(name, node, target, header):
 			z.do('if (writer.run%s) wrap_%s(%s);' % (extra, name, ', '.join(call_list)))
 	if name in vk.extra_sync:
 		z.do('frame_mutex.unlock();')
-	elif name in ['vkQueuePresentKHR', 'vkQueueBeginDebugUtilsLabelEXT', 'vkQueueEndDebugUtilsLabelEXT', 'vkQueueInsertDebugUtilsLabelEXT']:
-		z.do('if (internally_synchronized_queue) frame_mutex.unlock();')
 	z.do('// -- Post --')
 	save_add_tracking(name)
 	if retval == 'VkBool32' or retval == 'VkResult' or retval == 'uint32_t':

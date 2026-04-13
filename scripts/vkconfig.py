@@ -56,7 +56,8 @@ extra_optionals = {
 }
 
 # Need to make extra sure these are externally synchronized
-extra_sync = [ 'vkQueueSubmit', 'vkQueueSubmit2', 'vkQueueSubmit2KHR', 'vkQueueWaitIdle', 'vkQueueBindSparse', 'vkDestroyDevice' ]
+extra_sync = [ 'vkQueueSubmit', 'vkQueueSubmit2', 'vkQueueSubmit2KHR', 'vkQueueWaitIdle', 'vkQueueBindSparse', 'vkDestroyDevice',
+	'vkQueuePresentKHR', 'vkQueueBeginDebugUtilsLabelEXT', 'vkQueueEndDebugUtilsLabelEXT', 'vkQueueInsertDebugUtilsLabelEXT' ]
 validate_funcs(extra_sync)
 
 skip_opt_check = ['pAllocator', 'pUserData', 'pfnCallback', 'pfnUserCallback', 'pNext' ]
