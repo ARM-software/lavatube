@@ -1782,12 +1782,12 @@ def loadfunc(name, node, target, header):
 				z.do('assert(stored_retval == retval);')
 			elif retval == 'VkResult' and name != 'vkQueuePresentKHR':
 				z.do('check_retval(stored_retval, retval);')
-			elif retval in ['uint64_t', 'uint32_t']:
+			elif retval in ['uint64_t', 'uint32_t'] and not name in vk.ignore_retval:
 				z.do('assert(stored_retval == retval);')
 			elif retval in ['VkDeviceAddress', 'VkDeviceSize']:
 				pass
 			else:
-				assert name in ['vkQueuePresentKHR', 'vkGetDeviceProcAddr', 'vkGetInstanceProcAddr'], 'Unhandled return value type %s from %s' % (retval, name)
+				assert name in ['vkQueuePresentKHR', 'vkGetDeviceProcAddr', 'vkGetInstanceProcAddr'] or name in vk.ignore_retval, 'Unhandled return value type %s from %s' % (retval, name)
 			z.brace_end()
 		else:
 			if retval in ['VkResult', 'VkBool32']:

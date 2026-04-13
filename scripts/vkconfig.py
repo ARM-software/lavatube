@@ -126,6 +126,8 @@ ignore_on_read = [ 'vkGetMemoryHostPointerPropertiesEXT', 'vkCreateDebugUtilsMes
 	'vkGetImageSparseMemoryRequirements2', 'vkMapMemory2', 'vkUnmapMemory2', 'vkGetPhysicalDeviceWaylandPresentationSupportKHR',
 	'vkGetDescriptorEXT' ]
 validate_funcs(ignore_on_read)
+# Ignore return value only
+ignore_retval = [ 'vkGetDeferredOperationMaxConcurrencyKHR' ]
 # functions we should not call natively when tracing - let pre or post calls handle it
 ignore_on_trace = []
 validate_funcs(ignore_on_trace)
