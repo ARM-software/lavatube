@@ -823,6 +823,102 @@ static int find_raytracing_group_index(const trackedpipeline& pipeline_data, con
 	return -1;
 }
 
+static bool find_marked_shader_group_handle_match(const trackedpipeline& pipeline_data, const std::byte* handle_ptr, uint32_t& out_group_index, bool& out_ambiguous)
+{
+	static constexpr uint32_t marked_handle_size = 32;
+	out_group_index = CONTAINER_INVALID_INDEX;
+	out_ambiguous = false;
+	if (pipeline_data.raytracing_group_handle_size != marked_handle_size || pipeline_data.raytracing_group_handles.empty()) return false;
+	uint32_t group_count = pipeline_data.raytracing_group_count;
+	const size_t handle_capacity = pipeline_data.raytracing_group_handles.size();
+	const size_t max_groups = handle_capacity / marked_handle_size;
+	if (max_groups == 0) return false;
+	if (group_count == 0 || group_count > max_groups) group_count = (uint32_t)max_groups;
+	const std::byte* base = pipeline_data.raytracing_group_handles.data();
+	bool found = false;
+	for (uint32_t i = 0; i < group_count; i++)
+	{
+		const std::byte* candidate = base + (size_t)i * marked_handle_size;
+		if (memcmp(candidate, handle_ptr, marked_handle_size) != 0) continue;
+		if (found)
+		{
+			out_ambiguous = true;
+			return true;
+		}
+		found = true;
+		out_group_index = i;
+	}
+	return found;
+}
+
+static bool rewrite_marked_shader_group_handle(lava_file_reader& reader, uint32_t mark_index, uint64_t offset, void* dst)
+{
+	static constexpr uint32_t marked_handle_size = 32;
+	std::byte capture_handle[marked_handle_size] = {};
+	memcpy(capture_handle, dst, marked_handle_size);
+
+	const trackedpipeline* matched_pipeline = nullptr;
+	uint32_t matched_group_index = CONTAINER_INVALID_INDEX;
+	const std::byte* replay_handle = nullptr;
+	bool preserve_capture_handle = false;
+
+	for (const auto& pipeline_data : VkPipeline_index)
+	{
+		uint32_t group_index = CONTAINER_INVALID_INDEX;
+		bool ambiguous_in_pipeline = false;
+		if (!find_marked_shader_group_handle_match(pipeline_data, capture_handle, group_index, ambiguous_in_pipeline)) continue;
+		if (ambiguous_in_pipeline)
+		{
+			if (!reader.run) return false;
+			ABORT("Marked shader group handle %u at offset %lu matches multiple groups in pipeline %u",
+				mark_index, (unsigned long)offset, pipeline_data.index);
+		}
+		if (matched_pipeline)
+		{
+			if (!reader.run) return false;
+			ABORT("Marked shader group handle %u at offset %lu is ambiguous between pipeline %u group %u and pipeline %u group %u",
+				mark_index, (unsigned long)offset, matched_pipeline->index, matched_group_index, pipeline_data.index, group_index);
+		}
+		matched_pipeline = &pipeline_data;
+		matched_group_index = group_index;
+		preserve_capture_handle = pipeline_data.raytracing_group_handles_capture_replay;
+		if (preserve_capture_handle) continue;
+		if (pipeline_data.raytracing_group_handle_size_replay != marked_handle_size)
+		{
+			if (!reader.run) return false;
+			ABORT("Marked shader group handle %u at offset %lu needs replay handle size %u, expected %u for pipeline %u",
+				mark_index, (unsigned long)offset, pipeline_data.raytracing_group_handle_size_replay, marked_handle_size, pipeline_data.index);
+		}
+		const size_t replay_offset = (size_t)group_index * marked_handle_size;
+		if (replay_offset + marked_handle_size > pipeline_data.raytracing_group_handles_replay.size())
+		{
+			if (!reader.run) return false;
+			ABORT("Marked shader group handle %u at offset %lu replay lookup out of bounds for pipeline %u group %u",
+				mark_index, (unsigned long)offset, pipeline_data.index, group_index);
+		}
+		replay_handle = pipeline_data.raytracing_group_handles_replay.data() + replay_offset;
+	}
+
+	if (!matched_pipeline)
+	{
+		if (!reader.run) return false;
+		ABORT("Failed to resolve marked shader group handle %u at offset %lu", mark_index, (unsigned long)offset);
+	}
+
+	if (preserve_capture_handle)
+	{
+		DLOG("%u: Preserving capture-replay shader group handle at offset %lu for pipeline %u group %u",
+			mark_index, (unsigned long)offset, matched_pipeline->index, matched_group_index);
+		return true;
+	}
+
+	assert(replay_handle);
+	DLOG("%u: Changing shader group handle at offset %lu for pipeline %u group %u",
+		mark_index, (unsigned long)offset, matched_pipeline->index, matched_group_index);
+	memcpy(dst, replay_handle, marked_handle_size);
+	return true;
+}
+
 static bool fixup_sbt_region(lava_file_reader& reader, const trackeddevice& device_data, VkDevice device, trackedpipeline& pipeline_data,
 	const VkStridedDeviceAddressRegionKHR* region, const char* label)
 {
@@ -2543,8 +2639,11 @@ static void translate_marked_offsets(lava_file_reader& reader, const VkMarkedOff
 			break;
 		case VK_MARKING_TYPE_SHADER_GROUP_HANDLE_ARM:
 			{
-				const VkShaderGroupShaderKHR shader_type = markings->pSubTypes[i].shaderGroupType;
-				// TBD handle shader group handles here -- we can assume they are always 32 bytes long
+				static constexpr uint32_t marked_handle_size = 32;
+				assert(offset + marked_handle_size <= size);
+				if (!reader.run) break;
+				void* handle = (char*)ptr + offset;
+				rewrite_marked_shader_group_handle(reader, i, offset, handle);
 			}
 			break;
 		default:
