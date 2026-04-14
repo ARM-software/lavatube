@@ -48,6 +48,16 @@ void print_memory(const vulkan_setup_t& vulkan, VkDeviceMemory memory, const cha
 void print_buffer(const vulkan_setup_t& vulkan, VkBuffer buffer);
 void test_register_replay_callbacks();
 
+static inline VkUpdateBufferInfoARM make_buffer_update_info(VkBuffer buffer, VkDeviceSize offset, VkDeviceSize size, const void* data)
+{
+	VkUpdateBufferInfoARM info = { VK_STRUCTURE_TYPE_UPDATE_BUFFER_INFO_ARM, nullptr };
+	info.dstBuffer = buffer;
+	info.dstOffset = offset;
+	info.dataSize = size;
+	info.pData = data;
+	return info;
+}
+
 // Prior assumption: Memory is not already mapped.
 static inline void test_destroy_buffer(vulkan_setup_t& vulkan, unsigned value, VkDeviceMemory memory, VkBuffer buffer, VkDeviceSize offset, VkDeviceSize size)
 {
@@ -57,7 +67,8 @@ static inline void test_destroy_buffer(vulkan_setup_t& vulkan, unsigned value, V
 	assert(ptr[0] == value);
 	trace_vkUnmapMemory(vulkan.device, memory);
 	uint32_t checksum = 0;
-	result = trace_vkAssertBufferARM(vulkan.device, buffer, 0, VK_WHOLE_SIZE, &checksum, "buffer at end of lifetime");
+	VkUpdateBufferInfoARM info = make_buffer_update_info(buffer, 0, VK_WHOLE_SIZE, nullptr);
+	result = trace_vkAssertBufferARM(vulkan.device, &info, &checksum, "buffer at end of lifetime");
 	check(result);
 	trace_vkDestroyBuffer(vulkan.device, buffer, nullptr);
 }

@@ -61,7 +61,8 @@ static void thread_runner(int tid)
 		}
 		trace_vkSyncBufferTRACETOOLTEST(vulkan.device, buffer[i]);
 		uint32_t checksum = 0;
-		result = trace_vkAssertBufferARM(vulkan.device, buffer[i], 0, VK_WHOLE_SIZE, &checksum, nullptr);
+		VkUpdateBufferInfoARM info = make_buffer_update_info(buffer[i], 0, VK_WHOLE_SIZE, nullptr);
+		result = trace_vkAssertBufferARM(vulkan.device, &info, &checksum, nullptr);
 		check(result);
 		for (unsigned j = 0; j < NUM_BUFFERS; j++)
 		{

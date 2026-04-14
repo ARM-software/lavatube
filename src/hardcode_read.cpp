@@ -1462,8 +1462,6 @@ static void replay_pre_vkDestroyAccelerationStructureKHR(lava_file_reader& reade
 	{
 		destroy_internal_buffer(device, as.replay_storage);
 	}
-	if (as.capture_device_address == 0) return;
-	reader.parent->acceleration_structure_address_remapping.remove(as.capture_device_address, &as);
 }
 
 void replay_callback_vkAcquireNextImageKHR(callback_context& cb, VkDevice device, VkSwapchainKHR swapchain, uint64_t timeout,
@@ -2230,32 +2228,76 @@ void retrace_vkSyncBufferTRACETOOLTEST(lava_file_reader& reader)
 	const uint32_t buffer_index = reader.read_handle(DEBUGPARAM("VkBuffer"));
 }
 
+static uint32_t retrace_checksum_buffer_range(const trackeddevice& device_data, uint32_t buffer_index, VkDeviceSize offset, VkDeviceSize size)
+{
+	trackedbuffer& buffer_data = VkBuffer_index.at(buffer_index);
+	suballoc_location loc = device_data.allocator->find_buffer_memory(buffer_index);
+	if (size == VK_WHOLE_SIZE)
+	{
+		size = buffer_data.size - offset;
+	}
+	if (size == 0)
+	{
+		return adler32(nullptr, 0);
+	}
+	uint8_t* ptr = (uint8_t*)loc.mapped;
+	assert(ptr != nullptr);
+	return adler32((unsigned char*)ptr + offset, size);
+}
+
 void retrace_vkAssertBufferARM(lava_file_reader& reader)
 {
 	const uint32_t device_index = reader.read_handle(DEBUGPARAM("VkDevice"));
 	const auto& device_data = VkDevice_index.at(device_index);
-	const uint32_t buffer_index = reader.read_handle(DEBUGPARAM("VkBuffer"));
-	const VkDeviceSize offset = reader.read_uint64_t();
-	VkDeviceSize size = reader.read_uint64_t();
+	VkUpdateBufferInfoARM info = {};
+	read_VkUpdateBufferInfoARM(reader, &info);
 	const char* comment = reader.read_string();
 	const uint32_t checksum = reader.read_uint32_t();
-	trackedobject& tbuf = VkBuffer_index.at(buffer_index);
-	VkDevice device = index_to_VkDevice.at(device_index);
-	suballoc_location loc = device_data.allocator->find_buffer_memory(buffer_index);
-	if (size == VK_WHOLE_SIZE)
-	{
-		size = tbuf.size - offset; // set to remaining size
-	}
-	uint8_t* ptr = nullptr;
 	if (!reader.run) return;
-	ptr = (uint8_t*)loc.mapped;
-	assert(ptr != nullptr);
-	uint32_t checksum_new = adler32((unsigned char*)ptr + offset, size);
-	NEVER("buffer %s[%u] validation size=%u off=%u memoff=%u origchecksum=%u newchecksum=%u [first byte is %u, last byte is %u]", comment, buffer_index,
-	      (unsigned)size, (unsigned)offset, (unsigned)loc.offset, checksum, checksum_new, ptr[0], ptr[tbuf.size-1]);
+	uint32_t checksum_new = adler32(nullptr, 0);
+	uint32_t buffer_index = 0;
+	if (info.dstBuffer != VK_NULL_HANDLE)
+	{
+		buffer_index = index_to_VkBuffer.index(info.dstBuffer);
+		checksum_new = retrace_checksum_buffer_range(device_data, buffer_index, info.dstOffset, info.dataSize);
+		DLOG2("buffer %s[%u] validation checksum origchecksum=%u newchecksum=%u", comment, buffer_index, checksum, checksum_new);
+	}
 	if (checksum != checksum_new && !is_blackhole_mode())
 	{
 		ABORT("Buffer checksum failed: %s", comment);
+	}
+}
+
+void retrace_vkAssertMemoryARM(lava_file_reader& reader)
+{
+	const uint32_t device_index = reader.read_handle(DEBUGPARAM("VkDevice"));
+	const auto& device_data = VkDevice_index.at(device_index);
+	VkUpdateMemoryInfoARM info = {};
+	read_VkUpdateMemoryInfoARM(reader, &info);
+	const char* comment = reader.read_string();
+	const uint32_t checksum = reader.read_uint32_t();
+	if (!reader.run) return;
+	uint32_t checksum_new = adler32(nullptr, 0);
+	if (info.pDstRange && info.pDstRange->address)
+	{
+		VkDeviceSize size = info.dataSize;
+		if (size == VK_WHOLE_SIZE)
+		{
+			size = info.pDstRange->size;
+		}
+		VkDeviceSize buffer_offset = 0;
+		trackedbuffer* buffer_data = find_buffer_by_replay_address(info.pDstRange->address, size ? size : 1, buffer_offset);
+		if (!buffer_data)
+		{
+			ABORT("vkAssertMemoryARM address 0x%llx (size=%llu) is not mapped to a buffer",
+				(unsigned long long)info.pDstRange->address, (unsigned long long)size);
+		}
+		checksum_new = retrace_checksum_buffer_range(device_data, buffer_data->index, buffer_offset, size);
+		NEVER("memory %s[%u] validation checksum origchecksum=%u newchecksum=%u", comment, buffer_data->index, checksum, checksum_new);
+	}
+	if (checksum != checksum_new && !is_blackhole_mode())
+	{
+		ABORT("Memory checksum failed: %s", comment);
 	}
 }
 
@@ -2469,7 +2511,9 @@ static void translate_marked_offsets(lava_file_reader& reader, const VkMarkedOff
 				uint64_t current = 0;
 				// Use memcpy to handle unaligned device address storage.
 				memcpy(&current, addr, sizeof(current));
-				const uint64_t newval = reader.parent->device_address_remapping.translate_address(current);
+				const uint64_t newval = (address_type == VK_DEVICE_ADDRESS_TYPE_ACCELERATION_STRUCTURE_ARM)
+					? reader.parent->acceleration_structure_address_remapping.translate_address(current)
+					: reader.parent->device_address_remapping.translate_address(current);
 				assert(newval != 0 || !reader.run);
 				DLOG("%u: Changing %s address value at offset %lu from %lu to %lu", (unsigned)i, (address_type == VK_DEVICE_ADDRESS_TYPE_BUFFER_ARM) ? "buffer" : "acceleration structure",
 				     (unsigned long)offset, (unsigned long)current, (unsigned long)newval);
@@ -2786,6 +2830,33 @@ void read_VkUpdateBufferInfoARM(lava_file_reader& reader, VkUpdateBufferInfoARM*
 	const uint32_t buffer_index = reader.read_handle(DEBUGPARAM("VkBuffer"));
 	sptr->dstBuffer = index_to_VkBuffer.at(buffer_index);
 	sptr->dstOffset = reader.read_uint64_t();
+	sptr->dataSize = reader.read_uint64_t();
+	uint8_t pData_opt = reader.read_uint8_t();
+	sptr->pData = nullptr;
+	if (pData_opt)
+	{
+		uint8_t* backing = reader.pool.allocate<uint8_t>(sptr->dataSize);
+		memset(backing, 0, sptr->dataSize);
+		reader.read_array(backing, sptr->dataSize);
+		sptr->pData = backing;
+	}
+}
+
+void read_VkUpdateMemoryInfoARM(lava_file_reader& reader, VkUpdateMemoryInfoARM* sptr)
+{
+	sptr->sType = (VkStructureType)reader.read_uint32_t();
+	assert(sptr->sType == VK_STRUCTURE_TYPE_UPDATE_MEMORY_INFO_ARM);
+	read_extension(reader, (VkBaseOutStructure**)&sptr->pNext);
+	uint8_t pDstRange_opt = reader.read_uint8_t();
+	sptr->pDstRange = nullptr;
+	if (pDstRange_opt)
+	{
+		VkDeviceAddressRangeKHR* backing = reader.pool.allocate<VkDeviceAddressRangeKHR>(1);
+		memset(backing, 0, sizeof(VkDeviceAddressRangeKHR));
+		read_VkDeviceAddressRangeKHR(reader, backing);
+		sptr->pDstRange = backing;
+	}
+	sptr->dstFlags = (VkAddressCommandFlagsKHR)reader.read_uint32_t();
 	sptr->dataSize = reader.read_uint64_t();
 	uint8_t pData_opt = reader.read_uint8_t();
 	sptr->pData = nullptr;

@@ -11,10 +11,11 @@ import vkconfig as vk
 
 # New functions that we implement
 fake_functions = [ 'vkAssertBufferARM', 'vkSyncBufferTRACETOOLTEST', 'vkGetDeviceTracingObjectPropertyTRACETOOLTEST',
-	'vkCmdUpdateBuffer2ARM' ]
+	'vkCmdUpdateBuffer2ARM', 'vkAssertMemoryARM' ]
 fake_extension_structs = {
 	'VkMarkedOffsetsARM': 'VK_STRUCTURE_TYPE_MARKED_OFFSETS_ARM',
 	'VkUpdateBufferInfoARM': 'VK_STRUCTURE_TYPE_UPDATE_BUFFER_INFO_ARM',
+	'VkUpdateMemoryInfoARM': 'VK_STRUCTURE_TYPE_UPDATE_MEMORY_INFO_ARM',
 	'VkPhysicalDeviceExplicitHostUpdatesFeaturesARM': 'VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXPLICIT_HOST_UPDATES_FEATURES_ARM',
 	'VkFlushRangesFlagsARM' : 'VK_STRUCTURE_TYPE_FLUSH_RANGES_FLAGS_ARM',
 }
@@ -356,13 +357,15 @@ for f in fake_extension_structs:
 for f in fake_functions:
 	out(targets_read_headers, 'void retrace_%s(lava_file_reader& reader);' % f)
 	if f == 'vkAssertBufferARM':
-		out([wh], 'VKAPI_ATTR VkResult VKAPI_CALL trace_vkAssertBufferARM(VkDevice device, VkBuffer buffer, VkDeviceSize offset, VkDeviceSize size, uint32_t* checksum, const char* comment);')
+		out([wh], 'VKAPI_ATTR VkResult VKAPI_CALL trace_vkAssertBufferARM(VkDevice device, const VkUpdateBufferInfoARM* pInfo, uint32_t* checksum, const char* comment);')
 	elif f == 'vkSyncBufferTRACETOOLTEST':
 		out([wh], 'VKAPI_ATTR void VKAPI_CALL trace_vkSyncBufferTRACETOOLTEST(VkDevice device, VkBuffer buffer);')
 	elif f == 'vkGetDeviceTracingObjectPropertyTRACETOOLTEST':
 		out([wh], 'VKAPI_ATTR uint64_t VKAPI_CALL trace_vkGetDeviceTracingObjectPropertyTRACETOOLTEST(VkDevice device, VkObjectType objectType, uint64_t objectHandle, VkTracingObjectPropertyTRACETOOLTEST valueType);')
 	elif f == 'vkCmdUpdateBuffer2ARM':
 		out([wh], 'VKAPI_ATTR void trace_vkCmdUpdateBuffer2ARM(VkCommandBuffer commandBuffer, const VkUpdateBufferInfoARM* pInfo);')
+	elif f == 'vkAssertMemoryARM':
+		out([wh], 'VKAPI_ATTR VkResult VKAPI_CALL trace_vkAssertMemoryARM(VkDevice device, const VkUpdateMemoryInfoARM* pInfo, uint32_t* checksum, const char* comment);')
 	else:
 		assert False, 'Missing fake function header implementation: %s' % f
 out([gh])

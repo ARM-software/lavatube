@@ -86,11 +86,14 @@ static void trace()
 
 	test_marker(vulkan, "Asserting buffers");
 	uint32_t checksum = 0;
-	result = trace_vkAssertBufferARM(vulkan.device, buffer[0], 0, VK_WHOLE_SIZE, &checksum, nullptr);
+	VkUpdateBufferInfoARM info0 = make_buffer_update_info(buffer[0], 0, VK_WHOLE_SIZE, nullptr);
+	result = trace_vkAssertBufferARM(vulkan.device, &info0, &checksum, nullptr);
 	check(result);
-	result = trace_vkAssertBufferARM(vulkan.device, buffer[1], 0, VK_WHOLE_SIZE, &checksum, nullptr);
+	VkUpdateBufferInfoARM info1 = make_buffer_update_info(buffer[1], 0, VK_WHOLE_SIZE, nullptr);
+	result = trace_vkAssertBufferARM(vulkan.device, &info1, &checksum, nullptr);
 	check(result);
-	result = trace_vkAssertBufferARM(vulkan.device, buffer[2], 0, VK_WHOLE_SIZE, &checksum, nullptr);
+	VkUpdateBufferInfoARM info2 = make_buffer_update_info(buffer[2], 0, VK_WHOLE_SIZE, nullptr);
+	result = trace_vkAssertBufferARM(vulkan.device, &info2, &checksum, nullptr);
 	check(result);
 
 	trace_vkDestroyBuffer(vulkan.device, buffer[0], nullptr);
