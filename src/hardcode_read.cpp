@@ -2497,6 +2497,12 @@ static void translate_marked_offsets(lava_file_reader& reader, const VkMarkedOff
 				memcpy((char*)ptr + offset, descriptor_bytes.data(), descriptor_bytes.size());
 			}
 			break;
+		case VK_MARKING_TYPE_SHADER_GROUP_HANDLE_ARM:
+			{
+				const VkShaderGroupShaderKHR shader_type = markings->pSubTypes[i].shaderGroupType;
+				// TBD handle shader group handles here -- we can assume they are always 32 bytes long
+			}
+			break;
 		default:
 			assert(false); // not supported yet!
 			break;
