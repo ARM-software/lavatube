@@ -58,6 +58,31 @@ static bool has_device_extension(VkPhysicalDevice physical, const char* name)
 	return false;
 }
 
+static bool is_nvidia_proprietary_driver(VkPhysicalDevice physical)
+{
+	VkPhysicalDeviceProperties properties = {};
+	trace_vkGetPhysicalDeviceProperties(physical, &properties);
+
+	const bool has_driver_properties =
+		VK_API_VERSION_MAJOR(properties.apiVersion) > 1 ||
+		(VK_API_VERSION_MAJOR(properties.apiVersion) == 1 && VK_API_VERSION_MINOR(properties.apiVersion) >= 2) ||
+		has_device_extension(physical, VK_KHR_DRIVER_PROPERTIES_EXTENSION_NAME);
+	if (!has_driver_properties)
+	{
+		return false;
+	}
+
+	VkPhysicalDeviceDriverProperties driver_properties = {};
+	driver_properties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DRIVER_PROPERTIES;
+
+	VkPhysicalDeviceProperties2 properties2 = {};
+	properties2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
+	properties2.pNext = &driver_properties;
+	trace_vkGetPhysicalDeviceProperties2(physical, &properties2);
+
+	return driver_properties.driverID == VK_DRIVER_ID_NVIDIA_PROPRIETARY;
+}
+
 static VkCompositeAlphaFlagBitsKHR choose_composite_alpha(VkCompositeAlphaFlagsKHR supported)
 {
 	if (supported & VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR) return VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
@@ -131,6 +156,13 @@ int main()
 	result = trace_vkEnumeratePhysicalDevices(instance, &num_devices, physical_devices.data());
 	check(result);
 	VkPhysicalDevice physical = physical_devices[0];
+
+	if (is_nvidia_proprietary_driver(physical))
+	{
+		printf("SKIP: VK_EXT_headless_surface is unreliable on NVIDIA proprietary Vulkan driver.\n");
+		trace_vkDestroyInstance(instance, nullptr);
+		return 77;
+	}
 
 	if (!has_device_extension(physical, VK_KHR_SWAPCHAIN_EXTENSION_NAME))
 	{
