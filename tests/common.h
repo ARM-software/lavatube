@@ -58,6 +58,16 @@ static inline VkUpdateBufferInfoARM make_buffer_update_info(VkBuffer buffer, VkD
 	return info;
 }
 
+static inline VkUpdateMemoryInfoARM make_memory_update_info(const VkDeviceAddressRangeKHR* range, VkDeviceSize size, const void* data, VkAddressCommandFlagsKHR flags = 0)
+{
+	VkUpdateMemoryInfoARM info = { VK_STRUCTURE_TYPE_UPDATE_MEMORY_INFO_ARM, nullptr };
+	info.pDstRange = range;
+	info.dstFlags = flags;
+	info.dataSize = size;
+	info.pData = data;
+	return info;
+}
+
 // Prior assumption: Memory is not already mapped.
 static inline void test_destroy_buffer(vulkan_setup_t& vulkan, unsigned value, VkDeviceMemory memory, VkBuffer buffer, VkDeviceSize offset, VkDeviceSize size)
 {

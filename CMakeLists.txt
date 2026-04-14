@@ -392,6 +392,10 @@ set_tests_properties(trace_test_buffers_replay_cpu PROPERTIES FIXTURES_REQUIRED 
 add_test(NAME trace_test_buffers_validate COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-tool -V tracing_buffers.vk)
 set_tests_properties(trace_test_buffers_validate PROPERTIES FIXTURES_REQUIRED tracing_buffers)
 
+internal_test(tracing_memory tracing_memory.vk)
+add_test(NAME trace_test_memory_replay_cpu COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -C -V tracing_memory.vk)
+set_tests_properties(trace_test_memory_replay_cpu PROPERTIES FIXTURES_REQUIRED tracing_memory)
+
 internal_test(tracing_alignment tracing_alignment.vk)
 add_test(NAME trace_test_alignment_replay_cpu COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -C -V tracing_alignment.vk)
 set_tests_properties(trace_test_alignment_replay_cpu PROPERTIES FIXTURES_REQUIRED tracing_alignment)
