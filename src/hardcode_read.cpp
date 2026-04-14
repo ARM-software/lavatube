@@ -1321,6 +1321,17 @@ static size_t descriptor_buffer_descriptor_size(VkPhysicalDevice physical_device
 	}
 }
 
+static VkPhysicalDevice descriptor_buffer_physical_device(lava_file_reader& reader, VkDevice device)
+{
+	VkPhysicalDevice physical_device = reader.physicalDevice;
+	if (physical_device == VK_NULL_HANDLE && device != VK_NULL_HANDLE)
+	{
+		const uint32_t device_index = index_to_VkDevice.index(device);
+		physical_device = VkDevice_index.at(device_index).physicalDevice;
+	}
+	return physical_device;
+}
+
 [[noreturn]] static void skip_descriptor_buffer_portability(lava_file_reader& reader, VkDescriptorType descriptor_type, size_t capture_size,
 	size_t replay_size, uint64_t offset = 0, uint64_t region_size = 0)
 {
@@ -1344,18 +1355,33 @@ static size_t descriptor_buffer_descriptor_size(VkPhysicalDevice physical_device
 	reader.throw_stop_requested();
 }
 
+static void queue_descriptor_rewrite(lava_file_reader& reader, VkPhysicalDevice physical_device, VkDescriptorType descriptor_type, const void* bytes, size_t data_size)
+{
+	size_t descriptor_size = descriptor_buffer_descriptor_size(physical_device, descriptor_type);
+	if (descriptor_size == 0) descriptor_size = data_size;
+	if (descriptor_size == 0) return;
+	if (data_size != 0 && descriptor_size > data_size)
+	{
+		skip_descriptor_buffer_portability(reader, descriptor_type, data_size, descriptor_size);
+	}
+
+	descriptor_rewrite rewrite;
+	rewrite.type = descriptor_type;
+	rewrite.bytes.resize(descriptor_size);
+	rewrite.source = reader.current;
+	memcpy(rewrite.bytes.data(), bytes, descriptor_size);
+
+	lava::lock_guard lock(sync_mutex);
+	reader.parent->pending_descriptor_rewrites.push_back(std::move(rewrite));
+}
+
 void replay_callback_vkGetDescriptorEXT(callback_context& cb, VkDevice device, const VkDescriptorGetInfoEXT* pDescriptorInfo, size_t dataSize, void* pDescriptor)
 {
 	(void)pDescriptor;
 
 	if (!cb.reader.run || !pDescriptorInfo || device == VK_NULL_HANDLE) return;
 
-	VkPhysicalDevice physical_device = cb.reader.physicalDevice;
-	if (physical_device == VK_NULL_HANDLE)
-	{
-		const uint32_t device_index = index_to_VkDevice.index(device);
-		physical_device = VkDevice_index.at(device_index).physicalDevice;
-	}
+	const VkPhysicalDevice physical_device = descriptor_buffer_physical_device(cb.reader, device);
 
 	size_t descriptor_size = descriptor_buffer_descriptor_size(physical_device, pDescriptorInfo->type);
 	if (descriptor_size == 0) descriptor_size = dataSize;
@@ -1373,6 +1399,33 @@ void replay_callback_vkGetDescriptorEXT(callback_context& cb, VkDevice device, c
 
 	lava::lock_guard lock(sync_mutex);
 	cb.reader.parent->pending_descriptor_rewrites.push_back(std::move(rewrite));
+}
+
+void replay_callback_vkWriteSamplerDescriptorsEXT(callback_context& cb, VkDevice device, uint32_t samplerCount, const VkSamplerCreateInfo* pSamplers,
+	const VkHostAddressRangeEXT* pDescriptors)
+{
+	(void)pSamplers;
+	if (cb.result.vkresult != VK_SUCCESS || !cb.reader.run || device == VK_NULL_HANDLE || !pDescriptors) return;
+
+	const VkPhysicalDevice physical_device = descriptor_buffer_physical_device(cb.reader, device);
+	for (uint32_t i = 0; i < samplerCount; i++)
+	{
+		if (!pDescriptors[i].address || pDescriptors[i].size == 0) continue;
+		queue_descriptor_rewrite(cb.reader, physical_device, VK_DESCRIPTOR_TYPE_SAMPLER, pDescriptors[i].address, pDescriptors[i].size);
+	}
+}
+
+void replay_callback_vkWriteResourceDescriptorsEXT(callback_context& cb, VkDevice device, uint32_t resourceCount, const VkResourceDescriptorInfoEXT* pResources,
+	const VkHostAddressRangeEXT* pDescriptors)
+{
+	if (cb.result.vkresult != VK_SUCCESS || !cb.reader.run || device == VK_NULL_HANDLE || !pResources || !pDescriptors) return;
+
+	const VkPhysicalDevice physical_device = descriptor_buffer_physical_device(cb.reader, device);
+	for (uint32_t i = 0; i < resourceCount; i++)
+	{
+		if (!pDescriptors[i].address || pDescriptors[i].size == 0) continue;
+		queue_descriptor_rewrite(cb.reader, physical_device, pResources[i].type, pDescriptors[i].address, pDescriptors[i].size);
+	}
 }
 
 void replay_callback_vkCreateBuffer(callback_context& cb, VkDevice device, const VkBufferCreateInfo* pCreateInfo,
