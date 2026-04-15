@@ -189,6 +189,33 @@ void lava_writer::set(const std::string& path)
 	should_serialize = true;
 }
 
+void lava_writer::set_output(const std::string& packed_path)
+{
+	mPath = packed_path + "_tmp";
+	mPack = packed_path;
+	ILOG("Output path is set to %s", mPack.c_str());
+
+	if (access(mPath.c_str(), F_OK) == 0)
+	{
+		erase_directory(mPath);
+	}
+
+	int result = mkdir(mPath.c_str(), 0755);
+	if (result != 0)
+	{
+		ELOG("Failed to create \"%s\": %s", mPath.c_str(), strerror(errno));
+	}
+
+	frame_mutex.lock();
+	for (unsigned i = 0; i < thread_streams.size(); i++)
+	{
+		thread_streams.at(i)->set(mPath);
+	}
+	frame_mutex.unlock();
+
+	should_serialize = true;
+}
+
 lava_writer::lava_writer() : global_frame(0)
 {
 	frame_mutex.lock();
@@ -344,18 +371,37 @@ void lava_writer::finish()
 	vulkan_feature_detection_reset();
 }
 
-void lava_writer::make_writer()
+void lava_writer::make_writer(unsigned index)
 {
 	lava::lock_guard lock(frame_mutex);
-	tid = thread_streams.size();
-	lava_file_writer* f = new lava_file_writer(tid, this);
+	if (index == UINT32_MAX)
+	{
+		index = thread_streams.size();
+	}
+	assert(index == thread_streams.size());
+	tid = index;
+	lava_file_writer* f = new lava_file_writer(index, this);
 	if (!mPath.empty())
 	{
 		f->set(mPath);
 	}
 	f->inject_thread_barrier();
 	thread_streams.emplace_back(std::move(f));
-	DLOG("Created thread %d, currently %d threads", (int)tid, (int)thread_streams.size());
+	DLOG("Created thread %d, currently %d threads", (int)index, (int)thread_streams.size());
+}
+
+void lava_writer::bind_thread(unsigned index)
+{
+	assert(index < thread_streams.size());
+	tid = index;
+}
+
+void lava_writer::prepare_threads(unsigned count)
+{
+	while (thread_streams.size() < count)
+	{
+		make_writer(thread_streams.size());
+	}
 }
 
 lava_file_writer& lava_writer::file_writer()

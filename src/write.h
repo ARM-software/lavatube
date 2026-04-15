@@ -166,6 +166,9 @@ public:
 
 	static lava_writer& instance();
 	void set(const std::string& path);
+	void set_output(const std::string& packed_path);
+	void bind_thread(unsigned index);
+	void prepare_threads(unsigned count);
 	Json::Value& json() REQUIRES(frame_mutex) { return mJson; }
 	lava_file_writer& file_writer();
 	lava_file_writer& file_writer(unsigned index); // not thread safe!
@@ -200,7 +203,7 @@ public:
 	}
 
 private:
-	void make_writer();
+	void make_writer(unsigned index = UINT32_MAX);
 
 	std::string mPath;
 	std::string mPack;

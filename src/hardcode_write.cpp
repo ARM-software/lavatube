@@ -1564,6 +1564,50 @@ static void trace_post_vkGetPhysicalDeviceMemoryProperties2KHR(lava_file_writer&
 	trace_post_vkGetPhysicalDeviceMemoryProperties(writer, physicalDevice, &pMemoryProperties->memoryProperties);
 }
 
+static VkExtensionProperties extension_property_from_name(const std::string& name)
+{
+	VkExtensionProperties property = {};
+	strncpy(property.extensionName, name.c_str(), VK_MAX_EXTENSION_NAME_SIZE - 1);
+	property.specVersion = 0;
+	return property;
+}
+
+static void bootstrap_instance_extensions_from_metadata() REQUIRES(frame_mutex)
+{
+	lava_writer& instance = lava_writer::instance();
+	instance_extension_properties.clear();
+	const Json::Value& extensions = instance.json()["instancePresented"]["extensions"];
+	if (!extensions.isArray()) return;
+	for (const Json::Value& value : extensions)
+	{
+		if (!value.isString()) continue;
+		const std::string name = value.asString();
+		instance.meta.device.instance_extensions.insert(name);
+		instance_extension_properties.push_back(extension_property_from_name(name));
+	}
+}
+
+static void bootstrap_device_extensions_from_metadata(VkPhysicalDevice physicalDevice) REQUIRES(frame_mutex)
+{
+	lava_writer& instance = lava_writer::instance();
+	auto* physicaldevice_data = instance.records.VkPhysicalDevice_index.at(physicalDevice);
+	physicaldevice_data->presented_device_extensions.clear();
+	physicaldevice_data->supported_device_extensions.clear();
+	physicaldevice_data->device_extension_properties.clear();
+
+	const Json::Value& extensions = instance.json()["devicePresented"]["extensions"];
+	if (!extensions.isArray()) return;
+	for (const Json::Value& value : extensions)
+	{
+		if (!value.isString()) continue;
+		const std::string name = value.asString();
+		physicaldevice_data->presented_device_extensions.insert(name);
+		physicaldevice_data->supported_device_extensions.insert(name);
+		physicaldevice_data->device_extension_properties.push_back(extension_property_from_name(name));
+		instance.meta.device.device_extensions.insert(name);
+	}
+}
+
 static void modify_instance_extensions() REQUIRES(frame_mutex)
 {
 	lava_writer& instance = lava_writer::instance();
@@ -1664,7 +1708,11 @@ static void trace_pre_vkCreateDevice(VkPhysicalDevice physicalDevice, VkDeviceCr
 	Json::Value& r = instance.json();
 
 	r["deviceRequested"] = Json::objectValue;
-	if (physicaldevice_data->device_extension_properties.empty()) modify_device_extensions(physicalDevice); // in case empty
+	if (physicaldevice_data->device_extension_properties.empty())
+	{
+		if (writer.run) modify_device_extensions(physicalDevice); // in case empty
+		else bootstrap_device_extensions_from_metadata(physicalDevice);
+	}
 
 	// Logging
 	const VkBaseOutStructure* pNext = (const VkBaseOutStructure*)pCreateInfo->pNext;
@@ -1722,6 +1770,12 @@ static void trace_pre_vkCreateDevice(VkPhysicalDevice physicalDevice, VkDeviceCr
 	for (unsigned i = 0; i < pCreateInfo->enabledExtensionCount; i++)
 	{
 		r["deviceRequested"]["enabledExtensions"].append(pCreateInfo->ppEnabledExtensionNames[i]);
+		instance.meta.app.device_extensions.insert(pCreateInfo->ppEnabledExtensionNames[i]);
+	}
+	if (!writer.run)
+	{
+		frame_mutex.unlock();
+		return;
 	}
 
 	// -- Modify app request --
@@ -2982,11 +3036,11 @@ VKAPI_ATTR void VKAPI_CALL trace_vkGetDeviceQueue2(VkDevice device, const VkDevi
 	uint32_t realIndex = pQueueInfo->queueIndex;
 	uint32_t realFamily = pQueueInfo->queueFamilyIndex;
 
-	if (p__virtualqueues == 0)
+	if (writer.run && p__virtualqueues == 0)
 	{
 		wrap_vkGetDeviceQueue2(device, pQueueInfo, pQueue);
 	}
-	else // remap
+	else if (writer.run) // remap
 	{
 		assert(pQueueInfo->queueIndex < 2);
 		assert(pQueueInfo->queueFamilyIndex == 0);
@@ -3026,7 +3080,8 @@ VKAPI_ATTR void VKAPI_CALL trace_vkGetDeviceQueue(VkDevice device, uint32_t queu
 	lava_file_writer& writer = write_header("vkGetDeviceQueue", VKGETDEVICEQUEUE);
 	auto* device_data = writer.parent->records.VkDevice_index.at(device);
 	trackedphysicaldevice* physicaldevice_data = writer.parent->records.VkPhysicalDevice_index.at(device_data->physicalDevice);
-	const bool virtual_family = (physicaldevice_data->queueFamilyProperties.at(queueFamilyIndex).queueFlags & VK_QUEUE_GRAPHICS_BIT) && p__virtualqueues;
+	const bool virtual_family = writer.run && queueFamilyIndex < physicaldevice_data->queueFamilyProperties.size()
+		&& (physicaldevice_data->queueFamilyProperties.at(queueFamilyIndex).queueFlags & VK_QUEUE_GRAPHICS_BIT) && p__virtualqueues;
 
 	writer.write_handle(device_data);
 	writer.write_uint32_t(virtual_family ? LAVATUBE_VIRTUAL_QUEUE : queueFamilyIndex);
@@ -3036,11 +3091,11 @@ VKAPI_ATTR void VKAPI_CALL trace_vkGetDeviceQueue(VkDevice device, uint32_t queu
 	uint32_t realFamily = queueFamilyIndex;
 
 	// Execute
-	if (p__virtualqueues == 0)
+	if (writer.run && p__virtualqueues == 0)
 	{
 		wrap_vkGetDeviceQueue(device, queueFamilyIndex, queueIndex, pQueue);
 	}
-	else // remap
+	else if (writer.run) // remap
 	{
 		assert(queueIndex < 2);
 		assert(queueFamilyIndex == 0);
@@ -3054,7 +3109,7 @@ VKAPI_ATTR void VKAPI_CALL trace_vkGetDeviceQueue(VkDevice device, uint32_t queu
 		auto* queue_data = writer.parent->records.VkQueue_index.add(*pQueue, writer.current);
 		queue_data->queueIndex = queueIndex;
 		queue_data->queueFamily = queueFamilyIndex;
-		queue_data->queueFlags = physicaldevice_data->queueFamilyProperties.at(queueFamilyIndex).queueFlags;
+		queue_data->queueFlags = (queueFamilyIndex < physicaldevice_data->queueFamilyProperties.size()) ? physicaldevice_data->queueFamilyProperties.at(queueFamilyIndex).queueFlags : 0;
 		queue_data->device = device;
 		queue_data->device_index = device_data->index;
 		queue_data->realIndex = realIndex;
@@ -3206,6 +3261,13 @@ VKAPI_ATTR VkResult VKAPI_CALL trace_vkEnumerateInstanceLayerProperties(uint32_t
 	lava_file_writer& writer = write_header("vkEnumerateInstanceLayerProperties", VKENUMERATEINSTANCELAYERPROPERTIES);
 	writer.write_uint8_t(pProperties ? 1 : 0);
 	// Execute
+	if (!writer.run)
+	{
+		const VkResult retval = writer.use_result.result;
+		writer.write_uint32_t(retval);
+		writer.thaw();
+		return retval;
+	}
 #ifdef COMPILE_LAYER
 	VkResult retval = VK_SUCCESS;
 
@@ -3236,32 +3298,33 @@ VKAPI_ATTR VkResult VKAPI_CALL trace_vkEnumerateInstanceExtensionProperties(cons
 	writer.write_string(pLayerName);
 	writer.write_uint8_t(pProperties ? 1 : 0);
 	// Execute
+	VkResult retval = writer.run ? VK_SUCCESS : writer.use_result.result;
 #ifdef COMPILE_LAYER
 	if ((pLayerName != nullptr) && (strcmp(pLayerName, LAYER_PROPERTIES.layerName) == 0))
 	{
-		*pPropertyCount = 0;
-		writer.write_uint32_t(VK_SUCCESS);
+		if (pPropertyCount) *pPropertyCount = 0;
+		writer.write_uint32_t(retval);
 		writer.thaw();
-		return VK_SUCCESS;
+		return retval;
 	}
 #endif
 	frame_mutex.lock();
 	if (instance_extension_properties.size() == 0)
 	{
-		modify_instance_extensions(); // add our own extensions
+		if (writer.run) modify_instance_extensions(); // add our own extensions
+		else bootstrap_instance_extensions_from_metadata();
 	}
-	VkResult retval = VK_SUCCESS;
 	if (pProperties == nullptr)
 	{
-		*pPropertyCount = instance_extension_properties.size();
+		if (pPropertyCount) *pPropertyCount = instance_extension_properties.size();
 	}
-	else
+	else if (pPropertyCount)
 	{
 		for (unsigned i = 0; i < std::min<unsigned>(instance_extension_properties.size(), *pPropertyCount); i++)
 		{
 			memcpy(&pProperties[i], &instance_extension_properties[i], sizeof(VkExtensionProperties));
 		}
-		if (instance_extension_properties.size() > *pPropertyCount) retval = VK_INCOMPLETE;
+		if (writer.run && instance_extension_properties.size() > *pPropertyCount) retval = VK_INCOMPLETE;
 	}
 	frame_mutex.unlock();
 	writer.write_uint32_t(retval);
@@ -3281,6 +3344,13 @@ VKAPI_ATTR VkResult VKAPI_CALL trace_vkEnumerateDeviceLayerProperties(VkPhysical
 	writer.write_uint8_t(pProperties ? 1 : 0);
 
 	// Execute
+	if (!writer.run)
+	{
+		const VkResult retval = writer.use_result.result;
+		writer.write_uint32_t(retval);
+		writer.thaw();
+		return retval;
+	}
 #ifdef COMPILE_LAYER
 	VkResult retval = VK_SUCCESS;
 	if (pProperties == nullptr)
@@ -3315,34 +3385,35 @@ VKAPI_ATTR VkResult VKAPI_CALL trace_vkEnumerateDeviceExtensionProperties(VkPhys
 	writer.write_string(pLayerName);
 	writer.write_uint8_t(pProperties ? 1 : 0);
 	// Execute
+	VkResult retval = writer.run ? VK_SUCCESS : writer.use_result.result;
 #ifdef COMPILE_LAYER
 	if ((pLayerName != nullptr) && (strcmp(pLayerName, LAYER_PROPERTIES.layerName) == 0))
 	{
-		*pPropertyCount = 0;
-		writer.write_uint32_t(VK_SUCCESS);
+		if (pPropertyCount) *pPropertyCount = 0;
+		writer.write_uint32_t(retval);
 		writer.thaw();
-		return VK_SUCCESS;
+		return retval;
 	}
 #endif
 	frame_mutex.lock();
 	auto* physicaldevice_data = writer.parent->records.VkPhysicalDevice_index.at(physicalDevice);
 	if (physicaldevice_data->device_extension_properties.empty())
 	{
-		modify_device_extensions(physicalDevice);
+		if (writer.run) modify_device_extensions(physicalDevice);
+		else bootstrap_device_extensions_from_metadata(physicalDevice);
 	}
 	const auto& presented_extensions = physicaldevice_data->device_extension_properties;
-	VkResult retval = VK_SUCCESS;
 	if (pProperties == nullptr)
 	{
-		*pPropertyCount = presented_extensions.size();
+		if (pPropertyCount) *pPropertyCount = presented_extensions.size();
 	}
-	else
+	else if (pPropertyCount)
 	{
 		for (unsigned i = 0; i < std::min<unsigned>(presented_extensions.size(), *pPropertyCount); i++)
 		{
 			memcpy(&pProperties[i], &presented_extensions[i], sizeof(VkExtensionProperties));
 		}
-		if (presented_extensions.size() > *pPropertyCount) retval = VK_INCOMPLETE;
+		if (writer.run && presented_extensions.size() > *pPropertyCount) retval = VK_INCOMPLETE;
 	}
 	frame_mutex.unlock();
 	writer.write_uint32_t(retval);
@@ -3450,9 +3521,17 @@ static void common_vkGetPhysicalDeviceQueueFamilyProperties2(lava_file_writer& w
 	writer.physicalDevice = physicalDevice;
 	writer.write_uint8_t((pQueueFamilyProperties) ? 1 : 0);
 	// -- Post --
-	if (p__virtualqueues != 0)
+	if (!writer.run && physicaldevice_data && pQueueFamilyPropertyCount && pQueueFamilyProperties)
 	{
-		*pQueueFamilyPropertyCount = 1;
+		physicaldevice_data->queueFamilyProperties.resize(*pQueueFamilyPropertyCount);
+		for (uint32_t i = 0; i < *pQueueFamilyPropertyCount; i++)
+		{
+			physicaldevice_data->queueFamilyProperties.at(i) = pQueueFamilyProperties[i].queueFamilyProperties;
+		}
+	}
+	else if (p__virtualqueues != 0)
+	{
+		if (pQueueFamilyPropertyCount) *pQueueFamilyPropertyCount = 1;
 		if (pQueueFamilyProperties != nullptr) common_virtual_VkQueueFamilyProperties2(physicalDevice, pQueueFamilyProperties);
 	}
 	writer.thaw();
@@ -3480,13 +3559,17 @@ VKAPI_ATTR void VKAPI_CALL trace_vkGetPhysicalDeviceQueueFamilyProperties(VkPhys
 	writer.write_handle(physicaldevice_data);
 	writer.write_uint8_t((pQueueFamilyProperties) ? 1 : 0);
 
-	if (p__virtualqueues == 0 && writer.run)
+	if (!writer.run && physicaldevice_data && pQueueFamilyPropertyCount && pQueueFamilyProperties)
+	{
+		physicaldevice_data->queueFamilyProperties.assign(pQueueFamilyProperties, pQueueFamilyProperties + *pQueueFamilyPropertyCount);
+	}
+	else if (p__virtualqueues == 0 && writer.run)
 	{
 		wrap_vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice, pQueueFamilyPropertyCount, pQueueFamilyProperties);
 	}
 	else // virtual queues
 	{
-		*pQueueFamilyPropertyCount = 1;
+		if (pQueueFamilyPropertyCount) *pQueueFamilyPropertyCount = 1;
 		if (pQueueFamilyProperties != nullptr) common_virtual_VkQueueFamilyProperties(physicalDevice, pQueueFamilyProperties);
 	}
 	writer.thaw();

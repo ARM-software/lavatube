@@ -473,7 +473,12 @@ class parameter(spec.base_parameter):
 				z.do('%s = reader.read_handle(DEBUGPARAM("%s"));' % (tmpname, self.type))
 				if self.type == 'VkPhysicalDevice':
 					if self.funcname == 'vkCreateDevice': z.do('if (reader.run) replay_initialize_vkCreateDevice(reader, physicaldevice_index);')
-					z.do('%s = selected_physical_device;' % varname)
+					z.do('if (!reader.run)')
+					z.brace_begin()
+					z.do('%s = fake_handle<VkPhysicalDevice>(%s);' % (varname, tmpname))
+					z.do('selected_physical_device = %s;' % varname)
+					z.brace_end()
+					z.do('else %s = selected_physical_device;' % varname)
 				elif self.type != 'VkDeviceMemory' and (not self.funcname in vk.ignore_on_read or self.type == 'VkDevice'):
 					z.do('%s = index_to_%s.at(%s);' % (varname, self.type, tmpname))
 		elif self.type == 'VkDeviceOrHostAddressKHR' or self.type == 'VkDeviceOrHostAddressConstKHR':
@@ -1335,12 +1340,12 @@ def save_add_tracking(name):
 		count = spec.functions_destroy[name][1]
 		type = spec.functions_destroy[name][2]
 		if count == '1':
-			z.do('if (writer.run && %s != VK_NULL_HANDLE)' % param)
+			z.do('if (%s != VK_NULL_HANDLE)' % param)
 			z.brace_begin()
 		else:
 			z.do('for (unsigned i = 0; i < %s; i++)' % count)
 			z.brace_begin()
-			z.do('if (!writer.run || %s[i] == VK_NULL_HANDLE) continue;' % param)
+			z.do('if (%s[i] == VK_NULL_HANDLE) continue;' % param)
 		z.do('auto* meta = writer.parent->records.%s_index.unset(%s%s, writer.current);' % (type, param, '' if count == '1' else '[i]'))
 		z.do('DLOG2("removing %s from %s index %%u", (unsigned)meta->index);' % (type, name))
 		z.do('meta->destroyed = writer.current;')
@@ -1422,7 +1427,7 @@ def load_add_tracking(name):
 				z.do('const VkPhysicalDeviceInternallySynchronizedQueuesFeaturesKHR* pdisqf = (const VkPhysicalDeviceInternallySynchronizedQueuesFeaturesKHR*)find_extension(pCreateInfo, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_INTERNALLY_SYNCHRONIZED_QUEUES_FEATURES_KHR);')
 				z.do('data.internally_synchronized_queues = (pdisqf && pdisqf->internallySynchronizedQueues == VK_TRUE);')
 				z.do('data.allocator = new suballocator();')
-				z.do('data.allocator->create(selected_physical_device, pDevice, VkImage_index, VkBuffer_index, VkTensorARM_index, VkDataGraphPipelineSessionARM_index, reader.parent->threads.size(), reader.run);')
+				z.do('data.allocator->create(physicalDevice, pDevice, VkImage_index, VkBuffer_index, VkTensorARM_index, VkDataGraphPipelineSessionARM_index, reader.parent->threads.size(), reader.run);')
 			elif type == 'VkBuffer':
 				z.do('data.size = pCreateInfo->size;')
 				z.do('data.flags = pCreateInfo->flags;')

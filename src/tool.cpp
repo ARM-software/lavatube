@@ -3,6 +3,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <unistd.h>
+#include <errno.h>
 
 #include <algorithm>
 #include <vector>
@@ -12,10 +13,13 @@
 #include "util.h"
 #include "read_auto.h"
 #include "read.h"
+#include "write.h"
+#include "write_auto.h"
 #include "packfile.h"
 #include "util_auto.h"
 #include "sandbox.h"
 #include "postprocess.h"
+#include "json_helpers.h"
 
 extern lava::mutex sync_mutex;
 
@@ -24,6 +28,7 @@ static bool verbose = false;
 static bool report_unused = false;
 static bool dump_shaders = false;
 static bool dump_host_write_stats = false;
+static bool write_output = false;
 static int invokation_count = 0;
 
 // Utility funcs
@@ -139,6 +144,34 @@ static void print_removed_feature_lists(const Json::Value& removed_features)
 	}
 }
 
+static void bootstrap_write_side_state(const std::string& input)
+{
+	lava_writer& writer = lava_writer::instance();
+
+	frame_mutex.lock();
+	writer.json() = packed_json("metadata.json", input);
+	const int global_frames = writer.json().get("global_frames", 1).asInt();
+	writer.global_frame.exchange(std::max(global_frames - 1, 0));
+	frame_mutex.unlock();
+
+	const Json::Value tracking = packed_json("tracking.json", input);
+	if (!tracking.isMember("VkPhysicalDevice")) return;
+	for (const Json::Value& value : tracking["VkPhysicalDevice"])
+	{
+		trackedphysicaldevice data = trackedphysicaldevice_json(value);
+		data.last_modified = data.creation;
+		if (data.queueFamilyProperties.empty())
+		{
+			VkQueueFamilyProperties props = {};
+			props.queueCount = 1;
+			props.queueFlags = VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT | VK_QUEUE_TRANSFER_BIT;
+			data.queueFamilyProperties.push_back(props);
+		}
+		auto* add = writer.records.VkPhysicalDevice_index.add(fake_handle<VkPhysicalDevice>(data.index), data.creation);
+		*add = data;
+	}
+}
+
 static void replay_thread(lava_reader* replayer, int thread_id)
 {
 	if (p__sandbox_level >= 2) sandbox_level_three();
@@ -166,9 +199,34 @@ static void replay_thread(lava_reader* replayer, int thread_id)
 	}
 	try
 	{
+		lava_file_writer* output_writer = nullptr;
+		if (write_output)
+		{
+			lava_writer::instance().bind_thread(t.thread_index());
+		}
 		while ((instrtype = t.step()))
 		{
+			uint32_t output_call = 0;
+			if (write_output)
+			{
+				if (instrtype != PACKET_VULKAN_API_CALL && instrtype != PACKET_THREAD_BARRIER)
+				{
+					ABORT("Output mode does not yet support packet type %u on thread %u call %u", (unsigned)instrtype, (unsigned)t.thread_index(), (unsigned)t.current.call);
+				}
+				if (instrtype == PACKET_VULKAN_API_CALL && !output_writer)
+				{
+					output_writer = &lava_writer::instance().file_writer();
+				}
+				if (instrtype == PACKET_VULKAN_API_CALL)
+				{
+					output_call = output_writer->current.call;
+				}
+			}
 			switchboard_packet(instrtype, t);
+			if (write_output && instrtype == PACKET_VULKAN_API_CALL && output_writer->current.call != output_call + 1)
+			{
+				ABORT("Output mode does not yet support API call %s on thread %u call %u", get_function_name(t.current.call_id), (unsigned)t.thread_index(), (unsigned)t.current.call);
+			}
 			t.self_test();
 		}
 	}
@@ -362,8 +420,10 @@ int main(int argc, char **argv)
 		printf("SKIP: input trace file does not exist or is not readable: %s\n", filename_input.c_str());
 		return 77;
 	}
-
-	if (!filename_output.empty()) DIE("Output file support still to be done!");
+	if (!filename_output.empty() && (end != -1 || report_unused))
+	{
+		DIE("Output mode currently only supports no-op rewriting; frame selection and unused-feature removal are not supported");
+	}
 
 	if (p__sandbox_level >= 3) sandbox_level_two();
 
@@ -418,7 +478,7 @@ int main(int argc, char **argv)
 		replayer.finalize();
 	}
 
-	if (!filename_output.empty() || validate) // run second round to write out or test all changes
+	if (validate) // run second round to validate all changes
 	{
 		lava_reader replayer;
 		replayer.pass = 1; // second pass
@@ -469,6 +529,41 @@ int main(int argc, char **argv)
 		}
 
 		if (dump_host_write_stats) dump_host_write_stats_report("pass2");
+		reset_for_tools();
+		replayer.finalize();
+	}
+
+	if (!filename_output.empty())
+	{
+		lava_reader replayer;
+		replayer.pass = 1;
+		replayer.run = false;
+		replayer.validate = true;
+		replayer.init(filename_input);
+		replayer.set_frames(start, end);
+
+		lava_writer& writer = lava_writer::instance();
+		writer.run = false;
+		writer.set_output(filename_output);
+		writer.prepare_threads(replayer.threads.size());
+		bootstrap_write_side_state(filename_input);
+		add_callbacks_for_output();
+		write_output = true;
+
+		for (unsigned i = 0; i < replayer.threads.size(); i++)
+		{
+			replayer.threads[i] = std::thread(&replay_thread, &replayer, i);
+		}
+		for (unsigned i = 0; i < replayer.threads.size(); i++)
+		{
+			replayer.threads[i].join();
+		}
+
+		write_output = false;
+		writer.serialize();
+		writer.finish();
+		writer.run = true;
+		clear_callbacks();
 		reset_for_tools();
 		replayer.finalize();
 	}

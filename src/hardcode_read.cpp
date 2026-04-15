@@ -3489,8 +3489,14 @@ void retrace_vkEnumerateInstanceLayerProperties(lava_file_reader& reader)
 	// Post
 	callback_context cb_context{ reader };
 	cb_context.result.vkresult = retval;
-	uint32_t* pPropertyCount_ptr = (do_call == 1 && reader.run) ? &pPropertyCount : nullptr;
-	for (auto* c : vkEnumerateInstanceLayerProperties_callbacks) c(cb_context, pPropertyCount_ptr, pProperties.data());
+	VkLayerProperties tool_property = {};
+	uint32_t* pPropertyCount_ptr = (do_call == 1) ? &pPropertyCount : nullptr;
+	VkLayerProperties* pProperties_ptr = nullptr;
+	if (do_call == 1)
+	{
+		pProperties_ptr = reader.run ? pProperties.data() : &tool_property;
+	}
+	for (auto* c : vkEnumerateInstanceLayerProperties_callbacks) c(cb_context, pPropertyCount_ptr, pProperties_ptr);
 }
 
 void retrace_vkEnumerateInstanceExtensionProperties(lava_file_reader& reader)
@@ -3518,8 +3524,14 @@ void retrace_vkEnumerateInstanceExtensionProperties(lava_file_reader& reader)
 	// Post
 	callback_context cb_context{ reader };
 	cb_context.result.vkresult = retval;
-	uint32_t* pPropertyCount_ptr = (do_call == 1 && reader.run) ? &pPropertyCount : nullptr;
-	for (auto* c : vkEnumerateInstanceExtensionProperties_callbacks) c(cb_context, pLayerName, pPropertyCount_ptr, pProperties.data());
+	VkExtensionProperties tool_property = {};
+	uint32_t* pPropertyCount_ptr = (do_call == 1) ? &pPropertyCount : nullptr;
+	VkExtensionProperties* pProperties_ptr = nullptr;
+	if (do_call == 1)
+	{
+		pProperties_ptr = reader.run ? pProperties.data() : &tool_property;
+	}
+	for (auto* c : vkEnumerateInstanceExtensionProperties_callbacks) c(cb_context, pLayerName, pPropertyCount_ptr, pProperties_ptr);
 }
 
 void retrace_vkEnumerateDeviceLayerProperties(lava_file_reader& reader)
@@ -3535,7 +3547,8 @@ void retrace_vkEnumerateDeviceLayerProperties(lava_file_reader& reader)
 	{
 		physicalDevice_index = reader.read_handle(DEBUGPARAM("VkPhysicalDevice"));
 	}
-	(void)physicalDevice_index;
+	if (!reader.run && initialized) physicalDevice = fake_handle<VkPhysicalDevice>(physicalDevice_index);
+	if (!reader.run && physicalDevice != VK_NULL_HANDLE) selected_physical_device = physicalDevice;
 	reader.physicalDevice = physicalDevice;
 
 	const uint8_t do_call = reader.read_uint8_t();
@@ -3555,8 +3568,14 @@ void retrace_vkEnumerateDeviceLayerProperties(lava_file_reader& reader)
 	// Post
 	callback_context cb_context{ reader };
 	cb_context.result.vkresult = retval;
-	uint32_t* pPropertyCount_ptr = (do_call == 1 && reader.run) ? &pPropertyCount : nullptr;
-	for (auto* c : vkEnumerateDeviceLayerProperties_callbacks) c(cb_context, physicalDevice, pPropertyCount_ptr, pProperties.data());
+	VkLayerProperties tool_property = {};
+	uint32_t* pPropertyCount_ptr = (do_call == 1) ? &pPropertyCount : nullptr;
+	VkLayerProperties* pProperties_ptr = nullptr;
+	if (do_call == 1)
+	{
+		pProperties_ptr = reader.run ? pProperties.data() : &tool_property;
+	}
+	for (auto* c : vkEnumerateDeviceLayerProperties_callbacks) c(cb_context, physicalDevice, pPropertyCount_ptr, pProperties_ptr);
 }
 
 void retrace_vkEnumerateDeviceExtensionProperties(lava_file_reader& reader)
@@ -3573,7 +3592,8 @@ void retrace_vkEnumerateDeviceExtensionProperties(lava_file_reader& reader)
 	{
 		physicalDevice_index = reader.read_handle(DEBUGPARAM("VkPhysicalDevice"));
 	}
-	(void)physicalDevice_index;
+	if (!reader.run && initialized) physicalDevice = fake_handle<VkPhysicalDevice>(physicalDevice_index);
+	if (!reader.run && physicalDevice != VK_NULL_HANDLE) selected_physical_device = physicalDevice;
 	reader.physicalDevice = physicalDevice;
 	pLayerName = reader.read_string();
 	const uint8_t do_call = reader.read_uint8_t();
@@ -3593,8 +3613,14 @@ void retrace_vkEnumerateDeviceExtensionProperties(lava_file_reader& reader)
 	// Post
 	callback_context cb_context{ reader };
 	cb_context.result.vkresult = retval;
-	uint32_t* pPropertyCount_ptr = (do_call == 1 && reader.run) ? &pPropertyCount : nullptr;
-	for (auto* c : vkEnumerateDeviceExtensionProperties_callbacks) c(cb_context, physicalDevice, pLayerName, pPropertyCount_ptr, pProperties.data());
+	VkExtensionProperties tool_property = {};
+	uint32_t* pPropertyCount_ptr = (do_call == 1) ? &pPropertyCount : nullptr;
+	VkExtensionProperties* pProperties_ptr = nullptr;
+	if (do_call == 1)
+	{
+		pProperties_ptr = reader.run ? pProperties.data() : &tool_property;
+	}
+	for (auto* c : vkEnumerateDeviceExtensionProperties_callbacks) c(cb_context, physicalDevice, pLayerName, pPropertyCount_ptr, pProperties_ptr);
 }
 
 void retrace_vkGetPhysicalDeviceXlibPresentationSupportKHR(lava_file_reader& reader)

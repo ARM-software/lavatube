@@ -4,15 +4,138 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <sys/sendfile.h>
+#include <sys/stat.h>
+#include <algorithm>
 #include <vector>
 #include <map>
+#include <set>
+#include <string>
 #include "util.h"
 #include "packfile.h"
+
+struct packed_compare_result
+{
+	bool equal = true;
+	uint64_t size_a = 0;
+	uint64_t size_b = 0;
+	uint64_t first_difference = UINT64_MAX;
+};
+
+static packed_compare_result compare_packed_file(const std::string& pack_a, const std::string& pack_b, const std::string& inside)
+{
+	packed_compare_result result;
+	packed a = packed_open(inside, pack_a);
+	packed b = packed_open(inside, pack_b);
+	result.size_a = a.size();
+	result.size_b = b.size();
+	if (result.size_a != result.size_b)
+	{
+		result.equal = false;
+		a.close();
+		b.close();
+		return result;
+	}
+
+	const uint32_t chunk_size = 1024 * 1024;
+	std::vector<char> buffer_a(chunk_size);
+	std::vector<char> buffer_b(chunk_size);
+	uint64_t offset = 0;
+	while (offset < result.size_a)
+	{
+		const uint32_t current = std::min<uint64_t>(chunk_size, result.size_a - offset);
+		a.read(buffer_a.data(), current);
+		b.read(buffer_b.data(), current);
+		if (memcmp(buffer_a.data(), buffer_b.data(), current) != 0)
+		{
+			result.equal = false;
+			for (uint32_t i = 0; i < current; i++)
+			{
+				if (buffer_a[i] != buffer_b[i])
+				{
+					result.first_difference = offset + i;
+					break;
+				}
+			}
+			break;
+		}
+		offset += current;
+	}
+
+	a.close();
+	b.close();
+	return result;
+}
+
+static packed_compare_result compare_regular_file(const std::string& path_a, const std::string& path_b)
+{
+	packed_compare_result result;
+	struct stat stat_a;
+	struct stat stat_b;
+	int fd_a = open(path_a.c_str(), O_RDONLY | O_NOATIME);
+	if (fd_a == -1) FAIL("Cannot open \"%s\": %s", path_a.c_str(), strerror(errno));
+	int fd_b = open(path_b.c_str(), O_RDONLY | O_NOATIME);
+	if (fd_b == -1) FAIL("Cannot open \"%s\": %s", path_b.c_str(), strerror(errno));
+	if (fstat(fd_a, &stat_a) == -1) FAIL("Cannot stat \"%s\": %s", path_a.c_str(), strerror(errno));
+	if (fstat(fd_b, &stat_b) == -1) FAIL("Cannot stat \"%s\": %s", path_b.c_str(), strerror(errno));
+	result.size_a = stat_a.st_size;
+	result.size_b = stat_b.st_size;
+	if (result.size_a != result.size_b)
+	{
+		result.equal = false;
+		close(fd_a);
+		close(fd_b);
+		return result;
+	}
+
+	const uint32_t chunk_size = 1024 * 1024;
+	std::vector<char> buffer_a(chunk_size);
+	std::vector<char> buffer_b(chunk_size);
+	uint64_t offset = 0;
+	while (offset < result.size_a)
+	{
+		const uint32_t current = std::min<uint64_t>(chunk_size, result.size_a - offset);
+		size_t read_a = 0;
+		size_t read_b = 0;
+		while (read_a < current)
+		{
+			const ssize_t res = read(fd_a, buffer_a.data() + read_a, current - read_a);
+			if (res == -1 && errno == EINTR) continue;
+			if (res <= 0) FAIL("Failed to read \"%s\": %s", path_a.c_str(), strerror(errno));
+			read_a += res;
+		}
+		while (read_b < current)
+		{
+			const ssize_t res = read(fd_b, buffer_b.data() + read_b, current - read_b);
+			if (res == -1 && errno == EINTR) continue;
+			if (res <= 0) FAIL("Failed to read \"%s\": %s", path_b.c_str(), strerror(errno));
+			read_b += res;
+		}
+		if (memcmp(buffer_a.data(), buffer_b.data(), current) != 0)
+		{
+			result.equal = false;
+			for (uint32_t i = 0; i < current; i++)
+			{
+				if (buffer_a[i] != buffer_b[i])
+				{
+					result.first_difference = offset + i;
+					break;
+				}
+			}
+			break;
+		}
+		offset += current;
+	}
+
+	close(fd_a);
+	close(fd_b);
+	return result;
+}
 
 int main(int argc, char* argv[])
 {
 	if (argc < 3 || (argc < 4 && strcmp(argv[1], "list") != 0 && strcmp(argv[1], "check") != 0)
-	    || (argc > 3 && (strcmp(argv[1], "list") == 0 || strcmp(argv[1], "check") == 0)))
+	    || (argc > 4 && strcmp(argv[1], "diff") == 0)
+	    || (argc > 3 && strcmp(argv[1], "diff") != 0 && (strcmp(argv[1], "list") == 0 || strcmp(argv[1], "check") == 0)))
 	{
 		fprintf(stdout, "Usage:\n");
 		fprintf(stdout, "\t%s pack <output file> <input directory>\n", argv[0]);
@@ -22,7 +145,83 @@ int main(int argc, char* argv[])
 		fprintf(stdout, "\t%s list <input packaged file>\n", argv[0]);
 		fprintf(stdout, "\t%s print <target file> <input packaged file>\n", argv[0]); // pretty print a JSON
 		fprintf(stdout, "\t%s check <input packaged file>\n", argv[0]); // sanitycheck contents
+		fprintf(stdout, "\t%s diff <input packaged file A> <input packaged file B>\n", argv[0]);
 		return 0;
+	}
+	else if (strcmp(argv[1], "diff") == 0)
+	{
+		std::vector<std::string> files_a = packed_files(argv[2]);
+		std::vector<std::string> files_b = packed_files(argv[3]);
+		std::set<std::string> set_a(files_a.begin(), files_a.end());
+		std::set<std::string> set_b(files_b.begin(), files_b.end());
+		bool different = false;
+		unsigned identical_files = 0;
+		unsigned differing_files = 0;
+
+		for (const std::string& name : set_a)
+		{
+			if (set_b.count(name) == 0)
+			{
+				printf("Only in %s: %s\n", argv[2], name.c_str());
+				different = true;
+			}
+		}
+		for (const std::string& name : set_b)
+		{
+			if (set_a.count(name) == 0)
+			{
+				printf("Only in %s: %s\n", argv[3], name.c_str());
+				different = true;
+			}
+		}
+
+		for (const std::string& name : set_a)
+		{
+			if (set_b.count(name) == 0) continue;
+			packed_compare_result result = compare_packed_file(argv[2], argv[3], name);
+			if (result.equal)
+			{
+				identical_files++;
+				continue;
+			}
+
+			different = true;
+			differing_files++;
+			if (result.size_a != result.size_b)
+			{
+				printf("Different: %s size %lu vs %lu\n", name.c_str(), (unsigned long)result.size_a, (unsigned long)result.size_b);
+			}
+			else
+			{
+				printf("Different: %s first differing byte at offset %lu (size %lu)\n",
+					name.c_str(), (unsigned long)result.first_difference, (unsigned long)result.size_a);
+			}
+		}
+
+		if (!different)
+		{
+			packed_compare_result raw = compare_regular_file(argv[2], argv[3]);
+			if (raw.equal)
+			{
+				printf("Identical: %s and %s (%u files)\n", argv[2], argv[3], identical_files);
+				return 0;
+			}
+
+			if (raw.size_a != raw.size_b)
+			{
+				printf("Contained files identical, but packaged file size differs: %lu vs %lu\n",
+					(unsigned long)raw.size_a, (unsigned long)raw.size_b);
+			}
+			else
+			{
+				printf("Contained files identical, but packaged file bytes differ at offset %lu (size %lu)\n",
+					(unsigned long)raw.first_difference, (unsigned long)raw.size_a);
+			}
+			return 1;
+		}
+
+		printf("Summary: %u identical, %u different\n", identical_files, differing_files);
+		return 1;
 	}
 	else if (strcmp(argv[1], "check") == 0)
 	{

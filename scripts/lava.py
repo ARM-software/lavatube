@@ -78,6 +78,8 @@ out(targets_read, '#include "window.h"')
 out(targets_read, '#include "suballocator.h"')
 out(targets_read, '#include "postprocess.h"')
 out(targets_read, '#include "memory.h"')
+out(targets_read, '#include "write_auto.h"')
+out(targets_read, '#include "replay_trace_adapter.h"')
 out([uh,wrh], '#include <unordered_map>')
 out([uh,wrh], '#include "external/tracetooltests/src/usagetracker/vulkan_feature_detect.h"')
 out([r], '#include "read_auto.h"')
@@ -573,6 +575,18 @@ for f in spec.functions:
 	if f in spec.protected_funcs:
 		out(targets_read, '#ifdef %s' % (spec.protected_funcs[f]))
 	out(targets_read, '\t%s_callbacks.clear();' % f)
+	if f in spec.protected_funcs:
+		out(targets_read, '#endif')
+out(targets_read, '}')
+
+out(targets_read)
+out(targets_read_headers, 'void add_callbacks_for_output();')
+out(targets_read, 'void add_callbacks_for_output()')
+out(targets_read, '{')
+for f in spec.functions:
+	if f in spec.protected_funcs:
+		out(targets_read, '#ifdef %s' % (spec.protected_funcs[f]))
+	out(targets_read, '\t%s_callbacks.push_back(replay_trace_callback<trace_%s>::call);' % (f, f))
 	if f in spec.protected_funcs:
 		out(targets_read, '#endif')
 out(targets_read, '}')

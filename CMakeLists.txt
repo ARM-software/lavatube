@@ -508,6 +508,12 @@ target_include_directories(lava-tool ${COMMON_INCLUDE})
 target_link_libraries(lava-tool ${COMMON_LIBRARIES} lavatube)
 target_compile_options(lava-tool PRIVATE ${COMMON_FLAGS})
 add_dependencies(lava-tool sync_generated)
+add_test(NAME trace_test_tracing1_tool_rewrite
+	COMMAND ${CMAKE_COMMAND}
+		-DLAVA_TOOL=${CMAKE_CURRENT_BINARY_DIR}/lava-tool
+		-DINPUT_TRACE=${CMAKE_CURRENT_BINARY_DIR}/tracing_1_1.vk
+		-DOUTPUT_TRACE=/tmp/tracing_1_1_tool_rewrite.vk
+		-P ${PROJECT_SOURCE_DIR}/tests/lava_tool_rewrite.cmake)
 add_test(NAME validate_vulkan_demo COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-tool -V ${PROJECT_SOURCE_DIR}/traces/demo_computeraytracing.vk)
 add_test(NAME validate_vulkan_demo2 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-tool -V -f 10 20 ${PROJECT_SOURCE_DIR}/traces/demo_computeraytracing.vk)
 add_test(NAME validate_samples COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-tool -V -f 5 9 ${PROJECT_SOURCE_DIR}/traces/sample_hello_triangle.vk)
