@@ -2176,18 +2176,6 @@ static void trace_post_vkCreateInstance(lava_file_writer& writer, VkResult resul
 	writer.pool.reset();
 }
 
-static inline lava_file_writer& write_header(const char* funcname, lava_function_id id, bool thread_barrier = false)
-{
-	lava_writer& instance = lava_writer::instance();
-	lava_file_writer& writer = instance.file_writer();
-	if (thread_barrier) { frame_mutex.lock(); writer.inject_thread_barrier(); frame_mutex.unlock(); }
-	writer.write_api_command(id);
-	writer.current.call_id = id;
-	writer.current.frame = instance.global_frame;
-	DLOG("[t%02u %06u] Seq %s%s", writer.current.thread, writer.current.call, funcname, thread_barrier ? " (prefaced by thread barrier)" : "");
-	return writer;
-}
-
 static VkResult common_vkGetPhysicalDeviceToolProperties(lava_file_writer& writer, VkPhysicalDevice physicalDevice, uint32_t* pToolCount, VkPhysicalDeviceToolPropertiesEXT* pToolProperties)
 {
 	// -- Declarations --

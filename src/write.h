@@ -249,3 +249,15 @@ inline void lava_file_writer::write_api_command(uint16_t id)
 	write_uint32_t(0); // reserved for future use
 	current.call++;
 }
+
+inline lava_file_writer& write_header(const char* funcname, lava_function_id id, bool thread_barrier = false)
+{
+	lava_writer& instance = lava_writer::instance();
+	lava_file_writer& writer = instance.file_writer();
+	if (thread_barrier) { frame_mutex.lock(); writer.inject_thread_barrier(); frame_mutex.unlock(); }
+	writer.write_api_command(id);
+	writer.current.call_id = id;
+	writer.current.frame = instance.global_frame;
+	DLOG("[t%02u %06u] Seq %s%s", writer.current.thread, writer.current.call, funcname, thread_barrier ? " (prefaced by thread barrier)" : "");
+	return writer;
+}
