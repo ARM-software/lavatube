@@ -3197,33 +3197,40 @@ void retrace_vkGetSwapchainImagesKHR(lava_file_reader& reader)
 	data.initialized = true; // in case this function is called more than once
 }
 
-static void common_vkCreateSurfaceKHR(lava_file_reader& reader, uint32_t stored_sType, const char* name)
+static surface_create_packet decode_vkCreateSurfaceKHR_packet(lava_file_reader& reader, uint32_t expected_sType)
 {
-	VkInstance instance = index_to_VkInstance.at(reader.read_handle(DEBUGPARAM("VkInstance")));
-	const uint32_t sType = reader.read_uint32_t();
-	assert(sType == stored_sType);
+	surface_create_packet packet;
+	packet.instance = index_to_VkInstance.at(reader.read_handle(DEBUGPARAM("VkInstance")));
+	packet.stored_sType = reader.read_uint32_t();
+	assert(packet.stored_sType == expected_sType);
+	read_extension(reader, (VkBaseOutStructure**)&packet.pNext);
+	packet.flags = reader.read_uint32_t();
+	packet.x = reader.read_int32_t();
+	packet.y = reader.read_int32_t();
+	packet.width = reader.read_int32_t();
+	packet.height = reader.read_int32_t();
+	packet.border = reader.read_int32_t();
+	packet.depth = reader.read_int32_t();
+	packet.retval = static_cast<VkResult>(reader.read_uint32_t());
+	packet.surface_index = reader.read_handle(DEBUGPARAM("VkSurfaceKHR"));
+	return packet;
+}
 
-	VkBaseOutStructure* pNext = nullptr;
-	read_extension(reader, (VkBaseOutStructure**)&pNext);
-
-	const uint32_t flags = reader.read_uint32_t();
-	int32_t x = reader.read_int32_t();
-	int32_t y = reader.read_int32_t();
-	int32_t width = reader.read_int32_t();
-	int32_t height = reader.read_int32_t();
-	if (stored_sType == VK_STRUCTURE_TYPE_HEADLESS_SURFACE_CREATE_INFO_EXT && VkSwapchainKHR_index.size() > 0)
+static void replay_vkCreateSurfaceKHR_packet(lava_file_reader& reader, const surface_create_packet& packet, const char* name)
+{
+	int32_t x = packet.x;
+	int32_t y = packet.y;
+	int32_t width = packet.width;
+	int32_t height = packet.height;
+	if (packet.stored_sType == VK_STRUCTURE_TYPE_HEADLESS_SURFACE_CREATE_INFO_EXT && VkSwapchainKHR_index.size() > 0)
 	{
 		// Ugly hack for older trace file version. We now store json window info in the surface object instead.
 		trackedswapchain_replay& t = VkSwapchainKHR_index.at(0);
 		width = t.info.imageExtent.width;
 		height = t.info.imageExtent.height;
 	}
-	(void)reader.read_int32_t(); // depth
-	(void)reader.read_int32_t(); // border
-	const uint32_t retval = reader.read_uint32_t();
-	const uint32_t surface_index = reader.read_handle(DEBUGPARAM("VkSurfaceKHR"));
-	if (retval != VK_SUCCESS) return; // there was no window created, skip it
-	auto& data = VkSurfaceKHR_index.at(surface_index);
+	if (packet.retval != VK_SUCCESS) return; // there was no window created, skip it
+	auto& data = VkSurfaceKHR_index.at(packet.surface_index);
 	data.creation = reader.current;
 	data.last_modified = reader.current;
 	data.enter_created();
@@ -3243,50 +3250,66 @@ static void common_vkCreateSurfaceKHR(lava_file_reader& reader, uint32_t stored_
 	// Now finally create the window
 	DLOG("window originally from %s created with width=%d height=%d", name, width, height);
 	VkSurfaceKHR pSurface = VK_NULL_HANDLE;
-	if (!is_noscreen() && reader.run) pSurface = window_create(instance, surface_index, x, y, width, height);
-	else pSurface = fake_handle<VkSurfaceKHR>(surface_index);
-	if (pSurface) index_to_VkSurfaceKHR.set(surface_index, pSurface);
+	if (!is_noscreen() && reader.run) pSurface = window_create(packet.instance, packet.surface_index, x, y, width, height);
+	else pSurface = fake_handle<VkSurfaceKHR>(packet.surface_index);
+	if (pSurface) index_to_VkSurfaceKHR.set(packet.surface_index, pSurface);
 	// TBD we should create some window-common callback a user can attach to and trigger here
 }
 
 void retrace_vkCreateAndroidSurfaceKHR(lava_file_reader& reader)
 {
-	common_vkCreateSurfaceKHR(reader, VK_STRUCTURE_TYPE_ANDROID_SURFACE_CREATE_INFO_KHR, "vkCreateAndroidSurfaceKHR");
+	const surface_create_packet packet = decode_vkCreateSurfaceKHR_packet(reader, VK_STRUCTURE_TYPE_ANDROID_SURFACE_CREATE_INFO_KHR);
+	replay_vkCreateSurfaceKHR_packet(reader, packet, "vkCreateAndroidSurfaceKHR");
+	if (reader.write_output) tool_write_vkCreateSurfaceKHR_packet(packet, "vkCreateAndroidSurfaceKHR", VKCREATEANDROIDSURFACEKHR);
 }
 
 void retrace_vkCreateXcbSurfaceKHR(lava_file_reader& reader)
 {
-	common_vkCreateSurfaceKHR(reader, VK_STRUCTURE_TYPE_XCB_SURFACE_CREATE_INFO_KHR, "vkCreateXcbSurfaceKHR");
+	const surface_create_packet packet = decode_vkCreateSurfaceKHR_packet(reader, VK_STRUCTURE_TYPE_XCB_SURFACE_CREATE_INFO_KHR);
+	replay_vkCreateSurfaceKHR_packet(reader, packet, "vkCreateXcbSurfaceKHR");
+	if (reader.write_output) tool_write_vkCreateSurfaceKHR_packet(packet, "vkCreateXcbSurfaceKHR", VKCREATEXCBSURFACEKHR);
 }
 
 void retrace_vkCreateXlibSurfaceKHR(lava_file_reader& reader)
 {
-	common_vkCreateSurfaceKHR(reader, VK_STRUCTURE_TYPE_XLIB_SURFACE_CREATE_INFO_KHR, "vkCreateXlibSurfaceKHR");
+	const surface_create_packet packet = decode_vkCreateSurfaceKHR_packet(reader, VK_STRUCTURE_TYPE_XLIB_SURFACE_CREATE_INFO_KHR);
+	replay_vkCreateSurfaceKHR_packet(reader, packet, "vkCreateXlibSurfaceKHR");
+	if (reader.write_output) tool_write_vkCreateSurfaceKHR_packet(packet, "vkCreateXlibSurfaceKHR", VKCREATEXLIBSURFACEKHR);
 }
 
 void retrace_vkCreateWaylandSurfaceKHR(lava_file_reader& reader)
 {
-	common_vkCreateSurfaceKHR(reader, VK_STRUCTURE_TYPE_WAYLAND_SURFACE_CREATE_INFO_KHR, "vkCreateWaylandSurfaceKHR");
+	const surface_create_packet packet = decode_vkCreateSurfaceKHR_packet(reader, VK_STRUCTURE_TYPE_WAYLAND_SURFACE_CREATE_INFO_KHR);
+	replay_vkCreateSurfaceKHR_packet(reader, packet, "vkCreateWaylandSurfaceKHR");
+	if (reader.write_output) tool_write_vkCreateSurfaceKHR_packet(packet, "vkCreateWaylandSurfaceKHR", VKCREATEWAYLANDSURFACEKHR);
 }
 
 void retrace_vkCreateHeadlessSurfaceEXT(lava_file_reader& reader)
 {
-	common_vkCreateSurfaceKHR(reader, VK_STRUCTURE_TYPE_HEADLESS_SURFACE_CREATE_INFO_EXT, "vkCreateHeadlessSurfaceEXT");
+	const surface_create_packet packet = decode_vkCreateSurfaceKHR_packet(reader, VK_STRUCTURE_TYPE_HEADLESS_SURFACE_CREATE_INFO_EXT);
+	replay_vkCreateSurfaceKHR_packet(reader, packet, "vkCreateHeadlessSurfaceEXT");
+	if (reader.write_output) tool_write_vkCreateSurfaceKHR_packet(packet, "vkCreateHeadlessSurfaceEXT", VKCREATEHEADLESSSURFACEEXT);
 }
 
 void retrace_vkCreateWin32SurfaceKHR(lava_file_reader& reader)
 {
-	common_vkCreateSurfaceKHR(reader, VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR, "vkCreateWin32SurfaceKHR");
+	const surface_create_packet packet = decode_vkCreateSurfaceKHR_packet(reader, VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR);
+	replay_vkCreateSurfaceKHR_packet(reader, packet, "vkCreateWin32SurfaceKHR");
+	if (reader.write_output) tool_write_vkCreateSurfaceKHR_packet(packet, "vkCreateWin32SurfaceKHR", VKCREATEWIN32SURFACEKHR);
 }
 
 void retrace_vkCreateDirectFBSurfaceEXT(lava_file_reader& reader)
 {
-	common_vkCreateSurfaceKHR(reader, VK_STRUCTURE_TYPE_DIRECTFB_SURFACE_CREATE_INFO_EXT, "vkCreateDirectFBSurfaceEXT");
+	const surface_create_packet packet = decode_vkCreateSurfaceKHR_packet(reader, VK_STRUCTURE_TYPE_DIRECTFB_SURFACE_CREATE_INFO_EXT);
+	replay_vkCreateSurfaceKHR_packet(reader, packet, "vkCreateDirectFBSurfaceEXT");
+	if (reader.write_output) tool_write_vkCreateSurfaceKHR_packet(packet, "vkCreateDirectFBSurfaceEXT", VKCREATEDIRECTFBSURFACEEXT);
 }
 
 void retrace_vkCreateMetalSurfaceEXT(lava_file_reader& reader)
 {
-	common_vkCreateSurfaceKHR(reader, VK_STRUCTURE_TYPE_METAL_SURFACE_CREATE_INFO_EXT, "vkCreateMetalSurfaceEXT");
+	const surface_create_packet packet = decode_vkCreateSurfaceKHR_packet(reader, VK_STRUCTURE_TYPE_METAL_SURFACE_CREATE_INFO_EXT);
+	replay_vkCreateSurfaceKHR_packet(reader, packet, "vkCreateMetalSurfaceEXT");
+	if (reader.write_output) tool_write_vkCreateSurfaceKHR_packet(packet, "vkCreateMetalSurfaceEXT", VKCREATEMETALSURFACEEXT);
 }
 
 void retrace_vkGetDeviceQueue2(lava_file_reader& reader)
@@ -3315,7 +3338,7 @@ void retrace_vkGetDeviceQueue2(lava_file_reader& reader)
 			info_real.queueIndex = 0; // map to first queue
 		}
 	}
-	else if (info_real.queueFamilyIndex >= device_VkQueueFamilyProperties.size())
+	else if (reader.run && info_real.queueFamilyIndex >= device_VkQueueFamilyProperties.size())
 	{
 		ILOG("Changing queue family %u to %u", info_real.queueFamilyIndex, selected_queue_family_index);
 		info_real.queueFamilyIndex = selected_queue_family_index;
@@ -3374,7 +3397,7 @@ void retrace_vkGetDeviceQueue(lava_file_reader& reader)
 			queueIndex = 0; // map to first queue
 		}
 	}
-	else if (queueFamilyIndex >= device_VkQueueFamilyProperties.size())
+	else if (reader.run && queueFamilyIndex >= device_VkQueueFamilyProperties.size())
 	{
 		ILOG("Changing queue family %u to %u", queueFamilyIndex, selected_queue_family_index);
 		queueFamilyIndex = selected_queue_family_index;
@@ -3626,10 +3649,49 @@ void retrace_vkEnumerateDeviceExtensionProperties(lava_file_reader& reader)
 void retrace_vkGetPhysicalDeviceXlibPresentationSupportKHR(lava_file_reader& reader)
 {
 	uint32_t physicaldevice_index = reader.read_handle(DEBUGPARAM("VkPhysicalDevice"));
+	VkPhysicalDevice physicalDevice = selected_physical_device;
+	if (!reader.run)
+	{
+		physicalDevice = fake_handle<VkPhysicalDevice>(physicaldevice_index);
+		selected_physical_device = physicalDevice;
+	}
+	reader.physicalDevice = physicalDevice;
 	uint32_t queueFamilyIndex = reader.read_uint32_t();
-	// this function is ignored on replay
-	(void)reader.read_uint32_t(); // also ignore result return value
+	if (queueFamilyIndex == LAVATUBE_VIRTUAL_QUEUE)
+	{
+		queueFamilyIndex = reader.run ? selected_queue_family_index : 0;
+	}
+	VkBool32 retval = static_cast<VkBool32>(reader.read_uint32_t());
+	callback_context cb_context{ reader };
+	cb_context.result.vkbool = retval;
+	for (auto* c : vkGetPhysicalDeviceXlibPresentationSupportKHR_callbacks) c(cb_context, physicalDevice, queueFamilyIndex, nullptr, 0);
 }
+
+#ifdef VK_USE_PLATFORM_XCB_KHR
+
+void retrace_vkGetPhysicalDeviceXcbPresentationSupportKHR(lava_file_reader& reader)
+{
+	uint32_t physicaldevice_index = reader.read_handle(DEBUGPARAM("VkPhysicalDevice"));
+	VkPhysicalDevice physicalDevice = selected_physical_device;
+	if (!reader.run)
+	{
+		physicalDevice = fake_handle<VkPhysicalDevice>(physicaldevice_index);
+		selected_physical_device = physicalDevice;
+	}
+	reader.physicalDevice = physicalDevice;
+	uint32_t queueFamilyIndex = reader.read_uint32_t();
+	if (queueFamilyIndex == LAVATUBE_VIRTUAL_QUEUE)
+	{
+		queueFamilyIndex = reader.run ? selected_queue_family_index : 0;
+	}
+	xcb_visualid_t visual_id = static_cast<xcb_visualid_t>(reader.read_uint32_t());
+	VkBool32 retval = static_cast<VkBool32>(reader.read_uint32_t());
+	callback_context cb_context{ reader };
+	cb_context.result.vkbool = retval;
+	for (auto* c : vkGetPhysicalDeviceXcbPresentationSupportKHR_callbacks) c(cb_context, physicalDevice, queueFamilyIndex, nullptr, visual_id);
+}
+
+#endif
 
 // --- read helpers : legacy code ---
 

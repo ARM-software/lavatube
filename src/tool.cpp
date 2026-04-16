@@ -538,6 +538,7 @@ int main(int argc, char **argv)
 		lava_reader replayer;
 		replayer.pass = 1;
 		replayer.run = false;
+		replayer.write_output = true;
 		replayer.validate = true;
 		replayer.init(filename_input);
 		replayer.set_frames(start, end);

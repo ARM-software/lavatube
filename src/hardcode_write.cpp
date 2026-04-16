@@ -1546,6 +1546,12 @@ static void setup_virtual_memory(VkPhysicalDevice physicalDevice) REQUIRES(frame
 static void trace_post_vkGetPhysicalDeviceMemoryProperties(lava_file_writer& writer, VkPhysicalDevice physicalDevice, VkPhysicalDeviceMemoryProperties* pMemoryProperties)
 {
 	frame_mutex.lock();
+	if (!writer.run && pMemoryProperties && virtual_memory_properties.memoryTypeCount == 0)
+	{
+		real_memory_properties = *pMemoryProperties;
+		virtual_memory_properties = *pMemoryProperties;
+		for (uint32_t i = 0; i < virtual_memory_properties.memoryTypeCount; i++) remap_memory_types_to_real[i] = i;
+	}
 	if (virtual_memory_properties.memoryTypeCount == 0) // called before vkCreateDevice
 	{
 		setup_virtual_memory(physicalDevice);
@@ -2831,6 +2837,31 @@ static void write_surface_data(lava_file_writer& writer, uint32_t flags, int32_t
 	writer.write_int32_t(depth);
 }
 
+void tool_write_vkCreateSurfaceKHR_packet(const surface_create_packet& packet, const char* name, lava_function_id id)
+{
+	lava_file_writer& writer = write_header(name, id);
+	writer.write_handle(writer.parent->records.VkInstance_index.at(packet.instance));
+	writer.write_uint32_t(packet.stored_sType);
+	write_extension(writer, packet.pNext);
+	write_surface_data(writer, packet.flags, packet.x, packet.y, packet.width, packet.height, packet.border, packet.depth);
+	writer.write_uint32_t(static_cast<uint32_t>(packet.retval));
+	if (packet.retval == VK_SUCCESS && packet.surface_index != CONTAINER_NULL_VALUE)
+	{
+		auto* surface_data = writer.parent->records.VkSurfaceKHR_index.add(fake_handle<VkSurfaceKHR>(packet.surface_index), writer.current);
+		surface_data->width = packet.width;
+		surface_data->height = packet.height;
+		surface_data->x = packet.x;
+		surface_data->y = packet.y;
+		surface_data->enter_created();
+		writer.write_handle(surface_data);
+	}
+	else
+	{
+		writer.write_handle(nullptr);
+	}
+	writer.thaw();
+}
+
 VKAPI_ATTR VkResult VKAPI_CALL trace_vkCreateHeadlessSurfaceEXT(VkInstance instance, const VkHeadlessSurfaceCreateInfoEXT* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkSurfaceKHR* pSurface)
 {
 	lava_file_writer& writer = write_header("vkCreateHeadlessSurfaceEXT", VKCREATEHEADLESSSURFACEEXT);
@@ -3440,10 +3471,33 @@ VKAPI_ATTR VkBool32 VKAPI_CALL trace_vkGetPhysicalDeviceXlibPresentationSupportK
 {
 	lava_file_writer& writer = write_header("vkGetPhysicalDeviceXlibPresentationSupportKHR", VKGETPHYSICALDEVICEXLIBPRESENTATIONSUPPORTKHR);
 	trackedphysicaldevice* physicaldevice_data = writer.parent->records.VkPhysicalDevice_index.at(physicalDevice);
-	const bool virtual_family = (physicaldevice_data->queueFamilyProperties.at(queueFamilyIndex).queueFlags & VK_QUEUE_GRAPHICS_BIT) && p__virtualqueues;
+	const bool virtual_family = physicaldevice_data && queueFamilyIndex < physicaldevice_data->queueFamilyProperties.size()
+		&& (physicaldevice_data->queueFamilyProperties.at(queueFamilyIndex).queueFlags & VK_QUEUE_GRAPHICS_BIT) && p__virtualqueues;
 	writer.write_handle(physicaldevice_data);
+	writer.physicalDevice = physicalDevice;
 	writer.write_uint32_t(virtual_family ? LAVATUBE_VIRTUAL_QUEUE : queueFamilyIndex);
-	VkBool32 retval = wrap_vkGetPhysicalDeviceXlibPresentationSupportKHR(physicalDevice, queueFamilyIndex, dpy, visualID);
+	VkBool32 retval = writer.run ? wrap_vkGetPhysicalDeviceXlibPresentationSupportKHR(physicalDevice, queueFamilyIndex, dpy, visualID) : writer.use_result.uint_32;
+	writer.write_uint32_t(retval);
+	writer.thaw();
+	return retval;
+}
+
+#endif
+
+#ifdef VK_USE_PLATFORM_XCB_KHR
+
+VKAPI_ATTR VkBool32 VKAPI_CALL trace_vkGetPhysicalDeviceXcbPresentationSupportKHR(VkPhysicalDevice physicalDevice, uint32_t queueFamilyIndex, xcb_connection_t* connection, xcb_visualid_t visualID)
+{
+	lava_file_writer& writer = write_header("vkGetPhysicalDeviceXcbPresentationSupportKHR", VKGETPHYSICALDEVICEXCBPRESENTATIONSUPPORTKHR);
+	trackedphysicaldevice* physicaldevice_data = writer.parent->records.VkPhysicalDevice_index.at(physicalDevice);
+	const bool virtual_family = physicaldevice_data && queueFamilyIndex < physicaldevice_data->queueFamilyProperties.size()
+		&& (physicaldevice_data->queueFamilyProperties.at(queueFamilyIndex).queueFlags & VK_QUEUE_GRAPHICS_BIT) && p__virtualqueues;
+	writer.write_handle(physicaldevice_data);
+	writer.physicalDevice = physicalDevice;
+	writer.write_uint32_t(virtual_family ? LAVATUBE_VIRTUAL_QUEUE : queueFamilyIndex);
+	writer.write_uint32_t(visualID);
+	(void)connection;
+	VkBool32 retval = writer.run ? wrap_vkGetPhysicalDeviceXcbPresentationSupportKHR(physicalDevice, queueFamilyIndex, connection, visualID) : writer.use_result.uint_32;
 	writer.write_uint32_t(retval);
 	writer.thaw();
 	return retval;

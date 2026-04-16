@@ -107,6 +107,10 @@ public:
 	/// Duplicated into the file reader.
 	bool run = true;
 
+	/// Whether this replay pass should emit a rewritten output trace.
+	/// Duplicated into the file reader.
+	bool write_output = false;
+
 	/// Whether we should abort on less serious errors or just warn
 	bool validate = false;
 
@@ -238,6 +242,7 @@ public:
 
 	/// Whether we should actually call into Vulkan or if we are just processing the data
 	bool run = true;
+	bool write_output = false;
 
 	// Replay-only: per-thread queue for AS build sizes and internal AS buffers.
 	std::deque<VkAccelerationStructureBuildSizesInfoKHR> pending_as_build_sizes;
@@ -255,6 +260,7 @@ public:
 	{
 		assert(parent);
 		assert(run == parent->run);
+		assert(write_output == parent->write_output);
 		assert(global_frames >= local_frames);
 		file_reader::self_test();
 	}

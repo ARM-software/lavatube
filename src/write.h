@@ -45,6 +45,22 @@ union result_value
 	PFN_vkVoidFunction function;
 };
 
+struct surface_create_packet
+{
+	VkInstance instance = VK_NULL_HANDLE;
+	uint32_t stored_sType = 0;
+	VkBaseOutStructure* pNext = nullptr;
+	uint32_t flags = 0;
+	int32_t x = 0;
+	int32_t y = 0;
+	int32_t width = 0;
+	int32_t height = 0;
+	int32_t border = 0;
+	int32_t depth = 0;
+	VkResult retval = VK_SUCCESS;
+	uint32_t surface_index = CONTAINER_NULL_VALUE;
+};
+
 struct trace_capabilities
 {
 	void reset()
@@ -211,6 +227,8 @@ private:
 	Json::Value mJson GUARDED_BY(frame_mutex);
 	bool should_serialize = false;
 };
+
+void tool_write_vkCreateSurfaceKHR_packet(const surface_create_packet& packet, const char* name, lava_function_id id);
 
 inline void lava_file_writer::write_api_command(uint16_t id)
 {

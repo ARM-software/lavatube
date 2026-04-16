@@ -20,6 +20,7 @@ lava_file_reader::lava_file_reader(lava_reader* _parent, const std::string& path
 {
 	parent = _parent;
 	run = parent->run;
+	write_output = parent->write_output;
 	global_frames = frames;
 	current.thread = mytid;
 	current.call = 0;

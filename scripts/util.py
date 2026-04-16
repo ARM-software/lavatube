@@ -313,7 +313,9 @@ class parameter(spec.base_parameter):
 			z.decl('uint64_t', 'objectHandle')
 			z.do('%s = reader.read_handle(DEBUGPARAM("%s"));' % (varname, self.type))
 		elif self.type in ['wl_display', 'wl_surface']:
-			z.do('(void)reader.read_uint64_t();') # ignore it, if we actually replay on wayland, we'll have to regenerate it
+			if is_root:
+				z.decl('%s%s%s' % (self.mod, self.type, self.param_ptrstr), self.name)
+			z.do('%s = reinterpret_cast<%s%s*>((uintptr_t)reader.read_uint64_t());' % (varname, self.mod, self.type))
 		elif self.name == 'ppMaxPrimitiveCounts':
 			assert(self.funcname == 'vkCmdBuildAccelerationStructuresIndirectKHR')
 			z.decl(self.type + '**', self.name)
@@ -350,7 +352,10 @@ class parameter(spec.base_parameter):
 		elif self.name == 'queueFamilyIndex':
 			z.decl('uint32_t', self.name)
 			z.do('%s = reader.read_uint32_t();' % self.name)
-			z.do('if (%s == LAVATUBE_VIRTUAL_QUEUE) %s = selected_queue_family_index;' % (self.name, self.name))
+			z.do('if (%s == LAVATUBE_VIRTUAL_QUEUE)' % (self.name))
+			z.brace_begin()
+			z.do('%s = reader.run ? selected_queue_family_index : 0;' % (self.name))
+			z.brace_end()
 			if not is_root: z.do('%s = %s;' % (varname, self.name))
 		elif self.name == 'dataSize' and self.funcname in ['vkGetRayTracingShaderGroupHandlesKHR', 'vkGetRayTracingCaptureReplayShaderGroupHandlesKHR']:
 			storedtype = spec.type_mappings[self.type]
@@ -464,7 +469,10 @@ class parameter(spec.base_parameter):
 				z.decl('uint32_t', tmpname)
 				z.decl(self.type + '*', self.name)
 				z.do('%s = reader.read_handle(DEBUGPARAM("%s"));' % (tmpname, self.type))
-				z.do('*%s = index_to_%s.at(%s);' % (varname, self.type, tmpname))
+				if self.type == 'VkDeviceMemory':
+					z.do('*%s = reader.run ? VK_NULL_HANDLE : fake_handle<VkDeviceMemory>(%s);' % (varname, tmpname))
+				else:
+					z.do('*%s = index_to_%s.at(%s);' % (varname, self.type, tmpname))
 			else:
 				if not isptr(varname):
 					z.decl(self.type, self.name)
@@ -479,6 +487,8 @@ class parameter(spec.base_parameter):
 					z.do('selected_physical_device = %s;' % varname)
 					z.brace_end()
 					z.do('else %s = selected_physical_device;' % varname)
+				elif self.type == 'VkDeviceMemory':
+					z.do('%s = reader.run ? VK_NULL_HANDLE : fake_handle<VkDeviceMemory>(%s);' % (varname, tmpname))
 				elif self.type != 'VkDeviceMemory' and (not self.funcname in vk.ignore_on_read or self.type == 'VkDevice'):
 					z.do('%s = index_to_%s.at(%s);' % (varname, self.type, tmpname))
 		elif self.type == 'VkDeviceOrHostAddressKHR' or self.type == 'VkDeviceOrHostAddressConstKHR':
@@ -663,10 +673,13 @@ class parameter(spec.base_parameter):
 				z.do('auto& datagraph_binding = %s.get_binding(sptr->bindPoint, sptr->objectIndex);' % totrackable('VkDataGraphPipelineSessionARM'))
 				z.do('datagraph_binding.memory_flags = session_memory_flags;')
 				z.do('loc = device_data.allocator->add_datagraphpipelinesession(reader.thread_index(), (uint64_t)sptr->session, %s, sptr->bindPoint, sptr->objectIndex);' % totrackable('VkDataGraphPipelineSessionARM'))
+				z.do('if (reader.run)')
+				z.brace_begin()
 				z.do('assert(loc.memory != VK_NULL_HANDLE);')
 				z.do('%s = loc.memory;' % varname)
+				z.brace_end()
 			elif self.name == 'memoryOffset':
-				z.do('%s = loc.offset;' % varname)
+				z.do('if (reader.run) %s = loc.offset;' % varname)
 		elif self.funcname in ['vkBindImageMemory', 'vkBindBufferMemory', 'VkBindBufferMemoryInfo', 'VkBindBufferMemoryInfoKHR', 'VkBindImageMemoryInfoKHR', 'VkBindImageMemoryInfo', 'VkBindTensorMemoryInfoARM']:
 			if self.name in ['image', 'buffer', 'tensor']:
 				if self.funcname[0] == 'V': # is a struct type, commands have lowercase 'v'
@@ -681,10 +694,13 @@ class parameter(spec.base_parameter):
 					z.do('assert(min_size == image_data.size);')
 				z.do('suballoc_location loc = device_data.allocator->add_trackedobject(reader.thread_index(), (uint64_t)%s, %s);' % (varname, totrackable(self.type)))
 			if self.name == 'memory':
+				z.do('if (reader.run)')
+				z.brace_begin()
 				z.do('assert(loc.memory != VK_NULL_HANDLE);')
 				z.do('%s = loc.memory;' % varname) # relying on the order of arguments here; see case above
+				z.brace_end()
 			elif self.name == 'memoryOffset':
-				z.do('%s = loc.offset;' % varname) # relying on the order of arguments here; see case above
+				z.do('if (reader.run) %s = loc.offset;' % varname) # relying on the order of arguments here; see case above
 
 		if self.funcname == 'vkDestroySurfaceKHR' and self.name == 'instance':
 			z.do('if (reader.parent->stored_version_patch < 2) (void)reader.read_uint8_t();') # TBD remove this hack one day
@@ -998,7 +1014,7 @@ class parameter(spec.base_parameter):
 			z.do('writer.write_array(reinterpret_cast<%s%s*>(%s), %s);' % (self.mod, spec.type_mappings[self.type], varname, self.length))
 		elif self.name == 'queueFamilyIndex':
 			if self.funcname[0] == 'V': z.do('trackedphysicaldevice* physicaldevice_data = writer.parent->records.VkPhysicalDevice_index.at(writer.physicalDevice);')
-			z.do('const bool virtual_family = (physicaldevice_data->queueFamilyProperties.at(%s).queueFlags & VK_QUEUE_GRAPHICS_BIT) && p__virtualqueues;' % varname)
+			z.do('const bool virtual_family = physicaldevice_data && %s < physicaldevice_data->queueFamilyProperties.size() && (physicaldevice_data->queueFamilyProperties.at(%s).queueFlags & VK_QUEUE_GRAPHICS_BIT) && p__virtualqueues;' % (varname, varname))
 			z.do('writer.write_uint32_t(virtual_family ? LAVATUBE_VIRTUAL_QUEUE : %s);' % varname)
 		elif self.type in spec.type_mappings:
 			z.do('writer.write_%s(%s);' % (spec.type_mappings[self.type], varname))
@@ -1046,11 +1062,13 @@ class parameter(spec.base_parameter):
 			z.do('writer.write_uint64_t(static_cast<uint64_t>(image_data->size)); // save padded image size') # TBD remove
 		if self.funcname == 'vkAllocateMemory' and self.name == 'pAllocateInfo' and not postprocess:
 			z.do('frame_mutex.lock();')
+			z.do('char* extmem = nullptr;')
+			z.do('if (writer.run)')
+			z.brace_begin()
 			z.do('assert(real_memory_properties.memoryTypeCount > 0);')
 			z.do('assert(virtual_memory_properties.memoryTypeCount > pAllocateInfo_ORIGINAL->memoryTypeIndex);')
 			z.do('pAllocateInfo->memoryTypeIndex = remap_memory_types_to_real[pAllocateInfo->memoryTypeIndex]; // remap memory index')
 			z.do('assert(real_memory_properties.memoryTypeCount > pAllocateInfo->memoryTypeIndex);')
-			z.do('char* extmem = nullptr;')
 			z.do('if (p__external_memory == 1 && (virtual_memory_properties.memoryTypes[pAllocateInfo_ORIGINAL->memoryTypeIndex].propertyFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT))')
 			z.brace_begin()
 			z.do('if (find_extension(pAllocateInfo, VK_STRUCTURE_TYPE_IMPORT_MEMORY_HOST_POINTER_INFO_EXT)) ABORT("Cannot replace host memory allocations - application is already doing it!");')
@@ -1068,6 +1086,18 @@ class parameter(spec.base_parameter):
 			z.do('pAllocateInfo->pNext = info;')
 			z.brace_end()
 			z.do('else writer.parent->mem_allocated += pAllocateInfo->allocationSize;')
+			z.brace_end()
+			z.do('else if (virtual_memory_properties.memoryTypeCount <= pAllocateInfo_ORIGINAL->memoryTypeIndex)')
+			z.brace_begin()
+			z.do('for (uint32_t i = virtual_memory_properties.memoryTypeCount; i <= pAllocateInfo_ORIGINAL->memoryTypeIndex && i < VK_MAX_MEMORY_TYPES; i++)')
+			z.brace_begin()
+			z.do('remap_memory_types_to_real[i] = i;')
+			z.do('virtual_memory_properties.memoryTypes[i] = {};')
+			z.do('real_memory_properties.memoryTypes[i] = {};')
+			z.brace_end()
+			z.do('virtual_memory_properties.memoryTypeCount = std::min<uint32_t>(VK_MAX_MEMORY_TYPES, pAllocateInfo_ORIGINAL->memoryTypeIndex + 1);')
+			z.do('real_memory_properties.memoryTypeCount = std::max(real_memory_properties.memoryTypeCount, virtual_memory_properties.memoryTypeCount);')
+			z.brace_end()
 			z.do('frame_mutex.unlock();')
 
 def get_create_params(name):
@@ -1232,7 +1262,7 @@ def save_add_tracking(name):
 			z.do('add->flags = pCreateInfo->flags;')
 		elif type == 'VkDeviceMemory':
 			z.do('frame_mutex.lock();')
-			z.do('add->propertyFlags = virtual_memory_properties.memoryTypes[pAllocateInfo_ORIGINAL->memoryTypeIndex].propertyFlags;')
+			z.do('add->propertyFlags = (virtual_memory_properties.memoryTypeCount > pAllocateInfo_ORIGINAL->memoryTypeIndex) ? virtual_memory_properties.memoryTypes[pAllocateInfo_ORIGINAL->memoryTypeIndex].propertyFlags : 0;')
 			z.do('add->allocationSize = pAllocateInfo->allocationSize;')
 			z.do('add->backing = *pMemory;')
 			z.do('add->extmem = extmem;')
@@ -1800,8 +1830,24 @@ def loadfunc(name, node, target, header):
 			z.brace_end()
 		else:
 			if retval in ['VkResult', 'VkBool32']:
+				if retval == 'VkResult':
+					z.do('VkResult stored_retval = static_cast<VkResult>(reader.read_uint32_t());')
+					z.do('VkResult retval = stored_retval;')
+				elif retval == 'VkBool32':
+					z.do('VkBool32 stored_retval = static_cast<VkBool32>(reader.read_uint32_t());')
+					z.do('VkBool32 retval = stored_retval;')
+				if name == 'vkAllocateMemory':
+					z.do('if (!reader.run) pMemory = fake_handle<VkDeviceMemory>(devicememory_index);')
+				else:
+					z.do('// this function is ignored on replay')
+			elif retval in ['uint64_t', 'uint32_t']:
+				z.do('%s stored_retval = reader.read_%s();' % (retval, retval))
+				z.do('%s retval = stored_retval;' % retval)
 				z.do('// this function is ignored on replay')
-				z.do('(void)reader.read_uint32_t(); // also ignore result return value')
+			elif retval in ['VkDeviceAddress', 'VkDeviceSize']:
+				z.do('%s stored_retval = reader.read_uint64_t();' % retval)
+				z.do('%s retval = stored_retval;' % retval)
+				z.do('// this function is ignored on replay')
 
 	if name in vk.extra_sync or name in ['vkQueuePresentKHR', 'vkQueueBeginDebugUtilsLabelEXT', 'vkQueueEndDebugUtilsLabelEXT', 'vkQueueInsertDebugUtilsLabelEXT']:
 		z.do('sync_lock.unlock();')
@@ -1815,9 +1861,9 @@ def loadfunc(name, node, target, header):
 		z.do('%s.next_stored_image = *pImageIndex;' % totrackable('VkSwapchainKHR'))
 	load_add_tracking(name)
 	# Flexible post-handling
-	if not name in vk.skip_post_calls and name != 'vkGetPhysicalDeviceWaylandPresentationSupportKHR':
+	if not name in vk.skip_post_calls:
 		z.do('callback_context cb_context{ reader };')
-		if retval == 'void' or name in vk.ignore_on_read: pass
+		if retval == 'void': pass
 		elif retval == 'VkResult': z.do('cb_context.result.vkresult = retval;')
 		elif retval == 'VkBool32': z.do('cb_context.result.vkbool = retval;')
 		elif retval == 'uint64_t': z.do('cb_context.result.u64 = retval;')
