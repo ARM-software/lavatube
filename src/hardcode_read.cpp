@@ -2608,6 +2608,7 @@ static void assert_marked_offsets_equal(const VkMarkedOffsetsARM* a, const VkMar
 static void track_marked_offsets(lava_file_reader& reader, const VkMarkedOffsetsARM* markings)
 {
 	assert(markings);
+	if (reader.write_output) return;
 	assert(reader.parent->pass == 0 || reader.parent->pass == 1);
 
 	if (reader.parent->pass == 0)
@@ -2644,6 +2645,7 @@ static void translate_marked_offsets(lava_file_reader& reader, const VkMarkedOff
 	assert(markings->pOffsets);
 	assert(markings->pSubTypes);
 	assert(markings->pMarkingTypes);
+	if (reader.write_output) return;
 
 	track_marked_offsets(reader, markings);
 	for (uint32_t i = 0; i < markings->count; i++)
@@ -3089,22 +3091,24 @@ static void read_VkAccelerationStructureBuildGeometryInfoKHR(lava_file_reader& r
 
 void retrace_vkGetSwapchainImagesKHR(lava_file_reader& reader)
 {
-	VkResult result;
+	VkResult result = VK_SUCCESS;
 	const uint32_t device_index = reader.read_handle(DEBUGPARAM("VkDevice"));
 	const uint32_t swapchain_index = reader.read_handle(DEBUGPARAM("VkSwapchainKHR"));
 	VkDevice device = index_to_VkDevice.at(device_index);
 	auto& device_data = VkDevice_index.at(device_index);
+	reader.device = device;
+	reader.physicalDevice = device_data.physicalDevice;
 	const uint8_t do_call = reader.read_uint8_t();
 	const VkResult stored_retval = (VkResult)reader.read_uint32_t();
 	const uint32_t stored_image_count = reader.read_uint32_t();
-	if (!do_call) return;
-
 	VkSwapchainKHR swapchain = index_to_VkSwapchainKHR.at(swapchain_index);
 	trackedswapchain_replay& data = VkSwapchainKHR_index.at(swapchain_index);
+	uint32_t pSwapchainImageCount = stored_image_count;
+	VkImage* pSwapchainImages = nullptr;
+	std::vector<VkImage> output_images;
 
-	if (!is_noscreen() && reader.run)
+	if (do_call && !is_noscreen() && reader.run)
 	{
-		uint32_t pSwapchainImageCount;
 		result = wrap_vkGetSwapchainImagesKHR(device, swapchain, &pSwapchainImageCount, nullptr);
 		if (!is_virtualswapchain()) assert(stored_image_count == pSwapchainImageCount);
 		data.pSwapchainImages.resize(pSwapchainImageCount);
@@ -3112,8 +3116,12 @@ void retrace_vkGetSwapchainImagesKHR(lava_file_reader& reader)
 		assert(result == VK_SUCCESS);
 		(void)result;
 	}
+	else
+	{
+		result = stored_retval;
+	}
 
-	if (!data.initialized && is_virtualswapchain() && reader.run) // create virtual swapchain
+	if (do_call && !data.initialized && is_virtualswapchain() && reader.run) // create virtual swapchain
 	{
 		// Make virtual images
 		VkImageCreateInfo pinfo = {};
@@ -3186,15 +3194,37 @@ void retrace_vkGetSwapchainImagesKHR(lava_file_reader& reader)
 		assert(result == VK_SUCCESS);
 	}
 
-	for (uint32_t i = 0; i < stored_image_count; i++)
+	if (do_call)
 	{
-		const uint32_t remap_index = reader.read_handle(DEBUGPARAM("VkImage"));
-		if (!reader.run) index_to_VkImage.set(remap_index, fake_handle<VkImage>(remap_index));
-		else if (!is_virtualswapchain()) index_to_VkImage.set(remap_index, data.pSwapchainImages[i]);
-		else index_to_VkImage.set(remap_index, data.virtual_images[i]);
-		DLOG("Image index %u is swapchain image index %u", remap_index, i);
+		if (reader.write_output) output_images.resize(stored_image_count);
+		for (uint32_t i = 0; i < stored_image_count; i++)
+		{
+			const uint32_t remap_index = reader.read_handle(DEBUGPARAM("VkImage"));
+			if (!reader.run)
+			{
+				index_to_VkImage.set(remap_index, fake_handle<VkImage>(remap_index));
+				if (reader.write_output) output_images[i] = fake_handle<VkImage>(remap_index);
+			}
+			else if (!is_virtualswapchain())
+			{
+				index_to_VkImage.set(remap_index, data.pSwapchainImages[i]);
+			}
+			else
+			{
+				index_to_VkImage.set(remap_index, data.virtual_images[i]);
+			}
+			DLOG("Image index %u is swapchain image index %u", remap_index, i);
+		}
+		if (reader.write_output) pSwapchainImages = output_images.data();
+		data.initialized = true; // in case this function is called more than once
 	}
-	data.initialized = true; // in case this function is called more than once
+
+	if (reader.write_output)
+	{
+		callback_context cb_context{ reader };
+		cb_context.result.vkresult = result;
+		for (auto* c : vkGetSwapchainImagesKHR_callbacks) c(cb_context, device, swapchain, &pSwapchainImageCount, pSwapchainImages);
+	}
 }
 
 static surface_create_packet decode_vkCreateSurfaceKHR_packet(lava_file_reader& reader, uint32_t expected_sType)

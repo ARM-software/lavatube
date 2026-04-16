@@ -31,6 +31,12 @@ static bool dump_host_write_stats = false;
 static bool write_output = false;
 static int invokation_count = 0;
 
+static inline bool is_update_packet(uint8_t instrtype)
+{
+	return instrtype == PACKET_IMAGE_UPDATE || instrtype == PACKET_BUFFER_UPDATE || instrtype == PACKET_TENSOR_UPDATE
+		|| instrtype == PACKET_IMAGE_UPDATE2 || instrtype == PACKET_BUFFER_UPDATE2;
+}
+
 // Utility funcs
 
 static bool rewrite_call_less(const address_rewrite& a, const address_rewrite& b)
@@ -203,19 +209,18 @@ static void replay_thread(lava_reader* replayer, int thread_id)
 		if (write_output)
 		{
 			lava_writer::instance().bind_thread(t.thread_index());
+			output_writer = &lava_writer::instance().file_writer();
 		}
 		while ((instrtype = t.step()))
 		{
+			uint64_t packet_start = 0;
 			uint32_t output_call = 0;
 			if (write_output)
 			{
-				if (instrtype != PACKET_VULKAN_API_CALL && instrtype != PACKET_THREAD_BARRIER)
+				packet_start = t.stream_position() - 1; // include the packet type already consumed by step()
+				if (instrtype != PACKET_VULKAN_API_CALL && instrtype != PACKET_THREAD_BARRIER && !is_update_packet(instrtype))
 				{
 					ABORT("Output mode does not yet support packet type %u on thread %u call %u", (unsigned)instrtype, (unsigned)t.thread_index(), (unsigned)t.current.call);
-				}
-				if (instrtype == PACKET_VULKAN_API_CALL && !output_writer)
-				{
-					output_writer = &lava_writer::instance().file_writer();
 				}
 				if (instrtype == PACKET_VULKAN_API_CALL)
 				{
@@ -223,6 +228,18 @@ static void replay_thread(lava_reader* replayer, int thread_id)
 				}
 			}
 			switchboard_packet(instrtype, t);
+			if (write_output && is_update_packet(instrtype))
+			{
+				if (output_writer->pending_barrier.load(std::memory_order_relaxed))
+				{
+					frame_mutex.lock();
+					output_writer->inject_thread_barrier();
+					output_writer->pending_barrier.store(false, std::memory_order_relaxed);
+					frame_mutex.unlock();
+				}
+				const uint64_t packet_end = t.stream_position();
+				output_writer->write_array(t.stream_data(packet_start), packet_end - packet_start);
+			}
 			if (write_output && instrtype == PACKET_VULKAN_API_CALL && output_writer->current.call != output_call + 1)
 			{
 				ABORT("Output mode does not yet support API call %s on thread %u call %u", get_function_name(t.current.call_id), (unsigned)t.thread_index(), (unsigned)t.current.call);

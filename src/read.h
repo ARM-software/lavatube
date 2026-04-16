@@ -157,6 +157,8 @@ public:
 	VkFlags read_VkFlags() { uint32_t t; read_value(&t); return static_cast<VkFlags>(t); }
 
 	inline int thread_index() const { return current.thread; }
+	inline uint64_t stream_position() const { return read_position; }
+	inline const char* stream_data(uint64_t pos) const { return uncompressed_data + pos; }
 
 	inline VkDescriptorDataEXT read_VkDescriptorDataEXT() { return VkDescriptorDataEXT{}; } // TBD
 	inline VkAccelerationStructureNV read_VkAccelerationStructureNV() { return VK_NULL_HANDLE; }

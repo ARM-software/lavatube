@@ -491,6 +491,8 @@ class parameter(spec.base_parameter):
 					z.do('%s = reader.run ? VK_NULL_HANDLE : fake_handle<VkDeviceMemory>(%s);' % (varname, tmpname))
 				elif self.type != 'VkDeviceMemory' and (not self.funcname in vk.ignore_on_read or self.type == 'VkDevice'):
 					z.do('%s = index_to_%s.at(%s);' % (varname, self.type, tmpname))
+				elif self.type != 'VkDeviceMemory':
+					z.do('if (reader.write_output) %s = fake_handle<%s>(%s);' % (varname, self.type, tmpname))
 		elif self.type == 'VkDeviceOrHostAddressKHR' or self.type == 'VkDeviceOrHostAddressConstKHR':
 			z.decl('uint64_t', 'stored_address')
 			z.do('stored_address = reader.read_uint64_t();')
@@ -1407,6 +1409,8 @@ def load_add_pre(name):
 		z.decl(type, param)
 		z.decl('uint32_t', toindex(type))
 		z.do('%s = reader.read_handle(DEBUGPARAM("%s"));' % (toindex(type), type))
+		if name in vk.ignore_on_read:
+			z.do('if (reader.write_output) %s = fake_handle<%s>(%s);' % (param, type, toindex(type)))
 	elif name in spec.functions_create: # multiple
 		(param, count, type) = get_create_params(name)
 		z.do('%s* %s = reader.pool.allocate<%s>(%s);' % (type, param, type, count))
@@ -1414,6 +1418,8 @@ def load_add_pre(name):
 		z.do('for (unsigned i = 0; i < %s; i++)' % count)
 		z.brace_begin()
 		z.do('indices[i] = reader.read_handle(DEBUGPARAM("%s"));' % type)
+		if name in vk.ignore_on_read:
+			z.do('if (reader.write_output) %s[i] = fake_handle<%s>(indices[i]);' % (param, type))
 		z.brace_end()
 	elif name in spec.functions_destroy:
 		param = spec.functions_destroy[name][0]

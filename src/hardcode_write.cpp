@@ -2806,16 +2806,49 @@ void trace_post_vkCreateSwapchainKHR(lava_file_writer& writer, VkResult result, 
 	}
 }
 
+static void ensure_swapchain_image_records(lava_file_writer& writer, trackedswapchain* swapchain_data, const VkImage* images, uint32_t count)
+{
+	if (!swapchain_data || !images) return;
+	for (uint32_t i = 0; i < count; i++)
+	{
+		if (writer.parent->records.VkImage_index.contains(images[i])) continue;
+		auto* add = writer.parent->records.VkImage_index.add(images[i], writer.current);
+		add->last_modified = writer.current;
+		add->object_type = VK_OBJECT_TYPE_IMAGE;
+		add->sharingMode = swapchain_data->info.imageSharingMode;
+		add->is_swapchain_image = true;
+		add->tiling = TILING_OPTIMAL;
+		add->usage = swapchain_data->info.imageUsage;
+		add->imageType = VK_IMAGE_TYPE_2D;
+		add->flags = swapchain_data->info.flags;
+		add->format = swapchain_data->info.imageFormat;
+		add->initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+		add->currentLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+		add->extent.width = swapchain_data->info.imageExtent.width;
+		add->extent.height = swapchain_data->info.imageExtent.height;
+		add->extent.depth = 1;
+		add->arrayLayers = swapchain_data->info.imageArrayLayers;
+		add->enter_created();
+		add->self_test();
+		DLOG("Image index %u is swapchain image %u", add->index, i);
+	}
+}
+
 VKAPI_ATTR VkResult VKAPI_CALL trace_vkGetSwapchainImagesKHR(VkDevice device, VkSwapchainKHR swapchain, uint32_t* pSwapchainImageCount, VkImage* pSwapchainImages)
 {
 	lava_file_writer& writer = write_header("vkGetSwapchainImagesKHR", VKGETSWAPCHAINIMAGESKHR);
 	writer.write_handle(writer.parent->records.VkDevice_index.at(device));
-	writer.write_handle(writer.parent->records.VkSwapchainKHR_index.at(swapchain));
+	trackedswapchain* swapchain_data = writer.parent->records.VkSwapchainKHR_index.at(swapchain);
+	writer.write_handle(swapchain_data);
 	writer.write_uint8_t(pSwapchainImages ? 1 : 0);
 	// Execute
-	VkResult retval = wrap_vkGetSwapchainImagesKHR(device, swapchain, pSwapchainImageCount, pSwapchainImages);
+	VkResult retval = writer.run ? wrap_vkGetSwapchainImagesKHR(device, swapchain, pSwapchainImageCount, pSwapchainImages) : writer.use_result.result;
 	writer.write_uint32_t(retval);
 	// Post
+	if (!writer.run && retval == VK_SUCCESS && pSwapchainImages && pSwapchainImageCount)
+	{
+		ensure_swapchain_image_records(writer, swapchain_data, pSwapchainImages, *pSwapchainImageCount);
+	}
 	writer.write_uint32_t(*pSwapchainImageCount);
 	for (uint32_t i = 0; pSwapchainImages && i < *pSwapchainImageCount; i++)
 	{
