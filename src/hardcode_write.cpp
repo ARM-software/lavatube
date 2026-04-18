@@ -2335,6 +2335,13 @@ VKAPI_ATTR void VKAPI_CALL trace_vkSyncBufferTRACETOOLTEST(VkDevice device, VkBu
 	writer.write_handle(buffer_data);
 }
 
+VKAPI_ATTR void VKAPI_CALL trace_vkSyncBufferTRACETOOLTEST_output(VkDevice device, VkBuffer buffer)
+{
+	lava_file_writer& writer = write_header("vkSyncBufferTRACETOOLTEST", VKSYNCBUFFERTRACETOOLTEST);
+	writer.write_handle(writer.parent->records.VkDevice_index.at(device));
+	writer.write_handle(writer.parent->records.VkBuffer_index.at(buffer));
+}
+
 static void write_VkDataGraphPipelineConstantARM(lava_file_writer& writer, const VkDataGraphPipelineConstantARM* sptr)
 {
 }
@@ -2501,7 +2508,11 @@ VKAPI_ATTR VkResult VKAPI_CALL trace_vkAssertBufferARM(VkDevice device, const Vk
 	write_VkUpdateBufferInfoARM(writer, pInfo);
 	writer.write_string(comment);
 	uint32_t checksum_value = adler32(nullptr, 0);
-	if (pInfo->dstBuffer != VK_NULL_HANDLE)
+	if (!writer.run && checksum)
+	{
+		checksum_value = *checksum;
+	}
+	else if (pInfo->dstBuffer != VK_NULL_HANDLE)
 	{
 		auto* buffer_data = writer.parent->records.VkBuffer_index.at(pInfo->dstBuffer);
 		checksum_value = trace_checksum_buffer_range(writer, device, buffer_data, pInfo->dstOffset, pInfo->dataSize, "vkAssertBufferARM");
@@ -2519,7 +2530,11 @@ VKAPI_ATTR VkResult VKAPI_CALL trace_vkAssertMemoryARM(VkDevice device, const Vk
 	write_VkUpdateMemoryInfoARM(writer, pInfo);
 	writer.write_string(comment);
 	uint32_t checksum_value = adler32(nullptr, 0);
-	if (pInfo->pDstRange && pInfo->pDstRange->address)
+	if (!writer.run && checksum)
+	{
+		checksum_value = *checksum;
+	}
+	else if (pInfo->pDstRange && pInfo->pDstRange->address)
 	{
 		VkDeviceSize size = pInfo->dataSize;
 		if (size == VK_WHOLE_SIZE)

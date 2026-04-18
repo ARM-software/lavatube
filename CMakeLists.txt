@@ -610,6 +610,8 @@ function(layer_test test_name test_exe)
 	set_tests_properties(layer_test_${ARGV0}_replay_nonewsi PROPERTIES SKIP_RETURN_CODE 77 FIXTURES_REQUIRED ${ARGV0})
 	add_test(NAME layer_test_${ARGV0}_replay_from_simulation COMMAND ${RUN_IF_EXISTS} ${SIM_TRACE_FILE} ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -V vulkan_${ARGV0}_simulation.vk)
 	set_tests_properties(layer_test_${ARGV0}_replay_from_simulation PROPERTIES FIXTURES_REQUIRED "${ARGV0}_simulation;${ARGV0}" SKIP_RETURN_CODE 77)
+	add_test(NAME layer_test_${ARGV0}_write_out COMMAND ${RUN_IF_EXISTS} ${TRACE_FILE} ${CMAKE_CURRENT_BINARY_DIR}/lava-tool vulkan_${ARGV0}.vk tmp.vk)
+	set_tests_properties(layer_test_${ARGV0}_write_out PROPERTIES FIXTURES_REQUIRED "${ARGV0}" SKIP_RETURN_CODE 77)
 endfunction()
 
 layer_test(general general)

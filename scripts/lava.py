@@ -12,6 +12,17 @@ import vkconfig as vk
 # New functions that we implement
 fake_functions = [ 'vkAssertBufferARM', 'vkSyncBufferTRACETOOLTEST', 'vkGetDeviceTracingObjectPropertyTRACETOOLTEST',
 	'vkCmdUpdateBuffer2ARM', 'vkAssertMemoryARM' ]
+
+def output_fake_callback(name):
+	if name == 'vkAssertBufferARM':
+		return 'replay_trace_callback<trace_vkAssertBufferARM>::call'
+	if name == 'vkSyncBufferTRACETOOLTEST':
+		return 'replay_trace_callback<trace_vkSyncBufferTRACETOOLTEST_output>::call'
+	if name == 'vkCmdUpdateBuffer2ARM':
+		return 'replay_trace_callback<trace_vkCmdUpdateBuffer2ARM>::call'
+	if name == 'vkAssertMemoryARM':
+		return 'replay_trace_callback<trace_vkAssertMemoryARM>::call'
+	return None
 fake_extension_structs = {
 	'VkMarkedOffsetsARM': 'VK_STRUCTURE_TYPE_MARKED_OFFSETS_ARM',
 	'VkUpdateBufferInfoARM': 'VK_STRUCTURE_TYPE_UPDATE_BUFFER_INFO_ARM',
@@ -357,11 +368,24 @@ for v in spec.root.findall("commands/command"):
 for f in fake_extension_structs:
 	out(targets_read_headers, 'void read_%s(lava_file_reader& reader, %s* sptr);' % (f, f))
 for f in fake_functions:
+	if f == 'vkAssertBufferARM':
+		out([rh], 'typedef void(*replay_vkAssertBufferARM_callback)(callback_context& cb, VkDevice device, const VkUpdateBufferInfoARM* pInfo, uint32_t* checksum, const char* comment);')
+	elif f == 'vkSyncBufferTRACETOOLTEST':
+		out([rh], 'typedef void(*replay_vkSyncBufferTRACETOOLTEST_callback)(callback_context& cb, VkDevice device, VkBuffer buffer);')
+	elif f == 'vkGetDeviceTracingObjectPropertyTRACETOOLTEST':
+		out([rh], 'typedef void(*replay_vkGetDeviceTracingObjectPropertyTRACETOOLTEST_callback)(callback_context& cb, VkDevice device, VkObjectType objectType, uint64_t objectHandle, VkTracingObjectPropertyTRACETOOLTEST valueType);')
+	elif f == 'vkCmdUpdateBuffer2ARM':
+		out([rh], 'typedef void(*replay_vkCmdUpdateBuffer2ARM_callback)(callback_context& cb, VkCommandBuffer commandBuffer, const VkUpdateBufferInfoARM* pInfo);')
+	elif f == 'vkAssertMemoryARM':
+		out([rh], 'typedef void(*replay_vkAssertMemoryARM_callback)(callback_context& cb, VkDevice device, const VkUpdateMemoryInfoARM* pInfo, uint32_t* checksum, const char* comment);')
+	else:
+		assert False, 'Missing fake callback typedef implementation: %s' % f
 	out(targets_read_headers, 'void retrace_%s(lava_file_reader& reader);' % f)
 	if f == 'vkAssertBufferARM':
 		out([wh], 'VKAPI_ATTR VkResult VKAPI_CALL trace_vkAssertBufferARM(VkDevice device, const VkUpdateBufferInfoARM* pInfo, uint32_t* checksum, const char* comment);')
 	elif f == 'vkSyncBufferTRACETOOLTEST':
 		out([wh], 'VKAPI_ATTR void VKAPI_CALL trace_vkSyncBufferTRACETOOLTEST(VkDevice device, VkBuffer buffer);')
+		out([wh], 'VKAPI_ATTR void VKAPI_CALL trace_vkSyncBufferTRACETOOLTEST_output(VkDevice device, VkBuffer buffer);')
 	elif f == 'vkGetDeviceTracingObjectPropertyTRACETOOLTEST':
 		out([wh], 'VKAPI_ATTR uint64_t VKAPI_CALL trace_vkGetDeviceTracingObjectPropertyTRACETOOLTEST(VkDevice device, VkObjectType objectType, uint64_t objectHandle, VkTracingObjectPropertyTRACETOOLTEST valueType);')
 	elif f == 'vkCmdUpdateBuffer2ARM':
@@ -555,6 +579,9 @@ for f in spec.functions:
 	out(targets_read_headers, 'extern std::vector<replay_%s_callback> %s_callbacks;' % (f, f))
 	if f in spec.protected_funcs:
 		out(targets_read + targets_read_headers, '#endif')
+for f in fake_functions:
+	out(targets_read, 'std::vector<replay_%s_callback> %s_callbacks;' % (f, f))
+	out(targets_read_headers, 'extern std::vector<replay_%s_callback> %s_callbacks;' % (f, f))
 
 out(targets_read)
 out(targets_read_headers, 'extern std::unordered_map<std::string, std::vector<void*>*> read_callback_table;')
@@ -565,6 +592,8 @@ for f in spec.functions:
 	out(targets_read, '\t{ "%s", (std::vector<void*>*)&%s_callbacks },' % (f, f))
 	if f in spec.protected_funcs:
 		out(targets_read, '#endif')
+for f in fake_functions:
+	out(targets_read, '\t{ "%s", (std::vector<void*>*)&%s_callbacks },' % (f, f))
 out(targets_read, '};')
 
 out(targets_read)
@@ -577,6 +606,8 @@ for f in spec.functions:
 	out(targets_read, '\t%s_callbacks.clear();' % f)
 	if f in spec.protected_funcs:
 		out(targets_read, '#endif')
+for f in fake_functions:
+	out(targets_read, '\t%s_callbacks.clear();' % f)
 out(targets_read, '}')
 
 out(targets_read)
@@ -589,6 +620,10 @@ for f in spec.functions:
 	out(targets_read, '\t%s_callbacks.push_back(replay_trace_callback<trace_%s>::call);' % (f, f))
 	if f in spec.protected_funcs:
 		out(targets_read, '#endif')
+for f in fake_functions:
+	callback = output_fake_callback(f)
+	if callback:
+		out(targets_read, '\t%s_callbacks.push_back(%s);' % (f, callback))
 out(targets_read, '}')
 
 out(targets_write_headers, 'extern std::unordered_map<std::string, void*> write_callback_table;')

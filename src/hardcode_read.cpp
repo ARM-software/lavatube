@@ -2494,6 +2494,12 @@ void retrace_vkSyncBufferTRACETOOLTEST(lava_file_reader& reader)
 {
 	const uint32_t device_index = reader.read_handle(DEBUGPARAM("VkDevice"));
 	const uint32_t buffer_index = reader.read_handle(DEBUGPARAM("VkBuffer"));
+	VkDevice device = index_to_VkDevice.at(device_index);
+	VkBuffer buffer = index_to_VkBuffer.at(buffer_index);
+	reader.device = device;
+	reader.physicalDevice = VkDevice_index.at(device_index).physicalDevice;
+	callback_context cb_context{ reader };
+	for (auto* c : vkSyncBufferTRACETOOLTEST_callbacks) c(cb_context, device, buffer);
 }
 
 static uint32_t retrace_checksum_buffer_range(const trackeddevice& device_data, uint32_t buffer_index, VkDeviceSize offset, VkDeviceSize size)
@@ -2517,11 +2523,21 @@ void retrace_vkAssertBufferARM(lava_file_reader& reader)
 {
 	const uint32_t device_index = reader.read_handle(DEBUGPARAM("VkDevice"));
 	const auto& device_data = VkDevice_index.at(device_index);
+	VkDevice device = index_to_VkDevice.at(device_index);
+	reader.device = device;
+	reader.physicalDevice = device_data.physicalDevice;
 	VkUpdateBufferInfoARM info = {};
 	read_VkUpdateBufferInfoARM(reader, &info);
 	const char* comment = reader.read_string();
 	const uint32_t checksum = reader.read_uint32_t();
-	if (!reader.run) return;
+	if (!reader.run)
+	{
+		uint32_t checksum_copy = checksum;
+		callback_context cb_context{ reader };
+		cb_context.result.vkresult = VK_SUCCESS;
+		for (auto* c : vkAssertBufferARM_callbacks) c(cb_context, device, &info, &checksum_copy, comment);
+		return;
+	}
 	uint32_t checksum_new = adler32(nullptr, 0);
 	uint32_t buffer_index = 0;
 	if (info.dstBuffer != VK_NULL_HANDLE)
@@ -2540,11 +2556,21 @@ void retrace_vkAssertMemoryARM(lava_file_reader& reader)
 {
 	const uint32_t device_index = reader.read_handle(DEBUGPARAM("VkDevice"));
 	const auto& device_data = VkDevice_index.at(device_index);
+	VkDevice device = index_to_VkDevice.at(device_index);
+	reader.device = device;
+	reader.physicalDevice = device_data.physicalDevice;
 	VkUpdateMemoryInfoARM info = {};
 	read_VkUpdateMemoryInfoARM(reader, &info);
 	const char* comment = reader.read_string();
 	const uint32_t checksum = reader.read_uint32_t();
-	if (!reader.run) return;
+	if (!reader.run)
+	{
+		uint32_t checksum_copy = checksum;
+		callback_context cb_context{ reader };
+		cb_context.result.vkresult = VK_SUCCESS;
+		for (auto* c : vkAssertMemoryARM_callbacks) c(cb_context, device, &info, &checksum_copy, comment);
+		return;
+	}
 	uint32_t checksum_new = adler32(nullptr, 0);
 	if (info.pDstRange && info.pDstRange->address)
 	{
@@ -3156,6 +3182,8 @@ VKAPI_ATTR void retrace_vkCmdUpdateBuffer2ARM(lava_file_reader& reader)
 	if (ar) translate_marked_offsets(reader, ar, const_cast<void*>(info.pData), info.dataSize);
 	if (reader.run) wrap_vkCmdUpdateBuffer(commandBuffer, info.dstBuffer, info.dstOffset, info.dataSize, info.pData);
 	tbuf.last_modified = reader.current;
+	callback_context cb_context{ reader };
+	for (auto* c : vkCmdUpdateBuffer2ARM_callbacks) c(cb_context, commandBuffer, &info);
 }
 
 static void read_VkAccelerationStructureBuildGeometryInfoKHR(lava_file_reader& reader, VkAccelerationStructureBuildGeometryInfoKHR* sptr)
