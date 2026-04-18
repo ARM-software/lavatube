@@ -300,7 +300,7 @@ void postprocess_vkDestroyDevice(callback_context& cb, VkDevice device, const Vk
 
 // Main
 
-static void add_callbacks_for_first_round()
+static void add_callbacks_for_first_round(bool enable_submit_analysis)
 {
 #define CALLBACK(x) x ## _callbacks.push_back(postprocess_ ## x);
 	CALLBACK(vkCreateShaderModule);
@@ -323,9 +323,12 @@ static void add_callbacks_for_first_round()
 	CALLBACK(vkCmdTraceRaysKHR);
 	CALLBACK(vkCmdTraceRaysIndirectKHR);
 	CALLBACK(vkCmdTraceRaysIndirect2KHR);
-	CALLBACK(vkQueueSubmit);
-	CALLBACK(vkQueueSubmit2);
-	CALLBACK(vkQueueSubmit2KHR);
+	if (enable_submit_analysis)
+	{
+		CALLBACK(vkQueueSubmit);
+		CALLBACK(vkQueueSubmit2);
+		CALLBACK(vkQueueSubmit2KHR);
+	}
 	CALLBACK(vkCmdBindDescriptorSets2KHR);
 	CALLBACK(vkCmdBindDescriptorSets);
 	CALLBACK(vkCmdBindDescriptorSets2);
@@ -467,7 +470,7 @@ int main(int argc, char **argv)
 		replayer.init(filename_input);
 
 		// Add callbacks
-		add_callbacks_for_first_round();
+		add_callbacks_for_first_round(filename_output.empty());
 
 		for (unsigned i = 0; i < replayer.threads.size(); i++)
 		{
