@@ -725,9 +725,11 @@ class parameter(spec.base_parameter):
 		elif self.funcname == 'vkDestroySurface' and self.name == 'surface':
 			z.do('window_destroy(instance, surfacekhr_index);')
 		elif self.funcname in ['VkDebugMarkerObjectNameInfoEXT', 'VkDebugMarkerObjectTagInfoEXT', 'vkDebugReportMessageEXT'] and self.name == 'object':
-			z.do('%s = debug_object_lookup(%sobjectType, %s);' % (varname, owner, varname))
+			z.do('if (reader.write_output) %s = debug_object_lookup_output(%sobjectType, %s);' % (varname, owner, varname))
+			z.do('else %s = debug_object_lookup(%sobjectType, %s);' % (varname, owner, varname))
 		elif self.funcname in ['VkDebugUtilsObjectNameInfoEXT', 'VkDebugUtilsObjectTagInfoEXT', 'vkSetPrivateData', 'vkSetPrivateDataEXT', 'vkGetPrivateData', 'vkGetPrivateDataEXT'] and self.name == 'objectHandle':
-			z.do('%s = object_lookup(%sobjectType, %s);' % (varname, owner, varname))
+			z.do('if (reader.write_output) %s = object_lookup_output(%sobjectType, %s);' % (varname, owner, varname))
+			z.do('else %s = object_lookup(%sobjectType, %s);' % (varname, owner, varname))
 
 		# Track our currently executing device
 		if self.type == 'VkDevice' and self.funcname[0] == 'v' and self.name == 'device':

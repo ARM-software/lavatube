@@ -275,6 +275,57 @@ static uint64_t debug_object_lookup(VkDebugReportObjectTypeEXT type, uint32_t in
 	return 0;
 }
 
+static uint64_t debug_object_lookup_output(VkDebugReportObjectTypeEXT type, uint32_t index)
+{
+	switch (type)
+	{
+	case VK_DEBUG_REPORT_OBJECT_TYPE_INSTANCE_EXT: return (uint64_t)fake_handle<VkInstance>(index);
+	case VK_DEBUG_REPORT_OBJECT_TYPE_PHYSICAL_DEVICE_EXT: return (uint64_t)fake_handle<VkPhysicalDevice>(index);
+	case VK_DEBUG_REPORT_OBJECT_TYPE_DEVICE_EXT: return (uint64_t)fake_handle<VkDevice>(index);
+	case VK_DEBUG_REPORT_OBJECT_TYPE_QUEUE_EXT: return (uint64_t)fake_handle<VkQueue>(index);
+	case VK_DEBUG_REPORT_OBJECT_TYPE_DEVICE_MEMORY_EXT: return (uint64_t)fake_handle<VkDeviceMemory>(index);
+	case VK_DEBUG_REPORT_OBJECT_TYPE_SEMAPHORE_EXT: return (uint64_t)fake_handle<VkSemaphore>(index);
+	case VK_DEBUG_REPORT_OBJECT_TYPE_COMMAND_BUFFER_EXT: return (uint64_t)fake_handle<VkCommandBuffer>(index);
+	case VK_DEBUG_REPORT_OBJECT_TYPE_FENCE_EXT: return (uint64_t)fake_handle<VkFence>(index);
+	case VK_DEBUG_REPORT_OBJECT_TYPE_BUFFER_EXT: return (uint64_t)fake_handle<VkBuffer>(index);
+	case VK_DEBUG_REPORT_OBJECT_TYPE_IMAGE_EXT: return (uint64_t)fake_handle<VkImage>(index);
+	case VK_DEBUG_REPORT_OBJECT_TYPE_EVENT_EXT: return (uint64_t)fake_handle<VkEvent>(index);
+	case VK_DEBUG_REPORT_OBJECT_TYPE_QUERY_POOL_EXT: return (uint64_t)fake_handle<VkQueryPool>(index);
+	case VK_DEBUG_REPORT_OBJECT_TYPE_BUFFER_VIEW_EXT: return (uint64_t)fake_handle<VkBufferView>(index);
+	case VK_DEBUG_REPORT_OBJECT_TYPE_IMAGE_VIEW_EXT: return (uint64_t)fake_handle<VkImageView>(index);
+	case VK_DEBUG_REPORT_OBJECT_TYPE_SHADER_MODULE_EXT: return (uint64_t)fake_handle<VkShaderModule>(index);
+	case VK_DEBUG_REPORT_OBJECT_TYPE_PIPELINE_CACHE_EXT: return (uint64_t)fake_handle<VkPipelineCache>(index);
+	case VK_DEBUG_REPORT_OBJECT_TYPE_PIPELINE_LAYOUT_EXT: return (uint64_t)fake_handle<VkPipelineLayout>(index);
+	case VK_DEBUG_REPORT_OBJECT_TYPE_RENDER_PASS_EXT: return (uint64_t)fake_handle<VkRenderPass>(index);
+	case VK_DEBUG_REPORT_OBJECT_TYPE_PIPELINE_EXT: return (uint64_t)fake_handle<VkPipeline>(index);
+	case VK_DEBUG_REPORT_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT_EXT: return (uint64_t)fake_handle<VkDescriptorSetLayout>(index);
+	case VK_DEBUG_REPORT_OBJECT_TYPE_SAMPLER_EXT: return (uint64_t)fake_handle<VkSampler>(index);
+	case VK_DEBUG_REPORT_OBJECT_TYPE_DESCRIPTOR_POOL_EXT: return (uint64_t)fake_handle<VkDescriptorPool>(index);
+	case VK_DEBUG_REPORT_OBJECT_TYPE_DESCRIPTOR_SET_EXT: return (uint64_t)fake_handle<VkDescriptorSet>(index);
+	case VK_DEBUG_REPORT_OBJECT_TYPE_FRAMEBUFFER_EXT: return (uint64_t)fake_handle<VkFramebuffer>(index);
+	case VK_DEBUG_REPORT_OBJECT_TYPE_COMMAND_POOL_EXT: return (uint64_t)fake_handle<VkCommandPool>(index);
+	case VK_DEBUG_REPORT_OBJECT_TYPE_SURFACE_KHR_EXT: return (uint64_t)fake_handle<VkSurfaceKHR>(index);
+	case VK_DEBUG_REPORT_OBJECT_TYPE_SWAPCHAIN_KHR_EXT: return (uint64_t)fake_handle<VkSwapchainKHR>(index);
+	case VK_DEBUG_REPORT_OBJECT_TYPE_DESCRIPTOR_UPDATE_TEMPLATE_EXT: return (uint64_t)fake_handle<VkDescriptorUpdateTemplate>(index);
+	case VK_DEBUG_REPORT_OBJECT_TYPE_DISPLAY_KHR_EXT: return (uint64_t)fake_handle<VkDisplayKHR>(index);
+	case VK_DEBUG_REPORT_OBJECT_TYPE_DISPLAY_MODE_KHR_EXT: return (uint64_t)fake_handle<VkDisplayModeKHR>(index);
+	case VK_DEBUG_REPORT_OBJECT_TYPE_ACCELERATION_STRUCTURE_KHR_EXT: return (uint64_t)fake_handle<VkAccelerationStructureKHR>(index);
+	case VK_DEBUG_REPORT_OBJECT_TYPE_VALIDATION_CACHE_EXT: return (uint64_t)fake_handle<VkValidationCacheEXT>(index);
+	case VK_DEBUG_REPORT_OBJECT_TYPE_SAMPLER_YCBCR_CONVERSION_KHR_EXT: return (uint64_t)fake_handle<VkSamplerYcbcrConversion>(index);
+	// these are not supported:
+	case VK_DEBUG_REPORT_OBJECT_TYPE_CUDA_MODULE_NV_EXT:
+	case VK_DEBUG_REPORT_OBJECT_TYPE_CUDA_FUNCTION_NV_EXT:
+	case VK_DEBUG_REPORT_OBJECT_TYPE_DEBUG_REPORT_CALLBACK_EXT_EXT:
+	case VK_DEBUG_REPORT_OBJECT_TYPE_CU_MODULE_NVX_EXT:
+	case VK_DEBUG_REPORT_OBJECT_TYPE_CU_FUNCTION_NVX_EXT:
+	case VK_DEBUG_REPORT_OBJECT_TYPE_ACCELERATION_STRUCTURE_NV_EXT:
+	case VK_DEBUG_REPORT_OBJECT_TYPE_BUFFER_COLLECTION_FUCHSIA_EXT:
+	case VK_DEBUG_REPORT_OBJECT_TYPE_UNKNOWN_EXT:
+	case VK_DEBUG_REPORT_OBJECT_TYPE_MAX_ENUM_EXT: assert(false); return 0;
+	}
+	return 0;
+}
+
 static uint64_t object_lookup(VkObjectType type, uint32_t index)
 {
 	switch (type)
@@ -324,6 +375,74 @@ static uint64_t object_lookup(VkObjectType type, uint32_t index)
 	case VK_OBJECT_TYPE_TENSOR_ARM: return (uint64_t)index_to_VkTensorARM.at(index);
 	case VK_OBJECT_TYPE_TENSOR_VIEW_ARM: return (uint64_t)index_to_VkTensorViewARM.at(index);
 	case VK_OBJECT_TYPE_DATA_GRAPH_PIPELINE_SESSION_ARM: return (uint64_t)index_to_VkDataGraphPipelineSessionARM.at(index);
+
+	// these are not supported:
+	case VK_OBJECT_TYPE_EXTERNAL_COMPUTE_QUEUE_NV:
+	case VK_OBJECT_TYPE_OPTICAL_FLOW_SESSION_NV:
+	case VK_OBJECT_TYPE_BUFFER_COLLECTION_FUCHSIA:
+	case VK_OBJECT_TYPE_INDIRECT_COMMANDS_LAYOUT_NV:
+	case VK_OBJECT_TYPE_PERFORMANCE_CONFIGURATION_INTEL:
+	case VK_OBJECT_TYPE_ACCELERATION_STRUCTURE_NV:
+	case VK_OBJECT_TYPE_CU_FUNCTION_NVX:
+	case VK_OBJECT_TYPE_CU_MODULE_NVX:
+	case VK_OBJECT_TYPE_PIPELINE_BINARY_KHR:
+	case VK_OBJECT_TYPE_INDIRECT_COMMANDS_LAYOUT_EXT:
+	case VK_OBJECT_TYPE_INDIRECT_EXECUTION_SET_EXT:
+	case VK_OBJECT_TYPE_UNKNOWN:
+	case VK_OBJECT_TYPE_MAX_ENUM: assert(false); return 0;
+	}
+	return 0;
+}
+
+static uint64_t object_lookup_output(VkObjectType type, uint32_t index)
+{
+	switch (type)
+	{
+	case VK_OBJECT_TYPE_INSTANCE: return (uint64_t)fake_handle<VkInstance>(index);
+	case VK_OBJECT_TYPE_PHYSICAL_DEVICE: return (uint64_t)fake_handle<VkPhysicalDevice>(index);
+	case VK_OBJECT_TYPE_DEVICE: return (uint64_t)fake_handle<VkDevice>(index);
+	case VK_OBJECT_TYPE_QUEUE: return (uint64_t)fake_handle<VkQueue>(index);
+	case VK_OBJECT_TYPE_DEVICE_MEMORY: return (uint64_t)fake_handle<VkDeviceMemory>(index);
+	case VK_OBJECT_TYPE_SEMAPHORE: return (uint64_t)fake_handle<VkSemaphore>(index);
+	case VK_OBJECT_TYPE_COMMAND_BUFFER: return (uint64_t)fake_handle<VkCommandBuffer>(index);
+	case VK_OBJECT_TYPE_FENCE: return (uint64_t)fake_handle<VkFence>(index);
+	case VK_OBJECT_TYPE_BUFFER: return (uint64_t)fake_handle<VkBuffer>(index);
+	case VK_OBJECT_TYPE_IMAGE: return (uint64_t)fake_handle<VkImage>(index);
+	case VK_OBJECT_TYPE_EVENT: return (uint64_t)fake_handle<VkEvent>(index);
+	case VK_OBJECT_TYPE_QUERY_POOL: return (uint64_t)fake_handle<VkQueryPool>(index);
+	case VK_OBJECT_TYPE_BUFFER_VIEW: return (uint64_t)fake_handle<VkBufferView>(index);
+	case VK_OBJECT_TYPE_IMAGE_VIEW: return (uint64_t)fake_handle<VkImageView>(index);
+	case VK_OBJECT_TYPE_SHADER_MODULE: return (uint64_t)fake_handle<VkShaderModule>(index);
+	case VK_OBJECT_TYPE_PIPELINE_CACHE: return (uint64_t)fake_handle<VkPipelineCache>(index);
+	case VK_OBJECT_TYPE_PIPELINE_LAYOUT: return (uint64_t)fake_handle<VkPipelineLayout>(index);
+	case VK_OBJECT_TYPE_RENDER_PASS: return (uint64_t)fake_handle<VkRenderPass>(index);
+	case VK_OBJECT_TYPE_PIPELINE: return (uint64_t)fake_handle<VkPipeline>(index);
+	case VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT: return (uint64_t)fake_handle<VkDescriptorSetLayout>(index);
+	case VK_OBJECT_TYPE_SAMPLER: return (uint64_t)fake_handle<VkSampler>(index);
+	case VK_OBJECT_TYPE_DESCRIPTOR_POOL: return (uint64_t)fake_handle<VkDescriptorPool>(index);
+	case VK_OBJECT_TYPE_DESCRIPTOR_SET: return (uint64_t)fake_handle<VkDescriptorSet>(index);
+	case VK_OBJECT_TYPE_FRAMEBUFFER: return (uint64_t)fake_handle<VkFramebuffer>(index);
+	case VK_OBJECT_TYPE_COMMAND_POOL: return (uint64_t)fake_handle<VkCommandPool>(index);
+	case VK_OBJECT_TYPE_SURFACE_KHR: return (uint64_t)fake_handle<VkSurfaceKHR>(index);
+	case VK_OBJECT_TYPE_SWAPCHAIN_KHR: return (uint64_t)fake_handle<VkSwapchainKHR>(index);
+	case VK_OBJECT_TYPE_DESCRIPTOR_UPDATE_TEMPLATE: return (uint64_t)fake_handle<VkDescriptorUpdateTemplate>(index);
+	case VK_OBJECT_TYPE_PRIVATE_DATA_SLOT: return (uint64_t)fake_handle<VkPrivateDataSlot>(index);
+	case VK_OBJECT_TYPE_DISPLAY_KHR: return (uint64_t)fake_handle<VkDisplayKHR>(index);
+	case VK_OBJECT_TYPE_DISPLAY_MODE_KHR: return (uint64_t)fake_handle<VkDisplayModeKHR>(index);
+	case VK_OBJECT_TYPE_ACCELERATION_STRUCTURE_KHR: return (uint64_t)fake_handle<VkAccelerationStructureKHR>(index);
+	case VK_OBJECT_TYPE_VALIDATION_CACHE_EXT: return (uint64_t)fake_handle<VkValidationCacheEXT>(index);
+	case VK_OBJECT_TYPE_DEFERRED_OPERATION_KHR: return (uint64_t)fake_handle<VkDeferredOperationKHR>(index);
+	case VK_OBJECT_TYPE_MICROMAP_EXT: return (uint64_t)fake_handle<VkMicromapEXT>(index);
+	case VK_OBJECT_TYPE_SAMPLER_YCBCR_CONVERSION_KHR: return (uint64_t)fake_handle<VkSamplerYcbcrConversion>(index);
+	case VK_OBJECT_TYPE_VIDEO_SESSION_KHR: return (uint64_t)fake_handle<VkVideoSessionKHR>(index);
+	case VK_OBJECT_TYPE_VIDEO_SESSION_PARAMETERS_KHR: return (uint64_t)fake_handle<VkVideoSessionParametersKHR>(index);
+	case VK_OBJECT_TYPE_SHADER_EXT: return (uint64_t)fake_handle<VkShaderEXT>(index);
+	case VK_OBJECT_TYPE_SHADER_INSTRUMENTATION_ARM: return (uint64_t)fake_handle<VkShaderInstrumentationARM>(index);
+	case VK_OBJECT_TYPE_DEBUG_REPORT_CALLBACK_EXT: return (uint64_t)fake_handle<VkDebugReportCallbackEXT>(index);
+	case VK_OBJECT_TYPE_DEBUG_UTILS_MESSENGER_EXT: return (uint64_t)fake_handle<VkDebugUtilsMessengerEXT>(index);
+	case VK_OBJECT_TYPE_TENSOR_ARM: return (uint64_t)fake_handle<VkTensorARM>(index);
+	case VK_OBJECT_TYPE_TENSOR_VIEW_ARM: return (uint64_t)fake_handle<VkTensorViewARM>(index);
+	case VK_OBJECT_TYPE_DATA_GRAPH_PIPELINE_SESSION_ARM: return (uint64_t)fake_handle<VkDataGraphPipelineSessionARM>(index);
 
 	// these are not supported:
 	case VK_OBJECT_TYPE_EXTERNAL_COMPUTE_QUEUE_NV:
