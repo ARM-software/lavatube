@@ -1693,6 +1693,15 @@ def loadfunc(name, node, target, header):
 		if retval == 'VkResult':
 			z.do('VkResult stored_retval = static_cast<VkResult>(reader.read_uint32_t());')
 			z.do('if (retval == VK_RESULT_MAX_ENUM) retval = stored_retval;')
+		z.do('if (do_call == 1 && !reader.run)')
+		z.brace_begin()
+		z.do('%s = reader.pool.allocate<%s>(1);' % (spec.special_count_funcs[name][0], spec.special_count_funcs[name][1]))
+		z.do('*%s = 1;' % spec.special_count_funcs[name][0])
+		for vv in spec.special_count_funcs[name][2]:
+			z.do('%s.resize(1);' % vv[0])
+			if vv[1] in spec.type2sType:
+				z.do('for (auto& i : %s) { i.sType = %s; i.pNext = nullptr; }' % (vv[0], spec.type2sType[vv[1]]))
+		z.brace_end()
 		assert retval in ['VkResult', 'void'], 'Unhandled retval value'
 	elif name == "vkCreateInstance":
 		z.do('VkResult stored_retval = static_cast<VkResult>(reader.read_uint32_t());')

@@ -2118,6 +2118,12 @@ static VkResult common_vkGetPhysicalDeviceToolProperties(lava_file_writer& write
 	const auto* physicaldevice_data = writer.parent->records.VkPhysicalDevice_index.at(physicalDevice);
 	writer.write_handle(physicaldevice_data);
 	writer.write_uint8_t((pToolProperties) ? 1 : 0);
+	if (!writer.run)
+	{
+		VkResult retval = writer.use_result.result;
+		writer.write_uint32_t(retval);
+		return retval;
+	}
 	// -- Execute --
 	// We assume anything passed to us is available to use, and will hide our filled out data to other layers, and assume they will do the same to us.
 	if (pToolProperties != nullptr && *pToolCount > 0)
