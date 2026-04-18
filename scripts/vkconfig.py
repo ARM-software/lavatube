@@ -132,6 +132,8 @@ ignore_retval = [ 'vkGetDeferredOperationMaxConcurrencyKHR' ]
 # functions we should not call natively when tracing - let pre or post calls handle it
 ignore_on_trace = []
 validate_funcs(ignore_on_trace)
+# also ignore these calls for blackhole runs
+blackhole_ignore = [ 'vkGetQueryPoolResults' ]
 # these functions have hard-coded post-execute callbacks
 replay_pre_calls = [ 'vkDestroyInstance', 'vkDestroyDevice', 'vkCreateDevice', 'vkCreateSampler', 'vkQueuePresentKHR', 'vkCreateSwapchainKHR',
 	'vkCreateSharedSwapchainsKHR', 'vkCreateGraphicsPipelines', 'vkCreateComputePipelines', 'vkCreateRayTracingPipelinesKHR', 'vkCmdPushConstants2KHR',

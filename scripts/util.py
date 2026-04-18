@@ -1775,7 +1775,7 @@ def loadfunc(name, node, target, header):
 		z.do('else if (reader.run) cleanup_sync(queue, pPresentInfo->waitSemaphoreCount, pPresentInfo->pWaitSemaphores, 0, nullptr, VK_NULL_HANDLE);')
 	else:
 		prefix = 'if (reader.run) '
-		if name == 'vkGetQueryPoolResults':
+		if name in vk.blackhole_ignore:
 			prefix = 'if (reader.run && !is_blackhole_mode())'
 		if name in vk.layer_implemented:
 			if name == 'vkSetDebugUtilsObjectNameEXT':
@@ -1810,7 +1810,10 @@ def loadfunc(name, node, target, header):
 			if name == 'vkGetQueryPoolResults':
 				z.do('std::vector<char> data(dataSize);')
 				call_list[5] = 'data.data()'
-				z.do('if (stored_retval == VK_SUCCESS) { flags |= VK_QUERY_RESULT_WAIT_BIT; flags &= ~VK_QUERY_RESULT_PARTIAL_BIT; }')
+				z.do('VkQueryResultFlags replay_flags = flags;')
+				z.do('if (stored_retval == VK_SUCCESS) { replay_flags |= VK_QUERY_RESULT_WAIT_BIT; replay_flags &= ~VK_QUERY_RESULT_PARTIAL_BIT; }')
+				replay_call_list = call_list.copy()
+				replay_call_list[7] = 'replay_flags'
 
 			z.do('%s retval = stored_retval;' % retval)
 			for param in params:
@@ -1820,7 +1823,10 @@ def loadfunc(name, node, target, header):
 			# current
 			z.do(prefix.strip())
 			z.brace_begin()
-			z.do('retval = wrap_%s(%s);' % (name, ', '.join(call_list)))
+			if name == 'vkGetQueryPoolResults':
+				z.do('retval = wrap_%s(%s);' % (name, ', '.join(replay_call_list)))
+			else:
+				z.do('retval = wrap_%s(%s);' % (name, ', '.join(call_list)))
 
 			# comparison
 			if retval == 'VkBool32':
@@ -1867,18 +1873,17 @@ def loadfunc(name, node, target, header):
 		z.do('%s.next_stored_image = *pImageIndex;' % totrackable('VkSwapchainKHR'))
 	load_add_tracking(name)
 	# Flexible post-handling
-	if not name in vk.skip_post_calls:
-		z.do('callback_context cb_context{ reader };')
-		if retval == 'void': pass
-		elif retval == 'VkResult': z.do('cb_context.result.vkresult = retval;')
-		elif retval == 'VkBool32': z.do('cb_context.result.vkbool = retval;')
-		elif retval == 'uint64_t': z.do('cb_context.result.u64 = retval;')
-		elif retval == 'uint32_t': z.do('cb_context.result.u32 = retval;')
-		elif retval == 'VkDeviceAddress': z.do('cb_context.result.address = retval;')
-		elif retval == 'VkDeviceSize': z.do('cb_context.result.size = retval;')
-		elif retval == 'PFN_vkVoidFunction': z.do('cb_context.result.address = retval;')
-		else: assert False, 'Unhandled callback result type %s from %s' % (retval, name)
-		z.do('for (auto* c : %s_callbacks) c(%s);' % (name, 'cb_context, ' + ', '.join(call_list)))
+	z.do('callback_context cb_context{ reader };')
+	if retval == 'void': pass
+	elif retval == 'VkResult': z.do('cb_context.result.vkresult = retval;')
+	elif retval == 'VkBool32': z.do('cb_context.result.vkbool = retval;')
+	elif retval == 'uint64_t': z.do('cb_context.result.u64 = retval;')
+	elif retval == 'uint32_t': z.do('cb_context.result.u32 = retval;')
+	elif retval == 'VkDeviceAddress': z.do('cb_context.result.address = retval;')
+	elif retval == 'VkDeviceSize': z.do('cb_context.result.size = retval;')
+	elif retval == 'PFN_vkVoidFunction': z.do('cb_context.result.address = retval;')
+	else: assert False, 'Unhandled callback result type %s from %s' % (retval, name)
+	z.do('for (auto* c : %s_callbacks) c(%s);' % (name, 'cb_context, ' + ', '.join(call_list)))
 	if name in spec.draw_commands:
 		z.do('if (!reader.run) postprocess_draw_command(cb_context, commandbuffer_index, commandbuffer_data);')
 	if name in spec.compute_commands:
