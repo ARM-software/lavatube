@@ -164,6 +164,12 @@ trace_post_calls = [ 'vkCreateInstance', 'vkCreateDevice', 'vkDestroyInstance', 
 		'vkSubmitDebugUtilsMessageEXT', 'vkGetPhysicalDeviceProperties2', 'vkGetPhysicalDeviceProperties2KHR',
 		'vkGetPhysicalDeviceMemoryProperties2KHR' ]
 validate_funcs(trace_post_calls)
+trace_post_tool_calls = [
+	'vkCreateDescriptorUpdateTemplate', 'vkCreateDescriptorUpdateTemplateKHR',
+	'vkUpdateDescriptorSetWithTemplate', 'vkUpdateDescriptorSetWithTemplateKHR',
+	'vkCmdPushDescriptorSetWithTemplate', 'vkCmdPushDescriptorSetWithTemplateKHR'
+]
+validate_funcs(trace_post_tool_calls)
 skip_post_calls = [ 'vkGetQueryPoolResults' ]
 validate_funcs(skip_post_calls)
 # Workaround to be able to rewrite parameter inputs while tracing: These input variables are copied and replaced to not be const anymore.

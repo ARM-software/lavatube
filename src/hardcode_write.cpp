@@ -204,6 +204,9 @@ static void trace_post_vkCreateDescriptorUpdateTemplate(lava_file_writer& writer
 	if (result != VK_SUCCESS || !pCreateInfo || !pDescriptorUpdateTemplate) return;
 	auto* template_data = writer.parent->records.VkDescriptorUpdateTemplate_index.at(*pDescriptorUpdateTemplate);
 	if (!template_data) return;
+	template_data->type = pCreateInfo->templateType;
+	template_data->flags = pCreateInfo->flags;
+	template_data->data_size = descriptor_update_template_data_size(pCreateInfo);
 	template_data->entries.clear();
 	if (pCreateInfo->descriptorUpdateEntryCount == 0 || !pCreateInfo->pDescriptorUpdateEntries) return;
 	template_data->entries.reserve(pCreateInfo->descriptorUpdateEntryCount);

@@ -2016,9 +2016,15 @@ def savefunc(name, node, target, header):
 			z.do('writer.push_thread_barriers();')
 	if name in vk.trace_post_calls: # hard-coded post handling, must be last
 		if retval != 'void':
-			z.do('if (writer.run) trace_post_%s(writer, retval, %s);' % (name, ', '.join(call_list)))
+			if name in vk.trace_post_tool_calls:
+				z.do('trace_post_%s(writer, retval, %s);' % (name, ', '.join(call_list)))
+			else:
+				z.do('if (writer.run) trace_post_%s(writer, retval, %s);' % (name, ', '.join(call_list)))
 		else:
-			z.do('if (writer.run) trace_post_%s(writer, %s);' % (name, ', '.join(call_list)))
+			if name in vk.trace_post_tool_calls:
+				z.do('trace_post_%s(writer, %s);' % (name, ', '.join(call_list)))
+			else:
+				z.do('if (writer.run) trace_post_%s(writer, %s);' % (name, ', '.join(call_list)))
 
 	if name in spec.feature_detection_funcs:
 		z.do('check_%s(%s);' % (name, ', '.join(call_list)))
