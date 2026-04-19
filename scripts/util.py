@@ -1727,24 +1727,24 @@ def loadfunc(name, node, target, header):
 		z.brace_end()
 	elif name == "vkGetFenceStatus": # wait for success to restore original synchronization when call was originally successful
 		z.do('VkResult stored_retval = static_cast<VkResult>(reader.read_uint32_t());')
-		z.do('VkResult retval = VK_SUCCESS;')
+		z.do('VkResult retval = stored_retval;')
 		z.do('if (stored_retval == VK_SUCCESS && reader.run) { retval = wrap_vkWaitForFences(device, 1, &fence, VK_TRUE, UINT64_MAX); }')
 		z.do('else if (reader.run) { retval = wrap_vkGetFenceStatus(device, fence); }')
 	elif name == "vkWaitForFences": # as above
 		z.do('VkResult stored_retval = static_cast<VkResult>(reader.read_uint32_t());')
-		z.do('VkResult retval = VK_SUCCESS;')
+		z.do('VkResult retval = stored_retval;')
 		z.do('if (stored_retval == VK_SUCCESS) { timeout = UINT64_MAX; }')
 		z.do('else if (stored_retval == VK_TIMEOUT) { timeout = 0; }')
 		z.do('if (reader.run) retval = wrap_vkWaitForFences(device, fenceCount, pFences, waitAll, timeout);')
 	elif name == "vkWaitSemaphores": # as above
 		z.do('VkResult stored_retval = static_cast<VkResult>(reader.read_uint32_t());')
-		z.do('VkResult retval = VK_SUCCESS;')
+		z.do('VkResult retval = stored_retval;')
 		z.do('if (stored_retval == VK_SUCCESS) { timeout = UINT64_MAX; }')
 		z.do('else if (stored_retval == VK_TIMEOUT) { timeout = 0; }')
 		z.do('if (reader.run) retval = wrap_vkWaitSemaphores(device, pWaitInfo, timeout);')
 	elif name == "vkGetEventStatus": # loop until same result achieved
 		z.do('VkResult stored_retval = static_cast<VkResult>(reader.read_uint32_t());')
-		z.do('VkResult retval = VK_SUCCESS;')
+		z.do('VkResult retval = stored_retval;')
 		z.do('if (reader.run && (stored_retval == VK_EVENT_SET || stored_retval == VK_EVENT_RESET)) do { retval = wrap_vkGetEventStatus(device, event); } while (retval != stored_retval && retval != VK_ERROR_DEVICE_LOST);')
 	elif name == 'vkAcquireNextImageKHR':
 		z.do('VkResult stored_retval = static_cast<VkResult>(reader.read_uint32_t());')
