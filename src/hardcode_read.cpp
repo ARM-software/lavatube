@@ -275,6 +275,14 @@ static uint64_t debug_object_lookup(VkDebugReportObjectTypeEXT type, uint32_t in
 	return 0;
 }
 
+static uint64_t queue_lookup_fake_handle(uint32_t index)
+{
+	const trackedqueue& queue_data = VkQueue_index.at(index);
+	assert(queue_data.queueFamily != UINT32_MAX);
+	assert(queue_data.queueIndex != UINT32_MAX);
+	return (uint64_t)fake_handle<VkQueue>((queue_data.queueFamily << 16) + queue_data.queueIndex);
+}
+
 static uint64_t debug_object_lookup_output(VkDebugReportObjectTypeEXT type, uint32_t index)
 {
 	switch (type)
@@ -282,7 +290,7 @@ static uint64_t debug_object_lookup_output(VkDebugReportObjectTypeEXT type, uint
 	case VK_DEBUG_REPORT_OBJECT_TYPE_INSTANCE_EXT: return (uint64_t)fake_handle<VkInstance>(index);
 	case VK_DEBUG_REPORT_OBJECT_TYPE_PHYSICAL_DEVICE_EXT: return (uint64_t)fake_handle<VkPhysicalDevice>(index);
 	case VK_DEBUG_REPORT_OBJECT_TYPE_DEVICE_EXT: return (uint64_t)fake_handle<VkDevice>(index);
-	case VK_DEBUG_REPORT_OBJECT_TYPE_QUEUE_EXT: return (uint64_t)fake_handle<VkQueue>(index);
+	case VK_DEBUG_REPORT_OBJECT_TYPE_QUEUE_EXT: return queue_lookup_fake_handle(index);
 	case VK_DEBUG_REPORT_OBJECT_TYPE_DEVICE_MEMORY_EXT: return (uint64_t)fake_handle<VkDeviceMemory>(index);
 	case VK_DEBUG_REPORT_OBJECT_TYPE_SEMAPHORE_EXT: return (uint64_t)fake_handle<VkSemaphore>(index);
 	case VK_DEBUG_REPORT_OBJECT_TYPE_COMMAND_BUFFER_EXT: return (uint64_t)fake_handle<VkCommandBuffer>(index);
@@ -401,7 +409,7 @@ static uint64_t object_lookup_output(VkObjectType type, uint32_t index)
 	case VK_OBJECT_TYPE_INSTANCE: return (uint64_t)fake_handle<VkInstance>(index);
 	case VK_OBJECT_TYPE_PHYSICAL_DEVICE: return (uint64_t)fake_handle<VkPhysicalDevice>(index);
 	case VK_OBJECT_TYPE_DEVICE: return (uint64_t)fake_handle<VkDevice>(index);
-	case VK_OBJECT_TYPE_QUEUE: return (uint64_t)fake_handle<VkQueue>(index);
+	case VK_OBJECT_TYPE_QUEUE: return queue_lookup_fake_handle(index);
 	case VK_OBJECT_TYPE_DEVICE_MEMORY: return (uint64_t)fake_handle<VkDeviceMemory>(index);
 	case VK_OBJECT_TYPE_SEMAPHORE: return (uint64_t)fake_handle<VkSemaphore>(index);
 	case VK_OBJECT_TYPE_COMMAND_BUFFER: return (uint64_t)fake_handle<VkCommandBuffer>(index);
