@@ -167,7 +167,9 @@ validate_funcs(trace_post_calls)
 trace_post_tool_calls = [
 	'vkCreateDescriptorUpdateTemplate', 'vkCreateDescriptorUpdateTemplateKHR',
 	'vkUpdateDescriptorSetWithTemplate', 'vkUpdateDescriptorSetWithTemplateKHR',
-	'vkCmdPushDescriptorSetWithTemplate', 'vkCmdPushDescriptorSetWithTemplateKHR'
+	'vkCmdPushDescriptorSetWithTemplate', 'vkCmdPushDescriptorSetWithTemplateKHR',
+	'vkGetBufferDeviceAddress', 'vkGetBufferDeviceAddressKHR', 'vkGetBufferDeviceAddressEXT',
+	'vkGetAccelerationStructureDeviceAddressKHR'
 ]
 validate_funcs(trace_post_tool_calls)
 skip_post_calls = [ 'vkGetQueryPoolResults' ]

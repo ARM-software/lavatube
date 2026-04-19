@@ -338,7 +338,7 @@ class parameter(spec.base_parameter):
 			z.do('for (uint32_t k = 0; k < %s; k++)' % self.length)
 			z.loop_begin()
 			z.do('uint64_t stored_address = reader.read_uint64_t();')
-			z.do('%s[k] = reader.parent->device_address_remapping.translate_address(stored_address);' % tmpname)
+			z.do('%s[k] = reader.write_output ? stored_address : reader.parent->device_address_remapping.translate_address(stored_address);' % tmpname)
 			z.do('ILOG("%s changing device address from %%lu to %%lu at array position %%u", (unsigned long)stored_address, (unsigned long)%s[k], (unsigned)k);' % (self.funcname, tmpname))
 			z.loop_end()
 			z.do('%s = %s;' % (varname, tmpname))
@@ -347,7 +347,7 @@ class parameter(spec.base_parameter):
 				z.decl('VkDeviceAddress', varname)
 			z.decl('uint64_t', 'stored_address')
 			z.do('stored_address = reader.read_uint64_t();')
-			z.do('%s = reader.parent->device_address_remapping.translate_address(stored_address);' % varname)
+			z.do('%s = reader.write_output ? stored_address : reader.parent->device_address_remapping.translate_address(stored_address);' % varname)
 			z.do('ILOG("%s changing device address from %%lu to %%lu", (unsigned long)stored_address, (unsigned long)%s);' % (self.funcname, varname))
 		elif self.name == 'queueFamilyIndex':
 			z.decl('uint32_t', self.name)
@@ -496,7 +496,7 @@ class parameter(spec.base_parameter):
 		elif self.type == 'VkDeviceOrHostAddressKHR' or self.type == 'VkDeviceOrHostAddressConstKHR':
 			z.decl('uint64_t', 'stored_address')
 			z.do('stored_address = reader.read_uint64_t();')
-			z.do('%s.deviceAddress = reader.parent->device_address_remapping.translate_address(stored_address); // assume device address since we do not support host addresses' % varname)
+			z.do('%s.deviceAddress = reader.write_output ? stored_address : reader.parent->device_address_remapping.translate_address(stored_address); // assume device address since we do not support host addresses' % varname)
 			z.do('ILOG("%s changing device address from %%lu to %%lu", (unsigned long)stored_address, (unsigned long)%s.deviceAddress);' % (self.funcname, varname))
 		elif self.selector: # well-defined union
 			assert self.type in spec.unions, '%s used by %s with %s as selector is not in spec.unions!' % (self.type, self.name, self.selector)
@@ -531,7 +531,7 @@ class parameter(spec.base_parameter):
 					elif ttype == 'VkDeviceAddress':
 						z.decl('uint64_t', 'stored_address')
 						z.do('stored_address = reader.read_uint64_t();')
-						z.do('%s.%s = reader.parent->device_address_remapping.translate_address(stored_address);' % (varname, tname))
+						z.do('%s.%s = reader.write_output ? stored_address : reader.parent->device_address_remapping.translate_address(stored_address);' % (varname, tname))
 						z.do('ILOG("%s %s.%s changing device address from %%lu to %%lu inside union", (unsigned long)stored_address, (unsigned long)%s.%s);' % (self.funcname, varname, tname, varname, tname))
 					elif ttype in spec.type_mappings:
 						storedtype = spec.type_mappings[ttype]

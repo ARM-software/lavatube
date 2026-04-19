@@ -120,6 +120,7 @@ public:
 
 	int prev_callno = -1; // for validation
 	bool run = true;
+	bool write_output = false;
 	result_value use_result; // for post-processing to set which result to store
 
 	memory_pool pool;
@@ -200,6 +201,7 @@ public:
 	std::atomic_int global_frame;
 	trace_records records;
 	bool run = true;
+	bool write_output = false;
 
 	trace_metadata meta GUARDED_BY(frame_mutex);
 

@@ -73,6 +73,7 @@ lava_file_writer::lava_file_writer(uint16_t _tid, lava_writer* _parent) : file_w
 	current.thread = _tid;
 	current.call = 0;
 	run = parent->run;
+	write_output = parent->write_output;
 	get_thread_name(thread_name);
 	if (p__disable_multithread_compress) disable_multithreaded_compress();
 	if (p__disable_multithread_writeout) disable_multithreaded_writeout();
@@ -169,6 +170,7 @@ void lava_writer::set(const std::string& path)
 {
 	mPath = path + "_tmp";
 	mPack = path + ".vk";
+	write_output = false;
 	ILOG("Base path is set to %s", mPath.c_str());
 
 	// make path
@@ -182,6 +184,7 @@ void lava_writer::set(const std::string& path)
 	frame_mutex.lock();
 	for (unsigned i = 0; i < thread_streams.size(); i++)
 	{
+		thread_streams.at(i)->write_output = false;
 		thread_streams.at(i)->set(mPath);
 	}
 	frame_mutex.unlock();
@@ -193,6 +196,7 @@ void lava_writer::set_output(const std::string& packed_path)
 {
 	mPath = packed_path + "_tmp";
 	mPack = packed_path;
+	write_output = true;
 	ILOG("Output path is set to %s", mPack.c_str());
 
 	if (access(mPath.c_str(), F_OK) == 0)
@@ -209,6 +213,7 @@ void lava_writer::set_output(const std::string& packed_path)
 	frame_mutex.lock();
 	for (unsigned i = 0; i < thread_streams.size(); i++)
 	{
+		thread_streams.at(i)->write_output = true;
 		thread_streams.at(i)->set(mPath);
 	}
 	frame_mutex.unlock();

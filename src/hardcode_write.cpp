@@ -221,6 +221,79 @@ static void trace_post_vkCreateDescriptorUpdateTemplateKHR(lava_file_writer& wri
 	trace_post_vkCreateDescriptorUpdateTemplate(writer, result, device, pCreateInfo, pAllocator, pDescriptorUpdateTemplate);
 }
 
+static trackedbuffer* find_buffer_by_device_address(const trace_records& records, VkDeviceAddress address, VkDeviceSize size, VkDeviceSize& out_offset);
+
+static bool reverse_translate_buffer_address(const trace_records& records, uint64_t replay_address, uint64_t& capture_address)
+{
+	VkDeviceSize offset = 0;
+	trackedbuffer* buffer = find_buffer_by_device_address(records, replay_address, 1, offset);
+	if (!buffer || buffer->capture_device_address == 0) return false;
+	capture_address = buffer->capture_device_address + offset;
+	return true;
+}
+
+static bool reverse_translate_acceleration_structure_address(const trace_records& records, uint64_t replay_address, uint64_t& capture_address)
+{
+	for (auto* as : records.VkAccelerationStructureKHR_index.iterate())
+	{
+		if (!as) continue;
+		if (as->device_address != replay_address) continue;
+		if (as->capture_device_address == 0) return false;
+		capture_address = as->capture_device_address;
+		return true;
+	}
+	return false;
+}
+
+static char* reverse_translate_marked_payload(lava_file_writer& writer, trackedobject* object_data, const char* changedptr, uint64_t offset, uint64_t size, const VkMarkedOffsetsARM* ar)
+{
+	assert(ar && size > 0);
+	assert(ar->pOffsets);
+	assert(ar->pMarkingTypes);
+	assert(ar->pSubTypes);
+
+	char* scratch = writer.pool.allocate<char>(offset + size);
+	if (!scratch) ABORT("Failed to allocate marked payload rewrite buffer");
+	memcpy(scratch + offset, changedptr + offset, size);
+
+	for (uint32_t i = 0; i < ar->count; i++)
+	{
+		if (ar->pMarkingTypes[i] != VK_MARKING_TYPE_DEVICE_ADDRESS_ARM) continue;
+		const uint64_t mark_offset = ar->pOffsets[i];
+		if (mark_offset < offset || mark_offset + sizeof(uint64_t) > offset + size) continue;
+		uint64_t current = 0;
+		memcpy(&current, scratch + mark_offset, sizeof(current));
+		if (current == 0) continue;
+
+		uint64_t capture = 0;
+		const VkDeviceAddressTypeARM address_type = ar->pSubTypes[i].deviceAddressType;
+		bool found = false;
+		if (address_type == VK_DEVICE_ADDRESS_TYPE_BUFFER_ARM)
+		{
+			found = reverse_translate_buffer_address(writer.parent->records, current, capture);
+		}
+		else if (address_type == VK_DEVICE_ADDRESS_TYPE_ACCELERATION_STRUCTURE_ARM)
+		{
+			found = reverse_translate_acceleration_structure_address(writer.parent->records, current, capture);
+		}
+		else
+		{
+			ABORT("Unsupported marked device address subtype %u", (unsigned)address_type);
+		}
+		if (!found)
+		{
+			ABORT("Failed to reverse translate marked replay address 0x%llx for %s[%u]",
+				(unsigned long long)current, pretty_print_VkObjectType(object_data->object_type), (unsigned)object_data->index);
+		}
+		DLOG("%u: Rewriting %s marked address at offset %lu from replay 0x%llx to capture 0x%llx",
+		     (unsigned)i, (address_type == VK_DEVICE_ADDRESS_TYPE_BUFFER_ARM) ? "buffer" : "acceleration structure",
+		     (unsigned long)mark_offset, (unsigned long long)current, (unsigned long long)capture);
+		memcpy(scratch + mark_offset, &capture, sizeof(capture));
+	}
+
+	return scratch;
+}
+
 static void trace_post_vkAcquireNextImageKHR(lava_file_writer& writer, VkResult result, VkDevice device, VkSwapchainKHR swapchain, uint64_t timeout, VkSemaphore semaphore, VkFence fence, uint32_t* pImageIndex)
 {
 	DLOG("Acquired swapchain image index=%u", *pImageIndex);
@@ -1348,6 +1421,7 @@ static uint64_t write_out_object(lava_file_writer& writer, const auto* device_da
 	if (ar) flags |= PACKET_FLAG_HAS_PNEXT;
 	writer.write_uint16_t(flags);
 	if (ar) write_extension(writer, (VkBaseOutStructure*)ar);
+	if (writer.write_output && ar && size > 0) changedptr = reverse_translate_marked_payload(writer, object_data, changedptr, offset, size, ar);
 	uint64_t written = writer.write_patch(cloneptr, changedptr, offset, size);
 	object_data->updates++;
 	object_data->written += written;
