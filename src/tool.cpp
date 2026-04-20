@@ -591,6 +591,6 @@ int main(int argc, char **argv)
 
 	printf("%d shader invokations executed\n", invokation_count);
 
-	if (p__debug_destination) fclose(p__debug_destination);
+	close_debug_destination();
 	return 0;
 }

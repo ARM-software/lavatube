@@ -78,6 +78,7 @@ static inline uint64_t diff_timespec(const struct timespec *t1, const struct tim
 void set_thread_name(const char* name);
 /// Get current thread name, if any. Input parameter must be char[16].
 void get_thread_name(char* name);
+void close_debug_destination();
 
 static __attribute__((pure)) inline pid_t lava_gettid()
 {

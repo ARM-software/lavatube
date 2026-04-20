@@ -407,6 +407,6 @@ int main(int argc, char **argv)
 	if (!replayer.cleanup_after_stop()) cleanup_xcb_wsi_objects();
 	vkuDestroyWrapper(library);
 	wsi_shutdown();
-	if (p__debug_destination) fclose(p__debug_destination);
+	close_debug_destination();
 	return replayer.exit_status;
 }
