@@ -3441,60 +3441,76 @@ static void replay_vkCreateSurfaceKHR_packet(lava_file_reader& reader, const sur
 	// TBD we should create some window-common callback a user can attach to and trigger here
 }
 
+static surface_create_packet output_vkCreateSurfaceKHR_packet(const surface_create_packet& packet)
+{
+	surface_create_packet out = packet;
+	if (packet.retval != VK_SUCCESS || packet.surface_index == CONTAINER_NULL_VALUE) return out;
+
+	const auto& data = VkSurfaceKHR_index.at(packet.surface_index);
+	if (data.width != 0)
+	{
+		out.x = data.x;
+		out.y = data.y;
+		out.width = data.width;
+		out.height = data.height;
+	}
+	return out;
+}
+
 void retrace_vkCreateAndroidSurfaceKHR(lava_file_reader& reader)
 {
 	const surface_create_packet packet = decode_vkCreateSurfaceKHR_packet(reader, VK_STRUCTURE_TYPE_ANDROID_SURFACE_CREATE_INFO_KHR);
 	replay_vkCreateSurfaceKHR_packet(reader, packet, "vkCreateAndroidSurfaceKHR");
-	if (reader.write_output) tool_write_vkCreateSurfaceKHR_packet(packet, "vkCreateAndroidSurfaceKHR", VKCREATEANDROIDSURFACEKHR);
+	if (reader.write_output) tool_write_vkCreateSurfaceKHR_packet(output_vkCreateSurfaceKHR_packet(packet), "vkCreateAndroidSurfaceKHR", VKCREATEANDROIDSURFACEKHR);
 }
 
 void retrace_vkCreateXcbSurfaceKHR(lava_file_reader& reader)
 {
 	const surface_create_packet packet = decode_vkCreateSurfaceKHR_packet(reader, VK_STRUCTURE_TYPE_XCB_SURFACE_CREATE_INFO_KHR);
 	replay_vkCreateSurfaceKHR_packet(reader, packet, "vkCreateXcbSurfaceKHR");
-	if (reader.write_output) tool_write_vkCreateSurfaceKHR_packet(packet, "vkCreateXcbSurfaceKHR", VKCREATEXCBSURFACEKHR);
+	if (reader.write_output) tool_write_vkCreateSurfaceKHR_packet(output_vkCreateSurfaceKHR_packet(packet), "vkCreateXcbSurfaceKHR", VKCREATEXCBSURFACEKHR);
 }
 
 void retrace_vkCreateXlibSurfaceKHR(lava_file_reader& reader)
 {
 	const surface_create_packet packet = decode_vkCreateSurfaceKHR_packet(reader, VK_STRUCTURE_TYPE_XLIB_SURFACE_CREATE_INFO_KHR);
 	replay_vkCreateSurfaceKHR_packet(reader, packet, "vkCreateXlibSurfaceKHR");
-	if (reader.write_output) tool_write_vkCreateSurfaceKHR_packet(packet, "vkCreateXlibSurfaceKHR", VKCREATEXLIBSURFACEKHR);
+	if (reader.write_output) tool_write_vkCreateSurfaceKHR_packet(output_vkCreateSurfaceKHR_packet(packet), "vkCreateXlibSurfaceKHR", VKCREATEXLIBSURFACEKHR);
 }
 
 void retrace_vkCreateWaylandSurfaceKHR(lava_file_reader& reader)
 {
 	const surface_create_packet packet = decode_vkCreateSurfaceKHR_packet(reader, VK_STRUCTURE_TYPE_WAYLAND_SURFACE_CREATE_INFO_KHR);
 	replay_vkCreateSurfaceKHR_packet(reader, packet, "vkCreateWaylandSurfaceKHR");
-	if (reader.write_output) tool_write_vkCreateSurfaceKHR_packet(packet, "vkCreateWaylandSurfaceKHR", VKCREATEWAYLANDSURFACEKHR);
+	if (reader.write_output) tool_write_vkCreateSurfaceKHR_packet(output_vkCreateSurfaceKHR_packet(packet), "vkCreateWaylandSurfaceKHR", VKCREATEWAYLANDSURFACEKHR);
 }
 
 void retrace_vkCreateHeadlessSurfaceEXT(lava_file_reader& reader)
 {
 	const surface_create_packet packet = decode_vkCreateSurfaceKHR_packet(reader, VK_STRUCTURE_TYPE_HEADLESS_SURFACE_CREATE_INFO_EXT);
 	replay_vkCreateSurfaceKHR_packet(reader, packet, "vkCreateHeadlessSurfaceEXT");
-	if (reader.write_output) tool_write_vkCreateSurfaceKHR_packet(packet, "vkCreateHeadlessSurfaceEXT", VKCREATEHEADLESSSURFACEEXT);
+	if (reader.write_output) tool_write_vkCreateSurfaceKHR_packet(output_vkCreateSurfaceKHR_packet(packet), "vkCreateHeadlessSurfaceEXT", VKCREATEHEADLESSSURFACEEXT);
 }
 
 void retrace_vkCreateWin32SurfaceKHR(lava_file_reader& reader)
 {
 	const surface_create_packet packet = decode_vkCreateSurfaceKHR_packet(reader, VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR);
 	replay_vkCreateSurfaceKHR_packet(reader, packet, "vkCreateWin32SurfaceKHR");
-	if (reader.write_output) tool_write_vkCreateSurfaceKHR_packet(packet, "vkCreateWin32SurfaceKHR", VKCREATEWIN32SURFACEKHR);
+	if (reader.write_output) tool_write_vkCreateSurfaceKHR_packet(output_vkCreateSurfaceKHR_packet(packet), "vkCreateWin32SurfaceKHR", VKCREATEWIN32SURFACEKHR);
 }
 
 void retrace_vkCreateDirectFBSurfaceEXT(lava_file_reader& reader)
 {
 	const surface_create_packet packet = decode_vkCreateSurfaceKHR_packet(reader, VK_STRUCTURE_TYPE_DIRECTFB_SURFACE_CREATE_INFO_EXT);
 	replay_vkCreateSurfaceKHR_packet(reader, packet, "vkCreateDirectFBSurfaceEXT");
-	if (reader.write_output) tool_write_vkCreateSurfaceKHR_packet(packet, "vkCreateDirectFBSurfaceEXT", VKCREATEDIRECTFBSURFACEEXT);
+	if (reader.write_output) tool_write_vkCreateSurfaceKHR_packet(output_vkCreateSurfaceKHR_packet(packet), "vkCreateDirectFBSurfaceEXT", VKCREATEDIRECTFBSURFACEEXT);
 }
 
 void retrace_vkCreateMetalSurfaceEXT(lava_file_reader& reader)
 {
 	const surface_create_packet packet = decode_vkCreateSurfaceKHR_packet(reader, VK_STRUCTURE_TYPE_METAL_SURFACE_CREATE_INFO_EXT);
 	replay_vkCreateSurfaceKHR_packet(reader, packet, "vkCreateMetalSurfaceEXT");
-	if (reader.write_output) tool_write_vkCreateSurfaceKHR_packet(packet, "vkCreateMetalSurfaceEXT", VKCREATEMETALSURFACEEXT);
+	if (reader.write_output) tool_write_vkCreateSurfaceKHR_packet(output_vkCreateSurfaceKHR_packet(packet), "vkCreateMetalSurfaceEXT", VKCREATEMETALSURFACEEXT);
 }
 
 void retrace_vkGetDeviceQueue2(lava_file_reader& reader)

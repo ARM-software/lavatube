@@ -156,6 +156,10 @@ static void bootstrap_write_side_state(const std::string& input)
 
 	frame_mutex.lock();
 	writer.json() = packed_json("metadata.json", input);
+	writer.json()["lavatube_version_major"] = LAVATUBE_VERSION_MAJOR;
+	writer.json()["lavatube_version_minor"] = LAVATUBE_VERSION_MINOR;
+	writer.json()["lavatube_version_patch"] = LAVATUBE_VERSION_PATCH;
+	writer.json()["vulkan_header_version"] = version_to_string(VK_HEADER_VERSION);
 	const int global_frames = writer.json().get("global_frames", 1).asInt();
 	writer.global_frame.exchange(std::max(global_frames - 1, 0));
 	frame_mutex.unlock();
