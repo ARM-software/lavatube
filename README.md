@@ -149,6 +149,66 @@ To enable layer debugging, set `VK_LOADER_DEBUG=warning`.
 
 To enable lavatube debug output, set `LAVATUBE_DEBUG` to one of 1, 2 or 3.
 
+Testing
+=======
+
+Lavatube has a comprehensive test suite that runs on both Linux Desktop and Android.
+
+Linux Desktop
+-------------
+
+Run the standard CTest command in your build directory:
+
+```bash
+cd build
+ctest -V
+```
+
+Android
+-------
+
+Lavatube supports running the entire test suite on an Android device or emulator. The testing behavior depends on the architecture (ABI) you are building for.
+
+### Automated Emulator Testing (x86_64 / x86)
+
+If you build for `x86_64` (default for emulators), CTest will automatically manage the emulator lifecycle for you using CTest Fixtures:
+
+1.  **Boot**: It starts a headless emulator instance (`TestDevice`).
+2.  **Execution**: It pushes each test binary to `/data/local/tmp/` and executes it via ADB.
+3.  **Teardown**: It shuts down the emulator when finished.
+
+To run:
+```bash
+scripts/build-android.sh x86_64
+cd build_android_x86_64
+ctest -R container_test -V
+```
+
+### Physical Device Testing (arm64-v8a / armeabi-v7a)
+
+For ARM builds, CTest assumes you have a physical device connected via USB with ADB enabled. It will **not** attempt to start an emulator.
+
+1.  Connect your device via USB.
+2.  Verify it's visible with `adb devices`.
+3.  Run tests:
+
+```bash
+scripts/build-android.sh arm64-v8a
+cd build_android_arm64-v8a
+ctest -V
+```
+
+*Note: If no device is connected, ARM tests will fail quickly with a 10-second timeout.*
+
+### Custom Android App Tracing Test
+
+There is a specialized integration test `android_emulator_trace` that performs a full end-to-end capture and replay:
+1.  Boots the emulator.
+2.  Injects the Lavatube layer into a UI application (e.g., Google Calendar).
+3.  Captures a trace for 15 seconds.
+4.  Pulls the trace file back to your desktop.
+5.  Runs `lava-replay` on the desktop to verify the trace is valid.
+
 Files
 =====
 
