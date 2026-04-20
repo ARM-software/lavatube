@@ -1874,14 +1874,19 @@ static void trace_pre_vkCreateDevice(VkPhysicalDevice physicalDevice, VkDeviceCr
 	for (const auto &ext : tmp_device_extension_properties)
 	{
 		std::string name = ext.extensionName;
-		if (name == VK_KHR_EXTERNAL_MEMORY_EXTENSION_NAME) add_VK_KHR_external_memory = true;
-		if (name == VK_EXT_EXTERNAL_MEMORY_HOST_EXTENSION_NAME) add_VK_EXT_external_memory_host = true;
+		if (p__external_memory && name == VK_KHR_EXTERNAL_MEMORY_EXTENSION_NAME) add_VK_KHR_external_memory = true;
+		if (p__external_memory && name == VK_EXT_EXTERNAL_MEMORY_HOST_EXTENSION_NAME) add_VK_EXT_external_memory_host = true;
 	}
 
 	// Extra extensions to add
 	std::vector<std::string> extra_exts;
 	if (add_VK_KHR_external_memory) { extra_exts.push_back(VK_KHR_EXTERNAL_MEMORY_EXTENSION_NAME); }
 	if (add_VK_EXT_external_memory_host) { extra_exts.push_back(VK_EXT_EXTERNAL_MEMORY_HOST_EXTENSION_NAME); }
+	if (p__external_memory)
+	{
+		if (!add_VK_KHR_external_memory) ABORT("Tracing with external memory requested but VK_KHR_external_memory not supported -- aborting!");
+		if (!add_VK_EXT_external_memory_host) ABORT("Tracing with external memory requested but VK_EXT_external_memory_host not supported -- aborting!");
+	}
 
 	// Remove built-in extensions before sending the requested extension list to the driver
 	char** nameptrs = writer.pool.allocate<char*>(pCreateInfo->enabledExtensionCount + extra_exts.size()); // reserve space for all
