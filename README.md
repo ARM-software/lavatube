@@ -173,7 +173,7 @@ Lavatube supports running the entire test suite on an Android device or emulator
 
 If you build for `x86_64` (default for emulators), CTest will automatically manage the emulator lifecycle for you using CTest Fixtures:
 
-1.  **Boot**: It starts a headless emulator instance (`TestDevice`).
+1.  **Boot**: It starts a headless emulator instance (`TestDevice`). *Note: The first test execution may take a few minutes as the emulator boots.*
 2.  **Execution**: It pushes each test binary to `/data/local/tmp/` and executes it via ADB.
 3.  **Teardown**: It shuts down the emulator when finished.
 
