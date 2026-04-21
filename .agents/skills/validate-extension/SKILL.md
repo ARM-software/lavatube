@@ -1,5 +1,5 @@
 ---
-name: validate_extension
+name: validate-extension
 description: Validate the implementation and support in lavatube for a given Vulkan extension
 metadata:
   short-description: Validate lavatube's support for a Vulkan extension

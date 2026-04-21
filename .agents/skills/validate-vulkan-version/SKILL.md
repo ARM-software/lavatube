@@ -1,5 +1,5 @@
 ---
-name: validate_vulkan_version
+name: validate-vulkan-version
 description: Validate the implementation and support in lavatube for a given Vulkan version
 metadata:
   short-description: Validate lavatube's support for a Vulkan version

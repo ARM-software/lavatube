@@ -1,5 +1,5 @@
 ---
-name: validate_hardcoded
+name: validate-hardcoded
 description: Validate our hardcoded commands against code generated variants
 metadata:
   short-description: Validate lavatube's hardcoded command implementations to see if we missed anything
