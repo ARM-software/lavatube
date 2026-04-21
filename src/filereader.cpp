@@ -37,11 +37,10 @@ void file_reader::init(int fd, size_t uncompressed_size, size_t uncompressed_tar
 		compressed_data += 32; // the rest is reserved space
 		total_left -= header_bytes;
 		(void)version;
-		(void)compression_algorithm;
 	}
 	madvise(fstart, mapped_size, MADV_SEQUENTIAL);
 
-	const uint64_t padded_size = density_decompress_safe_size(uncompressed_size);
+	const uint64_t padded_size = (compression_algorithm == LAVATUBE_COMPRESSION_DENSITY) ? density_decompress_safe_size(uncompressed_size) : uncompressed_size;
 	uncompressed_data = (char*)mmap(nullptr, padded_size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 
 	done_decompressing = false;
@@ -90,9 +89,10 @@ void file_reader::release_checkpoint()
 file_reader::~file_reader()
 {
 	done_decompressing = true;
-	decompressor_thread.join();
+	if (decompressor_thread.joinable()) decompressor_thread.join();
 	munmap(fstart, mapped_size);
-	munmap(uncompressed_data, total_uncompressed);
+	const uint64_t padded_size = (compression_algorithm == LAVATUBE_COMPRESSION_DENSITY) ? density_decompress_safe_size(total_uncompressed) : total_uncompressed;
+	munmap(uncompressed_data, padded_size);
 }
 
 /// Only call this from the decompressor thread (or main thread if not using multi-threaded file reading).
