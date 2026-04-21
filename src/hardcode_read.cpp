@@ -1929,6 +1929,42 @@ void replay_callback_vkQueuePresentKHR(callback_context& cb, VkQueue queue, cons
 	VkPresentInfoKHR* pPresentInfo = const_cast<VkPresentInfoKHR*>(pPresentInfo_const);
 	lava::lock_guard lock(sync_mutex);
 	if (!pPresentInfo) return;
+	const int completed_global_frame_raw = reader.parent->global_frame.load(std::memory_order_acquire);
+	if (reader.parent->screenshots_enabled())
+	{
+		if (completed_global_frame_raw <= 0)
+		{
+			DIE("Screenshot capture encountered invalid global frame state %d", completed_global_frame_raw);
+		}
+		const uint32_t completed_global_frame = static_cast<uint32_t>(completed_global_frame_raw - 1);
+		if (reader.parent->screenshots().is_frame_selected(completed_global_frame))
+		{
+			if (pPresentInfo->swapchainCount != 1)
+			{
+				DIE("Screenshot capture currently only supports swapchainCount == 1, got %u", pPresentInfo->swapchainCount);
+			}
+			if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR && result != VK_ERROR_OUT_OF_DATE_KHR)
+			{
+				DIE("Cannot capture screenshot for frame %u after vkQueuePresentKHR returned %s", completed_global_frame, errorString(result));
+			}
+
+			const uint32_t swapchainkhr_index = index_to_VkSwapchainKHR.index(pPresentInfo->pSwapchains[0]);
+			if (swapchainkhr_index == CONTAINER_INVALID_INDEX) DIE("Failed to resolve presented swapchain for screenshot capture");
+			const trackedswapchain_replay& data = VkSwapchainKHR_index.at(swapchainkhr_index);
+			const uint32_t queue_index = index_to_VkQueue.index(queue);
+			if (queue_index == CONTAINER_INVALID_INDEX) DIE("Failed to resolve replay queue for screenshot capture");
+			const trackedqueue& queue_data = VkQueue_index.at(queue_index);
+			if (data.virtual_images.empty() || data.next_stored_image >= data.virtual_images.size())
+			{
+				DIE("No virtual swapchain image available for screenshot capture on frame %u", completed_global_frame);
+			}
+			if (!reader.parent->screenshots().capture(completed_global_frame, queue_data.physicalDevice, data.device, queue, queue_data.queueFamily,
+				data.virtual_images[data.next_stored_image], data.info.imageFormat, data.info.imageExtent.width, data.info.imageExtent.height))
+			{
+				DIE("Failed to capture screenshot for frame %u", completed_global_frame);
+			}
+		}
+	}
 	if (is_virtualswapchain() && (result == VK_SUBOPTIMAL_KHR || result == VK_ERROR_OUT_OF_DATE_KHR))
 	{
 		ILOG("We got %s from vkQueuePresentKHR -- remaking the swapchain!", errorString(result));
@@ -2442,6 +2478,7 @@ void replay_pre_vkDestroyDevice(lava_file_reader& reader, VkDevice device, const
 	if (device != VK_NULL_HANDLE)
 	{
 		wrap_vkDeviceWaitIdle(device);
+		reader.parent->screenshots().destroy_device(device);
 		const uint32_t device_index = index_to_VkDevice.index(device);
 		if (device_index != CONTAINER_INVALID_INDEX)
 		{

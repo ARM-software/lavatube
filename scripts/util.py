@@ -1552,12 +1552,7 @@ def load_add_tracking(name):
 			z.do('index_to_%s.unset(indices[i]);' % type)
 		z.brace_end()
 	elif name == 'vkQueuePresentKHR':
-		z.do('if (reader.new_frame()) // if it returns true, then we have hit the end of our global frame range, so terminate everything')
-		z.brace_begin()
-		z.do('if (reader.run) reader.parent->request_stop(queue_data.device);')
-		z.do('else reader.parent->request_stop();')
-		z.do('return; // make sure we now do not run anything below this point')
-		z.brace_end()
+		z.do('const bool stop_after_present = reader.new_frame();')
 	elif name in ['vkBindImageMemory', 'VkBindImageMemoryInfoKHR', 'VkBindImageMemoryInfo']:
 		z.do('image_data.backing = memory;')
 		z.do('image_data.offset = memoryOffset;')
@@ -1895,6 +1890,13 @@ def loadfunc(name, node, target, header):
 	elif retval == 'PFN_vkVoidFunction': z.do('cb_context.result.address = retval;')
 	else: assert False, 'Unhandled callback result type %s from %s' % (retval, name)
 	z.do('for (auto* c : %s_callbacks) c(%s);' % (name, 'cb_context, ' + ', '.join(call_list)))
+	if name == 'vkQueuePresentKHR':
+		z.do('if (stop_after_present) // if it returns true, then we have hit the end of our global frame range, so terminate everything')
+		z.brace_begin()
+		z.do('if (reader.run) reader.parent->request_stop(queue_data.device);')
+		z.do('else reader.parent->request_stop();')
+		z.do('return; // make sure we now do not run anything below this point')
+		z.brace_end()
 	if name in spec.draw_commands:
 		z.do('if (!reader.run) postprocess_draw_command(cb_context, commandbuffer_index, commandbuffer_data);')
 	if name in spec.compute_commands:

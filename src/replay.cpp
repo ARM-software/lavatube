@@ -74,6 +74,8 @@ static void usage()
 	printf("-S/--save-cache dir    Save cached objects to the specified directory\n");
 	printf("-L/--load-cache dir    Load cached objects from the specified directory\n");
 	printf("-B/--blackhole         Do not actually submit any work to the GPU. May be useful for CPU measurements.\n");
+	printf("--screenshots frames   Generate PNG screenshots for zero-based global frames N[-M][,...]\n");
+	printf("--screenshot-prefix p  Prefix for screenshot PNG names, producing p<frame>.png\n");
 	printf("--skip-missing-input   Exit with code 77 if the input trace file does not exist\n");
 	printf("--no-multithreaded-io  Do not do decompression and file read in a separate thread. May save some CPU load and memory.\n");
 	printf("-s/--sandbox level     Set security sandbox level (from 1 to 3, with 3 the most strict, default %d)\n", (int)p__sandbox_level);
@@ -204,6 +206,9 @@ int main(int argc, char **argv)
 	bool infodump = false;
 	bool skip_missing_input = false;
 	std::string wsi;
+	std::vector<replay_screenshot_range> screenshot_ranges;
+	std::string screenshot_prefix = "screenshot_frame_";
+	bool screenshot_prefix_set = false;
 
 	if (p__sandbox_level >= 1) sandbox_level_one();
 
@@ -331,6 +336,19 @@ int main(int argc, char **argv)
 		{
 			p__blackhole = 1;
 		}
+		else if (match(argv[i], nullptr, "--screenshots", remaining))
+		{
+			std::string error;
+			if (!parse_replay_screenshot_ranges(get_str(argv[++i], remaining), screenshot_ranges, error))
+			{
+				DIE("Bad --screenshots value: %s", error.c_str());
+			}
+		}
+		else if (match(argv[i], nullptr, "--screenshot-prefix", remaining))
+		{
+			screenshot_prefix = get_str(argv[++i], remaining);
+			screenshot_prefix_set = true;
+		}
 		else if (match(argv[i], nullptr, "--skip-missing-input", remaining))
 		{
 			skip_missing_input = true;
@@ -373,6 +391,9 @@ int main(int argc, char **argv)
 	if (p__realimages > 0 && !p__virtualswap) DIE("Setting the number of virtual images can only be done with a virtual swapchain!");
 	if (p__realpresentmode != VK_PRESENT_MODE_MAX_ENUM_KHR && !p__virtualswap) DIE("Changing present mode can only be used with a virtual swapchain!");
 	if (p__cpu && p__gpu) DIE("Cannot use both --cpu/-C and --gpu/-G at the same time!");
+	if (screenshot_prefix_set && screenshot_ranges.empty()) DIE("The --screenshot-prefix option requires --screenshots");
+	if (!screenshot_ranges.empty() && !p__virtualswap) DIE("The --screenshots option currently only supports the virtual/offscreen swapchain path");
+	if (!screenshot_ranges.empty() && p__blackhole) DIE("The --screenshots option cannot be used together with --blackhole");
 
 	if (filename.empty())
 	{
@@ -393,6 +414,8 @@ int main(int argc, char **argv)
 
 	VkuVulkanLibrary library = vkuCreateWrapper();
 	replayer.set_frames(start, end);
+	replayer.set_screenshot_prefix(std::move(screenshot_prefix));
+	replayer.set_screenshot_ranges(std::move(screenshot_ranges));
 	replayer.init(filename);
 	register_replay_callbacks();
 	if (infodump)
@@ -402,6 +425,7 @@ int main(int argc, char **argv)
 	}
 
 	run_multithreaded();
+	replayer.destroy_screenshot_resources();
 	replayer.finalize();
 	if (p__custom_allocator) allocators_print(stdout);
 	if (!replayer.cleanup_after_stop()) cleanup_xcb_wsi_objects();

@@ -223,6 +223,8 @@ set(LAVATUBE_SRC
     ${PROJECT_SOURCE_DIR}/src/filereader.h
     ${PROJECT_SOURCE_DIR}/src/read.cpp
     ${PROJECT_SOURCE_DIR}/src/read.h
+    ${PROJECT_SOURCE_DIR}/src/replay_screenshot.cpp
+    ${PROJECT_SOURCE_DIR}/src/replay_screenshot.h
     ${PROJECT_SOURCE_DIR}/src/allocators.cpp
     ${PROJECT_SOURCE_DIR}/src/allocators.h
     ${PROJECT_SOURCE_DIR}/src/suballocator.cpp
@@ -321,6 +323,19 @@ target_link_libraries(rangetrack ${MOST_COMMON_LIBRARIES})
 target_compile_options(rangetrack PRIVATE ${COMMON_FLAGS})
 add_lavatube_test(rangetrack_test COMMAND rangetrack)
 add_dependencies(rangetrack sync_generated)
+
+add_executable(replay_screenshot_test tests/replay_screenshot.cpp)
+target_include_directories(replay_screenshot_test ${COMMON_INCLUDE})
+target_link_libraries(replay_screenshot_test ${COMMON_LIBRARIES} lavatube)
+target_compile_options(replay_screenshot_test PRIVATE ${COMMON_FLAGS})
+add_lavatube_test(replay_screenshot_test COMMAND replay_screenshot_test)
+add_dependencies(replay_screenshot_test sync_generated)
+
+add_executable(check_png tests/check_png.cpp)
+target_include_directories(check_png ${COMMON_INCLUDE})
+target_link_libraries(check_png ${MOST_COMMON_LIBRARIES})
+target_compile_options(check_png PRIVATE ${COMMON_FLAGS})
+add_dependencies(check_png sync_generated)
 
 function(internal_test test_name test_output)
 	add_executable(${ARGV0} tests/${ARGV0}.cpp ${VULKAN_TESTS_SRC})
@@ -521,6 +536,24 @@ add_lavatube_test(replayer_samples_frames_nostalls COMMAND lava-replay -B -w non
 set_tests_properties(replayer_samples_frames_nostalls PROPERTIES ENVIRONMENT "LAVATUBE_ALLOW_STALLS=0")
 add_lavatube_test(trace_test_1_0_replay_preload0 COMMAND lava-replay --skip-missing-input -p 0 tracing_1_2_0.vk)
 set_tests_properties(trace_test_1_0_replay_preload0 PROPERTIES FIXTURES_REQUIRED tracing1 SKIP_RETURN_CODE 77)
+add_lavatube_test(replayer_samples_screenshot0 COMMAND lava-replay -C -w none --screenshots 0 ${PROJECT_SOURCE_DIR}/traces/sample_hello_triangle.vk)
+set_tests_properties(replayer_samples_screenshot0 PROPERTIES FIXTURES_SETUP ReplayScreenshot0 WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+add_lavatube_test(replayer_samples_screenshot0_validate COMMAND check_png screenshot_frame_0.png)
+set_tests_properties(replayer_samples_screenshot0_validate PROPERTIES FIXTURES_REQUIRED ReplayScreenshot0 WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+add_lavatube_test(replayer_samples_screenshot7 COMMAND lava-replay -C -w none -f 5 9 --screenshots 7 ${PROJECT_SOURCE_DIR}/traces/sample_hello_triangle.vk)
+set_tests_properties(replayer_samples_screenshot7 PROPERTIES FIXTURES_SETUP ReplayScreenshot7 WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+add_lavatube_test(replayer_samples_screenshot7_validate COMMAND check_png screenshot_frame_7.png)
+set_tests_properties(replayer_samples_screenshot7_validate PROPERTIES FIXTURES_REQUIRED ReplayScreenshot7 WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+add_lavatube_test(replayer_samples_screenshot_prefix COMMAND lava-replay -C -w none --screenshots 0 --screenshot-prefix capture_ ${PROJECT_SOURCE_DIR}/traces/sample_hello_triangle.vk)
+set_tests_properties(replayer_samples_screenshot_prefix PROPERTIES FIXTURES_SETUP ReplayScreenshotPrefix WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+add_lavatube_test(replayer_samples_screenshot_prefix_validate COMMAND check_png capture_0.png)
+set_tests_properties(replayer_samples_screenshot_prefix_validate PROPERTIES FIXTURES_REQUIRED ReplayScreenshotPrefix WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+add_lavatube_test(replayer_screenshot_invalid_spec COMMAND lava-replay --screenshots 4-2)
+set_tests_properties(replayer_screenshot_invalid_spec PROPERTIES WILL_FAIL TRUE)
+add_lavatube_test(replayer_screenshot_blackhole_rejected COMMAND lava-replay -C -B -w none --screenshots 0 ${PROJECT_SOURCE_DIR}/traces/sample_hello_triangle.vk)
+set_tests_properties(replayer_screenshot_blackhole_rejected PROPERTIES WILL_FAIL TRUE)
+add_lavatube_test(replayer_screenshot_prefix_requires_screenshots COMMAND lava-replay --screenshot-prefix capture_)
+set_tests_properties(replayer_screenshot_prefix_requires_screenshots PROPERTIES WILL_FAIL TRUE)
 install(TARGETS lava-replay RUNTIME)
 
 # --- lava-tool ---

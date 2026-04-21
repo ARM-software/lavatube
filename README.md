@@ -58,6 +58,8 @@ export VK_LAYER_PATH=<path_to_json_and_.so>
 export VK_INSTANCE_LAYERS=VK_LAYER_ARM_lavatube
 export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$VK_LAYER_PATH
 
+You can also use the `lava-capture.py` script to set all these for you.
+
 Building
 ========
 

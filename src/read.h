@@ -20,6 +20,7 @@
 #include "lavatube.h"
 #include "filereader.h"
 #include "jsoncpp/json/value.h"
+#include "replay_screenshot.h"
 
 using lava_replay_func = std::function<void(lava_file_reader&)>;
 class lava_file_reader;
@@ -95,8 +96,33 @@ public:
 	// consume these to rebuild descriptor buffer contents for the replay device instead of using capture-device bytes.
 	std::deque<descriptor_rewrite> pending_descriptor_rewrites GUARDED_BY(sync_mutex);
 
-	/// Current global frame (only use for logging)
+	/// Count of completed global frames. After a frame boundary this is the just-finished frame index plus one.
 	std::atomic_int global_frame{ 0 };
+
+	void set_screenshot_ranges(std::vector<replay_screenshot_range>&& ranges)
+	{
+		mReplayScreenshots.set_ranges(std::move(ranges));
+	}
+
+	void set_screenshot_prefix(std::string&& prefix)
+	{
+		mReplayScreenshots.set_prefix(std::move(prefix));
+	}
+
+	bool screenshots_enabled() const
+	{
+		return mReplayScreenshots.enabled();
+	}
+
+	replay_screenshot_handler& screenshots()
+	{
+		return mReplayScreenshots;
+	}
+
+	void destroy_screenshot_resources()
+	{
+		mReplayScreenshots.destroy();
+	}
 
 	std::vector<std::thread> threads;
 
@@ -138,6 +164,7 @@ private:
 	int mEnd = -1;
 	int mGlobalFrames = 0;
 	FILE* out_fptr = nullptr;
+	replay_screenshot_handler mReplayScreenshots;
 };
 
 class lava_file_reader : public file_reader
@@ -225,7 +252,7 @@ public:
 			start_measurement();
 		}
 		current.frame++;
-		parent->global_frame++; // just use for logging purposes
+		parent->global_frame++;
 		if (mEnd != -1 && (int)current.frame == mEnd)
 		{
 			if (mHaveFinalFrame)
