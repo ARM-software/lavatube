@@ -169,7 +169,10 @@ trace_post_tool_calls = [
 	'vkUpdateDescriptorSetWithTemplate', 'vkUpdateDescriptorSetWithTemplateKHR',
 	'vkCmdPushDescriptorSetWithTemplate', 'vkCmdPushDescriptorSetWithTemplateKHR',
 	'vkGetBufferDeviceAddress', 'vkGetBufferDeviceAddressKHR', 'vkGetBufferDeviceAddressEXT',
-	'vkGetAccelerationStructureDeviceAddressKHR'
+	'vkGetAccelerationStructureDeviceAddressKHR',
+	'vkGetBufferMemoryRequirements', 'vkGetBufferMemoryRequirements2', 'vkGetBufferMemoryRequirements2KHR',
+	'vkGetImageMemoryRequirements', 'vkGetImageMemoryRequirements2', 'vkGetImageMemoryRequirements2KHR',
+	'vkGetPhysicalDeviceMemoryProperties', 'vkGetPhysicalDeviceMemoryProperties2', 'vkGetPhysicalDeviceMemoryProperties2KHR'
 ]
 validate_funcs(trace_post_tool_calls)
 skip_post_calls = [ 'vkGetQueryPoolResults' ]
