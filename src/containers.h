@@ -13,6 +13,7 @@
 #include <stdint.h>
 #include <memory>
 #include <cstddef>
+#include <limits>
 #include <mutex>
 #include <shared_mutex>
 #include <map>
@@ -20,6 +21,7 @@
 
 #include "lavamutex.h"
 #include "unordered_dense/include/ankerl/unordered_dense.h"
+#include "spirv-simulator/framework/memory_flag_tracker.hpp"
 
 struct change_source
 {
@@ -87,6 +89,9 @@ private:
 struct host_write_regions
 {
 public:
+	using tracker_type = SPIRVSimulator::MemoryFlagTracker;
+	using fragment_id_type = tracker_type::FragmentId;
+
 	struct stats
 	{
 		uint64_t segments = 0;
@@ -100,7 +105,8 @@ public:
 	host_write_regions(const host_write_regions& other)
 	{
 		std::unique_lock lock(other.mutex);
-		data = other.data;
+		tracker = other.tracker;
+		fragment_sources = other.fragment_sources;
 	}
 
 	host_write_regions& operator=(const host_write_regions& other)
@@ -109,14 +115,16 @@ public:
 		std::unique_lock lock_this(mutex, std::defer_lock);
 		std::unique_lock lock_other(other.mutex, std::defer_lock);
 		std::lock(lock_this, lock_other);
-		data = other.data;
+		tracker = other.tracker;
+		fragment_sources = other.fragment_sources;
 		return *this;
 	}
 
 	host_write_regions(host_write_regions&& other) noexcept
 	{
 		std::unique_lock lock(other.mutex);
-		data = std::move(other.data);
+		tracker = std::move(other.tracker);
+		fragment_sources = std::move(other.fragment_sources);
 	}
 
 	host_write_regions& operator=(host_write_regions&& other) noexcept
@@ -125,7 +133,8 @@ public:
 		std::unique_lock lock_this(mutex, std::defer_lock);
 		std::unique_lock lock_other(other.mutex, std::defer_lock);
 		std::lock(lock_this, lock_other);
-		data = std::move(other.data);
+		tracker = std::move(other.tracker);
+		fragment_sources = std::move(other.fragment_sources);
 		return *this;
 	}
 
@@ -133,46 +142,20 @@ public:
 	{
 		std::shared_lock lock(mutex);
 		assert(size > 0);
-		const uint64_t end = address + (uint64_t)size;
-		assert(end >= address);
-
-		auto it = data.lower_bound(address);
-		if (it != data.begin())
+		std::vector<source_span> spans;
+		if (!collect_spans_unlocked(tracker, fragment_sources, address, size, spans))
 		{
-			auto prev = std::prev(it);
-			if (prev->second.end > address)
-			{
-				it = prev;
-			}
+			assert(false && "host_write_regions missing coverage");
+			return {};
 		}
-		assert(it != data.end());
-		assert(it->first <= address);
-		assert(it->second.end > address);
-
-		const change_source source = it->second.source;
-		uint64_t pos = address;
-		while (pos < end)
+		assert(!spans.empty());
+		const change_source source = spans.front().source;
+		for (const source_span& span : spans)
 		{
-			if (it == data.end() || it->first > pos)
-			{
-				assert(false && "host_write_regions missing coverage");
-				return source;
-			}
-			if (!same_source(it->second.source, source))
+			if (!same_source(span.source, source))
 			{
 				assert(false && "host_write_regions mixed sources");
 				return source;
-			}
-			const uint64_t seg_end = it->second.end;
-			if (seg_end <= pos)
-			{
-				++it;
-				continue;
-			}
-			pos = seg_end;
-			if (pos < end)
-			{
-				++it;
 			}
 		}
 		return source;
@@ -182,13 +165,26 @@ public:
 	{
 		std::shared_lock lock(mutex);
 		stats out;
-		out.segments = data.size();
-		for (const auto& entry : data)
+		const auto spans = tracker.queryRangeDetailed(0, std::numeric_limits<uint64_t>::max());
+		change_source previous = {};
+		bool have_previous = false;
+		uint64_t previous_end = 0;
+		for (const auto& span : spans)
 		{
-			if (entry.second.end > entry.first)
+			change_source source;
+			if (!lookup_source_unlocked(fragment_sources, span.fragment_id, source))
 			{
-				out.bytes += (entry.second.end - entry.first);
+				assert(false && "host_write_regions missing source mapping");
+				continue;
 			}
+			if (!have_previous || previous_end != span.start || !same_source(previous, source))
+			{
+				out.segments++;
+				previous = source;
+				have_previous = true;
+			}
+			previous_end = span.end;
+			out.bytes += (span.end - span.start);
 		}
 		return out;
 	}
@@ -202,9 +198,7 @@ public:
 
 		if (elements == 1)
 		{
-			const uint64_t end = address + size;
-			assert(end >= address);
-			insert_range(address, end, source);
+			register_source_unlocked(address, size, source);
 			return;
 		}
 
@@ -212,145 +206,62 @@ public:
 		{
 			const uint64_t total = size * (uint64_t)elements;
 			assert(total / elements == size);
-			const uint64_t end = address + total;
-			assert(end >= address);
-			insert_range(address, end, source);
+			register_source_unlocked(address, total, source);
 			return;
 		}
 
 		for (uint32_t i = 0; i < elements; ++i)
 		{
 			const uint64_t start = address + (uint64_t)i * (uint64_t)stride;
-			const uint64_t end = start + size;
-			assert(end >= start);
-			insert_range(start, end, source);
+			register_source_unlocked(start, size, source);
 		}
 	}
 
 	void copy_sources(const host_write_regions& regions, uint64_t dst_address, uint64_t src_address, uint64_t src_size)
 	{
 		if (src_size == 0) return;
-		const uint64_t src_end = src_address + src_size;
-		assert(src_end >= src_address);
-
-		struct pending_range
-		{
-			uint64_t start = 0;
-			uint64_t end = 0;
-			change_source source;
-		};
-
-		std::vector<pending_range> pending;
+		checked_end(dst_address, src_size);
+		std::vector<source_span> pending;
 
 		if (this == &regions)
 		{
 			std::unique_lock lock(mutex);
-			auto it = data.lower_bound(src_address);
-			if (it != data.begin())
+			if (!collect_spans_unlocked(tracker, fragment_sources, src_address, src_size, pending))
 			{
-				auto prev = std::prev(it);
-				if (prev->second.end > src_address)
-				{
-					it = prev;
-				}
+				assert(false && "host_write_regions missing coverage");
+				return;
 			}
-
-			uint64_t pos = src_address;
-			while (pos < src_end)
+			for (const source_span& entry : pending)
 			{
-				if (it == data.end() || it->first > pos)
-				{
-					assert(false && "host_write_regions missing coverage");
-					return;
-				}
-				const uint64_t seg_start = std::max<uint64_t>(it->first, src_address);
-				const uint64_t seg_end = std::min<uint64_t>(it->second.end, src_end);
-				if (seg_start > pos)
-				{
-					assert(false && "host_write_regions missing coverage");
-					return;
-				}
-				const uint64_t dst_start = dst_address + (seg_start - src_address);
-				const uint64_t dst_end = dst_start + (seg_end - seg_start);
-				if (!pending.empty() && pending.back().end == dst_start && same_source(pending.back().source, it->second.source))
-				{
-					pending.back().end = dst_end;
-				}
-				else
-				{
-					pending.push_back({ dst_start, dst_end, it->second.source });
-				}
-				pos = seg_end;
-				if (seg_end >= it->second.end)
-				{
-					++it;
-				}
-			}
-
-			for (const auto& entry : pending)
-			{
-				insert_range(entry.start, entry.end, entry.source);
+				const uint64_t dst_start = dst_address + (entry.start - src_address);
+				register_source_unlocked(dst_start, entry.end - entry.start, entry.source);
 			}
 			return;
 		}
 
 		{
 			std::shared_lock lock(regions.mutex);
-			auto it = regions.data.lower_bound(src_address);
-			if (it != regions.data.begin())
+			if (!collect_spans_unlocked(regions.tracker, regions.fragment_sources, src_address, src_size, pending))
 			{
-				auto prev = std::prev(it);
-				if (prev->second.end > src_address)
-				{
-					it = prev;
-				}
-			}
-
-			uint64_t pos = src_address;
-			while (pos < src_end)
-			{
-				if (it == regions.data.end() || it->first > pos)
-				{
-					assert(false && "host_write_regions missing coverage");
-					return;
-				}
-				const uint64_t seg_start = std::max<uint64_t>(it->first, src_address);
-				const uint64_t seg_end = std::min<uint64_t>(it->second.end, src_end);
-				if (seg_start > pos)
-				{
-					assert(false && "host_write_regions missing coverage");
-					return;
-				}
-				const uint64_t dst_start = dst_address + (seg_start - src_address);
-				const uint64_t dst_end = dst_start + (seg_end - seg_start);
-				if (!pending.empty() && pending.back().end == dst_start && same_source(pending.back().source, it->second.source))
-				{
-					pending.back().end = dst_end;
-				}
-				else
-				{
-					pending.push_back({ dst_start, dst_end, it->second.source });
-				}
-				pos = seg_end;
-				if (seg_end >= it->second.end)
-				{
-					++it;
-				}
+				assert(false && "host_write_regions missing coverage");
+				return;
 			}
 		}
 
 		if (pending.empty()) return;
 
 		std::unique_lock lock(mutex);
-		for (const auto& entry : pending)
+		for (const source_span& entry : pending)
 		{
-			insert_range(entry.start, entry.end, entry.source);
+			const uint64_t dst_start = dst_address + (entry.start - src_address);
+			register_source_unlocked(dst_start, entry.end - entry.start, entry.source);
 		}
 	}
 
 private:
-	struct segment
+	struct source_span
 	{
+		uint64_t start = 0;
 		uint64_t end = 0;
 		change_source source;
 	};
@@ -360,82 +271,71 @@ private:
 		return a.call == b.call && a.frame == b.frame && a.thread == b.thread && a.call_id == b.call_id;
 	}
 
-	void erase_range(uint64_t start, uint64_t end)
+	static uint64_t checked_end(uint64_t address, uint64_t size)
 	{
-		if (start >= end) return;
-
-		auto it = data.lower_bound(start);
-		if (it != data.begin())
-		{
-			auto prev = std::prev(it);
-			if (prev->second.end > start)
-			{
-				it = prev;
-			}
-		}
-
-		while (it != data.end() && it->first < end)
-		{
-			const uint64_t seg_start = it->first;
-			const uint64_t seg_end = it->second.end;
-			const change_source seg_source = it->second.source;
-
-			if (seg_start < start && seg_end > end)
-			{
-				it->second.end = start;
-				data.emplace(end, segment{ seg_end, seg_source });
-				return;
-			}
-
-			if (seg_start < start && seg_end > start)
-			{
-				it->second.end = start;
-				++it;
-				continue;
-			}
-
-			if (seg_start < end && seg_end > end)
-			{
-				data.erase(it++);
-				data.emplace(end, segment{ seg_end, seg_source });
-				return;
-			}
-
-			it = data.erase(it);
-		}
+		const uint64_t end = address + size;
+		assert(end >= address);
+		return end;
 	}
 
-	void insert_range(uint64_t start, uint64_t end, const change_source& source)
+	static bool lookup_source_unlocked(const std::map<fragment_id_type, change_source>& sources, fragment_id_type fragment_id, change_source& out)
 	{
-		if (start >= end) return;
-
-		erase_range(start, end);
-
-		uint64_t new_start = start;
-		uint64_t new_end = end;
-
-		auto it = data.lower_bound(start);
-		if (it != data.begin())
-		{
-			auto prev = std::prev(it);
-			if (prev->second.end == start && same_source(prev->second.source, source))
-			{
-				new_start = prev->first;
-				data.erase(prev);
-			}
-		}
-
-		auto next = data.lower_bound(end);
-		if (next != data.end() && next->first == end && same_source(next->second.source, source))
-		{
-			new_end = next->second.end;
-			data.erase(next);
-		}
-
-		data.emplace(new_start, segment{ new_end, source });
+		auto it = sources.find(fragment_id);
+		if (it == sources.end()) return false;
+		out = it->second;
+		return true;
 	}
 
-	std::map<uint64_t, segment> data;
+	static bool collect_spans_unlocked(const tracker_type& tracker, const std::map<fragment_id_type, change_source>& sources, uint64_t address, uint64_t size, std::vector<source_span>& out)
+	{
+		out.clear();
+		if (size == 0) return true;
+
+		const uint64_t end = checked_end(address, size);
+		const auto spans = tracker.queryRangeDetailed(address, size);
+		uint64_t pos = address;
+		for (const auto& span : spans)
+		{
+			if (span.start > pos)
+			{
+				return false;
+			}
+			const uint64_t start = std::max<uint64_t>(span.start, pos);
+			const uint64_t span_end = std::min<uint64_t>(span.end, end);
+			if (start >= span_end) continue;
+
+			change_source source;
+			if (!lookup_source_unlocked(sources, span.fragment_id, source))
+			{
+				return false;
+			}
+
+			if (!out.empty() && out.back().end == start && same_source(out.back().source, source))
+			{
+				out.back().end = span_end;
+			}
+			else
+			{
+				out.push_back({ start, span_end, source });
+			}
+			pos = span_end;
+			if (pos == end) break;
+		}
+		return pos == end;
+	}
+
+	void register_source_unlocked(uint64_t address, uint64_t size, const change_source& source)
+	{
+		if (size == 0) return;
+		tracker.write(address, size, 0);
+		const auto result = tracker.queryDetailed(address);
+		assert(result.has_value());
+		assert(result->address == address);
+		fragment_sources[result->fragment_id] = source;
+	}
+
+	tracker_type tracker;
+	std::map<fragment_id_type, change_source> fragment_sources;
 	mutable std::shared_mutex mutex;
 };
 
@@ -488,19 +388,31 @@ class address_remapper
 		T* best = nullptr;
 		uint64_t best_size = 0;
 		bool best_has_addr = false;
+		bool best_is_bound = false;
 		for (T* obj : entries)
 		{
 			if (!obj) continue;
+			bool is_bound = false;
+			if constexpr (requires(const T& value) { value.is_state(T::states::destroyed); })
+			{
+				if (obj->is_state(T::states::destroyed)) continue;
+			}
+			if constexpr (requires(const T& value) { value.is_state(T::states::bound); })
+			{
+				is_bound = obj->is_state(T::states::bound);
+			}
 			const uint64_t offset = stored - base;
 			if (obj->size == 0) continue;
 			if (offset >= obj->size) continue;
 			const bool has_addr = obj->device_address != 0;
 			if (!best || (has_addr && !best_has_addr) ||
-				(has_addr == best_has_addr && (obj->size > best_size || obj->size == best_size)))
+				(has_addr == best_has_addr && is_bound && !best_is_bound) ||
+				(has_addr == best_has_addr && is_bound == best_is_bound && (obj->size > best_size || obj->size == best_size)))
 			{
 				best = obj;
 				best_size = obj->size;
 				best_has_addr = has_addr;
+				best_is_bound = is_bound;
 			}
 		}
 		return best;

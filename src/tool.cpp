@@ -20,6 +20,7 @@
 #include "sandbox.h"
 #include "postprocess.h"
 #include "json_helpers.h"
+#include "replay_callbacks.h"
 
 extern lava::mutex sync_mutex;
 
@@ -348,6 +349,15 @@ static void add_callbacks_for_first_round(bool enable_submit_analysis)
 	CALLBACK(vkCreateShadersEXT);
 	CALLBACK(vkCmdBindShadersEXT);
 #undef CALLBACK
+
+	// Tool validation runs with reader.run == false, so these callbacks consume stored
+	// device addresses from the trace and populate the remappers we use for analysis.
+	vkGetBufferDeviceAddress_callbacks.push_back(replay_callback_vkGetBufferDeviceAddress);
+	vkGetBufferDeviceAddressKHR_callbacks.push_back(replay_callback_vkGetBufferDeviceAddressKHR);
+	vkGetBufferDeviceAddressEXT_callbacks.push_back(replay_callback_vkGetBufferDeviceAddressEXT);
+	vkGetAccelerationStructureDeviceAddressKHR_callbacks.push_back(replay_callback_vkGetAccelerationStructureDeviceAddressKHR);
+	vkCreateBuffer_callbacks.push_back(replay_callback_vkCreateBuffer);
+	vkCreateAccelerationStructureKHR_callbacks.push_back(replay_callback_vkCreateAccelerationStructureKHR);
 }
 
 int main(int argc, char **argv)

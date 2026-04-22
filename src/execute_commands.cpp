@@ -1,5 +1,6 @@
 #define SPV_ENABLE_UTILITY_CODE 1
 #include <spirv/unified1/spirv.h>
+#include <deque>
 #include <unordered_set>
 #include <unordered_map>
 #include <cstring>
@@ -14,11 +15,13 @@
 
 static bool run_spirv(const trackeddevice& device_data, const shader_stage& stage, const std::vector<std::byte>& push_constants,
 	const std::unordered_map<uint32_t, std::unordered_map<uint32_t, buffer_access>>& descriptorsets,
-	const std::unordered_map<uint32_t, std::unordered_map<uint32_t, image_access>>& imagesets)
+	const std::unordered_map<uint32_t, std::unordered_map<uint32_t, image_access>>& imagesets,
+	const std::unordered_map<uint32_t, std::unordered_map<uint32_t, uint64_t>>& opaquesets)
 {
 	SPIRVSimulator::SimulationData inputs;
 	SPIRVSimulator::SimulationResults results;
 	std::unordered_map<const void*, std::pair<uint32_t, uint32_t>> binding_lookup;
+	std::deque<uint64_t> opaque_storage;
 	inputs.push_constants = push_constants.empty() ? nullptr : push_constants.data();
 	inputs.entry_point_op_name = stage.name;
 	inputs.specialization_constants = stage.specialization_data.empty() ? nullptr : stage.specialization_data.data();
@@ -71,8 +74,19 @@ static bool run_spirv(const trackeddevice& device_data, const shader_stage& stag
 			set_bindings[binding_pair.first] = binding_ptr;
 		}
 	}
+	for (const auto& set_pair : opaquesets)
+	{
+		auto& set_bindings = inputs.bindings[set_pair.first];
+		for (const auto& binding_pair : set_pair.second)
+		{
+			if (set_bindings.count(binding_pair.first) > 0) continue;
+			opaque_storage.push_back(binding_pair.second ? binding_pair.second : 1);
+			set_bindings[binding_pair.first] = &opaque_storage.back();
+		}
+	}
 	inputs.shader_id = stage.unique_index;
-	SPIRVSimulator::SPIRVSimulator sim(stage.code, &inputs, &results, nullptr, false, ERROR_RAISE_ON_BUFFERS_INCOMPLETE);
+	SPIRVSimulator::MemoryFlagTracker memory_flag_tracker;
+	SPIRVSimulator::SPIRVSimulator sim(stage.code, &memory_flag_tracker, &inputs, &results, nullptr, false, ERROR_RAISE_ON_BUFFERS_INCOMPLETE);
 	sim.Run();
 
 	for (const auto& candidates : results.output_candidates)
@@ -216,6 +230,7 @@ bool execute_commands(lava_file_reader& reader, const trackeddevice& device_data
 	auto& cmdbuffer_data = VkCommandBuffer_index.at(cmdbuffer_index);
 	std::unordered_map<uint32_t, std::unordered_map<uint32_t, buffer_access>> descriptorsets; // descriptorset binding : set internal binding point : buffer
 	std::unordered_map<uint32_t, std::unordered_map<uint32_t, image_access>> imagesets; // descriptorset binding : set internal binding point : image
+	std::unordered_map<uint32_t, std::unordered_map<uint32_t, uint64_t>> opaquesets; // descriptorset binding : set internal binding point : opaque descriptor payload
 	for (const auto& c : cmdbuffer_data.commands)
 	{
 		switch (c.id)
@@ -232,6 +247,10 @@ bool execute_commands(lava_file_reader& reader, const trackeddevice& device_data
 				for (auto pair : tds.bound_images)
 				{
 					imagesets[set][pair.first] = pair.second;
+				}
+				for (auto pair : tds.bound_opaque_descriptors)
+				{
+					opaquesets[set][pair.first] = pair.second;
 				}
 				uint32_t binding = 0;
 				for (auto pair : tds.dynamic_buffers)
@@ -310,13 +329,13 @@ bool execute_commands(lava_file_reader& reader, const trackeddevice& device_data
 				assert(pipeline_data.shader_stages.size() == 1);
 				assert(pipeline_data.shader_stages[0].stage == VK_SHADER_STAGE_COMPUTE_BIT);
 				pipeline_data.shader_stages[0].calls++;
-				run_spirv(device_data, pipeline_data.shader_stages[0], push_constants, descriptorsets, imagesets);
+				run_spirv(device_data, pipeline_data.shader_stages[0], push_constants, descriptorsets, imagesets, opaquesets);
 			}
 			else // shader objects
 			{
 				auto& shader_object_data = VkShaderEXT_index.at(shader_objects.at(VK_SHADER_STAGE_COMPUTE_BIT));
 				shader_object_data.stage.calls++;
-				run_spirv(device_data, shader_object_data.stage, push_constants, descriptorsets, imagesets);
+				run_spirv(device_data, shader_object_data.stage, push_constants, descriptorsets, imagesets, opaquesets);
 			}
 			break;
 		case VKCMDDISPATCHDATAGRAPHARM:
@@ -346,7 +365,7 @@ bool execute_commands(lava_file_reader& reader, const trackeddevice& device_data
 				{
 					if (stage.stage == VK_SHADER_STAGE_COMPUTE_BIT) continue;
 					stage.calls++;
-					run_spirv(device_data, stage, push_constants, descriptorsets, imagesets);
+					run_spirv(device_data, stage, push_constants, descriptorsets, imagesets, opaquesets);
 				}
 			}
 			else for (auto& pair : shader_objects) // shader objects
@@ -356,7 +375,7 @@ bool execute_commands(lava_file_reader& reader, const trackeddevice& device_data
 				shader_stage& stage = shader_object_data.stage;
 				assert(pair.first == stage.stage);
 				stage.calls++;
-				run_spirv(device_data, stage, push_constants, descriptorsets, imagesets);
+				run_spirv(device_data, stage, push_constants, descriptorsets, imagesets, opaquesets);
 			}
 			break;
 		case VKCMDTRACERAYSKHR: // proxy for all raytracing commands
@@ -369,7 +388,7 @@ bool execute_commands(lava_file_reader& reader, const trackeddevice& device_data
 					for (auto& stage : pipeline_data.shader_stages)
 					{
 						stage.calls++;
-						run_spirv(device_data, stage, push_constants, descriptorsets, imagesets);
+						run_spirv(device_data, stage, push_constants, descriptorsets, imagesets, opaquesets);
 					}
 					break;
 				}
@@ -436,7 +455,7 @@ bool execute_commands(lava_file_reader& reader, const trackeddevice& device_data
 					for (auto& stage : pipeline_data.shader_stages)
 					{
 						stage.calls++;
-						run_spirv(device_data, stage, push_constants, descriptorsets, imagesets);
+						run_spirv(device_data, stage, push_constants, descriptorsets, imagesets, opaquesets);
 					}
 				}
 				else
@@ -444,7 +463,7 @@ bool execute_commands(lava_file_reader& reader, const trackeddevice& device_data
 					for (uint32_t stage_index : stages_to_run)
 					{
 						pipeline_data.shader_stages[stage_index].calls++;
-						run_spirv(device_data, pipeline_data.shader_stages[stage_index], push_constants, descriptorsets, imagesets);
+						run_spirv(device_data, pipeline_data.shader_stages[stage_index], push_constants, descriptorsets, imagesets, opaquesets);
 					}
 				}
 				(void)width;

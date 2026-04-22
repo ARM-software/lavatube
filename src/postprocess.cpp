@@ -90,7 +90,15 @@ static void handle_VkWriteDescriptorSets(uint32_t descriptorWriteCount, const Vk
 				assert(ptr);
 				assert(ptr->sType == VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR);
 				assert(ptr->accelerationStructureCount == pDescriptorWrites[i].descriptorCount);
-				// TBD
+				for (unsigned j = 0; j < ptr->accelerationStructureCount; j++)
+				{
+					if (ptr->pAccelerationStructures[j] == VK_NULL_HANDLE) continue;
+					const uint32_t as_index = index_to_VkAccelerationStructureKHR.index(ptr->pAccelerationStructures[j]);
+					auto& as_data = VkAccelerationStructureKHR_index.at(as_index);
+					uint64_t opaque_value = as_data.capture_device_address;
+					if (opaque_value == 0) opaque_value = (uint64_t)ptr->pAccelerationStructures[j];
+					tds.bound_opaque_descriptors[binding] = opaque_value;
+				}
 			}
 			break;
 		case VK_DESCRIPTOR_TYPE_MUTABLE_EXT: // Provided by VK_EXT_mutable_descriptor_type
@@ -124,6 +132,7 @@ static void handle_VkCopyDescriptorSets(uint32_t descriptorCopyCount, const VkCo
 		auto& dst = VkDescriptorSet_index.at(dst_index);
 		for (const auto& pair : src.bound_buffers) dst.bound_buffers[pair.first] = pair.second;
 		for (const auto& pair : src.bound_images) dst.bound_images[pair.first] = pair.second;
+		for (const auto& pair : src.bound_opaque_descriptors) dst.bound_opaque_descriptors[pair.first] = pair.second;
 		for (const auto& pair : src.dynamic_buffers) dst.dynamic_buffers[pair.first] = pair.second;
 	}
 }

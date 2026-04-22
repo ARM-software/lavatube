@@ -827,6 +827,7 @@ struct trackeddescriptorset : trackable
 	// postprocess only
 	std::unordered_map<uint32_t, buffer_access> bound_buffers; // binding point to buffer access
 	std::unordered_map<uint32_t, image_access> bound_images; // binding point to image access
+	std::unordered_map<uint32_t, uint64_t> bound_opaque_descriptors; // binding point to opaque descriptor payload
 	std::unordered_map<uint32_t, VkDescriptorBufferInfo> dynamic_buffers; // must be resolved on bind
 
 	void self_test() const
