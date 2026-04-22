@@ -1734,10 +1734,6 @@ static void replay_pre_vkDestroyAccelerationStructureKHR(lava_file_reader& reade
 	if (accelerationStructure == VK_NULL_HANDLE) return;
 	const uint32_t as_index = index_to_VkAccelerationStructureKHR.index(accelerationStructure);
 	auto& as = VkAccelerationStructureKHR_index.at(as_index);
-	if (as.capture_device_address != 0)
-	{
-		reader.parent->acceleration_structure_address_remapping.remove(as.capture_device_address, &as);
-	}
 	if (reader.run && as.replay_storage.buffer != VK_NULL_HANDLE)
 	{
 		destroy_internal_buffer(device, as.replay_storage);

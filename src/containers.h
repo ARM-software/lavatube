@@ -19,6 +19,11 @@
 #include <map>
 #include <algorithm>
 
+#ifndef VK_NO_PROTOTYPES
+#define VK_NO_PROTOTYPES
+#endif
+#include "vulkan/vulkan.h"
+
 #include "lavamutex.h"
 #include "unordered_dense/include/ankerl/unordered_dense.h"
 #include "spirv-simulator/framework/memory_flag_tracker.hpp"
@@ -389,13 +394,19 @@ class address_remapper
 		uint64_t best_size = 0;
 		bool best_has_addr = false;
 		bool best_is_bound = false;
+		bool best_is_destroyed = true;
 		for (T* obj : entries)
 		{
 			if (!obj) continue;
 			bool is_bound = false;
+			bool is_destroyed = false;
 			if constexpr (requires(const T& value) { value.is_state(T::states::destroyed); })
 			{
-				if (obj->is_state(T::states::destroyed)) continue;
+				is_destroyed = obj->is_state(T::states::destroyed);
+			}
+			if constexpr (requires(const T& value) { value.object_type; })
+			{
+				if (is_destroyed && obj->object_type != VK_OBJECT_TYPE_ACCELERATION_STRUCTURE_KHR) continue;
 			}
 			if constexpr (requires(const T& value) { value.is_state(T::states::bound); })
 			{
@@ -406,13 +417,16 @@ class address_remapper
 			if (offset >= obj->size) continue;
 			const bool has_addr = obj->device_address != 0;
 			if (!best || (has_addr && !best_has_addr) ||
+				(has_addr == best_has_addr && !is_destroyed && best_is_destroyed) ||
 				(has_addr == best_has_addr && is_bound && !best_is_bound) ||
-				(has_addr == best_has_addr && is_bound == best_is_bound && (obj->size > best_size || obj->size == best_size)))
+				(has_addr == best_has_addr && is_destroyed == best_is_destroyed && is_bound == best_is_bound &&
+				 (obj->size > best_size || obj->size == best_size)))
 			{
 				best = obj;
 				best_size = obj->size;
 				best_has_addr = has_addr;
 				best_is_bound = is_bound;
+				best_is_destroyed = is_destroyed;
 			}
 		}
 		return best;
