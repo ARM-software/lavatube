@@ -3150,7 +3150,7 @@ static void mem_unmap(lava_file_reader& reader, VkDevice device, const suballoc_
 	}
 }
 
-VKAPI_ATTR void retrace_vkThreadBarrierTRACETOOLTEST(lava_file_reader& reader)
+void retrace_vkThreadBarrierTRACETOOLTEST(lava_file_reader& reader)
 {
 	const unsigned size = reader.read_uint32_t();
 	for (int i = 0; i < (int)size; i++)
@@ -3213,7 +3213,7 @@ void read_VkUpdateMemoryInfoARM(lava_file_reader& reader, VkUpdateMemoryInfoARM*
 	}
 }
 
-VKAPI_ATTR void retrace_vkCmdUpdateBuffer2ARM(lava_file_reader& reader)
+void retrace_vkCmdUpdateBuffer2ARM(lava_file_reader& reader)
 {
 	VkUpdateBufferInfoARM info = {};
 	const uint32_t commandbuffer_index = reader.read_handle(DEBUGPARAM("VkCommandBuffer"));

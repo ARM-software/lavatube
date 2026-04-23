@@ -540,6 +540,7 @@ int main(int argc, char **argv)
 			lava_file_reader& t = replayer.file_reader(i);
 			t.rewrite_queue.sort(rewrite_call_less);
 		}
+#ifndef NDEBUG
 		for (unsigned i = 0; i < replayer.threads.size(); i++) // TBD sanity test, remove later
 		{
 			lava_file_reader& t = replayer.file_reader(i);
@@ -552,6 +553,7 @@ int main(int argc, char **argv)
 				last = v.source.call;
 			}
 		}
+#endif
 
 		for (unsigned i = 0; i < replayer.threads.size(); i++)
 		{

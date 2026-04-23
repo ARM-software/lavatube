@@ -155,13 +155,20 @@ class spool(object):
 			self.declarations.append(value)
 		self.do('%s = reader.pool.allocate<%s>(%s);' % (name, type, size))
 		if clear:
-			self.do('memset(%s, 0, %s * sizeof(%s));' % (name, size, type))
+			if size == '1':
+				self.do('memset(%s, 0, %s * sizeof(%s));' % (name, size, type))
+			else:
+				self.do('if (%s > 0)' % size)
+				self.brace_begin()
+				self.do('if (!%s) ABORT("Failed to allocate %s");' % (name, name))
+				self.do('memset(%s, 0, %s * sizeof(%s));' % (name, size, type))
+				if type in spec.type2sType:
+					self.do('for (unsigned sidx = 0; sidx < %s; sidx++) %s[sidx].sType = %s;' % (size, name, spec.type2sType[type]))
+				self.brace_end()
 		if clear and type in spec.type2sType:
 			# this hack is needed in a very few cases, and is mostly useless as it is overwritten later anyways
 			if size == '1':
 				self.do('%s->sType = %s;' % (name, spec.type2sType[type]))
-			else:
-				self.do('for (unsigned sidx = 0; sidx < %s; sidx++) %s[sidx].sType = %s;' % (size, name, spec.type2sType[type]))
 		return name
 
 z = spool()

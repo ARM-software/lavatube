@@ -5,6 +5,9 @@
 
 #include "replay_screenshot.h"
 
+#pragma GCC diagnostic ignored "-Wunused-variable"
+#pragma GCC diagnostic ignored "-Wunused-function"
+
 static void expect_parse(const char* spec, std::initializer_list<replay_screenshot_range> expected)
 {
 	std::vector<replay_screenshot_range> parsed;
