@@ -253,7 +253,9 @@ public:
 		}
 		current.frame++;
 		parent->global_frame++;
-		if (mEnd != -1 && (int)current.frame == mEnd)
+		// The measurement window starts at the selected start boundary, so stop
+		// after replaying the selected end boundary to cover end - start intervals.
+		if (mEnd != -1 && (int)current.frame == mEnd + 1)
 		{
 			if (mHaveFinalFrame)
 			{

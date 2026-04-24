@@ -114,7 +114,7 @@ lava_reader::~lava_reader()
 void lava_reader::finalize()
 {
 	const double total_time_ms = ((gettime() - mStartTime.load()) / 1000000UL);
-	const double fps = (double)mGlobalFrames / (total_time_ms / 1000.0);
+	const double fps = (total_time_ms > 0.0) ? ((double)mGlobalFrames / (total_time_ms / 1000.0)) : 0.0;
 	ILOG("==== %.2f ms, %u frames (%.2f fps) ====", total_time_ms, mGlobalFrames, fps);
 	Json::Value out;
 	out["fps"] = fps;
