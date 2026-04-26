@@ -38,6 +38,8 @@ void file_reader::init(int fd, size_t uncompressed_size, size_t uncompressed_tar
 		total_left -= header_bytes;
 		(void)version;
 	}
+	compressed_stream_start = compressed_data;
+	total_compressed_stream = total_left;
 	madvise(fstart, mapped_size, MADV_SEQUENTIAL);
 
 	const uint64_t padded_size = (compression_algorithm == LAVATUBE_COMPRESSION_DENSITY) ? density_decompress_safe_size(uncompressed_size) : uncompressed_size;
@@ -79,11 +81,27 @@ void file_reader::release_checkpoint()
 	assert(pa_size <= total_uncompressed);
 	if (pa_size > page_size)
 	{
-		madvise((void*)pa_ptr, pa_size, MADV_FREE); // release no longer needed memory
+		madvise((void*)pa_ptr, pa_size, MADV_DONTNEED); // aggressively discard pages we will never read again
 		freed_position = pa_ptr + pa_size - (uintptr_t)uncompressed_data; // remember last freed position
+		uncompressed_released_bytes.store(freed_position, std::memory_order_relaxed);
 		assert(freed_position <= checkpoint_position);
 	}
 	checkpoint_position = UINT64_MAX;
+}
+
+void file_reader::release_compressed_pages()
+{
+	if (!fstart || !compressed_data) return;
+
+	const uintptr_t released_start = (uintptr_t)fstart + compressed_mapping_released_bytes.load(std::memory_order_relaxed);
+	const uintptr_t released_end = (uintptr_t)compressed_data & page_mask();
+	if (released_end <= released_start) return;
+
+	const size_t releasable = released_end - released_start;
+	if (releasable <= page_size) return;
+
+	madvise((void*)released_start, releasable, MADV_DONTNEED); // compressed pages are strictly forward-only
+	compressed_mapping_released_bytes.store(released_end - (uintptr_t)fstart, std::memory_order_relaxed);
 }
 
 file_reader::~file_reader()
@@ -125,11 +143,13 @@ void file_reader::decompress_chunk()
 		memcpy(destination, compressed_data, uncompressed_size);
 	}
 	compressed_data += compressed_size;
+	compressed_stream_consumed_bytes.store((uint64_t)(compressed_data - compressed_stream_start), std::memory_order_relaxed);
 	write_position.fetch_add(uncompressed_size, std::memory_order_release);
 	write_position.notify_one();
 	last_chunk_uncompressed_size = uncompressed_size;
 	total_left -= compressed_size + header_size;
 	uncompressed_bytes += uncompressed_size;
+	release_compressed_pages();
 	if (total_left == 0 || write_position >= uncompressed_wanted) done_decompressing = true;  // all done!
 }
 

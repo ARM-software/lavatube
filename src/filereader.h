@@ -49,6 +49,7 @@ protected:
 
 	/// Let us know that we can now release any memory before the current read position. Safe to call even if no checkpoint set.
 	void release_checkpoint();
+	void release_compressed_pages();
 
 	std::atomic_uint64_t uncompressed_bytes { 0 };
 
@@ -227,7 +228,11 @@ private:
 	unsigned tid = -1; // only used for logging
 	/// Pointer to mapped memory of compressed file
 	char* compressed_data = nullptr; // current position in compressed buffer
+	char* compressed_stream_start = nullptr; // first byte of the logical compressed stream, after any file header
 	char* fstart = nullptr; // start position
+	std::atomic_uint64_t compressed_mapping_released_bytes { 0 };
+	std::atomic_uint64_t compressed_stream_consumed_bytes { 0 };
+	std::atomic_uint64_t uncompressed_released_bytes { 0 };
 	/// Name of compressed input file
 	std::string mFilename;
 	/// Start CPU usage for our worker thread
@@ -244,6 +249,7 @@ private:
 	std::atomic_bool worker_measurement_ready{ false };
 	/// Amount of memory mapped compressed data
 	uint64_t mapped_size = 0;
+	uint64_t total_compressed_stream = 0;
 	/// Checkpoint position - from where we have last started reading, but need to preserve data from. Only updated from main thread.
 	uint64_t checkpoint_position = 0;
 	/// Tip of the uncompressed buffer, the end of where we have last put data
