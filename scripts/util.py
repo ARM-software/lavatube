@@ -247,7 +247,7 @@ class parameter(spec.base_parameter):
 			z.do('for (unsigned %s = 0; %s < *%s; %s++) // varname=%s' % (tmpname, tmpname, size, tmpname, varname))
 		else:
 			z.do('for (unsigned %s = 0; %s < %s; %s++) // varname=%s' % (tmpname, tmpname, size, tmpname, varname))
-		if self.name[0] == 'p' and self.name[1] == 'p': return '%s[%s]' % (varname, tmpname)
+		if self.param_ptrstr.count('*') > 1: return '%s[%s]' % (varname, tmpname)
 		return '&%s[%s]' % (varname, tmpname)
 
 	def print_struct(self, mytype, varname, owner, size = None):
@@ -438,8 +438,20 @@ class parameter(spec.base_parameter):
 				if not is_root and iscount(self):
 					z.decl('%s%s*' % (self.mod, self.type), self.name)
 					z.do('%s = %s;' % (self.name, varname))
-				vname = z.backing(self.type, self.name, size=self.length, struct=True)
-				z.do('%s = %s;' % (varname, vname))
+				if self.param_ptrstr.count('*') > 1 and self.length:
+					vname = z.backing(self.type + '*', self.name, size=self.length)
+					z.do('%s = %s;' % (varname, vname))
+					z.do('for (unsigned sidx = 0; sidx < %s; sidx++)' % self.length)
+					z.loop_begin()
+					z.do('%s[sidx] = reader.pool.allocate<%s>(1);' % (vname, self.type))
+					z.do('if (!%s[sidx]) ABORT("Failed to allocate %s[sidx]");' % (vname, vname))
+					z.do('memset(%s[sidx], 0, sizeof(%s));' % (vname, self.type))
+					if self.type in spec.type2sType:
+						z.do('%s[sidx]->sType = %s;' % (vname, spec.type2sType[self.type]))
+					z.loop_end()
+				else:
+					vname = z.backing(self.type, self.name, size=self.length, struct=True)
+					z.do('%s = %s;' % (varname, vname))
 				self.print_struct(self.type, vname, owner, size=self.length)
 			elif not is_root:
 				self.print_struct(self.type, varname, owner, size=self.length)
@@ -1454,6 +1466,8 @@ def load_add_tracking(name):
 	if name in spec.functions_create:
 		(param, count, type) = get_create_params(name)
 		if count == '1':
+			z.do('if (retval == VK_SUCCESS && %s != CONTAINER_NULL_VALUE)' % toindex(type))
+			z.brace_begin()
 			z.do('DLOG2("insert %s by %s index %%u call=%%d", (unsigned)%s, (int)reader.current.call);' % (type, name, toindex(type)))
 			if type == 'VkSwapchainKHR':
 				z.do('if (is_noscreen() || !reader.run) pSwapchain = fake_handle<VkSwapchainKHR>(swapchainkhr_index);')
@@ -1501,6 +1515,7 @@ def load_add_tracking(name):
 				z.do('data.code.resize(pCreateInfo->codeSize / sizeof(uint32_t));')
 				z.do('memcpy(data.code.data(), pCreateInfo->pCode, pCreateInfo->codeSize);')
 			z.do('data.enter_created();')
+			z.brace_end()
 		else: # multiple
 			z.do('for (unsigned i = 0; i < %s && retval == VK_SUCCESS; i++)' % count)
 			z.brace_begin()

@@ -77,7 +77,7 @@ functions_noop = [
 	'vkGetImageViewOpaqueCaptureDescriptorDataEXT',
 	'vkCmdPushDescriptorSetWithTemplate2KHR', 'vkCmdPushDescriptorSetWithTemplate2',
 	'vkGetPipelinePropertiesEXT', 'vkGetBufferOpaqueCaptureDescriptorDataEXT', 'vkGetTensorOpaqueCaptureDescriptorDataARM', 'vkGetTensorViewOpaqueCaptureDescriptorDataARM',
-	'vkCmdBuildMicromapsEXT', 'vkBuildMicromapsEXT', 'vkGetMicromapBuildSizesEXT', 'vkGetImageOpaqueCaptureDescriptorDataEXT', 'vkGetSamplerOpaqueCaptureDescriptorDataEXT',
+	'vkGetImageOpaqueCaptureDescriptorDataEXT', 'vkGetSamplerOpaqueCaptureDescriptorDataEXT',
 	'vkGetDeviceFaultInfoEXT', # we never want to trace this, but rather inject it during tracing if device loss happens, print the info, then abort
 	'vkGetAccelerationStructureOpaqueCaptureDescriptorDataEXT', 'vkCmdSetRenderingInputAttachmentIndicesKHR', 'vkCmdSetRenderingInputAttachmentIndices',
 	'vkGetEncodedVideoSessionParametersKHR', 'vkCreatePipelineBinariesKHR', 'vkGetPipelineBinaryDataKHR',

@@ -9,7 +9,7 @@ import vkconfig as vk
 
 # Do not generate read/write functions for these
 skiplist = [ 'VkXlibSurfaceCreateInfoKHR', 'VkXcbSurfaceCreateInfoKHR', 'VkBaseOutStructure', 'VkBaseInStructure', 'VkAllocationCallbacks',
-	'VkDeviceFaultInfoEXT', 'VkMicromapBuildInfoEXT', 'VkAccelerationStructureTrianglesOpacityMicromapEXT', 'VkVideoDecodeH264ProfileInfoKHR',
+	'VkDeviceFaultInfoEXT', 'VkVideoDecodeH264ProfileInfoKHR',
 	'VkVideoDecodeH264CapabilitiesKHR', 'VkVideoDecodeH264SessionParametersAddInfoKHR', 'VkVideoDecodeH264ProfileInfoKHR', 'VkVideoDecodeH264SessionParametersCreateInfoKHR',
 	'VkVideoDecodeH264PictureInfoKHR', 'VkVideoDecodeH264DpbSlotInfoKHR', 'VkVideoDecodeH265ProfileInfoKHR', 'VkVideoDecodeH265SessionParametersAddInfoKHR',
 	'VkVideoDecodeH265CapabilitiesKHR', 'VkVideoDecodeH265SessionParametersCreateInfoKHR', 'VkVideoDecodeH265PictureInfoKHR', 'VkVideoDecodeH265DpbSlotInfoKHR',

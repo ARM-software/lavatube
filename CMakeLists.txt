@@ -810,6 +810,7 @@ layer_test(anki_scene2 anki_scene2)
 layer_test(compute_device_generated compute_device_generated)
 layer_test(graphics_multi_draw graphics_multi_draw --multi-draw-mode alternate)
 layer_test(descriptor_heap_1 descriptor_heap_1)
+layer_test(opacity_micromap opacity_micromap)
 
 # The two below will fail as we lack support for interleaved data for VK_EXT_multi_draw for now
 #layer_test(graphics_multi_draw_stride16 graphics_multi_draw --multi-draw-mode indexed --stride-mode aligned16)

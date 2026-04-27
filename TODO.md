@@ -19,9 +19,6 @@ Missing Vulkan call implementations:
 * vkUpdateDescriptorSetWithTemplate(KHR)
 * vkCmdPushDescriptorSetWithTemplate(KHR)
 * vkGetPipelinePropertiesEXT
-* vkCmdBuildMicromapsEXT
-* vkBuildMicromapsEXT
-* vkGetMicromapBuildSizesEXT
 * vkGetDeviceFaultInfoEXT
 
 Replayer:
