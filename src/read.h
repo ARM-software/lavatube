@@ -12,7 +12,6 @@
 #include <unordered_set>
 #include <cstring>
 #include <stdio.h>
-#include <functional>
 #include <deque>
 
 #include "lavamutex.h"
@@ -22,7 +21,7 @@
 #include "jsoncpp/json/value.h"
 #include "replay_screenshot.h"
 
-using lava_replay_func = std::function<void(lava_file_reader&)>;
+using lava_replay_func = void (*)(lava_file_reader&);
 class lava_file_reader;
 
 extern lava::mutex sync_mutex;
