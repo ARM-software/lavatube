@@ -13,6 +13,19 @@
 /// Mutex to enforce additional external synchronization
 lava::mutex sync_mutex;
 
+static void load_requested_extensions(const Json::Value& root, bool& has_extensions, std::vector<std::string>& extensions)
+{
+	extensions.clear();
+	has_extensions = root.isArray();
+	if (!has_extensions) return;
+
+	extensions.reserve(root.size());
+	for (const auto& ext : root)
+	{
+		extensions.push_back(ext.asString());
+	}
+}
+
 // --- file reader
 
 lava_file_reader::lava_file_reader(lava_reader* _parent, const std::string& path, int mytid, int frames, const Json::Value& frameinfo, size_t uncompressed_size, size_t uncompressed_target, int start, int end)
@@ -198,6 +211,8 @@ void lava_reader::init(const std::string& path)
 	stored_version_major = meta["lavatube_version_major"].asInt();
 	stored_version_minor = meta["lavatube_version_minor"].asInt();
 	stored_version_patch = meta["lavatube_version_patch"].asInt();
+	load_requested_extensions(meta["instanceRequested"]["enabledExtensions"], has_stored_instance_requested_extensions, stored_instance_requested_extensions);
+	load_requested_extensions(meta["deviceRequested"]["enabledExtensions"], has_stored_device_requested_extensions, stored_device_requested_extensions);
 
 	// initialize threads -- note that this happens before threading begins, so thread safe
 	threads.resize(num_threads);

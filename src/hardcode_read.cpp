@@ -2095,42 +2095,50 @@ void replay_pre_vkCreateDevice(lava_file_reader& reader, VkPhysicalDevice physic
 
 	// Replace stored features with a pruned feature list
 	VkBaseOutStructure *ext = (VkBaseOutStructure*)find_extension_parent(pCreateInfo, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES);
-	if (ext && has_VkPhysicalDeviceVulkan11Features)
+	if (ext && has_VkPhysicalDeviceVulkan11Features && !p__skip_remove_unused)
 	{
 		stored_VkPhysicalDeviceVulkan11Features.pNext = ext->pNext->pNext;
 		ext->pNext = (VkBaseOutStructure*)&stored_VkPhysicalDeviceVulkan11Features;
 	}
 	ext = (VkBaseOutStructure*)find_extension_parent(pCreateInfo, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES);
-	if (ext && has_VkPhysicalDeviceVulkan12Features)
+	if (ext && has_VkPhysicalDeviceVulkan12Features && !p__skip_remove_unused)
 	{
 		stored_VkPhysicalDeviceVulkan12Features.pNext = ext->pNext->pNext;
 		ext->pNext = (VkBaseOutStructure*)&stored_VkPhysicalDeviceVulkan12Features;
 	}
 	ext = (VkBaseOutStructure*)find_extension_parent(pCreateInfo, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES);
-	if (ext && has_VkPhysicalDeviceVulkan13Features)
+	if (ext && has_VkPhysicalDeviceVulkan13Features && !p__skip_remove_unused)
 	{
 		stored_VkPhysicalDeviceVulkan13Features.pNext = ext->pNext->pNext;
 		ext->pNext = (VkBaseOutStructure*)&stored_VkPhysicalDeviceVulkan13Features;
 	}
 	ext = (VkBaseOutStructure*)find_extension_parent(pCreateInfo, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_4_FEATURES);
-	if (ext && has_VkPhysicalDeviceVulkan14Features)
+	if (ext && has_VkPhysicalDeviceVulkan14Features && !p__skip_remove_unused)
 	{
 		stored_VkPhysicalDeviceVulkan14Features.pNext = ext->pNext->pNext;
 		ext->pNext = (VkBaseOutStructure*)&stored_VkPhysicalDeviceVulkan14Features;
 	}
 	ext = (VkBaseOutStructure*)find_extension_parent(pCreateInfo, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2);
-	if (ext && has_VkPhysicalDeviceFeatures2)
+	if (ext && has_VkPhysicalDeviceFeatures2 && !p__skip_remove_unused)
 	{
 		stored_VkPhysicalDeviceFeatures2.pNext = ext->pNext->pNext;
 		ext->pNext = (VkBaseOutStructure*)&stored_VkPhysicalDeviceFeatures2;
 		pCreateInfo->pEnabledFeatures = nullptr;
 	}
-	else if (has_VkPhysicalDeviceFeatures2) // use the old way, just stored in the new way
+	else if (has_VkPhysicalDeviceFeatures2 && !p__skip_remove_unused) // use the old way, just stored in the new way
 	{
 		pCreateInfo->pEnabledFeatures = &stored_VkPhysicalDeviceFeatures2.features; // struct copy
 	}
 
-	// TBD replace feature extensions
+	if (!p__skip_remove_unused)
+	{
+		std::unordered_set<std::string> enabled_exts;
+		for (uint32_t i = 0; i < pCreateInfo->enabledExtensionCount; i++)
+		{
+			enabled_exts.insert(pCreateInfo->ppEnabledExtensionNames[i]);
+		}
+		(void)vulkan_feature_detection_get()->adjust_VkDeviceCreateInfo(pCreateInfo, enabled_exts);
+	}
 
 	if (no_anisotropy())
 	{
@@ -2190,6 +2198,9 @@ const char* const* device_extensions(VkDeviceCreateInfo* sptr, lava_file_reader&
 	static std::vector<const char *> dst;
 	static std::vector<std::string> backing;
 	const char* const* stored = reader.read_string_array(len); // all extensions used in original
+	const uint32_t stored_len = len;
+	const uint32_t metadata_len = reader.parent->stored_device_requested_extensions.size();
+	const bool use_stored_metadata = reader.run && !p__skip_remove_unused && reader.parent->has_stored_device_requested_extensions;
 	if (!reader.run) return stored;
 	const std::vector<const char*> do_not_copy = {
 		VK_KHR_SWAPCHAIN_EXTENSION_NAME, VK_KHR_GET_MEMORY_REQUIREMENTS_2_EXTENSION_NAME,
@@ -2201,35 +2212,40 @@ const char* const* device_extensions(VkDeviceCreateInfo* sptr, lava_file_reader&
 
 	dst.clear();
 	backing.clear();
+	if (use_stored_metadata && stored_len != metadata_len)
+	{
+		DLOG("Replacing packet device extension list (%u entries) with metadata list (%u entries)", stored_len, metadata_len);
+	}
 
 	// Copy over all except platform-specific extensions and potential duplicates
-	for (unsigned i = 0; i < len; i++)
+	for (uint32_t i = 0; i < (use_stored_metadata ? metadata_len : stored_len); i++)
 	{
+		const char* ext_name = use_stored_metadata ? reader.parent->stored_device_requested_extensions[i].c_str() : stored[i];
 		bool nocopy = false;
 		for (unsigned j = 0; j < do_not_copy.size(); j++)
 		{
-			if (strcmp(stored[i], do_not_copy[j]) == 0)
+			if (strcmp(ext_name, do_not_copy[j]) == 0)
 			{
 				nocopy = true;
 				break;
 			}
 		}
 
-		if (strcmp(stored[i], "VK_EXT_frame_boundary") == 0)
+		if (strcmp(ext_name, "VK_EXT_frame_boundary") == 0)
 		{
 			trace_has_frame_boundary = true;
 			nocopy = true; // add it later
 		}
 
 		// Sanity check
-		if (is_noscreen() && strcmp(stored[i], "VK_KHR_display_swapchain") == 0)
+		if (is_noscreen() && strcmp(ext_name, "VK_KHR_display_swapchain") == 0)
 		{
 			ABORT("Cannot use VK_KHR_display_swapchain with none wsi yet");
 		}
 
 		if (!nocopy)
 		{
-			backing.push_back(stored[i]);
+			backing.push_back(ext_name);
 		}
 	}
 
@@ -2309,10 +2325,17 @@ const char* const* instance_extensions(lava_file_reader& reader, uint32_t& len)
 		"VK_EXT_headless_surface"
 	};
 	const char* const* stored = reader.read_string_array(len);
+	const uint32_t stored_len = len;
+	const uint32_t metadata_len = reader.parent->stored_instance_requested_extensions.size();
+	const bool use_stored_metadata = reader.run && !p__skip_remove_unused && reader.parent->has_stored_instance_requested_extensions;
 	if (!reader.run) return stored;
 
 	backing.clear();
 	dst.clear();
+	if (use_stored_metadata && stored_len != metadata_len)
+	{
+		DLOG("Replacing packet instance extension list (%u entries) with metadata list (%u entries)", stored_len, metadata_len);
+	}
 
 	uint32_t propertyCount = 0;
 	VkResult result = wrap_vkEnumerateInstanceExtensionProperties(nullptr, &propertyCount, nullptr);
@@ -2334,26 +2357,27 @@ const char* const* instance_extensions(lava_file_reader& reader, uint32_t& len)
 	assert(has_surface);
 
 	// Copy over all except platform-specific extensions and potential duplicates
-	for (unsigned i = 0; i < len; i++)
+	for (uint32_t i = 0; i < (use_stored_metadata ? metadata_len : stored_len); i++)
 	{
+		const char* ext_name = use_stored_metadata ? reader.parent->stored_instance_requested_extensions[i].c_str() : stored[i];
 		bool nocopy = false;
 		for (unsigned j = 0; j < do_not_copy.size(); j++)
 		{
-			if (strcmp(stored[i], do_not_copy[j]) == 0)
+			if (strcmp(ext_name, do_not_copy[j]) == 0)
 			{
 				nocopy = true;
 				break;
 			}
 		}
 
-		if (is_noscreen() && strcmp(stored[i], "VK_KHR_display") == 0)
+		if (is_noscreen() && strcmp(ext_name, "VK_KHR_display") == 0)
 		{
 			ABORT("Cannot use VK_KHR_display with none wsi yet");
 		}
 
 		if (!nocopy)
 		{
-			backing.push_back(stored[i]);
+			backing.push_back(ext_name);
 		}
 	}
 

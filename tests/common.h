@@ -32,6 +32,8 @@ struct vulkan_req_t // Vulkan context requirements
 	VkPhysicalDeviceVulkan11Features reqfeat11 = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES, &reqfeat12 };
 	VkPhysicalDeviceFeatures2 reqfeat2 = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2, &reqfeat11 };
 	uint32_t apiVersion = VK_API_VERSION_1_1;
+	std::vector<std::string> instance_extensions;
+	std::vector<std::string> device_extensions;
 };
 
 vulkan_setup_t test_init(const std::string& testname, vulkan_req_t& reqs, size_t chunk_size = 0);

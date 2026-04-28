@@ -120,6 +120,7 @@ extern uint_fast8_t p__sandbox_level;
 extern uint_fast8_t p__trust_host_flushes;
 extern int_fast32_t p__suballocator_heap_size;
 extern uint_fast8_t p__delete_empty_trace;
+extern uint_fast8_t p__skip_remove_unused;
 
 /// Logging to be enable as needed by source recompilation
 #define NEVER(_format, ...)

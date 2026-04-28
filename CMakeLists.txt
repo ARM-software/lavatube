@@ -443,6 +443,8 @@ set_tests_properties(trace_test_alignment_replay_cpu PROPERTIES FIXTURES_REQUIRE
 add_lavatube_test(trace_test_alignment_validate COMMAND $<TARGET_FILE:lava-tool> -V tracing_alignment.vk)
 set_tests_properties(trace_test_alignment_validate PROPERTIES FIXTURES_REQUIRED tracing_alignment)
 
+internal_test(tracing_unused tracing_unused.vk)
+
 add_executable(write1 tests/write1.cpp)
 target_include_directories(write1 ${COMMON_INCLUDE})
 target_link_libraries(write1 ${COMMON_LIBRARIES} lavatube)

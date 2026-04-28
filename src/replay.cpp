@@ -79,6 +79,7 @@ static void usage()
 	printf("--skip-missing-input   Exit with code 77 if the input trace file does not exist\n");
 	printf("--no-multithreaded-io  Do not do decompression and file read in a separate thread. May save some CPU load and memory.\n");
 	printf("-s/--sandbox level     Set security sandbox level (from 1 to 3, with 3 the most strict, default %d)\n", (int)p__sandbox_level);
+	printf("--skip-remove-unused   Do not attempt to cleverly remove unused features and extensions\n");
 	printf("Vulkan specific options:\n");
 	printf("--swapchain mode       Swapchain mode [virtual, captured, offscreen]\n"); // swapchain offscreen == wsi none
 	printf("--virtualperfmode      Performance measurement mode - do not blit from our virtual swapchain to the real swapchain\n");
@@ -331,6 +332,10 @@ int main(int argc, char **argv)
 		else if (match(argv[i], "-a", "--allow-stalls", remaining))
 		{
 			p__allow_stalls = 1;
+		}
+		else if (match(argv[i], nullptr, "--skip-remove-unused", remaining))
+		{
+			p__skip_remove_unused = 1;
 		}
 		else if (match(argv[i], "-B", "--blackhole", remaining))
 		{

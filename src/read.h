@@ -150,6 +150,12 @@ public:
 	/// Set our exit status here if we want to signal something special (eg a skip test value)
 	std::atomic_int exit_status { 0 };
 
+	/// Pruned extension lists stored in metadata.json after capture finalization.
+	bool has_stored_instance_requested_extensions = false;
+	bool has_stored_device_requested_extensions = false;
+	std::vector<std::string> stored_instance_requested_extensions;
+	std::vector<std::string> stored_device_requested_extensions;
+
 private:
 	/// Start time of frame range
 	std::atomic_uint64_t mStartTime{ 0 };

@@ -4,6 +4,37 @@
 
 static VkPhysicalDeviceMemoryProperties memory_properties = {};
 
+static void push_unique_extension(std::vector<const char*>& enabled, const char* name)
+{
+	for (const char* existing : enabled)
+	{
+		if (strcmp(existing, name) == 0) return;
+	}
+	enabled.push_back(name);
+}
+
+static void require_supported_extensions(const std::vector<std::string>& required, const std::vector<VkExtensionProperties>& supported, std::vector<const char*>& enabled)
+{
+	for (const std::string& name : required)
+	{
+		bool found = false;
+		for (const VkExtensionProperties& ext : supported)
+		{
+			if (name == ext.extensionName)
+			{
+				push_unique_extension(enabled, name.c_str());
+				found = true;
+				break;
+			}
+		}
+		if (!found)
+		{
+			printf("Missing required Vulkan extension for test: %s\n", name.c_str());
+			exit(77);
+		}
+	}
+}
+
 void test_register_replay_callbacks()
 {
 #define CALLBACK(x) x ## _callbacks.push_back(replay_callback_ ## x)
@@ -149,28 +180,29 @@ vulkan_setup_t test_init(const std::string& testname, vulkan_req_t& reqs, size_t
 	assert(result == VK_SUCCESS);
 	for (const VkExtensionProperties& s : supported_extensions)
 	{
-		if (strcmp(s.extensionName, VK_EXT_DEBUG_REPORT_EXTENSION_NAME) == 0) enabledExtensions.push_back(s.extensionName);
-		else if (strcmp(s.extensionName, VK_EXT_DEBUG_UTILS_EXTENSION_NAME) == 0) enabledExtensions.push_back(s.extensionName);
+		if (strcmp(s.extensionName, VK_EXT_DEBUG_REPORT_EXTENSION_NAME) == 0) push_unique_extension(enabledExtensions, s.extensionName);
+		else if (strcmp(s.extensionName, VK_EXT_DEBUG_UTILS_EXTENSION_NAME) == 0) push_unique_extension(enabledExtensions, s.extensionName);
 	}
 	if (wsi && strcmp(wsi, "headless") == 0)
 	{
-		enabledExtensions.push_back("VK_EXT_headless_surface");
+		push_unique_extension(enabledExtensions, "VK_EXT_headless_surface");
 	}
 #ifdef VK_USE_PLATFORM_XCB_KHR
 	else
 	{
-		enabledExtensions.push_back(VK_KHR_XCB_SURFACE_EXTENSION_NAME);
+		push_unique_extension(enabledExtensions, VK_KHR_XCB_SURFACE_EXTENSION_NAME);
 	}
 #endif
 #ifdef VK_USE_PLATFORM_ANDROID_KHR
-	enabledExtensions.push_back(VK_KHR_ANDROID_SURFACE_EXTENSION_NAME);
+	push_unique_extension(enabledExtensions, VK_KHR_ANDROID_SURFACE_EXTENSION_NAME);
 #endif
+	require_supported_extensions(reqs.instance_extensions, supported_extensions, enabledExtensions);
 #ifdef VALIDATION
 	const char *validationLayerNames[] = { "VK_LAYER_LUNARG_standard_validation" };
 	pCreateInfo.enabledLayerCount = 1;
 	pCreateInfo.ppEnabledLayerNames = validationLayerNames;
 #endif
-	enabledExtensions.push_back(VK_KHR_SURFACE_EXTENSION_NAME);
+	push_unique_extension(enabledExtensions, VK_KHR_SURFACE_EXTENSION_NAME);
 	if (enabledExtensions.size() > 0)
 	{
 		pCreateInfo.ppEnabledExtensionNames = enabledExtensions.data();
@@ -224,11 +256,12 @@ vulkan_setup_t test_init(const std::string& testname, vulkan_req_t& reqs, size_t
 	{
 		if (strcmp(s.extensionName, VK_EXT_TOOLING_INFO_EXTENSION_NAME) == 0 && vprops.properties.vendorID != 0x8086) // Intel driver seems bugged here, reports it but does not support it?
 		{
-			enabledExtensions.push_back(s.extensionName);
+			push_unique_extension(enabledExtensions, s.extensionName);
 		}
-		if (strcmp(s.extensionName, VK_ARM_TRACE_HELPERS_EXTENSION_NAME) == 0) enabledExtensions.push_back(s.extensionName);
-		if (strcmp(s.extensionName, VK_TRACETOOLTEST_OBJECT_PROPERTY_EXTENSION_NAME) == 0) enabledExtensions.push_back(s.extensionName);
+		if (strcmp(s.extensionName, VK_ARM_TRACE_HELPERS_EXTENSION_NAME) == 0) push_unique_extension(enabledExtensions, s.extensionName);
+		if (strcmp(s.extensionName, VK_TRACETOOLTEST_OBJECT_PROPERTY_EXTENSION_NAME) == 0) push_unique_extension(enabledExtensions, s.extensionName);
 	}
+	require_supported_extensions(reqs.device_extensions, supported_extensions, enabledExtensions);
 	if (enabledExtensions.size() > 0)
 	{
 		deviceInfo.ppEnabledExtensionNames = enabledExtensions.data();
