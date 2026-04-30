@@ -2075,11 +2075,21 @@ void replay_pre_vkCreateDevice(lava_file_reader& reader, VkPhysicalDevice physic
 	pCreateInfo->enabledLayerCount = 0; // even though implementation should ignore it as per the spec, that is not always the case, so help it along
 
 	// Limit the number of requested queues to what is available
+	const size_t replay_queue_family_count = device_VkQueueFamilyProperties.size();
+	bool collapse_queue_families = (size_t)pCreateInfo->queueCreateInfoCount > replay_queue_family_count;
+	for (uint32_t i = 0; i < pCreateInfo->queueCreateInfoCount; i++)
+	{
+		if (pCreateInfo->pQueueCreateInfos[i].queueFamilyIndex >= replay_queue_family_count)
+		{
+			collapse_queue_families = true;
+			break;
+		}
+	}
 	VkDeviceQueueCreateInfo* queueinfo = reader.pool.allocate<VkDeviceQueueCreateInfo>(pCreateInfo->queueCreateInfoCount);
 	for (uint32_t i = 0; i < pCreateInfo->queueCreateInfoCount; i++)
 	{
 		queueinfo[i] = pCreateInfo->pQueueCreateInfos[i]; // struct copy
-		if (pCreateInfo->queueCreateInfoCount == 1 && queueinfo[i].queueFamilyIndex != selected_queue_family_index)
+		if ((pCreateInfo->queueCreateInfoCount == 1 || collapse_queue_families) && queueinfo[i].queueFamilyIndex != selected_queue_family_index)
 		{
 			ILOG("Changing queue family %u to %u", queueinfo[i].queueFamilyIndex, selected_queue_family_index);
 			queueinfo[i].queueFamilyIndex = selected_queue_family_index;
@@ -2090,6 +2100,17 @@ void replay_pre_vkCreateDevice(lava_file_reader& reader, VkPhysicalDevice physic
 			ILOG("Changing queue count %u to %u for family %u", queueinfo[i].queueCount, device_VkQueueFamilyProperties.at(selected_queue_family_index).queueCount, selected_queue_family_index);
 			queueinfo[i].queueCount = device_VkQueueFamilyProperties.at(selected_queue_family_index).queueCount;
 		}
+	}
+	if (collapse_queue_families && pCreateInfo->queueCreateInfoCount > 1)
+	{
+		// Queue-family portability replay aliases everything onto one real queue family.
+		float* priority = reader.pool.allocate<float>(1);
+		priority[0] = (queueinfo[0].pQueuePriorities && queueinfo[0].queueCount > 0) ? queueinfo[0].pQueuePriorities[0] : 1.0f;
+		queueinfo[0].queueFamilyIndex = selected_queue_family_index;
+		queueinfo[0].queueCount = 1;
+		queueinfo[0].pQueuePriorities = priority;
+		ILOG("Collapsing %u queue create infos to one real queue because replay supports %zu queue families", pCreateInfo->queueCreateInfoCount, replay_queue_family_count);
+		pCreateInfo->queueCreateInfoCount = 1;
 	}
 	pCreateInfo->pQueueCreateInfos = queueinfo;
 
