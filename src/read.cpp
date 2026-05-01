@@ -39,10 +39,12 @@ lava_file_reader::lava_file_reader(lava_reader* _parent, const std::string& path
 	current.call = 0;
 	current.frame = 0;
 	current.thread = mytid;
+	memset(trace_thread_name, 0, sizeof(trace_thread_name));
 
 	if (frameinfo.isMember("thread_name"))
 	{
-		set_thread_name(frameinfo["thread_name"].asString().c_str());
+		strncpy(trace_thread_name, frameinfo["thread_name"].asString().c_str(), sizeof(trace_thread_name) - 1);
+		set_thread_name(trace_thread_name);
 	}
 
 	// Translate global frames to local frames and set our measurement window

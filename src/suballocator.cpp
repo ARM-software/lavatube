@@ -54,7 +54,7 @@ struct heap
 	/// and only it may iterate over and modify the allocations list.
 	std::list<suballocation> subs;
 	/// Other threads can queue delete offsets here; the owning thread drains them
-	/// before its next allocation attempt.
+	/// before its next allocation attempt, or we flush them during device teardown.
 	mutable lava::mutex deletes_mutex;
 	std::vector<uint32_t> deletes;
 	lava_tiling tiling = TILING_LINEAR; // default assumed to be linear

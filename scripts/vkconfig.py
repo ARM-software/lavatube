@@ -165,6 +165,7 @@ trace_post_calls = [ 'vkCreateInstance', 'vkCreateDevice', 'vkDestroyInstance', 
 		'vkGetPhysicalDeviceMemoryProperties2KHR' ]
 validate_funcs(trace_post_calls)
 trace_post_tool_calls = [
+	'vkQueuePresentKHR',
 	'vkCreateDescriptorUpdateTemplate', 'vkCreateDescriptorUpdateTemplateKHR',
 	'vkUpdateDescriptorSetWithTemplate', 'vkUpdateDescriptorSetWithTemplateKHR',
 	'vkCmdPushDescriptorSetWithTemplate', 'vkCmdPushDescriptorSetWithTemplateKHR',

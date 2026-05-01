@@ -399,6 +399,7 @@ void lava_writer::bind_thread(unsigned index)
 {
 	assert(index < thread_streams.size());
 	tid = index;
+	thread_streams.at(index)->capture_thread_name();
 }
 
 void lava_writer::prepare_threads(unsigned count)

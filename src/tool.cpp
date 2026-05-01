@@ -161,8 +161,7 @@ static void bootstrap_write_side_state(const std::string& input)
 	writer.json()["lavatube_version_minor"] = LAVATUBE_VERSION_MINOR;
 	writer.json()["lavatube_version_patch"] = LAVATUBE_VERSION_PATCH;
 	writer.json()["vulkan_header_version"] = version_to_string(VK_HEADER_VERSION);
-	const int global_frames = writer.json().get("global_frames", 1).asInt();
-	writer.global_frame.exchange(std::max(global_frames - 1, 0));
+	writer.global_frame.exchange(0);
 	frame_mutex.unlock();
 
 	const Json::Value tracking = packed_json("tracking.json", input);
@@ -188,6 +187,7 @@ static void replay_thread(lava_reader* replayer, int thread_id)
 	if (p__sandbox_level >= 2) sandbox_level_three();
 	lava_file_reader& t = replayer->file_reader(thread_id);
 	t.bind_runner_thread();
+	t.bind_trace_thread_name();
 	t.start_measurement();
 	uint8_t instrtype;
 	assert(t.run == false);

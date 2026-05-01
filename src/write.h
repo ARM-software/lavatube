@@ -116,6 +116,7 @@ public:
 
 	void new_frame(int global_frame) REQUIRES(frame_mutex);
 	void set(const std::string& path) REQUIRES(frame_mutex);
+	void capture_thread_name() { get_thread_name(thread_name); }
 	inline int thread_index() const { return current.thread; }
 
 	int prev_callno = -1; // for validation

@@ -191,6 +191,10 @@ public:
 	inline int thread_index() const { return current.thread; }
 	inline uint64_t stream_position() const { return read_position; }
 	inline const char* stream_data(uint64_t pos) const { return uncompressed_data + pos; }
+	void bind_trace_thread_name() const
+	{
+		if (trace_thread_name[0] != '\0') set_thread_name(trace_thread_name);
+	}
 
 	inline VkDescriptorDataEXT read_VkDescriptorDataEXT() { return VkDescriptorDataEXT{}; } // TBD
 	inline VkAccelerationStructureNV read_VkAccelerationStructureNV() { return VK_NULL_HANDLE; }
@@ -312,6 +316,7 @@ private:
 	/// Total amount of global frames (for final FPS calculation)
 	unsigned global_frames = 0;
 	unsigned local_frames = 0;
+	char trace_thread_name[16] = {};
 };
 
 inline void lava_file_reader::read_barrier()
