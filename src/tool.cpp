@@ -21,6 +21,7 @@
 #include "postprocess.h"
 #include "json_helpers.h"
 #include "replay_callbacks.h"
+#include "replay_trace_adapter.h"
 
 extern lava::mutex sync_mutex;
 
@@ -36,6 +37,74 @@ static inline bool is_update_packet(uint8_t instrtype)
 {
 	return instrtype == PACKET_IMAGE_UPDATE || instrtype == PACKET_BUFFER_UPDATE || instrtype == PACKET_TENSOR_UPDATE
 		|| instrtype == PACKET_IMAGE_UPDATE2 || instrtype == PACKET_BUFFER_UPDATE2;
+}
+
+static void sync_output_buffer_memory_flags(VkBuffer buffer)
+{
+	auto* writer_buffer = lava_writer::instance().records.VkBuffer_index.at(buffer);
+	assert(writer_buffer);
+	writer_buffer->memory_flags = VkBuffer_index.at(fake_index<VkBuffer>(buffer)).memory_flags;
+}
+
+static void sync_output_image_memory_flags(VkImage image)
+{
+	auto* writer_image = lava_writer::instance().records.VkImage_index.at(image);
+	assert(writer_image);
+	const trackedimage& reader_image = VkImage_index.at(fake_index<VkImage>(image));
+	writer_image->memory_flags = reader_image.memory_flags;
+	writer_image->size = reader_image.size;
+}
+
+static void sync_output_tensor_memory_flags(VkTensorARM tensor)
+{
+	auto* writer_tensor = lava_writer::instance().records.VkTensorARM_index.at(tensor);
+	assert(writer_tensor);
+	writer_tensor->memory_flags = VkTensorARM_index.at(fake_index<VkTensorARM>(tensor)).memory_flags;
+}
+
+static void sync_output_datagraph_session_memory_flags(const VkBindDataGraphPipelineSessionMemoryInfoARM& bind_info)
+{
+	auto* writer_session = lava_writer::instance().records.VkDataGraphPipelineSessionARM_index.at(bind_info.session);
+	assert(writer_session);
+	const auto& reader_session = VkDataGraphPipelineSessionARM_index.at(fake_index<VkDataGraphPipelineSessionARM>(bind_info.session));
+	const auto* reader_binding = reader_session.find_binding(bind_info.bindPoint, bind_info.objectIndex);
+	if (!reader_binding) return;
+	auto& writer_binding = writer_session->get_binding(bind_info.bindPoint, bind_info.objectIndex);
+	writer_binding.memory_flags = reader_binding->memory_flags;
+}
+
+static void sync_output_vkBindBufferMemory(callback_context&, VkDevice, VkBuffer buffer, VkDeviceMemory, VkDeviceSize)
+{
+	sync_output_buffer_memory_flags(buffer);
+}
+
+static void sync_output_vkBindImageMemory(callback_context&, VkDevice, VkImage image, VkDeviceMemory, VkDeviceSize)
+{
+	sync_output_image_memory_flags(image);
+}
+
+static void sync_output_vkBindBufferMemory2(callback_context&, VkDevice, uint32_t bindInfoCount, const VkBindBufferMemoryInfo* pBindInfos)
+{
+	if (!pBindInfos) return;
+	for (uint32_t i = 0; i < bindInfoCount; i++) sync_output_buffer_memory_flags(pBindInfos[i].buffer);
+}
+
+static void sync_output_vkBindImageMemory2(callback_context&, VkDevice, uint32_t bindInfoCount, const VkBindImageMemoryInfo* pBindInfos)
+{
+	if (!pBindInfos) return;
+	for (uint32_t i = 0; i < bindInfoCount; i++) sync_output_image_memory_flags(pBindInfos[i].image);
+}
+
+static void sync_output_vkBindTensorMemoryARM(callback_context&, VkDevice, uint32_t bindInfoCount, const VkBindTensorMemoryInfoARM* pBindInfos)
+{
+	if (!pBindInfos) return;
+	for (uint32_t i = 0; i < bindInfoCount; i++) sync_output_tensor_memory_flags(pBindInfos[i].tensor);
+}
+
+static void sync_output_vkBindDataGraphPipelineSessionMemoryARM(callback_context&, VkDevice, uint32_t bindInfoCount, const VkBindDataGraphPipelineSessionMemoryInfoARM* pBindInfos)
+{
+	if (!pBindInfos) return;
+	for (uint32_t i = 0; i < bindInfoCount; i++) sync_output_datagraph_session_memory_flags(pBindInfos[i]);
 }
 
 // Utility funcs
@@ -165,6 +234,9 @@ static void bootstrap_write_side_state(const std::string& input)
 	frame_mutex.unlock();
 
 	const Json::Value tracking = packed_json("tracking.json", input);
+	frame_mutex.lock();
+	writer.input_tracking() = tracking;
+	frame_mutex.unlock();
 	if (!tracking.isMember("VkPhysicalDevice")) return;
 	for (const Json::Value& value : tracking["VkPhysicalDevice"])
 	{
@@ -177,7 +249,7 @@ static void bootstrap_write_side_state(const std::string& input)
 			props.queueFlags = VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT | VK_QUEUE_TRANSFER_BIT;
 			data.queueFamilyProperties.push_back(props);
 		}
-		auto* add = writer.records.VkPhysicalDevice_index.add(fake_handle<VkPhysicalDevice>(data.index), data.creation);
+		auto* add = writer.records.VkPhysicalDevice_index.add(fake_handle<VkPhysicalDevice>(data.index), data.creation, data.index);
 		*add = data;
 	}
 }
@@ -585,6 +657,22 @@ int main(int argc, char **argv)
 		writer.prepare_threads(replayer.threads.size());
 		bootstrap_write_side_state(filename_input);
 		add_callbacks_for_output();
+		vkBindBufferMemory_callbacks.clear();
+		vkBindBufferMemory_callbacks.push_back(replay_trace_callback_with_pre<trace_vkBindBufferMemory, sync_output_vkBindBufferMemory>::call);
+		vkBindImageMemory_callbacks.clear();
+		vkBindImageMemory_callbacks.push_back(replay_trace_callback_with_pre<trace_vkBindImageMemory, sync_output_vkBindImageMemory>::call);
+		vkBindBufferMemory2_callbacks.clear();
+		vkBindBufferMemory2_callbacks.push_back(replay_trace_callback_with_pre<trace_vkBindBufferMemory2, sync_output_vkBindBufferMemory2>::call);
+		vkBindBufferMemory2KHR_callbacks.clear();
+		vkBindBufferMemory2KHR_callbacks.push_back(replay_trace_callback_with_pre<trace_vkBindBufferMemory2KHR, sync_output_vkBindBufferMemory2>::call);
+		vkBindImageMemory2_callbacks.clear();
+		vkBindImageMemory2_callbacks.push_back(replay_trace_callback_with_pre<trace_vkBindImageMemory2, sync_output_vkBindImageMemory2>::call);
+		vkBindImageMemory2KHR_callbacks.clear();
+		vkBindImageMemory2KHR_callbacks.push_back(replay_trace_callback_with_pre<trace_vkBindImageMemory2KHR, sync_output_vkBindImageMemory2>::call);
+		vkBindTensorMemoryARM_callbacks.clear();
+		vkBindTensorMemoryARM_callbacks.push_back(replay_trace_callback_with_pre<trace_vkBindTensorMemoryARM, sync_output_vkBindTensorMemoryARM>::call);
+		vkBindDataGraphPipelineSessionMemoryARM_callbacks.clear();
+		vkBindDataGraphPipelineSessionMemoryARM_callbacks.push_back(replay_trace_callback_with_pre<trace_vkBindDataGraphPipelineSessionMemoryARM, sync_output_vkBindDataGraphPipelineSessionMemoryARM>::call);
 		write_output = true;
 
 		for (unsigned i = 0; i < replayer.threads.size(); i++)

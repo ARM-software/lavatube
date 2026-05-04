@@ -2904,7 +2904,10 @@ static void ensure_swapchain_image_records(lava_file_writer& writer, trackedswap
 	{
 		if (writer.parent->records.VkImage_index.contains(images[i])) continue;
 		auto* add = writer.parent->records.VkImage_index.add(images[i], writer.current);
-		add->last_modified = writer.current;
+		// These images were created by the swapchain creation call, even though
+		// the handles only become visible to us later through vkGetSwapchainImagesKHR.
+		add->creation = swapchain_data->creation;
+		add->last_modified = swapchain_data->creation;
 		add->object_type = VK_OBJECT_TYPE_IMAGE;
 		add->sharingMode = swapchain_data->info.imageSharingMode;
 		add->is_swapchain_image = true;
@@ -2971,7 +2974,7 @@ void tool_write_vkCreateSurfaceKHR_packet(const surface_create_packet& packet, c
 	writer.write_uint32_t(static_cast<uint32_t>(packet.retval));
 	if (packet.retval == VK_SUCCESS && packet.surface_index != CONTAINER_NULL_VALUE)
 	{
-		auto* surface_data = writer.parent->records.VkSurfaceKHR_index.add(fake_handle<VkSurfaceKHR>(packet.surface_index), writer.current);
+		auto* surface_data = writer.parent->records.VkSurfaceKHR_index.add(fake_handle<VkSurfaceKHR>(packet.surface_index), writer.current, packet.surface_index);
 		surface_data->width = packet.width;
 		surface_data->height = packet.height;
 		surface_data->x = packet.x;

@@ -400,6 +400,7 @@ trackedimage trackedimage_json(const Json::Value& v)
 {
 	trackedimage t;
 	trackable_helper(t, v);
+	t.size = (VkDeviceSize)v.get("size", 0).asUInt64();
 	t.tiling = (lava_tiling)v["tiling"].asUInt();
 	t.flags = (VkImageCreateFlags)v["flags"].asUInt();
 	t.sharingMode = (VkSharingMode)v["sharingMode"].asUInt();

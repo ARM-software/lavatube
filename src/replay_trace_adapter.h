@@ -37,3 +37,17 @@ struct replay_trace_callback_with_post<TraceFn, PostFn>
 		PostFn(writer, args...);
 	}
 };
+
+template<auto TraceFn, auto PreFn>
+struct replay_trace_callback_with_pre;
+
+template<typename R, typename... Args, R(VKAPI_PTR *TraceFn)(Args...), void(*PreFn)(callback_context&, Args...)>
+struct replay_trace_callback_with_pre<TraceFn, PreFn>
+{
+	static void call(callback_context& cb, Args... args)
+	{
+		PreFn(cb, args...);
+		prepare_trace_callback(cb);
+		(void)TraceFn(args...);
+	}
+};

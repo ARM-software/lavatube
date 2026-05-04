@@ -262,6 +262,13 @@ static __attribute__((const)) inline uint64_t aligned_start(uint64_t size, uint6
 template<typename T>
 inline T fake_handle(uint32_t index) { return (T)((intptr_t)index + 1); }
 
+template<typename T>
+inline uint32_t fake_index(T handle)
+{
+	assert((intptr_t)handle > 0);
+	return (uint32_t)((intptr_t)handle - 1);
+}
+
 const char* pretty_print_VkObjectType(VkObjectType val);
 
 enum lavatube_compression_type

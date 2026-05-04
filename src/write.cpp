@@ -66,6 +66,29 @@ static void log_removed_strings(const char* heading, const std::unordered_set<st
 	for (const std::string& value : sorted) ILOG("\t%s", value.c_str());
 }
 
+static void merge_tracking_field(Json::Value& dst, const Json::Value& src, const char* field)
+{
+	if (!dst.isObject() || !src.isObject()) return;
+	for (const std::string& type_name : dst.getMemberNames())
+	{
+		if (!src.isMember(type_name)) continue;
+		Json::Value& dst_array = dst[type_name];
+		const Json::Value& src_array = src[type_name];
+		if (!dst_array.isArray() || !src_array.isArray()) continue;
+		for (Json::ArrayIndex i = 0; i < dst_array.size(); i++)
+		{
+			Json::Value& dst_value = dst_array[i];
+			if (!dst_value.isObject() || !dst_value.isMember("index")) continue;
+			const Json::ArrayIndex index = dst_value["index"].asUInt();
+			if (index >= src_array.size()) continue;
+			const Json::Value& src_value = src_array[index];
+			if (!src_value.isObject() || !src_value.isMember("index") || src_value["index"].asUInt() != index) continue;
+			if (!src_value.isMember(field)) continue;
+			dst_value[field] = src_value[field];
+		}
+	}
+}
+
 // --- trace file writer
 
 lava_file_writer::lava_file_writer(uint16_t _tid, lava_writer* _parent) : file_writer(_tid), parent(_parent)
@@ -335,7 +358,13 @@ void lava_writer::serialize()
 	write_json(mPath + "/limits.json", trace_limits(this));
 
 	// write out tracking info for each object
-	write_json(mPath + "/tracking.json", trackable_json(this));
+	Json::Value tracking = trackable_json(this);
+	if (write_output)
+	{
+		merge_tracking_field(tracking, mInputTracking, "updates");
+		merge_tracking_field(tracking, mInputTracking, "written");
+	}
+	write_json(mPath + "/tracking.json", tracking);
 
 }
 
@@ -371,6 +400,7 @@ void lava_writer::finish()
 	}
 	mPath = "";
 	mJson = Json::Value();
+	mInputTracking = Json::Value();
 	global_frame.exchange(0);
 	tid = -1;
 	vulkan_feature_detection_reset();

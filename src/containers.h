@@ -693,16 +693,23 @@ public:
 	~trace_remap() { clear(); }
 
 	/// Might be called simultaneously with itself and at() but never with the same key.
-	inline U* add(T key, const change_source& current)
+	inline U* add(T key, const change_source& current, uint32_t desired_index = CONTAINER_INVALID_INDEX)
 	{
 		std::lock_guard<std::mutex> lock(mutex);
 		assert(key != 0);
+		const bool uses_desired_index = desired_index != CONTAINER_INVALID_INDEX;
+		const index_mode requested_mode = uses_desired_index ? index_mode::desired : index_mode::automatic;
+		if (mode == index_mode::unknown) mode = requested_mode;
+		assert(mode == requested_mode);
 		U* p = new U;
-		p->index = _size++;
+		p->index = uses_desired_index ? desired_index : _size++;
 		p->creation = current;
 		p->last_modified = current;
 		lookup.insert(key, p);
-		storage.push_back(p);
+		const auto it = std::lower_bound(storage.begin(), storage.end(), p->index, [](const U* lhs, uint32_t rhs) { return lhs->index < rhs; });
+		assert(it == storage.end() || (*it)->index != p->index);
+		storage.insert(it, p);
+		if (uses_desired_index) _size.store(std::max(_size.load(), desired_index + 1));
 		return p;
 	}
 
@@ -744,6 +751,7 @@ public:
 		for (auto* p : storage) delete p;
 		storage.clear();
 		_size.store(0);
+		mode = index_mode::unknown;
 		lookup.insert(0, nullptr); // special case VK_NULL_HANDLE
 	}
 
@@ -753,8 +761,11 @@ public:
 	uint32_t size() const { return _size.load(); }
 
 private:
+	enum class index_mode : uint8_t { unknown, automatic, desired };
+
 	std::mutex mutex;
 	std::atomic_uint_least32_t _size;
+	index_mode mode = index_mode::unknown;
 	concurrent_unordered_map<T, U*> lookup;
 	std::vector<U*> storage;
 };

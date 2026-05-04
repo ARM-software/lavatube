@@ -712,7 +712,7 @@ class parameter(spec.base_parameter):
 					z.do('const VkImageTiling tiling = static_cast<VkImageTiling>(reader.read_uint32_t()); // fetch tiling property especially added')
 					z.do('assert((lava_tiling)tiling == image_data.tiling);')
 					z.do('const VkDeviceSize min_size = static_cast<VkDeviceSize>(reader.read_uint64_t()); // fetch padded memory size')
-					z.do('assert(min_size == image_data.size);')
+					z.do('(void)min_size; // unused, we now read size from the JSON metadata file')
 				z.do('suballoc_location loc = device_data.allocator->add_trackedobject(reader.thread_index(), (uint64_t)%s, %s);' % (varname, totrackable(self.type)))
 			if self.name == 'memory':
 				z.do('if (reader.run)')
@@ -1076,10 +1076,18 @@ class parameter(spec.base_parameter):
 			z.do('writer.commandBuffer = %s;' % varname) # always earlier in the parameter list than images and buffers, fortunately
 			z.do('writer.device = commandbuffer_data->device;')
 			z.do('writer.physicalDevice = commandbuffer_data->physicalDevice;')
-		if self.funcname in ['vkBindImageMemory', 'vkBindBufferMemory', 'VkBindImageMemoryInfo', 'VkBindImageMemoryInfoKHR', 'VkBindBufferMemoryInfo', 'VkBindBufferMemoryInfoKHR', 'VkBindTensorMemoryInfoARM', 'VkBindDataGraphPipelineSessionMemoryInfoARM'] and self.name in ['image', 'buffer', 'tensor', 'session']:
+		if self.funcname == 'VkBindDataGraphPipelineSessionMemoryInfoARM' and self.name == 'session':
 			z.do('const auto* meminfo = writer.parent->records.VkDeviceMemory_index.at(%s);' % (owner + 'memory'))
-			z.do('%s->memory_flags = meminfo->propertyFlags;' % totrackable(self.type))
-			z.do('writer.write_uint32_t(static_cast<uint32_t>(meminfo->propertyFlags)); // save memory flags') # TBD remove
+			z.do('auto& datagraph_binding = %s->get_binding(sptr->bindPoint, sptr->objectIndex);' % totrackable(self.type))
+			z.do('const VkMemoryPropertyFlags serialized_memory_flags = writer.write_output ? datagraph_binding.memory_flags : meminfo->propertyFlags;')
+			z.do('datagraph_binding.memory_flags = serialized_memory_flags;')
+			z.do('%s->memory_flags = serialized_memory_flags;' % totrackable(self.type))
+			z.do('writer.write_uint32_t(static_cast<uint32_t>(serialized_memory_flags)); // save memory flags') # TBD remove
+		if self.funcname in ['vkBindImageMemory', 'vkBindBufferMemory', 'VkBindImageMemoryInfo', 'VkBindImageMemoryInfoKHR', 'VkBindBufferMemoryInfo', 'VkBindBufferMemoryInfoKHR', 'VkBindTensorMemoryInfoARM'] and self.name in ['image', 'buffer', 'tensor']:
+			z.do('const auto* meminfo = writer.parent->records.VkDeviceMemory_index.at(%s);' % (owner + 'memory'))
+			z.do('const VkMemoryPropertyFlags serialized_memory_flags = writer.write_output ? %s->memory_flags : meminfo->propertyFlags;' % totrackable(self.type))
+			z.do('%s->memory_flags = serialized_memory_flags;' % totrackable(self.type))
+			z.do('writer.write_uint32_t(static_cast<uint32_t>(serialized_memory_flags)); // save memory flags') # TBD remove
 		if self.funcname in ['vkBindImageMemory', 'VkBindImageMemoryInfo', 'VkBindImageMemoryInfoKHR'] and self.name == 'image': # TBD remove
 			z.do('writer.write_uint32_t(static_cast<uint32_t>(image_data->tiling)); // save tiling info') # TBD remove
 			z.do('writer.write_uint64_t(static_cast<uint64_t>(image_data->size)); // save padded image size') # TBD remove
@@ -1194,7 +1202,7 @@ def save_add_tracking(name):
 		(param, count, type) = get_create_params(name)
 		z.do('if (retval == VK_SUCCESS)')
 		z.brace_begin()
-		z.do('auto* add = writer.parent->records.%s_index.add(*%s, writer.current);' % (type, param))
+		z.do('auto* add = writer.parent->records.%s_index.add(*%s, writer.current, writer.run ? CONTAINER_INVALID_INDEX : fake_index<%s>(*%s));' % (type, param, type, param))
 		if type == 'VkBuffer':
 			z.do('add->parent_device_index = device_data->index;')
 			z.do('add->size = pCreateInfo->size;')
@@ -1356,7 +1364,7 @@ def save_add_tracking(name):
 		z.do('for (unsigned i = 0; i < %s; i++)' % count)
 		z.brace_begin()
 		z.do('if (retval != VK_SUCCESS) { writer.write_handle(nullptr); continue; }')
-		z.do('auto* add = writer.parent->records.%s_index.add(%s[i], writer.current);' % (type, param))
+		z.do('auto* add = writer.parent->records.%s_index.add(%s[i], writer.current, writer.run ? CONTAINER_INVALID_INDEX : fake_index<%s>(%s[i]));' % (type, param, type, param))
 		if type == 'VkCommandBuffer':
 			z.do('add->pool = pAllocateInfo->commandPool;')
 			z.do('add->device = device;')
