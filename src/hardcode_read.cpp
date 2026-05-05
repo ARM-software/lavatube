@@ -283,6 +283,13 @@ static uint64_t queue_lookup_fake_handle(uint32_t index)
 	return (uint64_t)fake_handle<VkQueue>((queue_data.queueFamily << 16) + queue_data.queueIndex);
 }
 
+static VkQueue queue_lookup_output_handle(uint32_t index, VkQueue fallback)
+{
+	const trackedqueue& queue_data = VkQueue_index.at(index);
+	if (queue_data.queueFamily == UINT32_MAX || queue_data.queueIndex == UINT32_MAX) return fallback;
+	return fake_handle<VkQueue>((queue_data.queueFamily << 16) + queue_data.queueIndex);
+}
+
 static uint64_t debug_object_lookup_output(VkDebugReportObjectTypeEXT type, uint32_t index)
 {
 	switch (type)
@@ -3632,13 +3639,19 @@ void retrace_vkGetDeviceQueue2(lava_file_reader& reader)
 		assert(queue != VK_NULL_HANDLE);
 	}
 	const uint32_t stored_queue_index = reader.read_handle(DEBUGPARAM("VkQueue"));
+	if (!reader.run)
+	{
+		queue = index_to_VkQueue.contains(stored_queue_index)
+			? index_to_VkQueue.at(stored_queue_index)
+			: queue_lookup_output_handle(stored_queue_index, queue);
+	}
 	if (!index_to_VkQueue.contains(stored_queue_index))
 	{
 		index_to_VkQueue.set(stored_queue_index, queue);
 		auto& queue_data = VkQueue_index.at(stored_queue_index);
 		queue_data.device = device;
-		queue_data.queueIndex = info_real.queueIndex;
-		queue_data.queueFamily = info_real.queueFamilyIndex;
+		if (reader.run || queue_data.queueIndex == UINT32_MAX) queue_data.queueIndex = info_real.queueIndex;
+		if (reader.run || queue_data.queueFamily == UINT32_MAX) queue_data.queueFamily = info_real.queueFamilyIndex;
 		queue_data.realIndex = realIndex;
 		queue_data.realFamily = realFamily;
 		queue_data.realQueue = queue;
@@ -3646,6 +3659,13 @@ void retrace_vkGetDeviceQueue2(lava_file_reader& reader)
 		{
 			const VkQueueFamilyProperties& props = device_VkQueueFamilyProperties.at(info_real.queueFamilyIndex);
 			queue_data.queueFlags = props.queueFlags;
+		}
+		else if ((queue_data.queueFlags == VK_QUEUE_FLAG_BITS_MAX_ENUM || queue_data.queueFlags == 0)
+		         && queue_data.queueFamily < device_VkQueueFamilyProperties.size())
+		{
+			// Older traces sometimes serialized queueFlags as 0 when queue metadata
+			// was incomplete. Repair that legacy value from the captured queue family.
+			queue_data.queueFlags = device_VkQueueFamilyProperties.at(queue_data.queueFamily).queueFlags;
 		}
 		queue_data.physicalDevice = VkDevice_index.at(device_index).physicalDevice;
 		queue_data.internally_synchronized_queues = VkDevice_index.at(device_index).internally_synchronized_queues;
@@ -3691,13 +3711,19 @@ void retrace_vkGetDeviceQueue(lava_file_reader& reader)
 		assert(queue != VK_NULL_HANDLE);
 	}
 	const uint32_t stored_queue_index = reader.read_handle(DEBUGPARAM("VkQueue"));
+	if (!reader.run)
+	{
+		queue = index_to_VkQueue.contains(stored_queue_index)
+			? index_to_VkQueue.at(stored_queue_index)
+			: queue_lookup_output_handle(stored_queue_index, queue);
+	}
 	if (!index_to_VkQueue.contains(stored_queue_index))
 	{
 		index_to_VkQueue.set(stored_queue_index, queue);
 		auto& queue_data = VkQueue_index.at(stored_queue_index);
 		queue_data.device = device;
-		queue_data.queueIndex = queueIndex;
-		queue_data.queueFamily = queueFamilyIndex;
+		if (reader.run || queue_data.queueIndex == UINT32_MAX) queue_data.queueIndex = queueIndex;
+		if (reader.run || queue_data.queueFamily == UINT32_MAX) queue_data.queueFamily = queueFamilyIndex;
 		queue_data.realIndex = realIndex;
 		queue_data.realFamily = realFamily;
 		queue_data.realQueue = queue;
@@ -3705,6 +3731,13 @@ void retrace_vkGetDeviceQueue(lava_file_reader& reader)
 		{
 			const VkQueueFamilyProperties& props = device_VkQueueFamilyProperties.at(queueFamilyIndex);
 			queue_data.queueFlags = props.queueFlags;
+		}
+		else if ((queue_data.queueFlags == VK_QUEUE_FLAG_BITS_MAX_ENUM || queue_data.queueFlags == 0)
+		         && queue_data.queueFamily < device_VkQueueFamilyProperties.size())
+		{
+			// Older traces sometimes serialized queueFlags as 0 when queue metadata
+			// was incomplete. Repair that legacy value from the captured queue family.
+			queue_data.queueFlags = device_VkQueueFamilyProperties.at(queue_data.queueFamily).queueFlags;
 		}
 		queue_data.physicalDevice = VkDevice_index.at(device_index).physicalDevice;
 		queue_data.internally_synchronized_queues = VkDevice_index.at(device_index).internally_synchronized_queues;
@@ -3998,6 +4031,12 @@ void retrace_vkGetPhysicalDeviceXcbPresentationSupportKHR(lava_file_reader& read
 
 void image_update(lava_file_reader& reader, uint32_t device_index, uint32_t image_index, uint64_t size, const VkBaseOutStructure* sptr)
 {
+	if (reader.write_output)
+	{
+		reader.read_patch(nullptr, 0);
+		return;
+	}
+
 	VkDevice device = index_to_VkDevice.at(device_index);
 	const auto& device_data = VkDevice_index.at(device_index);
 	suballoc_location loc = device_data.allocator->find_image_memory(image_index);
@@ -4017,6 +4056,12 @@ void image_update(lava_file_reader& reader, uint32_t device_index, uint32_t imag
 
 void buffer_update(lava_file_reader& reader, uint32_t device_index, uint32_t buffer_index, uint64_t size, const VkBaseOutStructure* sptr)
 {
+	if (reader.write_output)
+	{
+		reader.read_patch(nullptr, 0);
+		return;
+	}
+
 	const auto& device_data = VkDevice_index.at(device_index);
 	suballoc_location loc = device_data.allocator->find_buffer_memory(buffer_index);
 	DLOG2("buffer update idx=%u flush=%s init=%s size=%lu", buffer_index, loc.needs_flush ? "yes" : "no", loc.needs_init ? "yes" : "no", (unsigned long)loc.size);
@@ -4038,6 +4083,12 @@ void buffer_update(lava_file_reader& reader, uint32_t device_index, uint32_t buf
 
 void tensor_update(lava_file_reader& reader, uint32_t device_index, uint32_t tensor_index, uint64_t size, const VkBaseOutStructure* sptr)
 {
+	if (reader.write_output)
+	{
+		reader.read_patch(nullptr, 0);
+		return;
+	}
+
 	const auto& device_data = VkDevice_index.at(device_index);
 	suballoc_location loc = device_data.allocator->find_tensor_memory(tensor_index);
 	DLOG2("tensor update idx=%u flush=%s init=%s size=%lu", tensor_index, loc.needs_flush ? "yes" : "no", loc.needs_init ? "yes" : "no", (unsigned long)loc.size);

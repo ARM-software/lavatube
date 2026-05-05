@@ -87,24 +87,22 @@ public:
 	/// Patch a memory area, return number of bytes changed.
 	uint32_t read_patch(char* buf, uint64_t maxsize)
 	{
-		char* ptr = buf;
+		uint64_t position = 0;
 		uint32_t offset;
 		uint32_t size;
 		uint64_t changed = 0;
 		do {
 			offset = read_uint32_t();
-			ptr += offset;
-			// cppcheck-suppress nullPointerRedundantCheck
-			assert(maxsize == 0 || ptr <= buf + maxsize);
+			position += offset;
+			assert(maxsize == 0 || position <= maxsize);
 			size = read_uint32_t();
 			check_space(size);
 			const char* uptr = uncompressed_data + read_position;
-			if (buf && size) memcpy(ptr, uptr, size);
+			if (buf && size) memcpy(buf + position, uptr, size);
 			read_position += size;
-			ptr += size;
+			position += size;
 			changed += size;
-			// cppcheck-suppress nullPointerRedundantCheck
-			assert(maxsize == 0 || ptr <= buf + maxsize);
+			assert(maxsize == 0 || position <= maxsize);
 		}
 		while (!(offset == 0 && size == 0));
 		return changed;

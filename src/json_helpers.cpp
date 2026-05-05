@@ -538,6 +538,9 @@ trackedqueue trackedqueue_json(const Json::Value& v)
 	trackedqueue t;
 	trackable_helper(t, v);
 	t.device_index = v["parent_device_index"].asUInt();
+	if (v.isMember("queueFamily")) t.queueFamily = v["queueFamily"].asUInt();
+	if (v.isMember("queueIndex")) t.queueIndex = v["queueIndex"].asUInt();
+	if (v.isMember("queueFlags")) t.queueFlags = (VkQueueFlags)v["queueFlags"].asUInt();
 	t.enter_initialized();
 	return t;
 }

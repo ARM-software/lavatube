@@ -25,7 +25,7 @@
 
 extern lava::mutex sync_mutex;
 
-static bool validate = false;
+static bool simulate = false;
 static bool verbose = false;
 static bool report_unused = false;
 static bool dump_shaders = false;
@@ -73,6 +73,19 @@ static void sync_output_datagraph_session_memory_flags(const VkBindDataGraphPipe
 	writer_binding.memory_flags = reader_binding->memory_flags;
 }
 
+static void sync_output_queue_metadata(VkQueue queue)
+{
+	auto& instance = lava_writer::instance();
+	if (instance.records.VkQueue_index.contains(queue)) return;
+
+	const uint32_t original_index = index_to_VkQueue.index(queue);
+	const trackedqueue& original_queue = VkQueue_index.at(original_index);
+	auto* writer_queue = instance.records.VkQueue_index.add(queue, instance.file_writer().current, original_index);
+	*writer_queue = original_queue;
+	if (writer_queue->last_modified.frame == UINT32_MAX) writer_queue->last_modified = writer_queue->creation;
+	writer_queue->realQueue = queue;
+}
+
 static void sync_output_vkBindBufferMemory(callback_context&, VkDevice, VkBuffer buffer, VkDeviceMemory, VkDeviceSize)
 {
 	sync_output_buffer_memory_flags(buffer);
@@ -107,6 +120,16 @@ static void sync_output_vkBindDataGraphPipelineSessionMemoryARM(callback_context
 	for (uint32_t i = 0; i < bindInfoCount; i++) sync_output_datagraph_session_memory_flags(pBindInfos[i]);
 }
 
+static void sync_output_vkGetDeviceQueue(callback_context&, VkDevice, uint32_t, uint32_t, VkQueue* pQueue)
+{
+	if (pQueue && *pQueue != VK_NULL_HANDLE) sync_output_queue_metadata(*pQueue);
+}
+
+static void sync_output_vkGetDeviceQueue2(callback_context&, VkDevice, const VkDeviceQueueInfo2*, VkQueue* pQueue)
+{
+	if (pQueue && *pQueue != VK_NULL_HANDLE) sync_output_queue_metadata(*pQueue);
+}
+
 // Utility funcs
 
 static bool rewrite_call_less(const address_rewrite& a, const address_rewrite& b)
@@ -120,7 +143,7 @@ static void usage()
 	printf("lava-tool [options] <input filename> [<output filename>]\n");
 	printf("-h/--help              This help\n");
 	printf("-v/--verbose           Verbose output\n");
-	printf("-V/--validate          Validate the input trace, abort with an error if anything amiss found instead of just reporting on it\n");
+	printf("-S/--simulate          Run a simulation to find how memory is used (if no output file, we just validate and abort on any errors)\n");
 #ifndef NDEBUG
 	printf("-d/--debug level       Set debug level [0,1,2,3]\n");
 	printf("-df/--debugfile FILE   Output debug output to the given file\n");
@@ -377,59 +400,62 @@ void postprocess_vkDestroyDevice(callback_context& cb, VkDevice device, const Vk
 
 // Main
 
-static void add_callbacks_for_first_round(bool enable_submit_analysis)
+static void add_callbacks_for_first_round(bool enable_simulation, bool enable_submit_analysis)
 {
 #define CALLBACK(x) x ## _callbacks.push_back(postprocess_ ## x);
-	CALLBACK(vkCreateShaderModule);
-	CALLBACK(vkDestroyDevice);
-	CALLBACK(vkSubmitDebugUtilsMessageEXT);
-	CALLBACK(vkCmdPushConstants);
-	CALLBACK(vkCmdPushConstants2KHR);
-	CALLBACK(vkCmdPushConstants2);
-	CALLBACK(vkCreateRayTracingPipelinesKHR);
-	CALLBACK(vkCreateDataGraphPipelineSessionARM);
-	CALLBACK(vkGetDataGraphPipelineSessionMemoryRequirementsARM);
-	CALLBACK(vkBindDataGraphPipelineSessionMemoryARM);
-	CALLBACK(vkGetRayTracingShaderGroupHandlesKHR);
-	CALLBACK(vkGetRayTracingCaptureReplayShaderGroupHandlesKHR);
-	CALLBACK(vkCreateGraphicsPipelines);
-	CALLBACK(vkCreateComputePipelines);
-	CALLBACK(vkCreateDataGraphPipelinesARM);
-	CALLBACK(vkCmdBindPipeline);
-	CALLBACK(vkCmdDispatchDataGraphARM);
-	CALLBACK(vkCmdTraceRaysKHR);
-	CALLBACK(vkCmdTraceRaysIndirectKHR);
-	CALLBACK(vkCmdTraceRaysIndirect2KHR);
-	if (enable_submit_analysis)
+	if (dump_shaders) CALLBACK(vkCreateShaderModule);
+	if (enable_simulation)
 	{
-		CALLBACK(vkQueueSubmit);
-		CALLBACK(vkQueueSubmit2);
-		CALLBACK(vkQueueSubmit2KHR);
-	}
-	CALLBACK(vkCmdBindDescriptorSets2KHR);
-	CALLBACK(vkCmdBindDescriptorSets);
-	CALLBACK(vkCmdBindDescriptorSets2);
-	CALLBACK(vkCmdPushDescriptorSet2KHR);
-	CALLBACK(vkCmdPushDescriptorSet2);
-	CALLBACK(vkCmdPushDescriptorSetKHR);
-	CALLBACK(vkCmdPushDescriptorSet);
-	CALLBACK(vkUpdateDescriptorSets);
-	CALLBACK(vkCmdUpdateBuffer);
-	CALLBACK(vkCmdCopyBuffer);
-	CALLBACK(vkCmdCopyBuffer2);
-	CALLBACK(vkCmdCopyBuffer2KHR);
-	CALLBACK(vkCreateShadersEXT);
-	CALLBACK(vkCmdBindShadersEXT);
-#undef CALLBACK
+		CALLBACK(vkDestroyDevice);
+		CALLBACK(vkSubmitDebugUtilsMessageEXT);
+		CALLBACK(vkCmdPushConstants);
+		CALLBACK(vkCmdPushConstants2KHR);
+		CALLBACK(vkCmdPushConstants2);
+		CALLBACK(vkCreateRayTracingPipelinesKHR);
+		CALLBACK(vkCreateDataGraphPipelineSessionARM);
+		CALLBACK(vkGetDataGraphPipelineSessionMemoryRequirementsARM);
+		CALLBACK(vkBindDataGraphPipelineSessionMemoryARM);
+		CALLBACK(vkGetRayTracingShaderGroupHandlesKHR);
+		CALLBACK(vkGetRayTracingCaptureReplayShaderGroupHandlesKHR);
+		CALLBACK(vkCreateGraphicsPipelines);
+		CALLBACK(vkCreateComputePipelines);
+		CALLBACK(vkCreateDataGraphPipelinesARM);
+		CALLBACK(vkCmdBindPipeline);
+		CALLBACK(vkCmdDispatchDataGraphARM);
+		CALLBACK(vkCmdTraceRaysKHR);
+		CALLBACK(vkCmdTraceRaysIndirectKHR);
+		CALLBACK(vkCmdTraceRaysIndirect2KHR);
+		if (enable_submit_analysis)
+		{
+			CALLBACK(vkQueueSubmit);
+			CALLBACK(vkQueueSubmit2);
+			CALLBACK(vkQueueSubmit2KHR);
+		}
+		CALLBACK(vkCmdBindDescriptorSets2KHR);
+		CALLBACK(vkCmdBindDescriptorSets);
+		CALLBACK(vkCmdBindDescriptorSets2);
+		CALLBACK(vkCmdPushDescriptorSet2KHR);
+		CALLBACK(vkCmdPushDescriptorSet2);
+		CALLBACK(vkCmdPushDescriptorSetKHR);
+		CALLBACK(vkCmdPushDescriptorSet);
+		CALLBACK(vkUpdateDescriptorSets);
+		CALLBACK(vkCmdUpdateBuffer);
+		CALLBACK(vkCmdCopyBuffer);
+		CALLBACK(vkCmdCopyBuffer2);
+		CALLBACK(vkCmdCopyBuffer2KHR);
+		CALLBACK(vkCreateShadersEXT);
+		CALLBACK(vkCmdBindShadersEXT);
 
-	// Tool validation runs with reader.run == false, so these callbacks consume stored
-	// device addresses from the trace and populate the remappers we use for analysis.
-	vkGetBufferDeviceAddress_callbacks.push_back(replay_callback_vkGetBufferDeviceAddress);
-	vkGetBufferDeviceAddressKHR_callbacks.push_back(replay_callback_vkGetBufferDeviceAddressKHR);
-	vkGetBufferDeviceAddressEXT_callbacks.push_back(replay_callback_vkGetBufferDeviceAddressEXT);
-	vkGetAccelerationStructureDeviceAddressKHR_callbacks.push_back(replay_callback_vkGetAccelerationStructureDeviceAddressKHR);
-	vkCreateBuffer_callbacks.push_back(replay_callback_vkCreateBuffer);
-	vkCreateAccelerationStructureKHR_callbacks.push_back(replay_callback_vkCreateAccelerationStructureKHR);
+		// Tool validation runs with reader.run == false, so these callbacks consume stored
+		// device addresses from the trace and populate the remappers we use for analysis.
+		vkGetBufferDeviceAddress_callbacks.push_back(replay_callback_vkGetBufferDeviceAddress);
+		vkGetBufferDeviceAddressKHR_callbacks.push_back(replay_callback_vkGetBufferDeviceAddressKHR);
+		vkGetBufferDeviceAddressEXT_callbacks.push_back(replay_callback_vkGetBufferDeviceAddressEXT);
+		vkGetAccelerationStructureDeviceAddressKHR_callbacks.push_back(replay_callback_vkGetAccelerationStructureDeviceAddressKHR);
+		vkCreateBuffer_callbacks.push_back(replay_callback_vkCreateBuffer);
+		vkCreateAccelerationStructureKHR_callbacks.push_back(replay_callback_vkCreateAccelerationStructureKHR);
+	}
+#undef CALLBACK
 }
 
 int main(int argc, char **argv)
@@ -453,9 +479,9 @@ int main(int argc, char **argv)
 		{
 			p__debug_level = get_int(argv[++i], remaining);
 		}
-		else if (match(argv[i], "-V", "--validate", remaining))
+		else if (match(argv[i], "-S", "--simulate", remaining))
 		{
-			validate = true;
+			simulate = true;
 		}
 		else if (match(argv[i], "-v", "--verbose", remaining))
 		{
@@ -533,6 +559,8 @@ int main(int argc, char **argv)
 
 	if (p__sandbox_level >= 3) sandbox_level_two();
 
+	if (report_unused || dump_host_write_stats) simulate = true;
+
 	std::list<address_rewrite> rewrite_queue_copy;
 
 	Json::Value meta = packed_json("metadata.json", filename_input);
@@ -546,17 +574,18 @@ int main(int argc, char **argv)
 		print_removed_feature_lists(device_removed_features_json);
 	}
 
-	// run first round
+	const bool need_first_round = filename_output.empty() || simulate || dump_shaders || dump_host_write_stats;
+
+	if (need_first_round)
 	{
 		lava_reader replayer;
 		replayer.run = false; // do not actually run anything
-		replayer.validate = validate; // abort on less serious errors, not just warn
+		replayer.validate = simulate; // abort on less serious errors, not just warn
 		replayer.pass = 0; // first pass
 		replayer.set_frames(start, end);
 		replayer.init(filename_input);
 
-		// Add callbacks
-		add_callbacks_for_first_round(filename_output.empty());
+		add_callbacks_for_first_round(simulate, filename_output.empty());
 
 		for (unsigned i = 0; i < replayer.threads.size(); i++)
 		{
@@ -584,19 +613,17 @@ int main(int argc, char **argv)
 		replayer.finalize();
 	}
 
-	if (validate) // run second round to validate all changes
+	if (simulate && filename_output.empty())
 	{
 		lava_reader replayer;
 		replayer.pass = 1; // second pass
 		replayer.run = false; // do not actually run anything, again
-		replayer.validate = validate; // abort on less serious errors, not just warn
+		replayer.validate = true; // abort on less serious errors, not just warn
 		replayer.init(filename_input);
 		replayer.set_frames(start, end);
 
-		// We can probably skip most of the callbacks now. Trying to skip all for now.
 		assert(vkCreateShaderModule_callbacks.size() == 0); // Verify that they were cleared
 
-		// Add in the rewrite queue from the previous run, but split by thread and sorted by call number.
 		sync_mutex.lock();
 		replayer.global_rewrite_queue = rewrite_queue_copy;
 		sync_mutex.unlock();
@@ -604,7 +631,7 @@ int main(int argc, char **argv)
 		{
 			assert(v.markings != nullptr && v.markings->count > 0);
 			ILOG("%s - number of markings: %u", describe_change_source(v.source).c_str(), (unsigned)v.markings->count);
-			lava_file_reader& t = replayer.file_reader(v.source.thread); // get the right filereader object
+			lava_file_reader& t = replayer.file_reader(v.source.thread);
 			t.rewrite_queue.push_back(v);
 		}
 		for (unsigned i = 0; i < replayer.threads.size(); i++)
@@ -613,7 +640,7 @@ int main(int argc, char **argv)
 			t.rewrite_queue.sort(rewrite_call_less);
 		}
 #ifndef NDEBUG
-		for (unsigned i = 0; i < replayer.threads.size(); i++) // TBD sanity test, remove later
+		for (unsigned i = 0; i < replayer.threads.size(); i++)
 		{
 			lava_file_reader& t = replayer.file_reader(i);
 			assert(i == (unsigned)t.thread_index());
@@ -640,14 +667,13 @@ int main(int argc, char **argv)
 		reset_for_tools();
 		replayer.finalize();
 	}
-
-	if (!filename_output.empty())
+	else if (!filename_output.empty())
 	{
 		lava_reader replayer;
 		replayer.pass = 1;
 		replayer.run = false;
 		replayer.write_output = true;
-		replayer.validate = true;
+		replayer.validate = false;
 		replayer.init(filename_input);
 		replayer.set_frames(start, end);
 
@@ -661,6 +687,10 @@ int main(int argc, char **argv)
 		vkBindBufferMemory_callbacks.push_back(replay_trace_callback_with_pre<trace_vkBindBufferMemory, sync_output_vkBindBufferMemory>::call);
 		vkBindImageMemory_callbacks.clear();
 		vkBindImageMemory_callbacks.push_back(replay_trace_callback_with_pre<trace_vkBindImageMemory, sync_output_vkBindImageMemory>::call);
+		vkGetDeviceQueue_callbacks.clear();
+		vkGetDeviceQueue_callbacks.push_back(replay_trace_callback_with_pre<trace_vkGetDeviceQueue, sync_output_vkGetDeviceQueue>::call);
+		vkGetDeviceQueue2_callbacks.clear();
+		vkGetDeviceQueue2_callbacks.push_back(replay_trace_callback_with_pre<trace_vkGetDeviceQueue2, sync_output_vkGetDeviceQueue2>::call);
 		vkBindBufferMemory2_callbacks.clear();
 		vkBindBufferMemory2_callbacks.push_back(replay_trace_callback_with_pre<trace_vkBindBufferMemory2, sync_output_vkBindBufferMemory2>::call);
 		vkBindBufferMemory2KHR_callbacks.clear();

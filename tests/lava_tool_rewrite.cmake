@@ -35,7 +35,7 @@ if(NOT compare_result EQUAL 0)
 endif()
 
 execute_process(
-	COMMAND "${LAVA_TOOL}" -V "${OUTPUT_TRACE}"
+	COMMAND "${LAVA_TOOL}" -S "${OUTPUT_TRACE}"
 	RESULT_VARIABLE validate_result
 )
 if(NOT validate_result EQUAL 0)
