@@ -2903,7 +2903,7 @@ static void ensure_swapchain_image_records(lava_file_writer& writer, trackedswap
 	for (uint32_t i = 0; i < count; i++)
 	{
 		if (writer.parent->records.VkImage_index.contains(images[i])) continue;
-		auto* add = writer.parent->records.VkImage_index.add(images[i], writer.current);
+		auto* add = writer.parent->records.VkImage_index.add(images[i], writer.current, writer.write_output ? fake_index<VkImage>(images[i]) : CONTAINER_INVALID_INDEX);
 		// These images were created by the swapchain creation call, even though
 		// the handles only become visible to us later through vkGetSwapchainImagesKHR.
 		add->creation = swapchain_data->creation;
@@ -3211,7 +3211,7 @@ VKAPI_ATTR void VKAPI_CALL trace_vkGetDeviceQueue2(VkDevice device, const VkDevi
 
 	if (!writer.parent->records.VkQueue_index.contains(*pQueue))
 	{
-		auto* queue_data = writer.parent->records.VkQueue_index.add(*pQueue, writer.current);
+		auto* queue_data = writer.parent->records.VkQueue_index.add(*pQueue, writer.current, writer.write_output ? fake_index<VkQueue>(*pQueue) : CONTAINER_INVALID_INDEX);
 		queue_data->queueIndex = pQueueInfo->queueIndex;
 		queue_data->queueFamily = pQueueInfo->queueFamilyIndex;
 		queue_data->queueFlags = pQueueInfo->flags;
@@ -3264,7 +3264,7 @@ VKAPI_ATTR void VKAPI_CALL trace_vkGetDeviceQueue(VkDevice device, uint32_t queu
 	// Post
 	if (!writer.parent->records.VkQueue_index.contains(*pQueue))
 	{
-		auto* queue_data = writer.parent->records.VkQueue_index.add(*pQueue, writer.current);
+		auto* queue_data = writer.parent->records.VkQueue_index.add(*pQueue, writer.current, writer.write_output ? fake_index<VkQueue>(*pQueue) : CONTAINER_INVALID_INDEX);
 		queue_data->queueIndex = queueIndex;
 		queue_data->queueFamily = queueFamilyIndex;
 		queue_data->queueFlags = (queueFamilyIndex < physicaldevice_data->queueFamilyProperties.size()) ? physicaldevice_data->queueFamilyProperties.at(queueFamilyIndex).queueFlags : 0;

@@ -591,6 +591,7 @@ function(trace_test test_name trace_file)
 	add_lavatube_test(trace_file_test_${ARGV0}_replay_cpu COMMAND $<TARGET_FILE:lava-replay> -w none -B --cpu ${PROJECT_SOURCE_DIR}/${ARGV1})
 	set_tests_properties(trace_file_test_${ARGV0}_replay_cpu PROPERTIES SKIP_RETURN_CODE 77)
 	add_lavatube_test(trace_file_test_${ARGV0}_validate COMMAND $<TARGET_FILE:lava-tool> ${PROJECT_SOURCE_DIR}/${ARGV1})
+	add_lavatube_test(trace_file_test_${ARGV0}_write_out COMMAND $<TARGET_FILE:lava-tool> ${PROJECT_SOURCE_DIR}/${ARGV1} ${CMAKE_CURRENT_BINARY_DIR}/tmp.vk)
 endfunction()
 
 trace_test(raytracingbasic traces/demo_raytracingbasic.vk)
@@ -602,6 +603,7 @@ trace_test(raytracingintersection traces/demo_raytracingintersection.vk)
 trace_test(raytracingpositionfetch traces/demo_raytracingpositionfetch.vk)
 trace_test(geometryshader traces/demo_geometryshader.vk)
 trace_test(inputattachments traces/demo_inputattachments.vk)
+trace_test(anki_simple traces/anki_simple.vk)
 
 # --- packtool ---
 
