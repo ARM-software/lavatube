@@ -38,10 +38,7 @@ static packed internal_packed_open(const std::string& packfile)
 {
 	struct stat st;
 	packed pf;
-	int flags = O_RDONLY;
-#ifndef __ANDROID__
-	flags |= O_NOATIME;
-#endif
+	int flags = O_RDONLY | default_file_flags;
 	pf.fd = openat(AT_FDCWD, packfile.c_str(), flags);
 	if (pf.fd == -1)
 	{
@@ -119,20 +116,14 @@ bool pack_add(const std::string& newfile, const std::string& pack)
 	assert(last_idx_ptr_pos > 0);
 	const uint64_t last_byte = pfread.size();
 	pfread.close();
-	int flags = O_WRONLY;
-#ifndef __ANDROID__
-	flags |= O_NOATIME;
-#endif
+	int flags = O_WRONLY | default_file_flags;
 	int filedesc = openat(AT_FDCWD, pack.c_str(), flags);
 	if (filedesc == -1) FAIL("Failed to open for editing \"%s\": %s", pack.c_str(), strerror(errno));
 	unsigned long r2 = lseek(filedesc, last_idx_ptr_pos, SEEK_SET);
 	assert(r2 > 0);
 	(void)r2;
 	packwrite(filedesc, &last_byte, sizeof(last_byte));
-	flags = O_RDONLY;
-#ifndef __ANDROID__
-	flags |= O_NOATIME;
-#endif
+	flags = O_RDONLY | default_file_flags;
 	int readdesc = openat(AT_FDCWD, newfile.c_str(), flags);
 	if (readdesc == -1) FAIL("Failed to open for reading \"%s\": %s", pack.c_str(), strerror(errno));
 	struct stat st;
@@ -176,10 +167,7 @@ static bool pack_directory_zip(const std::string& pack, const std::string& direc
 		if (namelist[i]->d_name[0] == '.') continue;
 
 		const std::string name = directory + "/" + std::string(namelist[i]->d_name);
-		int flags = O_RDONLY;
-#ifndef __ANDROID__
-		flags |= O_NOATIME;
-#endif
+		int flags = O_RDONLY | default_file_flags;
 		int fd = openat(AT_FDCWD, name.c_str(), flags);
 		if (fd == -1) FAIL("Failed to open \"%s\": %s", name.c_str(), strerror(errno));
 
@@ -373,10 +361,7 @@ bool pack_directory(const std::string& pack, const std::string& directory, bool 
 	struct dirent **namelist;
 	int n; // number of found entries in directory
 	const char* signature = "LAVA0001";
-	int flags = O_CREAT | O_TRUNC | O_WRONLY;
-#ifndef __ANDROID__
-	flags |= O_NOATIME;
-#endif
+	int flags = O_CREAT | O_TRUNC | O_WRONLY | default_file_flags;
 	int filedesc = openat(AT_FDCWD, pack.c_str(), flags, S_IRWXU | S_IRGRP | S_IROTH);
 	if (filedesc == -1) FAIL("Failed to create \"%s\": %s", pack.c_str(), strerror(errno));
 	packwrite(filedesc, signature, 9);
@@ -408,10 +393,7 @@ bool pack_directory(const std::string& pack, const std::string& directory, bool 
 		if (namelist[i]->d_name[0] == '.') continue;
 		std::string name = directory + "/" + std::string(namelist[i]->d_name);
 		const uint64_t pos = lseek(filedesc, 0, SEEK_CUR) + 1;
-		flags = O_RDONLY;
-#ifndef __ANDROID__
-		flags |= O_NOATIME;
-#endif
+		flags = O_RDONLY | default_file_flags;
 		int fd = openat(AT_FDCWD, name.c_str(), flags);
 		if (fd == -1) FAIL("Failed to open \"%s\": %s", name.c_str(), strerror(errno));
 		struct stat st;
@@ -474,10 +456,7 @@ bool unpack_directory(const std::string& pack, const std::string& directory)
 				FAIL("Failed to stat \"%s\" inside \"%s\": %s", name.c_str(), pack.c_str(), zipc_strerror(status));
 			}
 			std::string target = directory + "/" + name;
-			int flags = O_CREAT | O_TRUNC | O_WRONLY;
-#ifndef __ANDROID__
-			flags |= O_NOATIME;
-#endif
+			int flags = O_CREAT | O_TRUNC | O_WRONLY | default_file_flags;
 			int fd = openat(AT_FDCWD, target.c_str(), flags, 0664);
 			if (fd == -1)
 			{
@@ -527,10 +506,7 @@ bool unpack_directory(const std::string& pack, const std::string& directory)
 	for (auto& v : list)
 	{
 		std::string name = directory + "/" + std::string(v.filename);
-		int flags = O_CREAT | O_TRUNC | O_WRONLY;
-#ifndef __ANDROID__
-		flags |= O_NOATIME;
-#endif
+		int flags = O_CREAT | O_TRUNC | O_WRONLY | default_file_flags;
 		int fd = openat(AT_FDCWD, name.c_str(), flags, 0664);
 		if (fd == -1) FAIL("Failed to open \"%s\": %s", name.c_str(), strerror(errno));
 		off_t off = v.pos - 1;

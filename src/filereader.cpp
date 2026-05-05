@@ -90,7 +90,7 @@ void file_reader::init_mapped(const packed& pf, size_t uncompressed_size, size_t
 file_reader::file_reader(const std::string& filename, unsigned mytid, size_t uncompressed_size, size_t uncompressed_target, bool preload_active)
 	: preload_activated(preload_active), tid(mytid), mFilename(filename)
 {
-	int fd = open(filename.c_str(), O_RDONLY);
+	int fd = open(filename.c_str(), O_RDONLY | default_file_flags);
 	if (fd == -1) ABORT("Cannot open \"%s\": %s", filename.c_str(), strerror(errno));
 	struct stat64 st;
 	if (fstat64(fd, &st) == -1) ABORT("Failed to stat %s: %s", filename.c_str(), strerror(errno));

@@ -319,8 +319,7 @@ std::string get_trace_path(const std::string& base)
 	{
 		return std::string(value);
 	}
-	std::string dir = AndroidGlobs::ANDROID_OUT_TRACE_PATH;
-	return dir;
+	return base;
 #else
 	const char* outpath = getenv("LAVATUBE_DESTINATION");
 	if (outpath) return outpath;

@@ -5,7 +5,6 @@ General:
 * More work needed on trace portability
 * More work on making buffer suballocations faster
 * Vulkan-SC support, look into on-the-fly conversion to and from normal Vulkan
-* Rayquery / raytracing support
 * Push descriptors support
 * Inline uniform blocks support
 * Memory aliasing support
@@ -14,19 +13,11 @@ General:
 * Improved multi-device support
 	* Store internal Vulkan object metadata by Vulkan device
 
-Missing Vulkan call implementations:
-* vkUpdateDescriptorSets with descriptorCopyCount > 0
-* vkUpdateDescriptorSetWithTemplate(KHR)
-* vkCmdPushDescriptorSetWithTemplate(KHR)
-* vkGetPipelinePropertiesEXT
-* vkGetDeviceFaultInfoEXT
-
-Replayer:
-* Add back Android build
-* Trace fastforwarding
-* VK_EXT_pipeline_creation_feedback
-* Built-in screenshotting support, reading from virtual swapchain
-
 Tools
 * Trace to text tool
-* Improve the python code generators (very ugly code)
+* Improve the python code generators
+
+Android
+* Capture
+* Replay
+* TCP side-channel

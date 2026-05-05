@@ -15,6 +15,7 @@
 #include <assert.h>
 #include <vector>
 #include <string>
+#include <fcntl.h>
 
 #ifndef VK_NO_PROTOTYPES
 #define VK_NO_PROTOTYPES
@@ -127,6 +128,12 @@ extern uint_fast8_t p__zipcontainer;
 
 /// Logging to be enable as needed by source recompilation
 #define NEVER(_format, ...)
+
+#ifndef __ANDROID__
+const int default_file_flags = O_NOATIME;
+#else
+const int default_file_flags = 0;
+#endif
 
 #ifdef VK_USE_PLATFORM_ANDROID_KHR
 #include <sstream>

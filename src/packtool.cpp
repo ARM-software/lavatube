@@ -76,9 +76,9 @@ static packed_compare_result compare_regular_file(const std::string& path_a, con
 	packed_compare_result result;
 	struct stat stat_a;
 	struct stat stat_b;
-	int fd_a = open(path_a.c_str(), O_RDONLY | O_NOATIME);
+	int fd_a = open(path_a.c_str(), O_RDONLY | default_file_flags);
 	if (fd_a == -1) FAIL("Cannot open \"%s\": %s", path_a.c_str(), strerror(errno));
-	int fd_b = open(path_b.c_str(), O_RDONLY | O_NOATIME);
+	int fd_b = open(path_b.c_str(), O_RDONLY | default_file_flags);
 	if (fd_b == -1) FAIL("Cannot open \"%s\": %s", path_b.c_str(), strerror(errno));
 	if (fstat(fd_a, &stat_a) == -1) FAIL("Cannot stat \"%s\": %s", path_a.c_str(), strerror(errno));
 	if (fstat(fd_b, &stat_b) == -1) FAIL("Cannot stat \"%s\": %s", path_b.c_str(), strerror(errno));
@@ -1121,7 +1121,7 @@ int main(int argc, char* argv[])
 	{
 		if (argc != 4) return usage(argv[0]);
 		packed pf = packed_open(argv[2], argv[3]);
-		int fd = open(argv[2], O_CREAT | O_TRUNC | O_WRONLY | O_NOATIME, 0664);
+		int fd = open(argv[2], O_CREAT | O_TRUNC | O_WRONLY | default_file_flags, 0664);
 		if (fd == -1) FAIL("Failed to create target %s: %s", argv[2], strerror(errno));
 		std::vector<char> buffer(1024 * 1024);
 		uint64_t remaining = pf.size();

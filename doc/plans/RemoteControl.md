@@ -79,6 +79,11 @@ resources needing rights before we enter a sandbox level that prohibits them.
 
 # Open questions for later
 
+## Capture
+
+On Android in particular capturing might be challenging to setup and debug. A remote control
+link might make it easier.
+
 ## lava-tool
 
 There might be some value in running `lava-tool` also in daemon mode with remote control,
@@ -88,6 +93,12 @@ especially if debugging the spirv-simulator.
 
 Should daemon mode be the default? Then replay is always remote controlled from linux. Makes
 easy debug always easy.
+
+## Logs
+
+We already have the ability to stream debug output to file. We can use our control channel
+to fetch the current contents of the file - possibly with an offset if we already fetched parts
+of it.
 
 ## Inspiration
 
