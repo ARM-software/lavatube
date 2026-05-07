@@ -213,6 +213,8 @@ public:
 	/// Return spent CPU time in microseconds in worker thread
 	void stop_measurement(uint64_t& worker, uint64_t& runner);
 
+	uint8_t version() const { return stream_version; }
+
 private:
 	void decompressor(); // runs in separate thread, moves chunks from file to uncompressed chunks
 	void init(int fd, size_t uncompressed_size, size_t uncompressed_target);
@@ -255,6 +257,7 @@ private:
 	/// Last freed position, page-aligned position before the last checkpoint. Only updated by main thread.
 	uint64_t freed_position { 0 };
 	int compression_algorithm = LAVATUBE_COMPRESSION_DENSITY;
+	uint8_t stream_version = 0;
 
 protected:
 	const uintptr_t page_size = sysconf(_SC_PAGE_SIZE); // for doing page-alignment

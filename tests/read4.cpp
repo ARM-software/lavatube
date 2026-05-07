@@ -77,10 +77,23 @@ void read_test_1()
 	assert(big.at(81) == 99);
 }
 
+void read_test_2()
+{
+	file_reader t0("write_4_handle.bin", 0, 18, 18);
+	assert(t0.read_uint32_t() == 123);
+	assert(t0.read_int8_t() == 7);
+	assert(t0.read_uint32_t() == 70000);
+	assert(t0.read_uint32_t() == 321);
+	assert(t0.read_int8_t() == -1);
+	assert(t0.read_uint32_t() == 0);
+}
+
 int main()
 {
 	read_test_1();
+	read_test_2();
 	unlink("write_4.bin");
 	unlink("write_4-2.bin");
+	unlink("write_4_handle.bin");
 	return 0;
 }

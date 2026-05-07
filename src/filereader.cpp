@@ -23,20 +23,20 @@ void file_reader::init(int fd, size_t uncompressed_size, size_t uncompressed_tar
 	total_uncompressed = uncompressed_size;
 	uncompressed_wanted = uncompressed_target;
 
-	// Check if we start with a magic word, if so we're file version 2
+	// Check if we start with a magic word, if so the stream contains versioned metadata.
 	const char* magic_word = "LAVABIN";
 	if (memcmp(compressed_data, magic_word, strlen(magic_word)) == 0)
 	{
 		compressed_data += strlen(magic_word);
 		const uint8_t version = (uint8_t)compressed_data[0];
-		assert(version == 1);
+		assert(version == 1 || version == 2);
+		stream_version = version;
 		compression_algorithm = compressed_data[1];
 		assert(compression_algorithm == LAVATUBE_COMPRESSION_DENSITY || compression_algorithm == LAVATUBE_COMPRESSION_LZ4 || compression_algorithm == LAVATUBE_COMPRESSION_UNCOMPRESSED);
 		const size_t header_bytes = strlen(magic_word) + 32;
 		assert(total_left >= header_bytes);
 		compressed_data += 32; // the rest is reserved space
 		total_left -= header_bytes;
-		(void)version;
 	}
 	compressed_stream_start = compressed_data;
 	total_compressed_stream = total_left;

@@ -128,11 +128,24 @@ static void write_test_4()
 	ILOG("Uncompressed bytes in write_4_4: %ld", (long)file.uncompressed_bytes);
 }
 
+static void write_test_5()
+{
+	file_writer file(0);
+	file.set("write_4_handle.bin");
+	file.write_uint32_t(123);
+	file.write_int8_t(7);
+	file.write_uint32_t(70000);
+	file.write_uint32_t(321);
+	file.write_int8_t(-1);
+	file.write_uint32_t(0);
+}
+
 int main()
 {
 	write_test_1();
 	write_test_2();
 	write_test_3();
 	write_test_4();
+	write_test_5();
 	return 0;
 }

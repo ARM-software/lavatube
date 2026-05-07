@@ -340,7 +340,7 @@ inline uint32_t lava_file_reader::read_handle(DEBUGPARAM(const char* name))
 {
 	const uint32_t index = read_uint32_t();
 	const int req_thread = read_int8_t();
-	const int req_call = read_uint16_t();
+	const uint32_t req_call = (version() >= 2) ? read_uint32_t() : read_uint16_t();
 	if (req_thread < 0 || req_thread == (int)current.thread)
 	{
 		DLOG2("[t%02d %06d] read handle %s index=%u from same thread", (int)current.thread, (int)current.call + 1, name, (unsigned)index);
@@ -349,10 +349,10 @@ inline uint32_t lava_file_reader::read_handle(DEBUGPARAM(const char* name))
 	// check for thread dependency, if we need a resource not provided yet, spin until it is
 	int currentcall = parent->thread_call_numbers->at(req_thread).load(std::memory_order_relaxed);
 #ifdef DEBUG
-	if (req_call <= currentcall) DLOG2("[t%02d %06d] read handle %s index=%u, was for tid=%d call=%d, it is already at call=%d", (int)current.thread, (int)current.call + 1, name, (unsigned)index, (int)req_thread, req_call, currentcall);
-	else DLOG2("[t%02d %06d] read handle %s index=%u, MUST WAIT for tid=%d call=%d, it is now at call=%d", (int)current.thread, (int)current.call + 1, name, (unsigned)index, (int)req_thread, req_call, currentcall);
+	if (req_call <= (uint32_t)currentcall) DLOG2("[t%02d %06d] read handle %s index=%u, was for tid=%d call=%u, it is already at call=%d", (int)current.thread, (int)current.call + 1, name, (unsigned)index, (int)req_thread, req_call, currentcall);
+	else DLOG2("[t%02d %06d] read handle %s index=%u, MUST WAIT for tid=%d call=%u, it is now at call=%d", (int)current.thread, (int)current.call + 1, name, (unsigned)index, (int)req_thread, req_call, currentcall);
 #endif
-	while (req_call > currentcall)
+	while (req_call > (uint32_t)currentcall)
 	{
 		if (parent->stop_requested()) throw_stop_requested();
 		usleep(1);

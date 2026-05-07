@@ -144,14 +144,14 @@ public:
 			assert(!t->is_state(trackable::states::uninitialized) && !t->is_state(trackable::states::destroyed));
 			write_uint32_t(t->index);
 			write_int8_t(t->last_modified.thread);
-			write_uint16_t(t->last_modified.call);
+			write_uint32_t(t->last_modified.call);
 			DLOG3("%u : wrote handle idx=%u tid=%d call=%u", current.thread, (unsigned)t->index, (int)t->last_modified.thread, (unsigned)t->last_modified.call);
 		}
 		else
 		{
 			write_uint32_t(CONTAINER_NULL_VALUE);
 			write_int8_t((int8_t)-1);
-			write_uint16_t(0);
+			write_uint32_t(0);
 			DLOG3("%u : wrote a null handle", current.thread);
 		}
 	}
