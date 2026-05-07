@@ -1827,6 +1827,7 @@ void replay_pre_vkQueuePresentKHR(lava_file_reader& reader, VkQueue queue, VkPre
 		VkResult result;
 		VkSemaphore* semaphores = reader.pool.allocate<VkSemaphore>(pPresentInfo->waitSemaphoreCount + pPresentInfo->swapchainCount);
 		for (uint32_t i = 0; i < pPresentInfo->waitSemaphoreCount; i++) semaphores[i] = pPresentInfo->pWaitSemaphores[i];
+		uint32_t extra_waits = 0;
 		for (uint32_t i = 0; i < pPresentInfo->swapchainCount; i++)
 		{
 			const uint32_t swapchainkhr_index = index_to_VkSwapchainKHR.index(pPresentInfo->pSwapchains[i]);
@@ -1846,7 +1847,8 @@ void replay_pre_vkQueuePresentKHR(lava_file_reader& reader, VkQueue queue, VkPre
 			}
 			data.inflight[data.next_stored_image] = true; // now using it, if we weren't already
 			// copy virtual -> real
-			semaphores[pPresentInfo->waitSemaphoreCount + i] = data.virtual_semaphore;
+			semaphores[pPresentInfo->waitSemaphoreCount + extra_waits] = data.virtual_semaphore;
+			extra_waits++;
 			VkCommandBufferBeginInfo command_buffer_begin_info = {};
 			command_buffer_begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
 			result = wrap_vkBeginCommandBuffer(data.virtual_cmdbuffers[data.next_stored_image], &command_buffer_begin_info);
@@ -1909,7 +1911,7 @@ void replay_pre_vkQueuePresentKHR(lava_file_reader& reader, VkQueue queue, VkPre
 			result = wrap_vkQueueSubmit(queue, 1, &submit, data.virtual_fences[data.next_stored_image]);
 			assert(result == VK_SUCCESS);
 		}
-		pPresentInfo->waitSemaphoreCount = pPresentInfo->waitSemaphoreCount + pPresentInfo->swapchainCount;
+		pPresentInfo->waitSemaphoreCount = pPresentInfo->waitSemaphoreCount + extra_waits;
 		pPresentInfo->pWaitSemaphores = semaphores;
 	}
 	else
@@ -1923,8 +1925,8 @@ void replay_pre_vkQueuePresentKHR(lava_file_reader& reader, VkQueue queue, VkPre
 
 static void cleanup_sync(VkQueue queue, uint32_t waitSemaphoreCount, const VkSemaphore *waitSemaphores, uint32_t signalSemaphoreCount, const VkSemaphore *signalSemaphores, VkFence fence)
 {
-	const VkPipelineStageFlags flags = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
-	VkSubmitInfo submit_info = { VK_STRUCTURE_TYPE_SUBMIT_INFO, nullptr, waitSemaphoreCount, waitSemaphores, &flags, 0, nullptr, signalSemaphoreCount, signalSemaphores };
+	std::vector<VkPipelineStageFlags> flags(waitSemaphoreCount, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT);
+	VkSubmitInfo submit_info = { VK_STRUCTURE_TYPE_SUBMIT_INFO, nullptr, waitSemaphoreCount, waitSemaphores, flags.data(), 0, nullptr, signalSemaphoreCount, signalSemaphores };
 	VkResult result = wrap_vkQueueSubmit(queue, 1, &submit_info, fence);
 	assert(result == VK_SUCCESS);
 }

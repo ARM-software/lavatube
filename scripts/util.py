@@ -1786,6 +1786,7 @@ def loadfunc(name, node, target, header):
 		z.do('cleanup_sync(index_to_VkQueue.at(0), 0, nullptr, 1, &semaphore, fence);') # just picking any queue here
 		z.do('retval = VK_INCOMPLETE; // signal we skipped it')
 		z.brace_end()
+		z.do('const bool restore_acquired_image = reader.run && is_noscreen() && (stored_retval == VK_SUCCESS || stored_retval == VK_SUBOPTIMAL_KHR);')
 	elif name == 'vkAcquireNextImage2KHR':
 		z.do('const uint32_t %s = index_to_VkSwapchainKHR.index(pAcquireInfo->swapchain);' % toindex('VkSwapchainKHR'))
 		z.do('VkResult stored_retval = static_cast<VkResult>(reader.read_uint32_t());')
@@ -1802,6 +1803,7 @@ def loadfunc(name, node, target, header):
 		z.do('cleanup_sync(index_to_VkQueue.at(0), 0, nullptr, 1, &pAcquireInfo->semaphore, pAcquireInfo->fence);') # just picking any queue here
 		z.do('retval = VK_INCOMPLETE; // signal we skipped it')
 		z.brace_end()
+		z.do('const bool restore_acquired_image = reader.run && is_noscreen() && (stored_retval == VK_SUCCESS || stored_retval == VK_SUBOPTIMAL_KHR);')
 	elif name == 'vkQueuePresentKHR':
 		z.do('VkResult stored_retval = static_cast<VkResult>(reader.read_uint32_t());')
 		z.do('VkResult retval = stored_retval;')
@@ -1905,9 +1907,10 @@ def loadfunc(name, node, target, header):
 		for param in params:
 			if not param.inparam and param.type != 'VkBaseOutStructure':
 				param.print_load(param.name, '')
-	if name in ['vkAcquireNextImageKHR', 'vkAcquireNextImage2KHR']:
-		z.do('auto& %s = VkSwapchainKHR_index.at(%s);' % (totrackable('VkSwapchainKHR'), toindex('VkSwapchainKHR')))
-		z.do('%s.next_stored_image = *pImageIndex;' % totrackable('VkSwapchainKHR'))
+		if name in ['vkAcquireNextImageKHR', 'vkAcquireNextImage2KHR']:
+			z.do('auto& %s = VkSwapchainKHR_index.at(%s);' % (totrackable('VkSwapchainKHR'), toindex('VkSwapchainKHR')))
+			z.do('if (restore_acquired_image) %s.next_swapchain_image = *pImageIndex;' % totrackable('VkSwapchainKHR'))
+			z.do('%s.next_stored_image = *pImageIndex;' % totrackable('VkSwapchainKHR'))
 	load_add_tracking(name)
 	# Flexible post-handling
 	z.do('callback_context cb_context{ reader };')
