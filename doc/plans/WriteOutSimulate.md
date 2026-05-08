@@ -25,5 +25,22 @@ Currently only aware of `vkCmdTraceRaysIndirectKHR` and `vkCmdTraceRaysIndirect2
 These two read shader binding table addresses from a generic buffer object, and in
 this way reveal to us what is located at the given offsets.
 
-We could use this to create a very simple test case of the basic workflow. It is
-already being used in `vulkan_raytracing_3` and `vulkan_raytracing_4`.
+It is already being used in `vulkan_raytracing_3` and `vulkan_raytracing_4`, and
+I created a very simple test case `vulkan_raytracing_indirect_noop` as a very simple
+test case of the basic workflow.
+
+## Plan
+
+* Add cmd line option to `packtool diff` to check that two traces have identical
+  memory markings. We already have helper code for this in `src/hardcode.cpp` -
+  `sort_marked_offsets` and `assert_marked_offsets_equal` that we might
+  want to move out and reuse. We could call this option `--assert-markings`.
+* Make sure we have a successful write-out of `vulkan_raytracing_indirect_noop`
+  (`lava-tool vulkan_raytracing_indirect_noop.vk tmp.vk` verified with
+   `packtool diff --semantic vulkan_raytracing_indirect_noop.vk tmp.vk`)
+* Add code to verify memory markings coming from `vkCmdTraceRaysIndirect2KHR`
+  (verify with `lava-tool -V vulkan_raytracing_indirect_noop.vk`)
+* Create trace of `vulkan_raytracing_indirect_noop` without memory markings,
+  add the suffix `_raw` then run `lava-tool vulkan_raytracing_indirect_noop_raw.vk tmp.vk`
+  and verify with `packtool diff --assert-markings vulkan_raytracing_indirect.vk tmp.vk`
+  comparing our manual markings with the newly inserted ones.

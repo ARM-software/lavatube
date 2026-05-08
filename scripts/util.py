@@ -361,7 +361,7 @@ class parameter(spec.base_parameter):
 			z.do('%s = reader.read_uint32_t();' % self.name)
 			z.do('if (%s == LAVATUBE_VIRTUAL_QUEUE)' % (self.name))
 			z.brace_begin()
-			z.do('%s = reader.run ? selected_queue_family_index : 0;' % (self.name))
+			z.do('%s = reader.run ? selected_queue_family_index : (reader.write_output ? LAVATUBE_VIRTUAL_QUEUE : 0);' % (self.name))
 			z.brace_end()
 			if not is_root: z.do('%s = %s;' % (varname, self.name))
 		elif self.name == 'dataSize' and self.funcname in ['vkGetRayTracingShaderGroupHandlesKHR', 'vkGetRayTracingCaptureReplayShaderGroupHandlesKHR']:
@@ -402,6 +402,7 @@ class parameter(spec.base_parameter):
 			z.do('else %s = nullptr;' % varname)
 		elif (self.name == 'ppData' and self.funcname in ['vkMapMemory', 'vkMapMemory2KHR', 'vkMapMemory2']):
 			z.decl('%s%s%s' % (self.mod, self.type, self.param_ptrstr), self.name)
+			z.do('%s = reader.write_output ? reinterpret_cast<%s%s%s>(uintptr_t(1)) : nullptr;' % (varname, self.mod, self.type, self.param_ptrstr))
 		elif self.name == 'pfnUserCallback' and self.funcname == 'VkDebugUtilsMessengerCreateInfoEXT':
 			z.do('%s = messenger_callback; // hijacking this pointer with our own callback function' % varname)
 		elif self.name == 'pfnUserCallback' and self.funcname == 'VkDeviceDeviceMemoryReportCreateInfoEXT':

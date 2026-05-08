@@ -650,19 +650,31 @@ function(layer_test test_name test_exe)
 		ENVIRONMENT "LAVATUBE_VIRTUAL_QUEUES=1;LAVATUBE_DELETE_EMPTY_TRACE=1;LAVATUBE_DESTINATION=vulkan_${ARGV0};VK_LAYER_PATH=${CMAKE_CURRENT_BINARY_DIR}/implicit_layer.d;VK_INSTANCE_LAYERS=VK_LAYER_ARM_lavatube;LD_LIBRARY_PATH=${CMAKE_CURRENT_BINARY_DIR}/implicit_layer.d"
 		SKIP_RETURN_CODE 77
 	)
+
+	add_lavatube_test(layer_test_${ARGV0}_raw COMMAND vulkan_${ARGV1} --gpu --no-explicit --no-trace-helpers ${ARGV2} ${ARGV3} ${ARGV4} ${ARGV5} ${ARGV6} ${ARGV7})
+	set_tests_properties(layer_test_${ARGV0}_raw PROPERTIES
+		FIXTURES_SETUP ${ARGV0}
+		ENVIRONMENT "LAVATUBE_VIRTUAL_QUEUES=1;LAVATUBE_DELETE_EMPTY_TRACE=1;LAVATUBE_DESTINATION=vulkan_${ARGV0}_raw;VK_LAYER_PATH=${CMAKE_CURRENT_BINARY_DIR}/implicit_layer.d;VK_INSTANCE_LAYERS=VK_LAYER_ARM_lavatube;LD_LIBRARY_PATH=${CMAKE_CURRENT_BINARY_DIR}/implicit_layer.d"
+		SKIP_RETURN_CODE 77
+	)
+
 	add_lavatube_test(layer_test_${ARGV0}_simulation COMMAND vulkan_${ARGV1} --cpu ${ARGV2} ${ARGV3} ${ARGV4} ${ARGV5} ${ARGV6} ${ARGV7})
 	set_tests_properties(layer_test_${ARGV0}_simulation PROPERTIES
 		FIXTURES_SETUP ${ARGV0}_simulation
 		ENVIRONMENT "LAVATUBE_VIRTUAL_QUEUES=1;LAVATUBE_DELETE_EMPTY_TRACE=1;LAVATUBE_DESTINATION=vulkan_${ARGV0}_simulation;VK_LAYER_PATH=${CMAKE_CURRENT_BINARY_DIR}/implicit_layer.d;VK_INSTANCE_LAYERS=VK_LAYER_ARM_lavatube;LD_LIBRARY_PATH=${CMAKE_CURRENT_BINARY_DIR}/implicit_layer.d"
 		SKIP_RETURN_CODE 77
 	)
+
 	set(RUN_IF_EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/cmake/run_if_exists.sh)
 	set(TRACE_FILE ${CMAKE_CURRENT_BINARY_DIR}/vulkan_${ARGV0}.vk)
 	set(SIM_TRACE_FILE ${CMAKE_CURRENT_BINARY_DIR}/vulkan_${ARGV0}_simulation.vk)
+	set(RAW_TRACE_FILE ${CMAKE_CURRENT_BINARY_DIR}/vulkan_${ARGV0}_raw.vk)
 	add_lavatube_test(layer_test_${ARGV0}_validate COMMAND ${RUN_IF_EXISTS} ${TRACE_FILE} $<TARGET_FILE:lava-tool> -S --skip-missing-input vulkan_${ARGV0}.vk)
 	set_tests_properties(layer_test_${ARGV0}_validate PROPERTIES SKIP_RETURN_CODE 77 FIXTURES_REQUIRED ${ARGV0})
 	add_lavatube_test(layer_test_${ARGV0}_replay COMMAND ${RUN_IF_EXISTS} ${TRACE_FILE} $<TARGET_FILE:lava-replay> -V vulkan_${ARGV0}.vk)
 	set_tests_properties(layer_test_${ARGV0}_replay PROPERTIES SKIP_RETURN_CODE 77 FIXTURES_REQUIRED ${ARGV0})
+	add_lavatube_test(layer_test_${ARGV0}_replay_raw COMMAND ${RUN_IF_EXISTS} ${RAW_TRACE_FILE} $<TARGET_FILE:lava-replay> --blackhole --allow-stalls vulkan_${ARGV0}_raw.vk)
+	set_tests_properties(layer_test_${ARGV0}_replay_raw PROPERTIES SKIP_RETURN_CODE 77 FIXTURES_REQUIRED ${ARGV0})
 	add_lavatube_test(layer_test_${ARGV0}_replay_cpu COMMAND ${RUN_IF_EXISTS} ${TRACE_FILE} $<TARGET_FILE:lava-replay> -C -V vulkan_${ARGV0}.vk)
 	set_tests_properties(layer_test_${ARGV0}_replay_cpu PROPERTIES FIXTURES_REQUIRED ${ARGV0} SKIP_RETURN_CODE 77)
 	add_lavatube_test(layer_test_${ARGV0}_replay_blackhole COMMAND ${RUN_IF_EXISTS} ${TRACE_FILE} $<TARGET_FILE:lava-replay> -V -B vulkan_${ARGV0}.vk)
@@ -815,6 +827,7 @@ layer_test(compute_device_generated compute_device_generated)
 layer_test(graphics_multi_draw graphics_multi_draw --multi-draw-mode alternate)
 layer_test(descriptor_heap_1 descriptor_heap_1)
 layer_test(opacity_micromap opacity_micromap)
+layer_test(raytracing_indirect_noop raytracing_indirect_noop)
 
 # The two below will fail as we lack support for interleaved data for VK_EXT_multi_draw for now
 #layer_test(graphics_multi_draw_stride16 graphics_multi_draw --multi-draw-mode indexed --stride-mode aligned16)
