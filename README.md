@@ -24,6 +24,8 @@ Features
 
 Generally faster, uses less CPU resources and produces smaller trace files than gfxreconstruct.
 
+Our goals and metrics can be found in [Goals.md](doc/Goals.md).
+
 Performance
 -----------
 
