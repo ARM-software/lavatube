@@ -235,6 +235,7 @@ out([u], '};')
 out([u])
 
 out([wrh, wr] + targets_read)
+out([rh], 'void retrace_reset_all();')
 out(targets_read, 'static void reset_all()')
 out(targets_write, 'static void reset_all(trace_records* r) REQUIRES(frame_mutex)')
 out(targets_main, '{')
@@ -249,6 +250,10 @@ for v in spec.root.findall('types/type'):
 		out(targets_read, '\tindex_to_%s.clear();' % name)
 out(targets_read, '\tclear_callbacks();')
 out(targets_main, '}')
+out([r], 'void retrace_reset_all()')
+out([r], '{')
+out([r], '\treset_all();')
+out([r], '}')
 
 out(targets_main)
 out(targets_write, 'static void write_extension(lava_file_writer& writer, VkBaseOutStructure* sptr);')

@@ -197,6 +197,8 @@ set(COMMON_SRC
     ${PROJECT_SOURCE_DIR}/src/sandbox.h
     ${PROJECT_SOURCE_DIR}/src/json_helpers.cpp
     ${PROJECT_SOURCE_DIR}/src/json_helpers.h
+    ${PROJECT_SOURCE_DIR}/src/markings.cpp
+    ${PROJECT_SOURCE_DIR}/src/markings.h
 
     ${PROJECT_SOURCE_DIR}/src/filewriter.cpp
     ${PROJECT_SOURCE_DIR}/src/filewriter.h
@@ -607,18 +609,9 @@ trace_test(anki_simple traces/anki_simple.vk)
 
 # --- packtool ---
 
-add_executable(packtool src/packtool.cpp
-	${PROJECT_SOURCE_DIR}/external/jsoncpp/src/lib_json/json_writer.cpp
-	${PROJECT_SOURCE_DIR}/external/jsoncpp/src/lib_json/json_reader.cpp
-	${PROJECT_SOURCE_DIR}/external/jsoncpp/src/lib_json/json_value.cpp
-	${PROJECT_SOURCE_DIR}/src/packfile.cpp
-	${PROJECT_SOURCE_DIR}/src/packfile.h
-	${PROJECT_SOURCE_DIR}/src/util.cpp
-	${PROJECT_SOURCE_DIR}/src/util.h
-	${PROJECT_SOURCE_DIR}/src/android_utils.cpp
-)
+add_executable(packtool src/packtool.cpp)
 target_include_directories(packtool ${COMMON_INCLUDE})
-target_link_libraries(packtool ${MOST_COMMON_LIBRARIES})
+target_link_libraries(packtool ${COMMON_LIBRARIES} lavatube)
 target_compile_options(packtool PRIVATE ${COMMON_FLAGS} -fPIC)
 add_dependencies(packtool sync_generated)
 add_lavatube_test(pack_test_1 COMMAND packtool) # usage
@@ -639,6 +632,14 @@ add_lavatube_test(pack_test_5 COMMAND packtool list tracing_2.vk)
 set_tests_properties(pack_test_5 PROPERTIES FIXTURES_REQUIRED tracing_2)
 add_lavatube_test(pack_test_6 COMMAND packtool check tracing_2.vk)
 set_tests_properties(pack_test_6 PROPERTIES FIXTURES_REQUIRED tracing_2)
+add_lavatube_test(pack_test_7_markings
+	COMMAND ${CMAKE_COMMAND}
+		-DLAVA_TOOL=$<TARGET_FILE:lava-tool>
+		-DPACKTOOL=$<TARGET_FILE:packtool>
+		-DINPUT_TRACE=${CMAKE_CURRENT_BINARY_DIR}/vulkan_raytracing_indirect_noop.vk
+		-DOUTPUT_TRACE=${CMAKE_CURRENT_BINARY_DIR}/tmp_markings.vk
+		-P ${PROJECT_SOURCE_DIR}/tests/packtool_markings_diff.cmake)
+set_tests_properties(pack_test_7_markings PROPERTIES FIXTURES_REQUIRED raytracing_indirect_noop)
 install(TARGETS packtool RUNTIME)
 
 # --- layer tests ---

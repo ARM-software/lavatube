@@ -13,6 +13,9 @@
 #include <sstream>
 #include "util.h"
 #include "packfile.h"
+#include "read.h"
+#include "read_auto.h"
+#include "markings.h"
 
 struct packed_compare_result
 {
@@ -141,6 +144,29 @@ struct semantic_compare_result
 	std::vector<std::string> messages;
 };
 
+struct markings_compare_result
+{
+	bool identical = true;
+	std::vector<std::string> messages;
+};
+
+struct collected_markings_entry
+{
+	change_source source;
+	uint64_t packet = 0;
+	uint8_t instrtype = 0;
+	uint32_t occurrence = 0;
+	VkMarkedOffsetsARM* markings = nullptr;
+};
+
+struct markings_collect_state
+{
+	std::vector<collected_markings_entry>* out = nullptr;
+	uint64_t packet = 0;
+	uint8_t instrtype = 0;
+	uint32_t occurrence = 0;
+};
+
 static int usage(const char* argv0)
 {
 	fprintf(stdout, "Usage:\n");
@@ -151,7 +177,7 @@ static int usage(const char* argv0)
 	fprintf(stdout, "\t%s list <input packaged file>\n", argv0);
 	fprintf(stdout, "\t%s print <target file> <input packaged file>\n", argv0);
 	fprintf(stdout, "\t%s check <input packaged file>\n", argv0);
-	fprintf(stdout, "\t%s diff [--semantic] [--assert-sane] <input packaged file A> <input packaged file B>\n", argv0);
+	fprintf(stdout, "\t%s diff [--semantic] [--assert-sane] [--assert-markings] <input packaged file A> <input packaged file B>\n", argv0);
 	return 0;
 }
 
@@ -174,6 +200,181 @@ static bool is_thread_binary(const std::string& value)
 static bool is_frames_json(const std::string& value)
 {
 	return starts_with(value, "frames_") && ends_with(value, ".json");
+}
+
+static const char* packet_type_name(uint8_t instrtype)
+{
+	switch (instrtype)
+	{
+	case PACKET_VULKAN_API_CALL: return "PACKET_VULKAN_API_CALL";
+	case PACKET_THREAD_BARRIER: return "PACKET_THREAD_BARRIER";
+	case PACKET_IMAGE_UPDATE: return "PACKET_IMAGE_UPDATE";
+	case PACKET_BUFFER_UPDATE: return "PACKET_BUFFER_UPDATE";
+	case PACKET_VULKANSC_API_CALL: return "PACKET_VULKANSC_API_CALL";
+	case PACKET_TENSOR_UPDATE: return "PACKET_TENSOR_UPDATE";
+	case PACKET_IMAGE_UPDATE2: return "PACKET_IMAGE_UPDATE2";
+	case PACKET_BUFFER_UPDATE2: return "PACKET_BUFFER_UPDATE2";
+	default: return "PACKET_UNKNOWN";
+	}
+}
+
+static std::string marked_offsets_difference_string(marked_offsets_difference diff)
+{
+	switch (diff)
+	{
+	case marked_offsets_difference::none: return "none";
+	case marked_offsets_difference::missing_left: return "missing in A";
+	case marked_offsets_difference::missing_right: return "missing in B";
+	case marked_offsets_difference::s_type: return "sType mismatch";
+	case marked_offsets_difference::count: return "count mismatch";
+	case marked_offsets_difference::marking_types_missing: return "marking types missing";
+	case marked_offsets_difference::sub_types_missing: return "subtypes missing";
+	case marked_offsets_difference::offsets_missing: return "offsets missing";
+	case marked_offsets_difference::marking_types: return "marking type mismatch";
+	case marked_offsets_difference::sub_types: return "marking subtype mismatch";
+	case marked_offsets_difference::offsets: return "offset mismatch";
+	}
+	return "unknown";
+}
+
+static std::string markings_location_string(const collected_markings_entry& entry)
+{
+	std::string where = "thread " + _to_string(entry.source.thread)
+		+ " packet " + _to_string(entry.packet)
+		+ " marking " + _to_string(entry.occurrence);
+	if (entry.instrtype == PACKET_VULKAN_API_CALL && entry.source.call_id != UINT16_MAX)
+	{
+		where += " (" + std::string(get_function_name(entry.source.call_id))
+			+ ", call " + _to_string(entry.source.call) + ")";
+	}
+	else
+	{
+		where += " (" + std::string(packet_type_name(entry.instrtype))
+			+ ", api call " + _to_string(entry.source.call) + ")";
+	}
+	return where;
+}
+
+static bool markings_entry_less(const collected_markings_entry& a, const collected_markings_entry& b)
+{
+	if (a.source.thread != b.source.thread) return a.source.thread < b.source.thread;
+	if (a.packet != b.packet) return a.packet < b.packet;
+	return a.occurrence < b.occurrence;
+}
+
+static void free_collected_markings(std::vector<collected_markings_entry>& entries)
+{
+	for (collected_markings_entry& entry : entries)
+	{
+		free_marked_offsets(entry.markings);
+		entry.markings = nullptr;
+	}
+}
+
+static void collect_markings_observer(const change_source& source, const VkMarkedOffsetsARM* markings, void* userdata)
+{
+	if (!userdata || !markings) return;
+	markings_collect_state& state = *(markings_collect_state*)userdata;
+	collected_markings_entry entry;
+	entry.source = source;
+	entry.packet = state.packet;
+	entry.instrtype = state.instrtype;
+	entry.occurrence = state.occurrence++;
+	entry.markings = clone_marked_offsets(markings);
+	sort_marked_offsets(entry.markings);
+	state.out->push_back(entry);
+}
+
+static std::vector<collected_markings_entry> collect_trace_markings(const std::string& pack)
+{
+	std::vector<collected_markings_entry> out;
+	retrace_reset_all();
+	lava_reader reader;
+	markings_collect_state state;
+	state.out = &out;
+	reader.run = false;
+	reader.write_output = false;
+	reader.validate = false;
+	reader.pass = 0;
+	reader.create_results_file = false;
+	reader.markings_observer = collect_markings_observer;
+	reader.markings_observer_data = &state;
+	reader.init(pack);
+
+	const std::vector<std::string> thread_files = packed_files(pack, "thread_");
+	for (uint16_t thread_id = 0; thread_id < thread_files.size(); thread_id++)
+	{
+		lava_file_reader& t = reader.file_reader(thread_id);
+		state.packet = 0;
+		state.instrtype = 0;
+		state.occurrence = 0;
+		while (true)
+		{
+			const uint8_t instrtype = t.step();
+			if (instrtype == 0) break;
+			state.packet++;
+			state.instrtype = instrtype;
+			state.occurrence = 0;
+			switchboard_packet(instrtype, t);
+		}
+	}
+	reader.markings_observer = nullptr;
+	reader.markings_observer_data = nullptr;
+	std::sort(out.begin(), out.end(), markings_entry_less);
+	retrace_reset_all();
+	return out;
+}
+
+static markings_compare_result compare_packed_file_markings(const std::string& pack_a, const std::string& pack_b)
+{
+	markings_compare_result result;
+	std::vector<collected_markings_entry> markings_a = collect_trace_markings(pack_a);
+	std::vector<collected_markings_entry> markings_b = collect_trace_markings(pack_b);
+
+	size_t i = 0;
+	size_t j = 0;
+	while (i < markings_a.size() && j < markings_b.size())
+	{
+		const collected_markings_entry& a = markings_a[i];
+		const collected_markings_entry& b = markings_b[j];
+		if (markings_entry_less(a, b))
+		{
+			result.identical = false;
+			result.messages.push_back("Markings only in A at " + markings_location_string(a));
+			break;
+		}
+		if (markings_entry_less(b, a))
+		{
+			result.identical = false;
+			result.messages.push_back("Markings only in B at " + markings_location_string(b));
+			break;
+		}
+
+		const marked_offsets_difference diff = compare_marked_offsets(a.markings, b.markings);
+		if (diff != marked_offsets_difference::none)
+		{
+			result.identical = false;
+			result.messages.push_back("Markings differ at " + markings_location_string(a) + ": " + marked_offsets_difference_string(diff));
+			break;
+		}
+		i++;
+		j++;
+	}
+
+	if (result.identical && i < markings_a.size())
+	{
+		result.identical = false;
+		result.messages.push_back("Markings only in A at " + markings_location_string(markings_a[i]));
+	}
+	if (result.identical && j < markings_b.size())
+	{
+		result.identical = false;
+		result.messages.push_back("Markings only in B at " + markings_location_string(markings_b[j]));
+	}
+
+	free_collected_markings(markings_a);
+	free_collected_markings(markings_b);
+	return result;
 }
 
 static std::string json_value_string(const Json::Value& value)
@@ -481,10 +682,12 @@ int main(int argc, char* argv[])
 	{
 		bool semantic = false;
 		bool assert_sane = false;
+		bool assert_markings = false;
 		std::vector<const char*> positional;
 		for (int i = 2; i < argc; i++)
 		{
 			if (strcmp(argv[i], "--semantic") == 0) semantic = true;
+			else if (strcmp(argv[i], "--assert-markings") == 0) assert_markings = true;
 			else if (strcmp(argv[i], "--assert-sane") == 0)
 			{
 				assert_sane = true;
@@ -494,9 +697,35 @@ int main(int argc, char* argv[])
 		}
 		if (positional.size() != 2) return usage(argv[0]);
 
+		if (assert_markings && !semantic && !assert_sane)
+		{
+			markings_compare_result markings = compare_packed_file_markings(positional[0], positional[1]);
+			if (markings.identical)
+			{
+				printf("Markings identical: %s and %s\n", positional[0], positional[1]);
+				return 0;
+			}
+			for (const std::string& message : markings.messages)
+			{
+				printf("%s\n", message.c_str());
+			}
+			return 1;
+		}
+
 		if (semantic)
 		{
 			semantic_compare_result result = compare_packed_file_semantic(positional[0], positional[1]);
+			if (assert_markings)
+			{
+				markings_compare_result markings = compare_packed_file_markings(positional[0], positional[1]);
+				if (!markings.identical)
+				{
+					result.identical = false;
+					result.sane = false;
+					result.unexpected_differences++;
+					for (const std::string& message : markings.messages) result.messages.push_back(message);
+				}
+			}
 			if (result.identical && result.sane)
 			{
 				printf("Semantic identical: %s and %s\n", positional[0], positional[1]);
@@ -569,6 +798,15 @@ int main(int argc, char* argv[])
 			packed_compare_result raw = compare_regular_file(positional[0], positional[1]);
 			if (raw.equal)
 			{
+				if (assert_markings)
+				{
+					markings_compare_result markings = compare_packed_file_markings(positional[0], positional[1]);
+					if (!markings.identical)
+					{
+						for (const std::string& message : markings.messages) printf("%s\n", message.c_str());
+						return 1;
+					}
+				}
 				printf("Identical: %s and %s (%u files)\n", positional[0], positional[1], identical_files);
 				return 0;
 			}
@@ -583,9 +821,19 @@ int main(int argc, char* argv[])
 				printf("Contained files identical, but packaged file bytes differ at offset %lu (size %lu)\n",
 					(unsigned long)raw.first_difference, (unsigned long)raw.size_a);
 			}
+			if (assert_markings)
+			{
+				markings_compare_result markings = compare_packed_file_markings(positional[0], positional[1]);
+				for (const std::string& message : markings.messages) printf("%s\n", message.c_str());
+			}
 			return 1;
 		}
 
+		if (assert_markings)
+		{
+			markings_compare_result markings = compare_packed_file_markings(positional[0], positional[1]);
+			for (const std::string& message : markings.messages) printf("%s\n", message.c_str());
+		}
 		printf("Summary: %u identical, %u different\n", identical_files, differing_files);
 		return 1;
 	}

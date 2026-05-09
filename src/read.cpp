@@ -94,6 +94,12 @@ uint8_t lava_file_reader::step()
 	return r;
 }
 
+void lava_file_reader::note_markings(const VkMarkedOffsetsARM* markings)
+{
+	if (!parent->markings_observer || !markings) return;
+	parent->markings_observer(current, markings, parent->markings_observer_data);
+}
+
 lava_file_reader::~lava_file_reader()
 {
 }
@@ -164,8 +170,12 @@ void lava_reader::finalize()
 	out["readahead_workers_time"] = worker;
 	out["api_runners_time"] = runner;
 	out["process_time"] = process_time;
-	write_json(out_fptr, out);
-	fclose(out_fptr);
+	if (out_fptr)
+	{
+		write_json(out_fptr, out);
+		fclose(out_fptr);
+		out_fptr = nullptr;
+	}
 }
 
 bool lava_reader::cleanup_after_stop()
@@ -236,8 +246,11 @@ void lava_reader::init(const std::string& path)
 		thread_streams[thread_id] = new lava_file_reader(this, mPackedFile, thread_id, mGlobalFrames, frameinfo, uncompressed_size, uncompressed_target, mStart, mEnd);
 	}
 
-	out_fptr = fopen("lavaresults.json", "w");
-	if (!out_fptr) ABORT("Failed to open results file: %s", strerror(errno));
+	if (create_results_file)
+	{
+		out_fptr = fopen("lavaresults.json", "w");
+		if (!out_fptr) ABORT("Failed to open results file: %s", strerror(errno));
+	}
 	mStartTime.store(gettime());
 }
 

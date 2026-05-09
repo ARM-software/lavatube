@@ -31,16 +31,12 @@ test case of the basic workflow.
 
 ## Plan
 
-* Add cmd line option to `packtool diff` to check that two traces have identical
-  memory markings. We already have helper code for this in `src/hardcode.cpp` -
-  `sort_marked_offsets` and `assert_marked_offsets_equal` that we might
-  want to move out and reuse. We could call this option `--assert-markings`.
-* Make sure we have a successful write-out of `vulkan_raytracing_indirect_noop`
-  (`lava-tool vulkan_raytracing_indirect_noop.vk tmp.vk` verified with
-   `packtool diff --semantic vulkan_raytracing_indirect_noop.vk tmp.vk`)
+* Add code to track memory marking coming from `vkCmdTraceRaysIndirectKHR` and
+  `vkCmdTraceRaysIndirect2KHR`, similar to how spirv-simulator is a source for
+  these.
 * Add code to verify memory markings coming from `vkCmdTraceRaysIndirect2KHR`
   (verify with `lava-tool -V vulkan_raytracing_indirect_noop.vk`)
-* Create trace of `vulkan_raytracing_indirect_noop` without memory markings,
-  add the suffix `_raw` then run `lava-tool vulkan_raytracing_indirect_noop_raw.vk tmp.vk`
-  and verify with `packtool diff --assert-markings vulkan_raytracing_indirect.vk tmp.vk`
+* We have a trace `vulkan_raytracing_indirect_noop_raw` without memory markings.
+  Run `lava-tool -S vulkan_raytracing_indirect_noop_raw.vk tmp.vk` and verify
+  with `packtool diff --assert-markings vulkan_raytracing_indirect.vk tmp.vk`,
   comparing our manual markings with the newly inserted ones.

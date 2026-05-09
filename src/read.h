@@ -21,8 +21,9 @@
 #include "jsoncpp/json/value.h"
 #include "replay_screenshot.h"
 
-using lava_replay_func = void (*)(lava_file_reader&);
 class lava_file_reader;
+using lava_replay_func = void (*)(lava_file_reader&);
+using lava_markings_observer = void (*)(const change_source&, const VkMarkedOffsetsARM*, void*);
 
 extern lava::mutex sync_mutex;
 
@@ -155,6 +156,9 @@ public:
 	bool has_stored_device_requested_extensions = false;
 	std::vector<std::string> stored_instance_requested_extensions;
 	std::vector<std::string> stored_device_requested_extensions;
+	lava_markings_observer markings_observer = nullptr;
+	void* markings_observer_data = nullptr;
+	bool create_results_file = true;
 
 private:
 	/// Start time of frame range
@@ -195,6 +199,8 @@ public:
 	{
 		if (trace_thread_name[0] != '\0') set_thread_name(trace_thread_name);
 	}
+
+	void note_markings(const VkMarkedOffsetsARM* markings);
 
 	inline VkDescriptorDataEXT read_VkDescriptorDataEXT() { return VkDescriptorDataEXT{}; } // TBD
 	inline VkAccelerationStructureNV read_VkAccelerationStructureNV() { return VK_NULL_HANDLE; }
