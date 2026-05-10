@@ -421,6 +421,8 @@ static markings_compare_result compare_packed_file_markings(const std::string& p
 	markings_compare_result result;
 	std::vector<collected_markings_entry> markings_a = collect_trace_markings(pack_a);
 	std::vector<collected_markings_entry> markings_b = collect_trace_markings(pack_b);
+	markings_a.erase(std::remove_if(markings_a.begin(), markings_a.end(), is_capture_flush_leftover_markings), markings_a.end());
+	markings_b.erase(std::remove_if(markings_b.begin(), markings_b.end(), is_capture_flush_leftover_markings), markings_b.end());
 
 	size_t i = 0;
 	size_t j = 0;

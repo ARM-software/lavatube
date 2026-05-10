@@ -43,6 +43,30 @@ struct descriptor_rewrite
 	change_source source;
 };
 
+struct output_update_packet
+{
+	bool valid = false;
+	uint8_t instrtype = 0;
+	uint32_t device_index = CONTAINER_NULL_VALUE;
+	uint32_t object_index = CONTAINER_NULL_VALUE;
+	uint64_t header_start = 0;
+	uint64_t payload_start = 0;
+	uint64_t size = 0;
+	const VkBaseOutStructure* sptr = nullptr;
+
+	void clear()
+	{
+		valid = false;
+		instrtype = 0;
+		device_index = CONTAINER_NULL_VALUE;
+		object_index = CONTAINER_NULL_VALUE;
+		header_start = 0;
+		payload_start = 0;
+		size = 0;
+		sptr = nullptr;
+	}
+};
+
 // Only used to unwind replay threads out of stop-aware wait paths during shutdown.
 struct replay_stop_requested
 {
@@ -302,6 +326,7 @@ public:
 
 	/// Rewrite queue for the second pass, re-sorted and split by thread.
 	std::list<address_rewrite> rewrite_queue;
+	output_update_packet current_update_packet;
 
 	change_source current;
 

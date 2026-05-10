@@ -4041,9 +4041,21 @@ uint32_t update_image_packet(uint8_t instrtype, lava_file_reader& reader)
 	DLOG2("Update image packet (%d) on thread %d", (int)instrtype, reader.thread_index());
 	const uint32_t device_index = reader.read_handle(DEBUGPARAM("VkDevice"));
 	const uint32_t image_index = reader.read_handle(DEBUGPARAM("VkImage"));
+	const uint64_t header_start = reader.stream_position();
 	VkBaseOutStructure* sptr = nullptr;
 	uint64_t size = 0;
 	if (instrtype == PACKET_IMAGE_UPDATE2) size = read_version2_packet(reader, &sptr);
+	if (reader.write_output && instrtype == PACKET_IMAGE_UPDATE2)
+	{
+		reader.current_update_packet.valid = true;
+		reader.current_update_packet.instrtype = instrtype;
+		reader.current_update_packet.device_index = device_index;
+		reader.current_update_packet.object_index = image_index;
+		reader.current_update_packet.header_start = header_start;
+		reader.current_update_packet.payload_start = reader.stream_position();
+		reader.current_update_packet.size = size;
+		reader.current_update_packet.sptr = sptr;
+	}
 	image_update(reader, device_index, image_index, size, sptr);
 	return image_index;
 }
@@ -4053,9 +4065,21 @@ uint32_t update_buffer_packet(uint8_t instrtype, lava_file_reader& reader)
 	DLOG2("Update buffer packet (%d) on thread %d", (int)instrtype, reader.thread_index());
 	const uint32_t device_index = reader.read_handle(DEBUGPARAM("VkDevice"));
 	const uint32_t buffer_index = reader.read_handle(DEBUGPARAM("VkBuffer"));
+	const uint64_t header_start = reader.stream_position();
 	VkBaseOutStructure* sptr = nullptr;
 	uint64_t size = 0;
 	if (instrtype == PACKET_BUFFER_UPDATE2) size = read_version2_packet(reader, &sptr);
+	if (reader.write_output && instrtype == PACKET_BUFFER_UPDATE2)
+	{
+		reader.current_update_packet.valid = true;
+		reader.current_update_packet.instrtype = instrtype;
+		reader.current_update_packet.device_index = device_index;
+		reader.current_update_packet.object_index = buffer_index;
+		reader.current_update_packet.header_start = header_start;
+		reader.current_update_packet.payload_start = reader.stream_position();
+		reader.current_update_packet.size = size;
+		reader.current_update_packet.sptr = sptr;
+	}
 	buffer_update(reader, device_index, buffer_index, size, sptr);
 	return buffer_index;
 }
@@ -4065,8 +4089,20 @@ uint32_t update_tensor_packet(uint8_t instrtype, lava_file_reader& reader)
 	DLOG2("Update tensor packet (%d) on thread %d", (int)instrtype, reader.thread_index());
 	const uint32_t device_index = reader.read_handle(DEBUGPARAM("VkDevice"));
 	const uint32_t tensor_index = reader.read_handle(DEBUGPARAM("VkTensorARM"));
+	const uint64_t header_start = reader.stream_position();
 	VkBaseOutStructure* sptr = nullptr;
 	const uint64_t size = read_version2_packet(reader, &sptr);
+	if (reader.write_output)
+	{
+		reader.current_update_packet.valid = true;
+		reader.current_update_packet.instrtype = instrtype;
+		reader.current_update_packet.device_index = device_index;
+		reader.current_update_packet.object_index = tensor_index;
+		reader.current_update_packet.header_start = header_start;
+		reader.current_update_packet.payload_start = reader.stream_position();
+		reader.current_update_packet.size = size;
+		reader.current_update_packet.sptr = sptr;
+	}
 	tensor_update(reader, device_index, tensor_index, size, sptr);
 	return tensor_index;
 }

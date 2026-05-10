@@ -133,97 +133,88 @@ static void sync_output_vkGetDeviceQueue2(callback_context&, VkDevice, const VkD
 
 static std::list<address_rewrite>::iterator find_output_rewrite_entry(lava_file_reader& reader)
 {
-	auto same_output_phase_source = [&](const address_rewrite& entry)
+	return std::find_if(reader.rewrite_queue.begin(), reader.rewrite_queue.end(), [&](const address_rewrite& entry)
 	{
-		if (entry.source.thread != reader.current.thread || entry.source.frame != reader.current.frame || entry.source.call_id != reader.current.call_id) return false;
-		return entry.source.call == reader.current.call || entry.source.call == reader.current.call + 1;
-	};
-	return std::find_if(reader.rewrite_queue.begin(), reader.rewrite_queue.end(), same_output_phase_source);
+		return same_change_source(entry.source, reader.current);
+	});
 }
 
-static VkBaseOutStructure* build_flush_markings_chain(const VkMappedMemoryRange& original, VkMarkedOffsetsARM& desired, VkFlushRangesFlagsARM& flags_copy)
+static bool is_flush_markings_source(const change_source& source)
 {
-	VkBaseOutStructure* pNext = (VkBaseOutStructure*)original.pNext;
-	if (!pNext)
-	{
-		desired.pNext = nullptr;
-		return (VkBaseOutStructure*)&desired;
-	}
-	if (pNext->sType == VK_STRUCTURE_TYPE_MARKED_OFFSETS_ARM)
-	{
-		desired.pNext = pNext->pNext;
-		return (VkBaseOutStructure*)&desired;
-	}
-	if (pNext->sType == VK_STRUCTURE_TYPE_FLUSH_RANGES_FLAGS_ARM)
-	{
-		const VkFlushRangesFlagsARM* flags = (const VkFlushRangesFlagsARM*)pNext;
-		flags_copy = *flags;
-		VkBaseOutStructure* next = (VkBaseOutStructure*)flags->pNext;
-		if (!next)
-		{
-			desired.pNext = nullptr;
-			flags_copy.pNext = (VkBaseOutStructure*)&desired;
-			return (VkBaseOutStructure*)&flags_copy;
-		}
-		if (next->sType == VK_STRUCTURE_TYPE_MARKED_OFFSETS_ARM)
-		{
-			desired.pNext = next->pNext;
-			flags_copy.pNext = (VkBaseOutStructure*)&desired;
-			return (VkBaseOutStructure*)&flags_copy;
-		}
-		desired.pNext = next;
-		flags_copy.pNext = (VkBaseOutStructure*)&desired;
-		return (VkBaseOutStructure*)&flags_copy;
-	}
-	ABORT("Unsupported VkMappedMemoryRange pNext chain while injecting simulated markings");
+	return source.call_id != UINT16_MAX && strcmp(get_function_name(source.call_id), "vkFlushMappedMemoryRanges") == 0;
 }
 
-static void tool_write_vkFlushMappedMemoryRanges(callback_context& cb, VkDevice device, uint32_t memoryRangeCount, const VkMappedMemoryRange* pMemoryRanges)
+static void write_marked_offsets_extension(lava_file_writer& writer, const VkMarkedOffsetsARM* sptr)
 {
-	auto it = find_output_rewrite_entry(cb.reader);
-	if (it == cb.reader.rewrite_queue.end())
-	{
-		prepare_trace_callback(cb);
-		(void)trace_vkFlushMappedMemoryRanges(device, memoryRangeCount, pMemoryRanges);
-		return;
-	}
+	assert(sptr);
+	assert(sptr->sType == VK_STRUCTURE_TYPE_MARKED_OFFSETS_ARM);
+	assert(sptr->pNext == nullptr);
+	writer.write_uint32_t((uint32_t)sptr->sType); // write_extension discriminant
+	writer.write_uint32_t(sptr->sType);
+	writer.write_uint32_t(0); // terminate pNext chain
+	writer.write_uint32_t(sptr->count);
+	const bool pMarkingTypes_opt = (sptr->pMarkingTypes != nullptr && sptr->count > 0);
+	writer.write_uint8_t(pMarkingTypes_opt);
+	if (pMarkingTypes_opt) writer.write_array(reinterpret_cast<const char*>(sptr->pMarkingTypes), sptr->count * sizeof(VkMarkingTypeARM));
+	const bool pSubTypes_opt = (sptr->pSubTypes != nullptr && sptr->count > 0);
+	writer.write_uint8_t(pSubTypes_opt);
+	if (pSubTypes_opt) writer.write_array(reinterpret_cast<const char*>(sptr->pSubTypes), sptr->count * sizeof(VkMarkingSubTypeARM));
+	const bool pOffsets_opt = (sptr->pOffsets != nullptr && sptr->count > 0);
+	writer.write_uint8_t(pOffsets_opt);
+	if (pOffsets_opt) writer.write_array(reinterpret_cast<const char*>(sptr->pOffsets), sptr->count * sizeof(VkDeviceSize));
+}
 
-	if (!pMemoryRanges || memoryRangeCount == 0) ABORT("Need a VkMappedMemoryRange to inject simulated markings for %s", describe_change_source(cb.reader.current).c_str());
-	if (memoryRangeCount != 1) ABORT("Simulated markings injection for vkFlushMappedMemoryRanges currently only supports a single range");
+static bool maybe_write_rewritten_update_packet(lava_file_reader& reader, lava_file_writer& writer, uint64_t packet_start, uint64_t packet_end)
+{
+	auto it = find_output_rewrite_entry(reader);
+	if (it == reader.rewrite_queue.end()) return false;
+
+	const output_update_packet& update = reader.current_update_packet;
+	if (!update.valid) ABORT("Need version2 update packet metadata to inject simulated markings for %s", describe_change_source(reader.current).c_str());
+	if (update.instrtype != PACKET_BUFFER_UPDATE2 && update.instrtype != PACKET_IMAGE_UPDATE2 && update.instrtype != PACKET_TENSOR_UPDATE)
+	{
+		ABORT("Simulated markings injection currently only supports version2 update packets, got packet type %u for %s",
+			(unsigned)update.instrtype, describe_change_source(reader.current).c_str());
+	}
+	if (update.sptr && update.sptr->sType != VK_STRUCTURE_TYPE_MARKED_OFFSETS_ARM)
+	{
+		ABORT("Unsupported update packet pNext chain while injecting simulated markings for %s", describe_change_source(reader.current).c_str());
+	}
 
 	VkMarkedOffsetsARM* desired = clone_marked_offsets(it->markings);
 	normalize_marked_offsets(desired);
-
-	const VkMappedMemoryRange& original = pMemoryRanges[0];
-	const VkMarkedOffsetsARM* existing = (const VkMarkedOffsetsARM*)find_extension(&original, VK_STRUCTURE_TYPE_MARKED_OFFSETS_ARM);
-	VkMarkedOffsetsARM* existing_normalized = clone_marked_offsets(existing);
-	normalize_marked_offsets(existing_normalized);
-	const marked_offsets_difference diff = compare_marked_offsets(existing_normalized, desired);
-
-	const VkMappedMemoryRange* ranges_to_write = pMemoryRanges;
-	VkMappedMemoryRange patched_range = original;
-	VkFlushRangesFlagsARM flags_copy{};
-	if (diff != marked_offsets_difference::none)
+	VkMarkedOffsetsARM* existing = clone_marked_offsets((const VkMarkedOffsetsARM*)update.sptr);
+	normalize_marked_offsets(existing);
+	const marked_offsets_difference diff = compare_marked_offsets(existing, desired);
+	if (diff == marked_offsets_difference::none)
 	{
-		if (existing)
-		{
-			ILOG("Replacing VkMarkedOffsetsARM for %s (%s)", describe_change_source(cb.reader.current).c_str(), marked_offsets_difference_string(diff));
-		}
-		else
-		{
-			ILOG("Injecting VkMarkedOffsetsARM for %s (%u markings)", describe_change_source(cb.reader.current).c_str(), (unsigned)desired->count);
-		}
-		patched_range.pNext = build_flush_markings_chain(original, *desired, flags_copy);
-		ranges_to_write = &patched_range;
+		free_marked_offsets(existing);
+		free_marked_offsets(desired);
+		free_marked_offsets(it->markings);
+		reader.rewrite_queue.erase(it);
+		return false;
 	}
 
-	prepare_trace_callback(cb);
-	(void)trace_vkFlushMappedMemoryRanges(device, memoryRangeCount, ranges_to_write);
+	if (existing)
+	{
+		ILOG("Replacing VkMarkedOffsetsARM on %s (%s)", describe_change_source(reader.current).c_str(), marked_offsets_difference_string(diff));
+	}
+	else
+	{
+		ILOG("Injecting VkMarkedOffsetsARM on %s (%u markings)", describe_change_source(reader.current).c_str(), (unsigned)desired->count);
+	}
 
-	free_marked_offsets(existing_normalized);
+	writer.write_array(reader.stream_data(packet_start), update.header_start - packet_start);
+	writer.write_uint64_t(update.size);
+	writer.write_uint16_t(PACKET_FLAG_HAS_PNEXT);
+	write_marked_offsets_extension(writer, desired);
+	writer.write_array(reader.stream_data(update.payload_start), packet_end - update.payload_start);
+
+	free_marked_offsets(existing);
 	free_marked_offsets(desired);
 	free_marked_offsets(it->markings);
-	cb.reader.rewrite_queue.erase(it);
+	reader.rewrite_queue.erase(it);
+	return true;
 }
 
 // Utility funcs
@@ -251,6 +242,21 @@ static void usage()
 	printf("--skip-missing-input   Exit with code 77 if the input trace file does not exist\n");
 	printf("-s/--sandbox level     Set security sandbox level (from 1 to 3, with 3 the most strict, default %d)\n", (int)p__sandbox_level);
 	exit(-1);
+}
+
+static void discard_ignored_flush_rewrites(std::list<address_rewrite>& queue)
+{
+	for (auto it = queue.begin(); it != queue.end();)
+	{
+		if (!is_flush_markings_source(it->source))
+		{
+			++it;
+			continue;
+		}
+		ILOG("Skipping uninjected VkMarkedOffsetsARM on %s", describe_change_source(it->source).c_str());
+		free_marked_offsets(it->markings);
+		it = queue.erase(it);
+	}
 }
 
 static inline bool match(const char* in, const char* short_form, const char* long_form, int& remaining)
@@ -413,6 +419,7 @@ static void replay_thread(lava_reader* replayer, int thread_id)
 			uint32_t output_call = 0;
 			if (write_output)
 			{
+				t.current_update_packet.clear();
 				packet_start = t.stream_position() - 1; // include the packet type already consumed by step()
 				if (instrtype != PACKET_VULKAN_API_CALL && instrtype != PACKET_THREAD_BARRIER && !is_update_packet(instrtype))
 				{
@@ -434,7 +441,10 @@ static void replay_thread(lava_reader* replayer, int thread_id)
 					frame_mutex.unlock();
 				}
 				const uint64_t packet_end = t.stream_position();
-				output_writer->write_array(t.stream_data(packet_start), packet_end - packet_start);
+				if (!simulate || !maybe_write_rewritten_update_packet(t, *output_writer, packet_start, packet_end))
+				{
+					output_writer->write_array(t.stream_data(packet_start), packet_end - packet_start);
+				}
 			}
 			if (write_output && instrtype == PACKET_VULKAN_API_CALL && output_writer->current.call != output_call + 1)
 			{
@@ -807,8 +817,6 @@ int main(int argc, char **argv)
 		vkGetDeviceQueue_callbacks.push_back(replay_trace_callback_with_pre<trace_vkGetDeviceQueue, sync_output_vkGetDeviceQueue>::call);
 		vkGetDeviceQueue2_callbacks.clear();
 		vkGetDeviceQueue2_callbacks.push_back(replay_trace_callback_with_pre<trace_vkGetDeviceQueue2, sync_output_vkGetDeviceQueue2>::call);
-		vkFlushMappedMemoryRanges_callbacks.clear();
-		vkFlushMappedMemoryRanges_callbacks.push_back(tool_write_vkFlushMappedMemoryRanges);
 		vkBindBufferMemory2_callbacks.clear();
 		vkBindBufferMemory2_callbacks.push_back(replay_trace_callback_with_pre<trace_vkBindBufferMemory2, sync_output_vkBindBufferMemory2>::call);
 		vkBindBufferMemory2KHR_callbacks.clear();
@@ -836,6 +844,7 @@ int main(int argc, char **argv)
 			for (unsigned i = 0; i < replayer.threads.size(); i++)
 			{
 				lava_file_reader& t = replayer.file_reader(i);
+				discard_ignored_flush_rewrites(t.rewrite_queue);
 				if (!t.rewrite_queue.empty())
 				{
 					const address_rewrite& missing = t.rewrite_queue.front();
