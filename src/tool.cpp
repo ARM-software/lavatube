@@ -40,6 +40,23 @@ static inline bool is_update_packet(uint8_t instrtype)
 		|| instrtype == PACKET_IMAGE_UPDATE2 || instrtype == PACKET_BUFFER_UPDATE2;
 }
 
+static VkObjectType update_packet_object_type(uint8_t instrtype)
+{
+	switch (instrtype)
+	{
+	case PACKET_BUFFER_UPDATE:
+	case PACKET_BUFFER_UPDATE2:
+		return VK_OBJECT_TYPE_BUFFER;
+	case PACKET_IMAGE_UPDATE:
+	case PACKET_IMAGE_UPDATE2:
+		return VK_OBJECT_TYPE_IMAGE;
+	case PACKET_TENSOR_UPDATE:
+		return VK_OBJECT_TYPE_TENSOR_ARM;
+	default:
+		return VK_OBJECT_TYPE_UNKNOWN;
+	}
+}
+
 static void sync_output_buffer_memory_flags(VkBuffer buffer)
 {
 	auto* writer_buffer = lava_writer::instance().records.VkBuffer_index.at(buffer);
@@ -133,9 +150,13 @@ static void sync_output_vkGetDeviceQueue2(callback_context&, VkDevice, const VkD
 
 static std::list<address_rewrite>::iterator find_output_rewrite_entry(lava_file_reader& reader)
 {
+	const output_update_packet& update = reader.current_update_packet;
+	const VkObjectType object_type = update_packet_object_type(update.instrtype);
 	return std::find_if(reader.rewrite_queue.begin(), reader.rewrite_queue.end(), [&](const address_rewrite& entry)
 	{
-		return same_change_source(entry.source, reader.current);
+		if (!same_change_source(entry.source, reader.current)) return false;
+		if (entry.object_type == VK_OBJECT_TYPE_UNKNOWN) return true;
+		return entry.object_type == object_type && entry.object_index == update.object_index;
 	});
 }
 
@@ -162,6 +183,23 @@ static void write_marked_offsets_extension(lava_file_writer& writer, const VkMar
 	const bool pOffsets_opt = (sptr->pOffsets != nullptr && sptr->count > 0);
 	writer.write_uint8_t(pOffsets_opt);
 	if (pOffsets_opt) writer.write_array(reinterpret_cast<const char*>(sptr->pOffsets), sptr->count * sizeof(VkDeviceSize));
+}
+
+static uint64_t marked_offsets_extension_size(const VkMarkedOffsetsARM* sptr)
+{
+	assert(sptr);
+	uint64_t bytes = 0;
+	bytes += sizeof(uint32_t); // write_extension discriminant
+	bytes += sizeof(uint32_t); // sType
+	bytes += sizeof(uint32_t); // pNext terminator
+	bytes += sizeof(uint32_t); // count
+	bytes += sizeof(uint8_t); // pMarkingTypes_opt
+	if (sptr->pMarkingTypes && sptr->count > 0) bytes += (uint64_t)sptr->count * sizeof(VkMarkingTypeARM);
+	bytes += sizeof(uint8_t); // pSubTypes_opt
+	if (sptr->pSubTypes && sptr->count > 0) bytes += (uint64_t)sptr->count * sizeof(VkMarkingSubTypeARM);
+	bytes += sizeof(uint8_t); // pOffsets_opt
+	if (sptr->pOffsets && sptr->count > 0) bytes += (uint64_t)sptr->count * sizeof(VkDeviceSize);
+	return bytes;
 }
 
 static bool maybe_write_rewritten_update_packet(lava_file_reader& reader, lava_file_writer& writer, uint64_t packet_start, uint64_t packet_end)
@@ -205,7 +243,9 @@ static bool maybe_write_rewritten_update_packet(lava_file_reader& reader, lava_f
 	}
 
 	writer.write_array(reader.stream_data(packet_start), update.header_start - packet_start);
-	writer.write_uint64_t(update.size);
+	const uint64_t payload_bytes = packet_end - update.payload_start;
+	const uint64_t new_header_bytes = sizeof(uint16_t) + marked_offsets_extension_size(desired);
+	writer.write_uint64_t(payload_bytes + new_header_bytes);
 	writer.write_uint16_t(PACKET_FLAG_HAS_PNEXT);
 	write_marked_offsets_extension(writer, desired);
 	writer.write_array(reader.stream_data(update.payload_start), packet_end - update.payload_start);
@@ -668,6 +708,7 @@ int main(int argc, char **argv)
 	if (report_unused || dump_host_write_stats) simulate = true;
 
 	std::list<address_rewrite> rewrite_queue_copy;
+	std::list<address_rewrite> output_rewrite_queue_copy;
 
 	Json::Value meta = packed_json("metadata.json", filename_input);
 	Json::Value instance_removed_json = meta["instanceRequested"]["removedExtensions"];
@@ -712,6 +753,7 @@ int main(int argc, char **argv)
 		// Copy out the rewrite queue
 		sync_mutex.lock(); // threads are stopped here but let's avoid warnings
 		rewrite_queue_copy = replayer.global_rewrite_queue;
+		output_rewrite_queue_copy = replayer.global_output_rewrite_queue;
 		sync_mutex.unlock();
 
 		if (dump_host_write_stats) dump_host_write_stats_report("pass1");
@@ -793,7 +835,7 @@ int main(int argc, char **argv)
 		replayer.set_frames(start, end);
 		if (simulate)
 		{
-			for (const auto& v : rewrite_queue_copy)
+			for (const auto& v : output_rewrite_queue_copy)
 			{
 				replayer.file_reader(v.source.thread).rewrite_queue.push_back(v);
 			}

@@ -215,6 +215,14 @@ struct discovered_markings_bucket
 	std::vector<discovered_buffer_marking> entries;
 };
 
+struct discovered_output_markings_bucket
+{
+	change_source source;
+	VkObjectType object_type = VK_OBJECT_TYPE_UNKNOWN;
+	uint32_t object_index = CONTAINER_NULL_VALUE;
+	std::vector<discovered_buffer_marking> entries;
+};
+
 static VkShaderGroupShaderKHR get_shader_group_handle_marking_subtype(const trackedpipeline& pipeline_data, uint32_t group_index)
 {
 	if (group_index >= pipeline_data.raytracing_groups.size()) return VK_SHADER_GROUP_SHADER_GENERAL_KHR;
@@ -257,6 +265,7 @@ static void merge_discovered_markings(lava_file_reader& reader, const std::vecto
 	if (!reader.parent->validate || reader.write_output || reader.parent->pass != 0 || discovered.empty()) return;
 
 	std::vector<discovered_markings_bucket> buckets;
+	std::vector<discovered_output_markings_bucket> output_buckets;
 	for (const discovered_buffer_marking& marking : discovered)
 	{
 		assert(marking.buffer_data);
@@ -277,6 +286,26 @@ static void merge_discovered_markings(lava_file_reader& reader, const std::vecto
 		{
 			it->entries.push_back(marking);
 		}
+
+		auto output_it = std::find_if(output_buckets.begin(), output_buckets.end(), [&](const discovered_output_markings_bucket& bucket)
+		{
+			return same_change_source(bucket.source, source)
+				&& bucket.object_type == marking.buffer_data->object_type
+				&& bucket.object_index == marking.buffer_data->index;
+		});
+		if (output_it == output_buckets.end())
+		{
+			discovered_output_markings_bucket bucket;
+			bucket.source = source;
+			bucket.object_type = marking.buffer_data->object_type;
+			bucket.object_index = marking.buffer_data->index;
+			bucket.entries.push_back(marking);
+			output_buckets.push_back(std::move(bucket));
+		}
+		else
+		{
+			output_it->entries.push_back(marking);
+		}
 	}
 
 	lava::lock_guard lock(sync_mutex);
@@ -284,6 +313,12 @@ static void merge_discovered_markings(lava_file_reader& reader, const std::vecto
 	{
 		VkMarkedOffsetsARM* markings = build_marked_offsets(bucket.entries);
 		merge_rewrite_markings(reader.parent->global_rewrite_queue, bucket.source, markings);
+		free_marked_offsets(markings);
+	}
+	for (const discovered_output_markings_bucket& bucket : output_buckets)
+	{
+		VkMarkedOffsetsARM* markings = build_marked_offsets(bucket.entries);
+		merge_rewrite_markings(reader.parent->global_output_rewrite_queue, bucket.source, markings, bucket.object_type, bucket.object_index);
 		free_marked_offsets(markings);
 	}
 }

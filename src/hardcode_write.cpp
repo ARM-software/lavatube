@@ -1177,6 +1177,76 @@ static void trace_touch_buffer_by_address(lava_file_writer& writer, trackedcmdbu
 	cmdbuf_data->touch(buffer_data, offset, touch_size, __LINE__);
 }
 
+static bool trace_read_buffer_by_address(lava_file_writer& writer, VkDeviceAddress address, void* dst, VkDeviceSize size, const char* label)
+{
+	if (address == 0 || size == 0) return false;
+	VkDeviceSize offset = 0;
+	trackedbuffer* buffer_data = find_buffer_by_device_address(writer.parent->records, address, size, offset);
+	if (!buffer_data)
+	{
+		DLOG("Unable to read %s address 0x%llx (size=%llu): no backing buffer found",
+			label, (unsigned long long)address, (unsigned long long)size);
+		return false;
+	}
+	if (offset + size > buffer_data->size)
+	{
+		DLOG("Unable to read %s address 0x%llx (size=%llu): exceeds buffer size %llu",
+			label, (unsigned long long)address, (unsigned long long)size, (unsigned long long)buffer_data->size);
+		return false;
+	}
+
+	auto* memory_data = writer.parent->records.VkDeviceMemory_index.at(buffer_data->backing);
+	if (!memory_data || !(memory_data->propertyFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT))
+	{
+		DLOG("Unable to read %s address 0x%llx (size=%llu): backing memory is not host visible",
+			label, (unsigned long long)address, (unsigned long long)size);
+		return false;
+	}
+
+	const VkDeviceSize memory_offset = buffer_data->offset + offset;
+	VkDevice device = writer.device;
+	if (device == VK_NULL_HANDLE)
+	{
+		DLOG("Unable to read %s address 0x%llx (size=%llu): missing parent device",
+			label, (unsigned long long)address, (unsigned long long)size);
+		return false;
+	}
+
+	if (memory_data->ptr && memory_data->offset <= memory_offset && memory_data->offset + memory_data->size >= memory_offset + size)
+	{
+		memcpy(dst, memory_data->ptr + (memory_offset - memory_data->offset), size);
+		return true;
+	}
+
+	uint8_t* ptr = nullptr;
+	bool restore_mapping = false;
+	if (memory_data->ptr)
+	{
+		wrap_vkUnmapMemory(device, memory_data->backing);
+		restore_mapping = true;
+	}
+	VkResult result = wrap_vkMapMemory(device, buffer_data->backing, memory_offset, size, 0, (void**)&ptr);
+	if (result != VK_SUCCESS)
+	{
+		DLOG("Unable to map %s address 0x%llx (size=%llu): %s",
+			label, (unsigned long long)address, (unsigned long long)size, errorString(result));
+		if (restore_mapping)
+		{
+			result = wrap_vkMapMemory(device, memory_data->backing, memory_data->offset, memory_data->size, 0, (void**)&memory_data->ptr);
+			if (result != VK_SUCCESS) ABORT("Failed to restore persistent mapping while reading %s", label);
+		}
+		return false;
+	}
+	memcpy(dst, ptr, size);
+	wrap_vkUnmapMemory(device, buffer_data->backing);
+	if (restore_mapping)
+	{
+		result = wrap_vkMapMemory(device, memory_data->backing, memory_data->offset, memory_data->size, 0, (void**)&memory_data->ptr);
+		if (result != VK_SUCCESS) ABORT("Failed to restore persistent mapping while reading %s", label);
+	}
+	return true;
+}
+
 static void trace_post_vkCmdBuildAccelerationStructuresKHR(lava_file_writer& writer, VkCommandBuffer commandBuffer,
 	uint32_t infoCount, const VkAccelerationStructureBuildGeometryInfoKHR* pInfos,
 	const VkAccelerationStructureBuildRangeInfoKHR* const* ppBuildRangeInfos)
@@ -1380,6 +1450,33 @@ static void trace_post_vkCmdTraceRaysIndirect2KHR(lava_file_writer& writer, VkCo
 	if (!cmdbuf_data) return;
 	cmdbuf_data->self_test();
 	trace_touch_buffer_by_address(writer, cmdbuf_data, indirectDeviceAddress, sizeof(VkTraceRaysIndirectCommand2KHR), "indirect2 trace rays");
+
+	VkTraceRaysIndirectCommand2KHR indirect = {};
+	if (!trace_read_buffer_by_address(writer, indirectDeviceAddress, &indirect, sizeof(indirect), "indirect2 trace rays")) return;
+
+	VkStridedDeviceAddressRegionKHR raygen = {};
+	raygen.deviceAddress = indirect.raygenShaderRecordAddress;
+	raygen.size = indirect.raygenShaderRecordSize;
+	raygen.stride = indirect.raygenShaderRecordSize;
+	trace_touch_sbt_region(writer, cmdbuf_data, &raygen, "raygen");
+
+	VkStridedDeviceAddressRegionKHR miss = {};
+	miss.deviceAddress = indirect.missShaderBindingTableAddress;
+	miss.size = indirect.missShaderBindingTableSize;
+	miss.stride = indirect.missShaderBindingTableStride;
+	trace_touch_sbt_region(writer, cmdbuf_data, &miss, "miss");
+
+	VkStridedDeviceAddressRegionKHR hit = {};
+	hit.deviceAddress = indirect.hitShaderBindingTableAddress;
+	hit.size = indirect.hitShaderBindingTableSize;
+	hit.stride = indirect.hitShaderBindingTableStride;
+	trace_touch_sbt_region(writer, cmdbuf_data, &hit, "hit");
+
+	VkStridedDeviceAddressRegionKHR callable = {};
+	callable.deviceAddress = indirect.callableShaderBindingTableAddress;
+	callable.size = indirect.callableShaderBindingTableSize;
+	callable.stride = indirect.callableShaderBindingTableStride;
+	trace_touch_sbt_region(writer, cmdbuf_data, &callable, "callable");
 }
 
 static void trace_post_vkCmdPushDescriptorSetWithTemplate(lava_file_writer& writer, VkCommandBuffer commandBuffer, VkDescriptorUpdateTemplate descriptorUpdateTemplate, VkPipelineLayout layout, uint32_t set, const void* pData)

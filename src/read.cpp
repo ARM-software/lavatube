@@ -20,12 +20,22 @@ bool same_change_source(const change_source& a, const change_source& b)
 	return a.call == b.call && a.frame == b.frame && a.thread == b.thread && a.call_id == b.call_id;
 }
 
+static bool same_rewrite_target(const address_rewrite& entry, VkObjectType object_type, uint32_t object_index)
+{
+	return entry.object_type == object_type && entry.object_index == object_index;
+}
+
 void merge_rewrite_markings(std::list<address_rewrite>& queue, const change_source& source, const VkMarkedOffsetsARM* markings)
+{
+	merge_rewrite_markings(queue, source, markings, VK_OBJECT_TYPE_UNKNOWN, CONTAINER_NULL_VALUE);
+}
+
+void merge_rewrite_markings(std::list<address_rewrite>& queue, const change_source& source, const VkMarkedOffsetsARM* markings, VkObjectType object_type, uint32_t object_index)
 {
 	assert(markings);
 	auto it = std::find_if(queue.begin(), queue.end(), [&](const address_rewrite& entry)
 	{
-		return same_change_source(entry.source, source);
+		return same_change_source(entry.source, source) && same_rewrite_target(entry, object_type, object_index);
 	});
 	if (it == queue.end())
 	{
@@ -33,6 +43,8 @@ void merge_rewrite_markings(std::list<address_rewrite>& queue, const change_sour
 		entry.markings = clone_marked_offsets(markings);
 		normalize_marked_offsets(entry.markings);
 		entry.source = source;
+		entry.object_type = object_type;
+		entry.object_index = object_index;
 		queue.push_back(entry);
 		return;
 	}
