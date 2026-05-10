@@ -560,8 +560,8 @@ private:
 class memory_pool
 {
 public:
-	/// Create a 4mb size memory pool
-	memory_pool(unsigned mbs = 4) : pool(mbs * 1024 * 1024) {}
+	/// Create a moderately sized memory pool
+	memory_pool(unsigned mbs = 32) : pool(mbs * 1024 * 1024) {}
 
 	template<typename T> __attribute__((alloc_size(2, 3)))
 	inline T* allocate(size_t _count, const size_t _size = sizeof(T))
@@ -569,6 +569,7 @@ public:
 		if (_count == 0) return nullptr;
 		const size_t alignment = std::max<size_t>(alignof(T), 2);
 		const size_t allocsize = _count * sizeof(T);
+		if (index + allocsize > pool.size()) return nullptr;
 		size_t space = pool.size() - (index + allocsize);
 		void* retval = pool.data() + index;
 		if (!std::align(alignment, allocsize, retval, space))
@@ -584,6 +585,7 @@ public:
 	{
 		if (_count == 0) return nullptr;
 		const size_t allocsize = _count * sizeof(T);
+		if (index + allocsize > pool.size()) return nullptr;
 		size_t space = pool.size() - (index + allocsize);
 		void* retval = pool.data() + index;
 		if (!std::align(alignment, allocsize, retval, space))
