@@ -4,12 +4,15 @@
 #include <unordered_set>
 #include <unordered_map>
 #include <cstring>
+#include <cstdlib>
+#include <cstddef>
 #include "spirv-simulator/framework/spirv_simulator.hpp"
 
 #include "execute_commands.h"
 
 #include "read_auto.h"
 #include "read.h"
+#include "markings.h"
 #include "util_auto.h"
 #include "suballocator.h"
 
@@ -117,6 +120,7 @@ struct mapped_address_range
 {
 	std::byte* ptr = nullptr;
 	VkDeviceSize size = 0;
+	VkDeviceSize buffer_offset = 0;
 	trackedbuffer* buffer_data = nullptr;
 };
 
@@ -149,6 +153,7 @@ static bool map_device_address_range(const lava_file_reader& reader, const track
 	std::byte* base = (std::byte*)loc.mapped;
 	out.ptr = base + offset;
 	out.size = size;
+	out.buffer_offset = offset;
 	out.buffer_data = buffer_data;
 	return true;
 }
@@ -195,8 +200,96 @@ static int find_raytracing_group_index(const trackedpipeline& pipeline_data, con
 	return -1;
 }
 
+struct discovered_buffer_marking
+{
+	trackedbuffer* buffer_data = nullptr;
+	VkDeviceSize offset = 0;
+	VkDeviceSize size = 0;
+	VkMarkingTypeARM type = (VkMarkingTypeARM)0;
+	VkMarkingSubTypeARM subtype{};
+};
+
+struct discovered_markings_bucket
+{
+	change_source source;
+	std::vector<discovered_buffer_marking> entries;
+};
+
+static VkShaderGroupShaderKHR get_shader_group_handle_marking_subtype(const trackedpipeline& pipeline_data, uint32_t group_index)
+{
+	if (group_index >= pipeline_data.raytracing_groups.size()) return VK_SHADER_GROUP_SHADER_GENERAL_KHR;
+	const raytracing_group& group = pipeline_data.raytracing_groups[group_index];
+	if (group.type == VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_KHR) return VK_SHADER_GROUP_SHADER_GENERAL_KHR;
+	if (group.closest_hit_shader != VK_SHADER_UNUSED_KHR) return VK_SHADER_GROUP_SHADER_CLOSEST_HIT_KHR;
+	if (group.any_hit_shader != VK_SHADER_UNUSED_KHR) return VK_SHADER_GROUP_SHADER_ANY_HIT_KHR;
+	if (group.intersection_shader != VK_SHADER_UNUSED_KHR) return VK_SHADER_GROUP_SHADER_INTERSECTION_KHR;
+	return VK_SHADER_GROUP_SHADER_GENERAL_KHR;
+}
+
+static VkMarkedOffsetsARM* build_marked_offsets(const std::vector<discovered_buffer_marking>& entries)
+{
+	assert(!entries.empty());
+	VkMarkedOffsetsARM* markings = (VkMarkedOffsetsARM*)malloc(sizeof(VkMarkedOffsetsARM));
+	if (!markings) ABORT("Failed to allocate discovered VkMarkedOffsetsARM");
+	memset(markings, 0, sizeof(*markings));
+	markings->sType = VK_STRUCTURE_TYPE_MARKED_OFFSETS_ARM;
+	markings->count = entries.size();
+	VkMarkingTypeARM* types = (VkMarkingTypeARM*)malloc(sizeof(VkMarkingTypeARM) * markings->count);
+	VkMarkingSubTypeARM* subtypes = (VkMarkingSubTypeARM*)malloc(sizeof(VkMarkingSubTypeARM) * markings->count);
+	VkDeviceSize* offsets = (VkDeviceSize*)malloc(sizeof(VkDeviceSize) * markings->count);
+	if (!types || !subtypes || !offsets) ABORT("Failed to allocate discovered VkMarkedOffsetsARM arrays");
+	markings->pMarkingTypes = types;
+	markings->pSubTypes = subtypes;
+	markings->pOffsets = offsets;
+
+	for (uint32_t i = 0; i < markings->count; i++)
+	{
+		types[i] = entries[i].type;
+		subtypes[i] = entries[i].subtype;
+		offsets[i] = entries[i].offset;
+	}
+	normalize_marked_offsets(markings);
+	return markings;
+}
+
+static void merge_discovered_markings(lava_file_reader& reader, const std::vector<discovered_buffer_marking>& discovered)
+{
+	if (!reader.parent->validate || reader.write_output || reader.parent->pass != 0 || discovered.empty()) return;
+
+	std::vector<discovered_markings_bucket> buckets;
+	for (const discovered_buffer_marking& marking : discovered)
+	{
+		assert(marking.buffer_data);
+		assert(marking.size > 0);
+		const change_source source = marking.buffer_data->source.get_source(marking.offset, marking.size);
+		auto it = std::find_if(buckets.begin(), buckets.end(), [&](const discovered_markings_bucket& bucket)
+		{
+			return same_change_source(bucket.source, source);
+		});
+		if (it == buckets.end())
+		{
+			discovered_markings_bucket bucket;
+			bucket.source = source;
+			bucket.entries.push_back(marking);
+			buckets.push_back(std::move(bucket));
+		}
+		else
+		{
+			it->entries.push_back(marking);
+		}
+	}
+
+	lava::lock_guard lock(sync_mutex);
+	for (const discovered_markings_bucket& bucket : buckets)
+	{
+		VkMarkedOffsetsARM* markings = build_marked_offsets(bucket.entries);
+		merge_rewrite_markings(reader.parent->global_rewrite_queue, bucket.source, markings);
+		free_marked_offsets(markings);
+	}
+}
+
 static void collect_stages_from_sbt_region(const lava_file_reader& reader, const trackeddevice& device_data, const trackedpipeline& pipeline_data,
-	const VkStridedDeviceAddressRegionKHR& region, const char* label, std::unordered_set<uint32_t>& stages)
+	const VkStridedDeviceAddressRegionKHR& region, const char* label, std::unordered_set<uint32_t>& stages, std::vector<discovered_buffer_marking>* discovered = nullptr)
 {
 	if (region.deviceAddress == 0 || region.size == 0) return;
 	if (pipeline_data.raytracing_group_handle_size == 0 || pipeline_data.raytracing_group_handles.empty()) return;
@@ -214,7 +307,18 @@ static void collect_stages_from_sbt_region(const lava_file_reader& reader, const
 	{
 		const std::byte* handle_ptr = mapping.ptr + (size_t)i * stride;
 		const int group_index = find_raytracing_group_index(pipeline_data, handle_ptr);
-		if (group_index >= 0) add_raytracing_group_stages(pipeline_data, (uint32_t)group_index, stages);
+		if (group_index < 0) continue;
+		add_raytracing_group_stages(pipeline_data, (uint32_t)group_index, stages);
+		if (!discovered) continue;
+		VkMarkingSubTypeARM subtype{};
+		subtype.shaderGroupType = get_shader_group_handle_marking_subtype(pipeline_data, (uint32_t)group_index);
+		discovered->push_back({
+			.buffer_data = mapping.buffer_data,
+			.offset = mapping.buffer_offset + (VkDeviceSize)i * stride,
+			.size = pipeline_data.raytracing_group_handle_size,
+			.type = VK_MARKING_TYPE_SHADER_GROUP_HANDLE_ARM,
+			.subtype = subtype,
+		});
 	}
 }
 
@@ -400,6 +504,7 @@ bool execute_commands(lava_file_reader& reader, const trackeddevice& device_data
 				uint32_t width = c.data.trace_rays.width;
 				uint32_t height = c.data.trace_rays.height;
 				uint32_t depth = c.data.trace_rays.depth;
+				std::vector<discovered_buffer_marking> discovered_markings;
 
 				if (c.data.trace_rays.mode == trackedcommand::TRACE_RAYS_INDIRECT)
 				{
@@ -422,18 +527,60 @@ bool execute_commands(lava_file_reader& reader, const trackeddevice& device_data
 					if (map_device_address_range(reader, device_data, c.data.trace_rays.indirect_device_address, sizeof(VkTraceRaysIndirectCommand2KHR), mapping, "indirect2"))
 					{
 						const VkTraceRaysIndirectCommand2KHR* indirect = reinterpret_cast<const VkTraceRaysIndirectCommand2KHR*>(mapping.ptr);
+						VkMarkingSubTypeARM address_subtype{};
+						address_subtype.deviceAddressType = VK_DEVICE_ADDRESS_TYPE_BUFFER_ARM;
 						raygen.deviceAddress = indirect->raygenShaderRecordAddress;
 						raygen.size = indirect->raygenShaderRecordSize;
 						raygen.stride = indirect->raygenShaderRecordSize;
+						if (indirect->raygenShaderRecordAddress != 0)
+						{
+							discovered_markings.push_back({
+								.buffer_data = mapping.buffer_data,
+								.offset = mapping.buffer_offset + offsetof(VkTraceRaysIndirectCommand2KHR, raygenShaderRecordAddress),
+								.size = sizeof(VkDeviceAddress),
+								.type = VK_MARKING_TYPE_DEVICE_ADDRESS_ARM,
+								.subtype = address_subtype,
+							});
+						}
 						miss.deviceAddress = indirect->missShaderBindingTableAddress;
 						miss.size = indirect->missShaderBindingTableSize;
 						miss.stride = indirect->missShaderBindingTableStride;
+						if (indirect->missShaderBindingTableAddress != 0)
+						{
+							discovered_markings.push_back({
+								.buffer_data = mapping.buffer_data,
+								.offset = mapping.buffer_offset + offsetof(VkTraceRaysIndirectCommand2KHR, missShaderBindingTableAddress),
+								.size = sizeof(VkDeviceAddress),
+								.type = VK_MARKING_TYPE_DEVICE_ADDRESS_ARM,
+								.subtype = address_subtype,
+							});
+						}
 						hit.deviceAddress = indirect->hitShaderBindingTableAddress;
 						hit.size = indirect->hitShaderBindingTableSize;
 						hit.stride = indirect->hitShaderBindingTableStride;
+						if (indirect->hitShaderBindingTableAddress != 0)
+						{
+							discovered_markings.push_back({
+								.buffer_data = mapping.buffer_data,
+								.offset = mapping.buffer_offset + offsetof(VkTraceRaysIndirectCommand2KHR, hitShaderBindingTableAddress),
+								.size = sizeof(VkDeviceAddress),
+								.type = VK_MARKING_TYPE_DEVICE_ADDRESS_ARM,
+								.subtype = address_subtype,
+							});
+						}
 						callable.deviceAddress = indirect->callableShaderBindingTableAddress;
 						callable.size = indirect->callableShaderBindingTableSize;
 						callable.stride = indirect->callableShaderBindingTableStride;
+						if (indirect->callableShaderBindingTableAddress != 0)
+						{
+							discovered_markings.push_back({
+								.buffer_data = mapping.buffer_data,
+								.offset = mapping.buffer_offset + offsetof(VkTraceRaysIndirectCommand2KHR, callableShaderBindingTableAddress),
+								.size = sizeof(VkDeviceAddress),
+								.type = VK_MARKING_TYPE_DEVICE_ADDRESS_ARM,
+								.subtype = address_subtype,
+							});
+						}
 						width = indirect->width;
 						height = indirect->height;
 						depth = indirect->depth;
@@ -445,10 +592,11 @@ bool execute_commands(lava_file_reader& reader, const trackeddevice& device_data
 				}
 
 				std::unordered_set<uint32_t> stages_to_run;
-				collect_stages_from_sbt_region(reader, device_data, pipeline_data, raygen, "raygen", stages_to_run);
-				collect_stages_from_sbt_region(reader, device_data, pipeline_data, miss, "miss", stages_to_run);
-				collect_stages_from_sbt_region(reader, device_data, pipeline_data, hit, "hit", stages_to_run);
-				collect_stages_from_sbt_region(reader, device_data, pipeline_data, callable, "callable", stages_to_run);
+				collect_stages_from_sbt_region(reader, device_data, pipeline_data, raygen, "raygen", stages_to_run, &discovered_markings);
+				collect_stages_from_sbt_region(reader, device_data, pipeline_data, miss, "miss", stages_to_run, &discovered_markings);
+				collect_stages_from_sbt_region(reader, device_data, pipeline_data, hit, "hit", stages_to_run, &discovered_markings);
+				collect_stages_from_sbt_region(reader, device_data, pipeline_data, callable, "callable", stages_to_run, &discovered_markings);
+				merge_discovered_markings(reader, discovered_markings);
 
 				if (stages_to_run.empty())
 				{

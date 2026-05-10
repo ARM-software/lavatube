@@ -1,5 +1,6 @@
 #include <fstream>
 #include <errno.h>
+#include <algorithm>
 
 #include "lavatube.h"
 #include "read.h"
@@ -9,9 +10,37 @@
 #include "read_auto.h"
 #include "util_auto.h"
 #include "suballocator.h"
+#include "markings.h"
 
 /// Mutex to enforce additional external synchronization
 lava::mutex sync_mutex;
+
+bool same_change_source(const change_source& a, const change_source& b)
+{
+	return a.call == b.call && a.frame == b.frame && a.thread == b.thread && a.call_id == b.call_id;
+}
+
+void merge_rewrite_markings(std::list<address_rewrite>& queue, const change_source& source, const VkMarkedOffsetsARM* markings)
+{
+	assert(markings);
+	auto it = std::find_if(queue.begin(), queue.end(), [&](const address_rewrite& entry)
+	{
+		return same_change_source(entry.source, source);
+	});
+	if (it == queue.end())
+	{
+		address_rewrite entry;
+		entry.markings = clone_marked_offsets(markings);
+		normalize_marked_offsets(entry.markings);
+		entry.source = source;
+		queue.push_back(entry);
+		return;
+	}
+
+	VkMarkedOffsetsARM* merged = merge_marked_offsets(it->markings, markings);
+	free_marked_offsets(it->markings);
+	it->markings = merged;
+}
 
 static void load_requested_extensions(const Json::Value& root, bool& has_extensions, std::vector<std::string>& extensions)
 {

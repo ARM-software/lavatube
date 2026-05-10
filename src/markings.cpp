@@ -79,6 +79,71 @@ void sort_marked_offsets(VkMarkedOffsetsARM* markings)
 	memcpy((void*)markings->pSubTypes, subs.data(), sizeof(VkMarkingSubTypeARM) * markings->count);
 }
 
+void normalize_marked_offsets(VkMarkedOffsetsARM* markings)
+{
+	if (!markings) return;
+	sort_marked_offsets(markings);
+	if (markings->count <= 1) return;
+	assert(markings->pOffsets);
+	assert(markings->pMarkingTypes);
+	assert(markings->pSubTypes);
+
+	uint32_t out = 1;
+	for (uint32_t i = 1; i < markings->count; i++)
+	{
+		const bool same_offset = markings->pOffsets[out - 1] == markings->pOffsets[i];
+		const bool same_type = markings->pMarkingTypes[out - 1] == markings->pMarkingTypes[i];
+		const bool same_subtype = memcmp(&markings->pSubTypes[out - 1], &markings->pSubTypes[i], sizeof(VkMarkingSubTypeARM)) == 0;
+		if (same_offset && same_type && same_subtype) continue;
+		if (out != i)
+		{
+			((VkDeviceSize*)markings->pOffsets)[out] = markings->pOffsets[i];
+			((VkMarkingTypeARM*)markings->pMarkingTypes)[out] = markings->pMarkingTypes[i];
+			((VkMarkingSubTypeARM*)markings->pSubTypes)[out] = markings->pSubTypes[i];
+		}
+		out++;
+	}
+	markings->count = out;
+}
+
+VkMarkedOffsetsARM* merge_marked_offsets(const VkMarkedOffsetsARM* a, const VkMarkedOffsetsARM* b)
+{
+	if (!a) return clone_marked_offsets(b);
+	if (!b) return clone_marked_offsets(a);
+	assert(a->sType == VK_STRUCTURE_TYPE_MARKED_OFFSETS_ARM);
+	assert(b->sType == VK_STRUCTURE_TYPE_MARKED_OFFSETS_ARM);
+
+	VkMarkedOffsetsARM* dst = (VkMarkedOffsetsARM*)malloc(sizeof(VkMarkedOffsetsARM));
+	if (!dst) ABORT("Failed to allocate merged VkMarkedOffsetsARM");
+	memset(dst, 0, sizeof(*dst));
+	dst->sType = VK_STRUCTURE_TYPE_MARKED_OFFSETS_ARM;
+	dst->pNext = nullptr;
+	dst->count = a->count + b->count;
+	if (dst->count == 0) return dst;
+
+	dst->pMarkingTypes = (VkMarkingTypeARM*)malloc(sizeof(VkMarkingTypeARM) * dst->count);
+	dst->pSubTypes = (VkMarkingSubTypeARM*)malloc(sizeof(VkMarkingSubTypeARM) * dst->count);
+	dst->pOffsets = (VkDeviceSize*)malloc(sizeof(VkDeviceSize) * dst->count);
+	if (!dst->pMarkingTypes || !dst->pSubTypes || !dst->pOffsets) ABORT("Failed to allocate merged VkMarkedOffsetsARM arrays");
+
+	if (a->count > 0)
+	{
+		assert(a->pMarkingTypes && a->pSubTypes && a->pOffsets);
+		memcpy((void*)dst->pMarkingTypes, a->pMarkingTypes, sizeof(VkMarkingTypeARM) * a->count);
+		memcpy((void*)dst->pSubTypes, a->pSubTypes, sizeof(VkMarkingSubTypeARM) * a->count);
+		memcpy((void*)dst->pOffsets, a->pOffsets, sizeof(VkDeviceSize) * a->count);
+	}
+	if (b->count > 0)
+	{
+		assert(b->pMarkingTypes && b->pSubTypes && b->pOffsets);
+		memcpy((void*)(dst->pMarkingTypes + a->count), b->pMarkingTypes, sizeof(VkMarkingTypeARM) * b->count);
+		memcpy((void*)(dst->pSubTypes + a->count), b->pSubTypes, sizeof(VkMarkingSubTypeARM) * b->count);
+		memcpy((void*)(dst->pOffsets + a->count), b->pOffsets, sizeof(VkDeviceSize) * b->count);
+	}
+	normalize_marked_offsets(dst);
+	return dst;
+}
+
 void free_marked_offsets(VkMarkedOffsetsARM* markings)
 {
 	if (!markings) return;
@@ -108,4 +173,23 @@ marked_offsets_difference compare_marked_offsets(const VkMarkedOffsetsARM* a, co
 	if (memcmp(a->pSubTypes, b->pSubTypes, subs_bytes) != 0) return marked_offsets_difference::sub_types;
 	if (memcmp(a->pOffsets, b->pOffsets, offsets_bytes) != 0) return marked_offsets_difference::offsets;
 	return marked_offsets_difference::none;
+}
+
+const char* marked_offsets_difference_string(marked_offsets_difference diff)
+{
+	switch (diff)
+	{
+	case marked_offsets_difference::none: return "none";
+	case marked_offsets_difference::missing_left: return "missing_left";
+	case marked_offsets_difference::missing_right: return "missing_right";
+	case marked_offsets_difference::s_type: return "s_type";
+	case marked_offsets_difference::count: return "count";
+	case marked_offsets_difference::marking_types_missing: return "marking_types_missing";
+	case marked_offsets_difference::sub_types_missing: return "sub_types_missing";
+	case marked_offsets_difference::offsets_missing: return "offsets_missing";
+	case marked_offsets_difference::marking_types: return "marking_types";
+	case marked_offsets_difference::sub_types: return "sub_types";
+	case marked_offsets_difference::offsets: return "offsets";
+	default: return "unknown";
+	}
 }

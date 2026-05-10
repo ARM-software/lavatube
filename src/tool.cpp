@@ -22,6 +22,7 @@
 #include "json_helpers.h"
 #include "replay_callbacks.h"
 #include "replay_trace_adapter.h"
+#include "markings.h"
 
 extern lava::mutex sync_mutex;
 
@@ -128,6 +129,101 @@ static void sync_output_vkGetDeviceQueue(callback_context&, VkDevice, uint32_t, 
 static void sync_output_vkGetDeviceQueue2(callback_context&, VkDevice, const VkDeviceQueueInfo2*, VkQueue* pQueue)
 {
 	if (pQueue && *pQueue != VK_NULL_HANDLE) sync_output_queue_metadata(*pQueue);
+}
+
+static std::list<address_rewrite>::iterator find_output_rewrite_entry(lava_file_reader& reader)
+{
+	auto same_output_phase_source = [&](const address_rewrite& entry)
+	{
+		if (entry.source.thread != reader.current.thread || entry.source.frame != reader.current.frame || entry.source.call_id != reader.current.call_id) return false;
+		return entry.source.call == reader.current.call || entry.source.call == reader.current.call + 1;
+	};
+	return std::find_if(reader.rewrite_queue.begin(), reader.rewrite_queue.end(), same_output_phase_source);
+}
+
+static VkBaseOutStructure* build_flush_markings_chain(const VkMappedMemoryRange& original, VkMarkedOffsetsARM& desired, VkFlushRangesFlagsARM& flags_copy)
+{
+	VkBaseOutStructure* pNext = (VkBaseOutStructure*)original.pNext;
+	if (!pNext)
+	{
+		desired.pNext = nullptr;
+		return (VkBaseOutStructure*)&desired;
+	}
+	if (pNext->sType == VK_STRUCTURE_TYPE_MARKED_OFFSETS_ARM)
+	{
+		desired.pNext = pNext->pNext;
+		return (VkBaseOutStructure*)&desired;
+	}
+	if (pNext->sType == VK_STRUCTURE_TYPE_FLUSH_RANGES_FLAGS_ARM)
+	{
+		const VkFlushRangesFlagsARM* flags = (const VkFlushRangesFlagsARM*)pNext;
+		flags_copy = *flags;
+		VkBaseOutStructure* next = (VkBaseOutStructure*)flags->pNext;
+		if (!next)
+		{
+			desired.pNext = nullptr;
+			flags_copy.pNext = (VkBaseOutStructure*)&desired;
+			return (VkBaseOutStructure*)&flags_copy;
+		}
+		if (next->sType == VK_STRUCTURE_TYPE_MARKED_OFFSETS_ARM)
+		{
+			desired.pNext = next->pNext;
+			flags_copy.pNext = (VkBaseOutStructure*)&desired;
+			return (VkBaseOutStructure*)&flags_copy;
+		}
+		desired.pNext = next;
+		flags_copy.pNext = (VkBaseOutStructure*)&desired;
+		return (VkBaseOutStructure*)&flags_copy;
+	}
+	ABORT("Unsupported VkMappedMemoryRange pNext chain while injecting simulated markings");
+}
+
+static void tool_write_vkFlushMappedMemoryRanges(callback_context& cb, VkDevice device, uint32_t memoryRangeCount, const VkMappedMemoryRange* pMemoryRanges)
+{
+	auto it = find_output_rewrite_entry(cb.reader);
+	if (it == cb.reader.rewrite_queue.end())
+	{
+		prepare_trace_callback(cb);
+		(void)trace_vkFlushMappedMemoryRanges(device, memoryRangeCount, pMemoryRanges);
+		return;
+	}
+
+	if (!pMemoryRanges || memoryRangeCount == 0) ABORT("Need a VkMappedMemoryRange to inject simulated markings for %s", describe_change_source(cb.reader.current).c_str());
+	if (memoryRangeCount != 1) ABORT("Simulated markings injection for vkFlushMappedMemoryRanges currently only supports a single range");
+
+	VkMarkedOffsetsARM* desired = clone_marked_offsets(it->markings);
+	normalize_marked_offsets(desired);
+
+	const VkMappedMemoryRange& original = pMemoryRanges[0];
+	const VkMarkedOffsetsARM* existing = (const VkMarkedOffsetsARM*)find_extension(&original, VK_STRUCTURE_TYPE_MARKED_OFFSETS_ARM);
+	VkMarkedOffsetsARM* existing_normalized = clone_marked_offsets(existing);
+	normalize_marked_offsets(existing_normalized);
+	const marked_offsets_difference diff = compare_marked_offsets(existing_normalized, desired);
+
+	const VkMappedMemoryRange* ranges_to_write = pMemoryRanges;
+	VkMappedMemoryRange patched_range = original;
+	VkFlushRangesFlagsARM flags_copy{};
+	if (diff != marked_offsets_difference::none)
+	{
+		if (existing)
+		{
+			ILOG("Replacing VkMarkedOffsetsARM for %s (%s)", describe_change_source(cb.reader.current).c_str(), marked_offsets_difference_string(diff));
+		}
+		else
+		{
+			ILOG("Injecting VkMarkedOffsetsARM for %s (%u markings)", describe_change_source(cb.reader.current).c_str(), (unsigned)desired->count);
+		}
+		patched_range.pNext = build_flush_markings_chain(original, *desired, flags_copy);
+		ranges_to_write = &patched_range;
+	}
+
+	prepare_trace_callback(cb);
+	(void)trace_vkFlushMappedMemoryRanges(device, memoryRangeCount, ranges_to_write);
+
+	free_marked_offsets(existing_normalized);
+	free_marked_offsets(desired);
+	free_marked_offsets(it->markings);
+	cb.reader.rewrite_queue.erase(it);
 }
 
 // Utility funcs
@@ -585,7 +681,7 @@ int main(int argc, char **argv)
 		replayer.set_frames(start, end);
 		replayer.init(filename_input);
 
-		add_callbacks_for_first_round(simulate, filename_output.empty());
+		add_callbacks_for_first_round(simulate, simulate);
 
 		for (unsigned i = 0; i < replayer.threads.size(); i++)
 		{
@@ -662,6 +758,15 @@ int main(int argc, char **argv)
 		{
 			replayer.threads[i].join();
 		}
+		{
+			lava::lock_guard lock(sync_mutex);
+			if (!replayer.global_rewrite_queue.empty())
+			{
+				const address_rewrite& missing = replayer.global_rewrite_queue.front();
+				DIE("Missing serialized memory markings for %s (%u discovered markings left unmatched)",
+					describe_change_source(missing.source).c_str(), (unsigned)missing.markings->count);
+			}
+		}
 
 		if (dump_host_write_stats) dump_host_write_stats_report("pass2");
 		reset_for_tools();
@@ -676,6 +781,17 @@ int main(int argc, char **argv)
 		replayer.validate = false;
 		replayer.init(filename_input);
 		replayer.set_frames(start, end);
+		if (simulate)
+		{
+			for (const auto& v : rewrite_queue_copy)
+			{
+				replayer.file_reader(v.source.thread).rewrite_queue.push_back(v);
+			}
+			for (unsigned i = 0; i < replayer.threads.size(); i++)
+			{
+				replayer.file_reader(i).rewrite_queue.sort(rewrite_call_less);
+			}
+		}
 
 		lava_writer& writer = lava_writer::instance();
 		writer.run = false;
@@ -691,6 +807,8 @@ int main(int argc, char **argv)
 		vkGetDeviceQueue_callbacks.push_back(replay_trace_callback_with_pre<trace_vkGetDeviceQueue, sync_output_vkGetDeviceQueue>::call);
 		vkGetDeviceQueue2_callbacks.clear();
 		vkGetDeviceQueue2_callbacks.push_back(replay_trace_callback_with_pre<trace_vkGetDeviceQueue2, sync_output_vkGetDeviceQueue2>::call);
+		vkFlushMappedMemoryRanges_callbacks.clear();
+		vkFlushMappedMemoryRanges_callbacks.push_back(tool_write_vkFlushMappedMemoryRanges);
 		vkBindBufferMemory2_callbacks.clear();
 		vkBindBufferMemory2_callbacks.push_back(replay_trace_callback_with_pre<trace_vkBindBufferMemory2, sync_output_vkBindBufferMemory2>::call);
 		vkBindBufferMemory2KHR_callbacks.clear();
@@ -712,6 +830,19 @@ int main(int argc, char **argv)
 		for (unsigned i = 0; i < replayer.threads.size(); i++)
 		{
 			replayer.threads[i].join();
+		}
+		if (simulate)
+		{
+			for (unsigned i = 0; i < replayer.threads.size(); i++)
+			{
+				lava_file_reader& t = replayer.file_reader(i);
+				if (!t.rewrite_queue.empty())
+				{
+					const address_rewrite& missing = t.rewrite_queue.front();
+					DIE("Missing output injection of simulated memory markings for %s (%u discovered markings left unmatched)",
+						describe_change_source(missing.source).c_str(), (unsigned)missing.markings->count);
+				}
+			}
 		}
 
 		write_output = false;

@@ -640,6 +640,18 @@ add_lavatube_test(pack_test_7_markings
 		-DOUTPUT_TRACE=${CMAKE_CURRENT_BINARY_DIR}/tmp_markings.vk
 		-P ${PROJECT_SOURCE_DIR}/tests/packtool_markings_diff.cmake)
 set_tests_properties(pack_test_7_markings PROPERTIES FIXTURES_REQUIRED raytracing_indirect_noop)
+add_lavatube_test(pack_test_7_markings_simulate
+	COMMAND ${CMAKE_COMMAND}
+		-DSIMULATE=ON
+		-DLAVA_TOOL=$<TARGET_FILE:lava-tool>
+		-DPACKTOOL=$<TARGET_FILE:packtool>
+		-DINPUT_TRACE=${CMAKE_CURRENT_BINARY_DIR}/vulkan_raytracing_indirect_noop.vk
+		-DOUTPUT_TRACE=${CMAKE_CURRENT_BINARY_DIR}/tmp_markings_simulate.vk
+		-P ${PROJECT_SOURCE_DIR}/tests/packtool_markings_diff.cmake)
+set_tests_properties(pack_test_7_markings_simulate PROPERTIES FIXTURES_REQUIRED raytracing_indirect_noop)
+add_lavatube_test(trace_test_raytracing_indirect_noop_simulate
+	COMMAND lava-tool -S ${CMAKE_CURRENT_BINARY_DIR}/vulkan_raytracing_indirect_noop.vk)
+set_tests_properties(trace_test_raytracing_indirect_noop_simulate PROPERTIES FIXTURES_REQUIRED raytracing_indirect_noop)
 install(TARGETS packtool RUNTIME)
 
 # --- layer tests ---
@@ -656,6 +668,13 @@ function(layer_test test_name test_exe)
 	set_tests_properties(layer_test_${ARGV0}_raw PROPERTIES
 		FIXTURES_SETUP ${ARGV0}
 		ENVIRONMENT "LAVATUBE_VIRTUAL_QUEUES=1;LAVATUBE_DELETE_EMPTY_TRACE=1;LAVATUBE_DESTINATION=vulkan_${ARGV0}_raw;VK_LAYER_PATH=${CMAKE_CURRENT_BINARY_DIR}/implicit_layer.d;VK_INSTANCE_LAYERS=VK_LAYER_ARM_lavatube;LD_LIBRARY_PATH=${CMAKE_CURRENT_BINARY_DIR}/implicit_layer.d"
+		SKIP_RETURN_CODE 77
+	)
+
+	add_lavatube_test(layer_test_${ARGV0}_explicit COMMAND vulkan_${ARGV1} --gpu --no-trace-helpers ${ARGV2} ${ARGV3} ${ARGV4} ${ARGV5} ${ARGV6} ${ARGV7})
+	set_tests_properties(layer_test_${ARGV0}_explicit PROPERTIES
+		FIXTURES_SETUP ${ARGV0}
+		ENVIRONMENT "LAVATUBE_VIRTUAL_QUEUES=1;LAVATUBE_DELETE_EMPTY_TRACE=1;LAVATUBE_DESTINATION=vulkan_${ARGV0}_explicit;VK_LAYER_PATH=${CMAKE_CURRENT_BINARY_DIR}/implicit_layer.d;VK_INSTANCE_LAYERS=VK_LAYER_ARM_lavatube;LD_LIBRARY_PATH=${CMAKE_CURRENT_BINARY_DIR}/implicit_layer.d"
 		SKIP_RETURN_CODE 77
 	)
 

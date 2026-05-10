@@ -1362,6 +1362,26 @@ static void trace_post_vkCmdTraceRaysKHR(lava_file_writer& writer, VkCommandBuff
 	trace_touch_sbt_region(writer, cmdbuf_data, pCallableShaderBindingTable, "callable");
 }
 
+static void trace_post_vkCmdTraceRaysIndirectKHR(lava_file_writer& writer, VkCommandBuffer commandBuffer,
+	const VkStridedDeviceAddressRegionKHR* pRaygenShaderBindingTable, const VkStridedDeviceAddressRegionKHR* pMissShaderBindingTable,
+	const VkStridedDeviceAddressRegionKHR* pHitShaderBindingTable, const VkStridedDeviceAddressRegionKHR* pCallableShaderBindingTable,
+	VkDeviceAddress indirectDeviceAddress)
+{
+	trace_post_vkCmdTraceRaysKHR(writer, commandBuffer,
+		pRaygenShaderBindingTable, pMissShaderBindingTable, pHitShaderBindingTable, pCallableShaderBindingTable, 0, 0, 0);
+	auto* cmdbuf_data = writer.parent->records.VkCommandBuffer_index.at(commandBuffer);
+	if (!cmdbuf_data) return;
+	trace_touch_buffer_by_address(writer, cmdbuf_data, indirectDeviceAddress, sizeof(VkTraceRaysIndirectCommandKHR), "indirect trace rays");
+}
+
+static void trace_post_vkCmdTraceRaysIndirect2KHR(lava_file_writer& writer, VkCommandBuffer commandBuffer, VkDeviceAddress indirectDeviceAddress)
+{
+	auto* cmdbuf_data = writer.parent->records.VkCommandBuffer_index.at(commandBuffer);
+	if (!cmdbuf_data) return;
+	cmdbuf_data->self_test();
+	trace_touch_buffer_by_address(writer, cmdbuf_data, indirectDeviceAddress, sizeof(VkTraceRaysIndirectCommand2KHR), "indirect2 trace rays");
+}
+
 static void trace_post_vkCmdPushDescriptorSetWithTemplate(lava_file_writer& writer, VkCommandBuffer commandBuffer, VkDescriptorUpdateTemplate descriptorUpdateTemplate, VkPipelineLayout layout, uint32_t set, const void* pData)
 {
 	handle_descriptor_update_template(writer, VK_NULL_HANDLE, descriptorUpdateTemplate, pData, true);

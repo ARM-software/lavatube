@@ -43,12 +43,14 @@
 #define MAGENTA "\x1B[35m"
 #define CYAN "\x1B[36m"
 #define RESET "\x1B[0m"
+#define GRAY "\x1B[90m"
 #define MAKEBLUE(x) BLUE x RESET
 #define MAKERED(x) RED x RESET
 #define MAKEGREEN(x) GREEN x RESET
 #define MAKEYELLOW(x) YELLOW x RESET
 #define MAKEMAGENTA(x) MAGENTA x RESET
 #define MAKECYAN(x) CYAN x RESET
+#define MAKEGRAY(x) GRAY x RESET
 
 #define likely(x)   __builtin_expect((x),1)
 #define unlikely(x) __builtin_expect((x),0)

@@ -178,6 +178,7 @@ static int usage(const char* argv0)
 	fprintf(stdout, "\t%s print <target file> <input packaged file>\n", argv0);
 	fprintf(stdout, "\t%s check <input packaged file>\n", argv0);
 	fprintf(stdout, "\t%s diff [--semantic] [--assert-sane] [--assert-markings] <input packaged file A> <input packaged file B>\n", argv0);
+	fprintf(stdout, "\t%s list-markings <input packaged file>\n", argv0);
 	return 0;
 }
 
@@ -218,7 +219,7 @@ static const char* packet_type_name(uint8_t instrtype)
 	}
 }
 
-static std::string marked_offsets_difference_string(marked_offsets_difference diff)
+static std::string packtool_marked_offsets_difference_string(marked_offsets_difference diff)
 {
 	switch (diff)
 	{
@@ -253,6 +254,96 @@ static std::string markings_location_string(const collected_markings_entry& entr
 			+ ", api call " + _to_string(entry.source.call) + ")";
 	}
 	return where;
+}
+
+static bool is_capture_flush_leftover_markings(const collected_markings_entry& entry)
+{
+	return entry.instrtype == PACKET_VULKAN_API_CALL
+		&& entry.source.call_id != UINT16_MAX
+		&& strcmp(get_function_name(entry.source.call_id), "vkFlushMappedMemoryRanges") == 0;
+}
+
+static std::string marking_type_string(VkMarkingTypeARM type)
+{
+	switch (type)
+	{
+	case VK_MARKING_TYPE_DEVICE_ADDRESS_ARM: return "device_address";
+	case VK_MARKING_TYPE_DESCRIPTOR_SIZE_ARM: return "descriptor_size";
+	case VK_MARKING_TYPE_DESCRIPTOR_OFFSET_ARM: return "descriptor_offset";
+	case VK_MARKING_TYPE_DESCRIPTOR_ARM: return "descriptor";
+	case VK_MARKING_TYPE_SHADER_GROUP_HANDLE_ARM: return "shader_group_handle";
+	default: return "unknown(" + _to_string((int)type) + ")";
+	}
+}
+
+static std::string marking_subtype_string(VkMarkingTypeARM type, const VkMarkingSubTypeARM& subtype)
+{
+	switch (type)
+	{
+	case VK_MARKING_TYPE_DEVICE_ADDRESS_ARM:
+		switch (subtype.deviceAddressType)
+		{
+		case VK_DEVICE_ADDRESS_TYPE_BUFFER_ARM: return "buffer";
+		case VK_DEVICE_ADDRESS_TYPE_ACCELERATION_STRUCTURE_ARM: return "acceleration_structure";
+		default: return "unknown_device_address_type(" + _to_string((int)subtype.deviceAddressType) + ")";
+		}
+	case VK_MARKING_TYPE_DESCRIPTOR_SIZE_ARM:
+	case VK_MARKING_TYPE_DESCRIPTOR_OFFSET_ARM:
+	case VK_MARKING_TYPE_DESCRIPTOR_ARM:
+		return "descriptor_type=" + _to_string((int)subtype.descriptorType);
+	case VK_MARKING_TYPE_SHADER_GROUP_HANDLE_ARM:
+		switch (subtype.shaderGroupType)
+		{
+		case VK_SHADER_GROUP_SHADER_GENERAL_KHR: return "general";
+		case VK_SHADER_GROUP_SHADER_CLOSEST_HIT_KHR: return "closest_hit";
+		case VK_SHADER_GROUP_SHADER_ANY_HIT_KHR: return "any_hit";
+		case VK_SHADER_GROUP_SHADER_INTERSECTION_KHR: return "intersection";
+		default: return "unknown_shader_group_type(" + _to_string((int)subtype.shaderGroupType) + ")";
+		}
+	default:
+		return "reserved=" + _to_string((unsigned long long)subtype.reserved);
+	}
+}
+
+static void print_markings_entry(const collected_markings_entry& entry)
+{
+	const bool ignored = is_capture_flush_leftover_markings(entry);
+	auto print_line = [&](const std::string& line)
+	{
+		if (ignored) printf(MAKEGRAY("%s\n"), line.c_str());
+		else printf("%s\n", line.c_str());
+	};
+
+	std::string header = markings_location_string(entry);
+	if (ignored) header += " [ignored capture leftover]";
+	print_line(header);
+	if (entry.source.call_id != UINT16_MAX)
+	{
+		print_line("  source: " + describe_change_source(entry.source));
+	}
+	else
+	{
+		print_line("  source: frame " + _to_string((unsigned)entry.source.frame)
+			+ " call " + _to_string((unsigned)entry.source.call)
+			+ " thread " + _to_string((unsigned)entry.source.thread)
+			+ " (call id unknown)");
+	}
+	print_line("  packet_type: " + std::string(packet_type_name(entry.instrtype)));
+	if (!entry.markings)
+	{
+		print_line("  markings: <missing>");
+		return;
+	}
+	print_line("  count: " + _to_string((unsigned)entry.markings->count));
+	for (uint32_t i = 0; i < entry.markings->count; i++)
+	{
+		const VkMarkingTypeARM type = entry.markings->pMarkingTypes ? entry.markings->pMarkingTypes[i] : (VkMarkingTypeARM)0;
+		const VkMarkingSubTypeARM subtype = entry.markings->pSubTypes ? entry.markings->pSubTypes[i] : VkMarkingSubTypeARM{};
+		const VkDeviceSize offset = entry.markings->pOffsets ? entry.markings->pOffsets[i] : 0;
+		print_line("    [" + _to_string((unsigned)i) + "] offset=" + _to_string((unsigned long long)offset)
+			+ " type=" + marking_type_string(type)
+			+ " subtype=" + marking_subtype_string(type, subtype));
+	}
 }
 
 static bool markings_entry_less(const collected_markings_entry& a, const collected_markings_entry& b)
@@ -354,7 +445,7 @@ static markings_compare_result compare_packed_file_markings(const std::string& p
 		if (diff != marked_offsets_difference::none)
 		{
 			result.identical = false;
-			result.messages.push_back("Markings differ at " + markings_location_string(a) + ": " + marked_offsets_difference_string(diff));
+			result.messages.push_back("Markings differ at " + markings_location_string(a) + ": " + packtool_marked_offsets_difference_string(diff));
 			break;
 		}
 		i++;
@@ -858,6 +949,28 @@ int main(int argc, char* argv[])
 		if (!map.at("tracking.json")) DIE("No tracking.json in container");
 		if (!map.at("frames_0.json")) DIE("No frames_0.json in container");
 		printf("Success\n");
+		return 0;
+	}
+	else if (strcmp(argv[1], "list-markings") == 0)
+	{
+		if (argc != 3) return usage(argv[0]);
+		std::vector<collected_markings_entry> markings = collect_trace_markings(argv[2]);
+		if (markings.empty())
+		{
+			printf("No markings found in %s\n", argv[2]);
+			return 0;
+		}
+		for (size_t i = 0; i < markings.size(); i++)
+		{
+			if (i > 0) printf("\n");
+			print_markings_entry(markings[i]);
+		}
+		size_t ignored = 0;
+		for (const auto& entry : markings) if (is_capture_flush_leftover_markings(entry)) ignored++;
+		printf("\nTotal markings blocks: %zu", markings.size());
+		if (ignored > 0) printf(" (%zu ignored capture leftovers)", ignored);
+		printf("\n");
+		free_collected_markings(markings);
 		return 0;
 	}
 	else if (strcmp(argv[1], "pack") == 0)

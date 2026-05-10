@@ -2761,11 +2761,6 @@ void read_VkMarkedOffsetsARM(lava_file_reader& reader, VkMarkedOffsetsARM* sptr)
 	reader.note_markings(sptr);
 }
 
-static bool same_source_local(const change_source& a, const change_source& b)
-{
-	return a.call == b.call && a.frame == b.frame && a.thread == b.thread && a.call_id == b.call_id;
-}
-
 static void assert_marked_offsets_equal(const VkMarkedOffsetsARM* a, const VkMarkedOffsetsARM* b)
 {
 	assert(compare_marked_offsets(a, b) == marked_offsets_difference::none);
@@ -2779,12 +2774,8 @@ static void track_marked_offsets(lava_file_reader& reader, const VkMarkedOffsets
 
 	if (reader.parent->pass == 0)
 	{
-		address_rewrite entry;
-		entry.markings = clone_marked_offsets(markings);
-		sort_marked_offsets(entry.markings);
-		entry.source = reader.current;
 		lava::lock_guard lock(sync_mutex);
-		reader.parent->global_rewrite_queue.push_back(entry);
+		merge_rewrite_markings(reader.parent->global_rewrite_queue, reader.current, markings);
 		return;
 	}
 
@@ -2792,11 +2783,11 @@ static void track_marked_offsets(lava_file_reader& reader, const VkMarkedOffsets
 	auto& queue = reader.parent->global_rewrite_queue;
 	auto it = std::find_if(queue.begin(), queue.end(), [&](const address_rewrite& v)
 	{
-		return same_source_local(v.source, reader.current);
+		return same_change_source(v.source, reader.current);
 	});
 	assert(it != queue.end());
 	VkMarkedOffsetsARM* temp = clone_marked_offsets(markings);
-	sort_marked_offsets(temp);
+	normalize_marked_offsets(temp);
 	assert_marked_offsets_equal(it->markings, temp);
 	free_marked_offsets(temp);
 	free_marked_offsets(it->markings);

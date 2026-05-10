@@ -33,6 +33,9 @@ struct address_rewrite
 	change_source source;
 };
 
+bool same_change_source(const change_source& a, const change_source& b);
+void merge_rewrite_markings(std::list<address_rewrite>& queue, const change_source& source, const VkMarkedOffsetsARM* markings);
+
 struct descriptor_rewrite
 {
 	VkDescriptorType type = VK_DESCRIPTOR_TYPE_MAX_ENUM;
