@@ -649,6 +649,16 @@ add_lavatube_test(pack_test_7_markings_simulate
 		-DOUTPUT_TRACE=${CMAKE_CURRENT_BINARY_DIR}/tmp_markings_simulate.vk
 		-P ${PROJECT_SOURCE_DIR}/tests/packtool_markings_diff.cmake)
 set_tests_properties(pack_test_7_markings_simulate PROPERTIES FIXTURES_REQUIRED raytracing_indirect_noop)
+add_lavatube_test(pack_test_7_markings_simulate_explicit
+	COMMAND ${CMAKE_COMMAND}
+		-DSIMULATE=ON
+		-DLAVA_TOOL=$<TARGET_FILE:lava-tool>
+		-DPACKTOOL=$<TARGET_FILE:packtool>
+		-DINPUT_TRACE=${CMAKE_CURRENT_BINARY_DIR}/vulkan_raytracing_indirect_noop_explicit.vk
+		-DCOMPARE_TRACE=${CMAKE_CURRENT_BINARY_DIR}/vulkan_raytracing_indirect_noop.vk
+		-DOUTPUT_TRACE=${CMAKE_CURRENT_BINARY_DIR}/tmp_markings_simulate_explicit.vk
+		-P ${PROJECT_SOURCE_DIR}/tests/packtool_markings_diff.cmake)
+set_tests_properties(pack_test_7_markings_simulate_explicit PROPERTIES FIXTURES_REQUIRED raytracing_indirect_noop)
 add_lavatube_test(trace_test_raytracing_indirect_noop_simulate
 	COMMAND lava-tool -S ${CMAKE_CURRENT_BINARY_DIR}/vulkan_raytracing_indirect_noop.vk)
 set_tests_properties(trace_test_raytracing_indirect_noop_simulate PROPERTIES FIXTURES_REQUIRED raytracing_indirect_noop)

@@ -16,15 +16,117 @@
 #include "util_auto.h"
 #include "suballocator.h"
 
-static bool run_spirv(const trackeddevice& device_data, const shader_stage& stage, const std::vector<std::byte>& push_constants,
+struct simulator_buffer_range
+{
+	const void* base_ptr = nullptr;
+	size_t size = 0;
+	trackedbuffer* buffer_data = nullptr;
+	VkDeviceSize buffer_offset = 0;
+	uint32_t set = UINT32_MAX;
+	uint32_t binding = UINT32_MAX;
+	bool physical_address_backing = false;
+};
+
+static uint64_t simulator_pointer_bits(const void* ptr)
+{
+	return static_cast<uint64_t>(reinterpret_cast<uintptr_t>(ptr));
+}
+
+static void register_simulator_buffer_range(std::vector<simulator_buffer_range>& ranges, const void* base_ptr, size_t size,
+	trackedbuffer* buffer_data, VkDeviceSize buffer_offset, uint32_t set = UINT32_MAX, uint32_t binding = UINT32_MAX, bool physical_address_backing = false)
+{
+	if (!base_ptr || !buffer_data || size == 0) return;
+	for (const simulator_buffer_range& existing : ranges)
+	{
+		if (existing.base_ptr == base_ptr && existing.size == size && existing.buffer_data == buffer_data
+			&& existing.buffer_offset == buffer_offset && existing.physical_address_backing == physical_address_backing)
+		{
+			return;
+		}
+	}
+	ranges.push_back({
+		.base_ptr = base_ptr,
+		.size = size,
+		.buffer_data = buffer_data,
+		.buffer_offset = buffer_offset,
+		.set = set,
+		.binding = binding,
+		.physical_address_backing = physical_address_backing,
+	});
+}
+
+static void merge_simulator_output_candidates(const shader_stage& stage, const change_source& source,
+	const std::unordered_map<const void*, simulator_buffer_range>& range_lookup, const SPIRVSimulator::SimulationResults& results)
+{
+	for (const auto& candidates : results.output_candidates)
+	{
+		ILOG("Found set of %u candidates for %p", (unsigned)candidates.second.size(), candidates.first);
+		const auto range_it = range_lookup.find(candidates.first);
+		for (const auto& candidate : candidates.second)
+		{
+			if (range_it != range_lookup.end())
+			{
+				const simulator_buffer_range& range = range_it->second;
+				if (range.set != UINT32_MAX && range.binding != UINT32_MAX)
+				{
+					ILOG("SPIRV candidate %s in %s set=%u binding=%u base=%p offset=%lu address=0x%llx", candidate.verified ? "verified" : "UNVERIFIED", stage.name.c_str(),
+						(unsigned)range.set, (unsigned)range.binding, candidates.first, (unsigned long)candidate.offset,
+						(unsigned long long)candidate.address);
+				}
+				else if (range.physical_address_backing)
+				{
+					ILOG("SPIRV candidate %s in %s physical-address buffer=%u base=%p offset=%lu address=0x%llx", candidate.verified ? "verified" : "UNVERIFIED",
+						stage.name.c_str(), (unsigned)range.buffer_data->index, candidates.first, (unsigned long)candidate.offset,
+						(unsigned long long)candidate.address);
+				}
+				else
+				{
+					ILOG("SPIRV candidate %s in %s buffer=%u base=%p offset=%lu address=0x%llx", candidate.verified ? "verified" : "UNVERIFIED", stage.name.c_str(),
+						(unsigned)range.buffer_data->index, candidates.first, (unsigned long)candidate.offset,
+						(unsigned long long)candidate.address);
+				}
+				if (candidate.verified)
+				{
+					range.buffer_data->source.register_source(range.buffer_offset + candidate.offset, sizeof(uint64_t), source);
+				}
+			}
+			else
+			{
+				ILOG("SPIRV candidate %s in %s base=%p offset=%lu address=0x%llx", candidate.verified ? "verified" : "UNVERIFIED", stage.name.c_str(), candidates.first,
+					(unsigned long)candidate.offset, (unsigned long long)candidate.address);
+			}
+		}
+	}
+}
+
+static void merge_simulator_memory_metadata(const change_source& source, const std::vector<simulator_buffer_range>& ranges,
+	const SPIRVSimulator::MemoryFlagTracker& memory_flag_tracker)
+{
+	for (const simulator_buffer_range& range : ranges)
+	{
+		const uint64_t base = simulator_pointer_bits(range.base_ptr);
+		const auto spans = memory_flag_tracker.queryRangeDetailed(base, range.size);
+		for (const auto& span : spans)
+		{
+			if ((span.flags & SPS_FLAG_IS_PBUFFER_PTR) == 0) continue;
+			const uint64_t start = std::max<uint64_t>(span.start, base);
+			const uint64_t end = std::min<uint64_t>(span.end, base + range.size);
+			if (start >= end) continue;
+			range.buffer_data->source.register_source(range.buffer_offset + (start - base), end - start, source);
+		}
+	}
+}
+
+static bool run_spirv(const trackeddevice& device_data, const shader_stage& stage, const change_source& source, const std::vector<std::byte>& push_constants,
 	const std::unordered_map<uint32_t, std::unordered_map<uint32_t, buffer_access>>& descriptorsets,
 	const std::unordered_map<uint32_t, std::unordered_map<uint32_t, image_access>>& imagesets,
 	const std::unordered_map<uint32_t, std::unordered_map<uint32_t, uint64_t>>& opaquesets)
 {
 	SPIRVSimulator::SimulationData inputs;
 	SPIRVSimulator::SimulationResults results;
-	std::unordered_map<const void*, std::pair<uint32_t, uint32_t>> binding_lookup;
 	std::deque<uint64_t> opaque_storage;
+	std::vector<simulator_buffer_range> simulator_ranges;
+	std::unordered_map<const void*, simulator_buffer_range> range_lookup;
 	inputs.push_constants = push_constants.empty() ? nullptr : push_constants.data();
 	inputs.entry_point_op_name = stage.name;
 	inputs.specialization_constants = stage.specialization_data.empty() ? nullptr : stage.specialization_data.data();
@@ -45,12 +147,16 @@ static bool run_spirv(const trackeddevice& device_data, const shader_stage& stag
 			std::byte* base = (std::byte*)loc.mapped;
 			std::byte* binding_ptr = base + access.offset;
 			set_bindings[binding_pair.first] = binding_ptr;
-			binding_lookup.emplace(binding_ptr, std::make_pair(set_pair.first, binding_pair.first));
-			// Provide real runtime-array length information to the SPIR-V simulator
 			const VkDeviceSize binding_size = (access.size != 0) ? access.size : (access.buffer_data->size - access.offset);
+			register_simulator_buffer_range(simulator_ranges, binding_ptr, binding_size, access.buffer_data, access.offset, set_pair.first, binding_pair.first);
+			// Provide real runtime-array length information to the SPIR-V simulator
 			if (binding_size > 0)
 			{
-				inputs.rt_array_lengths[reinterpret_cast<uint64_t>(binding_ptr)][0] = static_cast<size_t>(binding_size);
+				inputs.rt_array_lengths[simulator_pointer_bits(binding_ptr)][0] = static_cast<size_t>(binding_size);
+			}
+			if ((access.buffer_data->usage2 & VK_BUFFER_USAGE_2_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT) != 0)
+			{
+				inputs.descriptor_candidates[binding_ptr];
 			}
 		}
 	}
@@ -87,31 +193,57 @@ static bool run_spirv(const trackeddevice& device_data, const shader_stage& stag
 			set_bindings[binding_pair.first] = &opaque_storage.back();
 		}
 	}
+
+	for (trackedbuffer& buffer_data : VkBuffer_index)
+	{
+		if (buffer_data.parent_device_index != device_data.index) continue;
+		if (!buffer_data.is_state(trackedobject::states::bound)) continue;
+		if (buffer_data.size == 0) continue;
+		suballoc_location loc = device_data.allocator->find_buffer_memory(buffer_data.index);
+		if (!loc.mapped) continue;
+		std::byte* base = (std::byte*)loc.mapped;
+		const uint64_t visible_address = buffer_data.capture_device_address ? buffer_data.capture_device_address : buffer_data.device_address;
+		if (visible_address != 0)
+		{
+			inputs.physical_address_buffers[visible_address] = std::make_pair(static_cast<size_t>(buffer_data.size), base);
+			inputs.rt_array_lengths[simulator_pointer_bits(base)][0] = static_cast<size_t>(buffer_data.size);
+			register_simulator_buffer_range(simulator_ranges, base, buffer_data.size, &buffer_data, 0, UINT32_MAX, UINT32_MAX, true);
+		}
+		if ((buffer_data.usage2 & VK_BUFFER_USAGE_2_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT) != 0)
+		{
+			inputs.descriptor_candidates[base];
+		}
+	}
+
+	for (const simulator_buffer_range& range : simulator_ranges)
+	{
+		range_lookup.emplace(range.base_ptr, range);
+	}
+
 	inputs.shader_id = stage.unique_index;
 	SPIRVSimulator::MemoryFlagTracker memory_flag_tracker;
 	SPIRVSimulator::SPIRVSimulator sim(stage.code, &memory_flag_tracker, &inputs, &results, nullptr, false, ERROR_RAISE_ON_BUFFERS_INCOMPLETE);
 	sim.Run();
 
-	for (const auto& candidates : results.output_candidates)
+	if (results.full_dispatch_needed)
 	{
-		ILOG("Found set of %u candidates for %p", (unsigned)candidates.second.size(), candidates.first);
-		const void* base_ptr = candidates.first;
-		const auto binding_it = binding_lookup.find(base_ptr);
-		for (const auto& candidate : candidates.second)
-		{
-			if (binding_it != binding_lookup.end())
-			{
-				ILOG("SPIRV candidate %s in %s set=%u binding=%u base=%p offset=%lu address=0x%llx", candidate.verified ? "verified" : "UNVERIFIED", stage.name.c_str(),
-					(unsigned)binding_it->second.first, (unsigned)binding_it->second.second, base_ptr, (unsigned long)candidate.offset,
-					(unsigned long long)candidate.address);
-			}
-			else
-			{
-				ILOG("SPIRV candidate %s in %s base=%p offset=%lu address=0x%llx", candidate.verified ? "verified" : "UNVERIFIED", stage.name.c_str(), base_ptr,
-					(unsigned long)candidate.offset, (unsigned long long)candidate.address);
-			}
-		}
+		DLOG("SPIRV simulator requested full dispatch for shader %s", stage.name.c_str());
 	}
+	if (results.aborted_long_loop)
+	{
+		DLOG("SPIRV simulator aborted long loop while executing shader %s", stage.name.c_str());
+	}
+	if (results.had_arbitrary_write)
+	{
+		DLOG("SPIRV simulator saw arbitrary external write while executing shader %s", stage.name.c_str());
+	}
+	if (!results.physical_address_data.empty())
+	{
+		DLOG("SPIRV simulator found %u physical-address value chains in shader %s", (unsigned)results.physical_address_data.size(), stage.name.c_str());
+	}
+
+	merge_simulator_output_candidates(stage, source, range_lookup, results);
+	merge_simulator_memory_metadata(source, simulator_ranges, memory_flag_tracker);
 
 	return true;
 }
@@ -468,13 +600,13 @@ bool execute_commands(lava_file_reader& reader, const trackeddevice& device_data
 				assert(pipeline_data.shader_stages.size() == 1);
 				assert(pipeline_data.shader_stages[0].stage == VK_SHADER_STAGE_COMPUTE_BIT);
 				pipeline_data.shader_stages[0].calls++;
-				run_spirv(device_data, pipeline_data.shader_stages[0], push_constants, descriptorsets, imagesets, opaquesets);
+				run_spirv(device_data, pipeline_data.shader_stages[0], c.source, push_constants, descriptorsets, imagesets, opaquesets);
 			}
 			else // shader objects
 			{
 				auto& shader_object_data = VkShaderEXT_index.at(shader_objects.at(VK_SHADER_STAGE_COMPUTE_BIT));
 				shader_object_data.stage.calls++;
-				run_spirv(device_data, shader_object_data.stage, push_constants, descriptorsets, imagesets, opaquesets);
+				run_spirv(device_data, shader_object_data.stage, c.source, push_constants, descriptorsets, imagesets, opaquesets);
 			}
 			break;
 		case VKCMDDISPATCHDATAGRAPHARM:
@@ -504,7 +636,7 @@ bool execute_commands(lava_file_reader& reader, const trackeddevice& device_data
 				{
 					if (stage.stage == VK_SHADER_STAGE_COMPUTE_BIT) continue;
 					stage.calls++;
-					run_spirv(device_data, stage, push_constants, descriptorsets, imagesets, opaquesets);
+					run_spirv(device_data, stage, c.source, push_constants, descriptorsets, imagesets, opaquesets);
 				}
 			}
 			else for (auto& pair : shader_objects) // shader objects
@@ -514,7 +646,7 @@ bool execute_commands(lava_file_reader& reader, const trackeddevice& device_data
 				shader_stage& stage = shader_object_data.stage;
 				assert(pair.first == stage.stage);
 				stage.calls++;
-				run_spirv(device_data, stage, push_constants, descriptorsets, imagesets, opaquesets);
+				run_spirv(device_data, stage, c.source, push_constants, descriptorsets, imagesets, opaquesets);
 			}
 			break;
 		case VKCMDTRACERAYSKHR: // proxy for all raytracing commands
@@ -527,7 +659,7 @@ bool execute_commands(lava_file_reader& reader, const trackeddevice& device_data
 					for (auto& stage : pipeline_data.shader_stages)
 					{
 						stage.calls++;
-						run_spirv(device_data, stage, push_constants, descriptorsets, imagesets, opaquesets);
+						run_spirv(device_data, stage, c.source, push_constants, descriptorsets, imagesets, opaquesets);
 					}
 					break;
 				}
@@ -638,7 +770,7 @@ bool execute_commands(lava_file_reader& reader, const trackeddevice& device_data
 					for (auto& stage : pipeline_data.shader_stages)
 					{
 						stage.calls++;
-						run_spirv(device_data, stage, push_constants, descriptorsets, imagesets, opaquesets);
+						run_spirv(device_data, stage, c.source, push_constants, descriptorsets, imagesets, opaquesets);
 					}
 				}
 				else
@@ -646,7 +778,7 @@ bool execute_commands(lava_file_reader& reader, const trackeddevice& device_data
 					for (uint32_t stage_index : stages_to_run)
 					{
 						pipeline_data.shader_stages[stage_index].calls++;
-						run_spirv(device_data, pipeline_data.shader_stages[stage_index], push_constants, descriptorsets, imagesets, opaquesets);
+						run_spirv(device_data, pipeline_data.shader_stages[stage_index], c.source, push_constants, descriptorsets, imagesets, opaquesets);
 					}
 				}
 				(void)width;
