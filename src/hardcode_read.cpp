@@ -1346,21 +1346,23 @@ static void replay_pre_vkDestroySwapchainKHR(lava_file_reader& reader, VkDevice 
 	assert(device == t.device);
 	for (unsigned i = 0; i < t.virtual_fences.size(); i++)
 	{
-		if (!t.inflight.at(i)) continue;
-		// check status, wait if needed, then delete
-		VkResult r = wrap_vkGetFenceStatus(device, t.virtual_fences.at(i));
-		if (r == VK_NOT_READY)
+		if (t.inflight.at(i))
 		{
-			r = wrap_vkWaitForFences(device, 1, &t.virtual_fences.at(i), VK_TRUE, UINT64_MAX);
+			// Check status, wait if needed, then delete.
+			VkResult r = wrap_vkGetFenceStatus(device, t.virtual_fences.at(i));
+			if (r == VK_NOT_READY)
+			{
+				r = wrap_vkWaitForFences(device, 1, &t.virtual_fences.at(i), VK_TRUE, UINT64_MAX);
+			}
 		}
-		wrap_vkDestroyFence(device, t.virtual_fences.at(i), nullptr);
-		wrap_vkDestroyImage(device, t.virtual_images.at(i), nullptr);
+		if (t.virtual_fences.at(i) != VK_NULL_HANDLE) wrap_vkDestroyFence(device, t.virtual_fences.at(i), nullptr);
+		if (t.virtual_images.at(i) != VK_NULL_HANDLE) wrap_vkDestroyImage(device, t.virtual_images.at(i), nullptr);
 	}
 	if (is_noscreen())
 	{
 		for (VkImage image : t.pSwapchainImages)
 		{
-			wrap_vkDestroyImage(device, image, nullptr);
+			if (image != VK_NULL_HANDLE) wrap_vkDestroyImage(device, image, nullptr);
 		}
 	}
 	if (t.virtual_cmdpool != VK_NULL_HANDLE) wrap_vkResetCommandPool(device, t.virtual_cmdpool, VK_COMMAND_POOL_RESET_RELEASE_RESOURCES_BIT);
@@ -1983,7 +1985,7 @@ void replay_callback_vkQueuePresentKHR(callback_context& cb, VkQueue queue, cons
 			}
 		}
 	}
-	if (is_virtualswapchain() && (result == VK_SUBOPTIMAL_KHR || result == VK_ERROR_OUT_OF_DATE_KHR))
+	if (!is_noscreen() && is_virtualswapchain() && (result == VK_SUBOPTIMAL_KHR || result == VK_ERROR_OUT_OF_DATE_KHR))
 	{
 		ILOG("We got %s from vkQueuePresentKHR -- remaking the swapchain!", errorString(result));
 
@@ -4184,17 +4186,29 @@ void terminate_all(lava_file_reader& reader, VkDevice stored_device)
 	terminate(index_to_VkPipelineCache, stored_device, wrap_vkDestroyPipelineCache);
 	terminate(index_to_VkShaderModule, stored_device, wrap_vkDestroyShaderModule);
 	terminate(index_to_VkImageView, stored_device, wrap_vkDestroyImageView);
-	for (uint32_t i = 0; i < index_to_VkImage.size(); i++) // do not attempt to delete swapchain images!
+	for (uint32_t i = 0; i < index_to_VkImage.size(); i++) // do not attempt to delete swapchain-owned images here
 	{
+		if (!index_to_VkImage.contains(i)) continue;
 		for (const trackedswapchain_replay& t : VkSwapchainKHR_index)
 		{
 			for (VkImage image : t.pSwapchainImages)
 			{
-				if (index_to_VkImage.contains(i) && index_to_VkImage.at(i) == image)
+				if (index_to_VkImage.at(i) == image)
 				{
 					index_to_VkImage.unset(i);
+					break;
 				}
 			}
+			if (!index_to_VkImage.contains(i)) break;
+			for (VkImage image : t.virtual_images)
+			{
+				if (index_to_VkImage.at(i) == image)
+				{
+					index_to_VkImage.unset(i);
+					break;
+				}
+			}
+			if (!index_to_VkImage.contains(i)) break;
 		}
 	}
 	terminate(index_to_VkImage, stored_device, wrap_vkDestroyImage);
