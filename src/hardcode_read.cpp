@@ -1354,6 +1354,13 @@ static void replay_pre_vkDestroySwapchainKHR(lava_file_reader& reader, VkDevice 
 		wrap_vkDestroyFence(device, t.virtual_fences.at(i), nullptr);
 		wrap_vkDestroyImage(device, t.virtual_images.at(i), nullptr);
 	}
+	if (is_noscreen())
+	{
+		for (VkImage image : t.pSwapchainImages)
+		{
+			wrap_vkDestroyImage(device, image, nullptr);
+		}
+	}
 	if (t.virtual_cmdpool != VK_NULL_HANDLE) wrap_vkResetCommandPool(device, t.virtual_cmdpool, VK_COMMAND_POOL_RESET_RELEASE_RESOURCES_BIT);
 	if (t.virtual_cmdpool != VK_NULL_HANDLE) wrap_vkFreeCommandBuffers(device, t.virtual_cmdpool, t.virtual_cmdbuffers.size(), t.virtual_cmdbuffers.data());
 	wrap_vkDestroyCommandPool(device, t.virtual_cmdpool, nullptr);
@@ -3399,7 +3406,13 @@ void retrace_vkGetSwapchainImagesKHR(lava_file_reader& reader)
 		if (is_noscreen())
 		{
 			data.pSwapchainImages.resize(stored_image_count);
-			for (uint32_t i = 0; i < stored_image_count; i++) data.pSwapchainImages[i] = data.virtual_images[i];
+			pinfo.usage = data.info.imageUsage | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+			for (uint32_t i = 0; i < stored_image_count; i++)
+			{
+				result = wrap_vkCreateImage(device, &pinfo, nullptr, &data.pSwapchainImages[i]);
+				assert(result == VK_SUCCESS);
+			}
+			device_data.allocator->virtualswap_images(data.pSwapchainImages);
 		}
 
 		// Setup image region for later copy
