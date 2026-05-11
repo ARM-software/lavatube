@@ -2743,6 +2743,7 @@ VKAPI_ATTR void trace_vkCmdUpdateBuffer2ARM(VkCommandBuffer commandBuffer, const
 	writer.device = commandbuffer_data->device;
 	writer.physicalDevice = commandbuffer_data->physicalDevice;
 	write_VkUpdateBufferInfoARM(writer, pInfo);
+	if (writer.run) wrap_vkCmdUpdateBuffer(commandBuffer, pInfo->dstBuffer, pInfo->dstOffset, pInfo->dataSize, pInfo->pData);
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL trace_vkAssertBufferARM(VkDevice device, const VkUpdateBufferInfoARM* pInfo, uint32_t* checksum, const char* comment)
