@@ -1489,6 +1489,58 @@ static void trace_post_vkCmdPushDescriptorSetWithTemplateKHR(lava_file_writer& w
 	handle_descriptor_update_template(writer, VK_NULL_HANDLE, descriptorUpdateTemplate, pData, true);
 }
 
+static inline uint64_t load_u64_unaligned(const char* ptr)
+{
+	uint64_t value = 0;
+	memcpy(&value, ptr, sizeof(value));
+	return value;
+}
+
+static uint64_t collect_patch_spans(const char* orig, const char* chng, uint64_t offset, uint64_t size, std::vector<range>& spans)
+{
+	uint64_t changed = 0;
+	uint64_t pos = 0;
+	orig += offset;
+	chng += offset;
+	while (pos < size)
+	{
+		while (pos + sizeof(uint64_t) <= size && load_u64_unaligned(orig + pos) == load_u64_unaligned(chng + pos)) pos += sizeof(uint64_t);
+		while (pos < size && orig[pos] == chng[pos]) pos++;
+		if (pos >= size) break;
+
+		const uint64_t start = pos;
+		while (pos + sizeof(uint64_t) <= size && load_u64_unaligned(orig + pos) != load_u64_unaligned(chng + pos)) pos += sizeof(uint64_t);
+		while (pos < size && orig[pos] != chng[pos]) pos++;
+
+		assert(pos > start);
+		spans.push_back({ offset + start, offset + pos - 1 });
+		changed += pos - start;
+	}
+	return changed;
+}
+
+static bool range_overlaps_any(uint64_t first, uint64_t last, const std::vector<range>& spans)
+{
+	for (const auto& span : spans)
+	{
+		if (first <= span.last && span.first <= last) return true;
+	}
+	return false;
+}
+
+static uint64_t marked_entry_size(const VkMarkedOffsetsARM* markings, uint32_t index)
+{
+	switch (markings->pMarkingTypes[index])
+	{
+	case VK_MARKING_TYPE_DEVICE_ADDRESS_ARM:
+		return sizeof(VkDeviceAddress);
+	case VK_MARKING_TYPE_SHADER_GROUP_HANDLE_ARM:
+		return 32;
+	default:
+		return 1;
+	}
+}
+
 // combine all updates for each memory into one update list for each device memory object, so we keep the number of map operations to a minimum
 static void queue_update(lava_file_writer& writer, trackedqueue* t, VkCommandBuffer cmdbuf, std::unordered_map<VkDeviceMemory, range>& ranges_by_memory, std::unordered_set<trackedcmdbuffer_trace*>& cmdbufs)
 {
@@ -2898,8 +2950,11 @@ void trace_post_vkFlushMappedMemoryRanges(lava_file_writer& writer, VkResult res
 				char* changedptr = memory_data->ptr + object_data->offset - memory_data->offset;
 				uint64_t start = std::max<uint64_t>(object_data->offset, mapped_start) - object_data->offset;
 				uint64_t end = std::min<uint64_t>(object_data->offset + object_data->size, mapped_end) - object_data->offset;
+				std::vector<range> changed_spans;
+				const uint64_t changed = collect_patch_spans(cloneptr, changedptr, start, end - start, changed_spans);
 				VkMarkedOffsetsARM adjusted = {};
 				VkMarkedOffsetsARM* ar_use = nullptr;
+				bool has_descriptor_markings = false;
 				std::vector<VkDeviceSize> adjusted_offsets;
 				std::vector<VkMarkingTypeARM> adjusted_types;
 				std::vector<VkMarkingSubTypeARM> adjusted_subtypes;
@@ -2918,7 +2973,20 @@ void trace_post_vkFlushMappedMemoryRanges(lava_file_writer& writer, VkResult res
 							continue;
 						}
 						if (mark_abs < object_data->offset || mark_abs >= object_data->offset + object_data->size) continue;
-						adjusted_offsets.push_back(mark_abs - object_data->offset);
+						const uint64_t object_mark_offset = mark_abs - object_data->offset;
+						if (ar->pMarkingTypes[mark_i] == VK_MARKING_TYPE_DESCRIPTOR_ARM)
+						{
+							// Descriptor rewrites are queued as side effects of vkGetDescriptorEXT and related calls.
+							// Even when diffing suppresses the payload, replay still needs a matching marking to
+							// consume the pending rewrite in-order.
+							has_descriptor_markings = true;
+						}
+						else
+						{
+							const uint64_t mark_size = marked_entry_size(ar, mark_i);
+							if (!range_overlaps_any(object_mark_offset, object_mark_offset + mark_size - 1, changed_spans)) continue;
+						}
+						adjusted_offsets.push_back(object_mark_offset);
 						adjusted_types.push_back(ar->pMarkingTypes[mark_i]);
 						if (ar->pSubTypes) adjusted_subtypes.push_back(ar->pSubTypes[mark_i]);
 					}
@@ -2931,6 +2999,7 @@ void trace_post_vkFlushMappedMemoryRanges(lava_file_writer& writer, VkResult res
 						ar_use = &adjusted;
 					}
 				}
+				if (changed == 0 && !has_descriptor_markings) continue;
 				uint64_t written = write_out_object(writer, device_data, object_data, cloneptr, changedptr, start, end - start, ar_use);
 				ILOG("vkFlushMappedMemoryRanges[%u] flushing %s[%u] obj(%lu to %lu) object memory offset=%lu object size=%lu flush(off=%u, size=%u) effective(off=%llu, size=%llu)", i, pretty_print_VkObjectType(object_data->object_type),
 				     (unsigned)object_data->index, (unsigned long)start, (unsigned long)end, (unsigned long)object_data->offset, (unsigned long)object_data->size, (unsigned)v.offset, (unsigned)v.size,

@@ -231,11 +231,7 @@ public:
 		if (this == &regions)
 		{
 			std::unique_lock lock(mutex);
-			if (!collect_spans_unlocked(tracker, fragment_sources, src_address, src_size, pending))
-			{
-				assert(false && "host_write_regions missing coverage");
-				return;
-			}
+			collect_spans_unlocked(tracker, fragment_sources, src_address, src_size, pending, false);
 			for (const source_span& entry : pending)
 			{
 				const uint64_t dst_start = dst_address + (entry.start - src_address);
@@ -246,11 +242,7 @@ public:
 
 		{
 			std::shared_lock lock(regions.mutex);
-			if (!collect_spans_unlocked(regions.tracker, regions.fragment_sources, src_address, src_size, pending))
-			{
-				assert(false && "host_write_regions missing coverage");
-				return;
-			}
+			collect_spans_unlocked(regions.tracker, regions.fragment_sources, src_address, src_size, pending, false);
 		}
 
 		if (pending.empty()) return;
@@ -291,7 +283,7 @@ private:
 		return true;
 	}
 
-	static bool collect_spans_unlocked(const tracker_type& tracker, const std::map<fragment_id_type, change_source>& sources, uint64_t address, uint64_t size, std::vector<source_span>& out)
+	static bool collect_spans_unlocked(const tracker_type& tracker, const std::map<fragment_id_type, change_source>& sources, uint64_t address, uint64_t size, std::vector<source_span>& out, bool require_full_coverage = true)
 	{
 		out.clear();
 		if (size == 0) return true;
@@ -301,18 +293,19 @@ private:
 		uint64_t pos = address;
 		for (const auto& span : spans)
 		{
-			if (span.start > pos)
+			if (require_full_coverage && span.start > pos)
 			{
 				return false;
 			}
-			const uint64_t start = std::max<uint64_t>(span.start, pos);
+			const uint64_t start = std::max<uint64_t>(span.start, require_full_coverage ? pos : address);
 			const uint64_t span_end = std::min<uint64_t>(span.end, end);
 			if (start >= span_end) continue;
 
 			change_source source;
 			if (!lookup_source_unlocked(sources, span.fragment_id, source))
 			{
-				return false;
+				if (require_full_coverage) return false;
+				continue;
 			}
 
 			if (!out.empty() && out.back().end == start && same_source(out.back().source, source))
@@ -323,10 +316,13 @@ private:
 			{
 				out.push_back({ start, span_end, source });
 			}
-			pos = span_end;
-			if (pos == end) break;
+			if (require_full_coverage)
+			{
+				pos = span_end;
+				if (pos == end) break;
+			}
 		}
-		return pos == end;
+		return require_full_coverage ? pos == end : true;
 	}
 
 	void register_source_unlocked(uint64_t address, uint64_t size, const change_source& source)
