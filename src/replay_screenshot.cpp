@@ -385,12 +385,13 @@ bool replay_screenshot_handler::capture(uint32_t frame, VkPhysicalDevice physica
 			pixels[i + 0] = src[i + 2];
 			pixels[i + 1] = src[i + 1];
 			pixels[i + 2] = src[i + 0];
-			pixels[i + 3] = src[i + 3];
+			pixels[i + 3] = 255;
 		}
 	}
 	else
 	{
 		std::copy(src, src + pixel_bytes, pixels.begin());
+		for (VkDeviceSize i = 3; i < pixel_bytes; i += 4) pixels[i] = 255;
 	}
 	wrap_vkUnmapMemory(device, resources.staging.memory);
 

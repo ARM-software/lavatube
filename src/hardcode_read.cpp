@@ -1967,19 +1967,36 @@ void replay_callback_vkQueuePresentKHR(callback_context& cb, VkQueue queue, cons
 			{
 				DIE("Cannot capture screenshot for frame %u after vkQueuePresentKHR returned %s", completed_global_frame, errorString(result));
 			}
-
 			const uint32_t swapchainkhr_index = index_to_VkSwapchainKHR.index(pPresentInfo->pSwapchains[0]);
-			if (swapchainkhr_index == CONTAINER_INVALID_INDEX) DIE("Failed to resolve presented swapchain for screenshot capture");
+			if (swapchainkhr_index == CONTAINER_INVALID_INDEX)
+			{
+				DIE("Failed to resolve presented swapchain for screenshot capture");
+			}
 			const trackedswapchain_replay& data = VkSwapchainKHR_index.at(swapchainkhr_index);
 			const uint32_t queue_index = index_to_VkQueue.index(queue);
-			if (queue_index == CONTAINER_INVALID_INDEX) DIE("Failed to resolve replay queue for screenshot capture");
+			if (queue_index == CONTAINER_INVALID_INDEX)
+			{
+				DIE("Failed to resolve replay queue for screenshot capture");
+			}
 			const trackedqueue& queue_data = VkQueue_index.at(queue_index);
 			if (data.virtual_images.empty() || data.next_stored_image >= data.virtual_images.size())
 			{
 				DIE("No virtual swapchain image available for screenshot capture on frame %u", completed_global_frame);
 			}
-			if (!reader.parent->screenshots().capture(completed_global_frame, queue_data.physicalDevice, data.device, queue, queue_data.queueFamily,
-				data.virtual_images[data.next_stored_image], data.info.imageFormat, data.info.imageExtent.width, data.info.imageExtent.height))
+			VkImage screenshot_image = data.virtual_images[data.next_stored_image];
+			if (is_virtualswapchain() && is_noscreen())
+			{
+				if (pPresentInfo->pImageIndices == nullptr)
+				{
+					DIE("Missing presented image index for screenshot capture on frame %u", completed_global_frame);
+				}
+				if (pPresentInfo->pImageIndices[0] >= data.pSwapchainImages.size())
+				{
+					DIE("Presented swapchain image index %u is out of range for screenshot capture on frame %u", pPresentInfo->pImageIndices[0], completed_global_frame);
+				}
+				screenshot_image = data.pSwapchainImages[pPresentInfo->pImageIndices[0]];
+			}
+			if (!reader.parent->screenshots().capture(completed_global_frame, queue_data.physicalDevice, data.device, queue, queue_data.queueFamily, screenshot_image, data.info.imageFormat, data.info.imageExtent.width, data.info.imageExtent.height))
 			{
 				DIE("Failed to capture screenshot for frame %u", completed_global_frame);
 			}
