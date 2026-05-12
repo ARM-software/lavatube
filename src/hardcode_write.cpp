@@ -31,6 +31,14 @@ static uint64_t descriptor_dynamic_slot(uint32_t binding, uint32_t array_index)
 	return (uint64_t(binding) << 32) | array_index;
 }
 
+static VkDescriptorBufferInfo descriptor_dynamic_slot_value(const trackeddescriptorset_trace* tds, uint32_t binding, uint32_t array_index)
+{
+	static const VkDescriptorBufferInfo empty = { VK_NULL_HANDLE, 0, 0 };
+	const uint64_t slot = descriptor_dynamic_slot(binding, array_index);
+	const auto it = tds->dynamic_buffers.find(slot);
+	return (it != tds->dynamic_buffers.end()) ? it->second : empty;
+}
+
 static trackable* debug_object_trackable(trace_records& r, VkDebugReportObjectTypeEXT type, uint64_t object)
 {
 	switch (type)
@@ -659,8 +667,6 @@ static void trace_post_vkCmdBindDescriptorSets(lava_file_writer& writer,
 		for (const auto& dynamic_pair : tds->dynamic_buffers)
 		{
 			const VkDescriptorBufferInfo& info = dynamic_pair.second;
-			const uint32_t array_index = (uint32_t)(dynamic_pair.first & 0xffffffffu);
-			const uint32_t binding = (uint32_t)(dynamic_pair.first >> 32);
 			if (info.buffer == VK_NULL_HANDLE)
 			{
 				dynamic_index++;
@@ -755,8 +761,7 @@ static void handle_VkWriteDescriptorSets(lava_file_writer& writer, uint32_t desc
 				if (!push)
 				{
 					const uint64_t slot = descriptor_dynamic_slot(pDescriptorWrites[i].dstBinding, pDescriptorWrites[i].dstArrayElement + j);
-					if (pDescriptorWrites[i].pBufferInfo[j].buffer == VK_NULL_HANDLE) tds->dynamic_buffers.erase(slot);
-					else tds->dynamic_buffers[slot] = pDescriptorWrites[i].pBufferInfo[j];
+					tds->dynamic_buffers[slot] = pDescriptorWrites[i].pBufferInfo[j];
 				}
 			}
 			break;
@@ -1082,10 +1087,12 @@ static void handle_VkCopyDescriptorSets(lava_file_writer& writer, uint32_t descr
 		auto* src = writer.parent->records.VkDescriptorSet_index.at(pDescriptorCopies[i].srcSet);
 		auto* dst = writer.parent->records.VkDescriptorSet_index.at(pDescriptorCopies[i].dstSet);
 		merge_descriptor_touched(dst, src);
-		for (const auto& pair : src->dynamic_buffers)
+		for (uint32_t j = 0; j < pDescriptorCopies[i].descriptorCount; j++)
 		{
-			if (pair.second.buffer == VK_NULL_HANDLE) dst->dynamic_buffers.erase(pair.first);
-			else dst->dynamic_buffers[pair.first] = pair.second;
+			const VkDescriptorBufferInfo src_info = descriptor_dynamic_slot_value(src,
+				pDescriptorCopies[i].srcBinding, pDescriptorCopies[i].srcArrayElement + j);
+			const uint64_t dst_slot = descriptor_dynamic_slot(pDescriptorCopies[i].dstBinding, pDescriptorCopies[i].dstArrayElement + j);
+			dst->dynamic_buffers[dst_slot] = src_info;
 		}
 	}
 }

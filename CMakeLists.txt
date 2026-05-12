@@ -419,6 +419,9 @@ add_lavatube_test(trace_test_6_replay_cpu COMMAND $<TARGET_FILE:lava-replay> -C 
 internal_test(tracing7 tracing_7.vk)
 add_lavatube_test(trace_test_7_replay_cpu COMMAND $<TARGET_FILE:lava-replay> -C -V tracing_7.vk)
 
+internal_test(tracing_dynamic_descriptors tracing_dynamic_descriptors.vk)
+add_lavatube_test(trace_test_dynamic_descriptors_replay_cpu COMMAND $<TARGET_FILE:lava-replay> -C -V tracing_dynamic_descriptors.vk)
+
 internal_test(tracing_remap tracing_remap.vk)
 add_lavatube_test(trace_test_remap_replay_cpu COMMAND $<TARGET_FILE:lava-replay> -C -V tracing_remap.vk)
 add_lavatube_test(trace_test_remap_validate COMMAND $<TARGET_FILE:lava-tool> tracing_remap.vk)
