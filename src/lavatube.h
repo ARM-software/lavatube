@@ -20,6 +20,7 @@
 #include "generated/vk_wrapper_auto.h"
 #include "generated/tostring.h"
 
+#include <map>
 #include <unordered_set>
 #include <list>
 #include <vulkan/vk_icd.h>
@@ -844,7 +845,7 @@ struct trackeddescriptorset_trace : trackeddescriptorset
 {
 	using trackeddescriptorset::trackeddescriptorset; // inherit constructor
 	std::unordered_map<trackedobject*, exposure> touched; // track memory updates
-	std::vector<VkDescriptorBufferInfo> dynamic_buffers; // must be resolved on bind
+	std::map<uint64_t, VkDescriptorBufferInfo> dynamic_buffers; // binding<<32 | array index, resolved on bind
 
 	void touch(trackedobject* data, VkDeviceSize offset, VkDeviceSize size, unsigned line = 0)
 	{

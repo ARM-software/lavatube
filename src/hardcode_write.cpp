@@ -26,6 +26,11 @@ static uint32_t remap_memory_types_to_real[VK_MAX_MEMORY_TYPES] GUARDED_BY(frame
 // Protos
 static void write_VkMarkedOffsetsARM(lava_file_writer& writer, const VkMarkedOffsetsARM* sptr);
 
+static uint64_t descriptor_dynamic_slot(uint32_t binding, uint32_t array_index)
+{
+	return (uint64_t(binding) << 32) | array_index;
+}
+
 static trackable* debug_object_trackable(trace_records& r, VkDebugReportObjectTypeEXT type, uint64_t object)
 {
 	switch (type)
@@ -649,18 +654,25 @@ static void trace_post_vkCmdBindDescriptorSets(lava_file_writer& writer,
 	auto* cmdbuf_data = writer.parent->records.VkCommandBuffer_index.at(commandBuffer);
 	for (unsigned i = 0; i < descriptorSetCount; i++)
 	{
-		const auto* tds = writer.parent->records.VkDescriptorSet_index.at(pDescriptorSets[i]);
+		auto* tds = writer.parent->records.VkDescriptorSet_index.at(pDescriptorSets[i]);
 		cmdbuf_data->touch_merge(tds->touched);
-		for (unsigned j = 0; j < tds->dynamic_buffers.size(); j++)
+		for (const auto& dynamic_pair : tds->dynamic_buffers)
 		{
-			if (tds->dynamic_buffers.at(j).buffer == VK_NULL_HANDLE) continue;
-			auto* buffer_data = writer.parent->records.VkBuffer_index.at(tds->dynamic_buffers.at(j).buffer);
-			VkDeviceSize size = tds->dynamic_buffers.at(j).range;
-			VkDeviceSize offset = tds->dynamic_buffers.at(j).offset + pDynamicOffsets[dynamic_index + j];
+			const VkDescriptorBufferInfo& info = dynamic_pair.second;
+			const uint32_t array_index = (uint32_t)(dynamic_pair.first & 0xffffffffu);
+			const uint32_t binding = (uint32_t)(dynamic_pair.first >> 32);
+			if (info.buffer == VK_NULL_HANDLE)
+			{
+				dynamic_index++;
+				continue;
+			}
+			auto* buffer_data = writer.parent->records.VkBuffer_index.at(info.buffer);
+			VkDeviceSize size = info.range;
+			VkDeviceSize offset = info.offset + pDynamicOffsets[dynamic_index];
 			if (size == VK_WHOLE_SIZE) size = buffer_data->size - offset;
 			cmdbuf_data->touch(buffer_data, offset, size, __LINE__);
+			dynamic_index++;
 		}
-		dynamic_index += tds->dynamic_buffers.size();
 		assert(dynamic_index <= dynamicOffsetCount);
 	}
 }
@@ -697,7 +709,10 @@ static void handle_VkWriteDescriptorSets(lava_file_writer& writer, uint32_t desc
 		auto* tds = writer.parent->records.VkDescriptorSet_index.at(pDescriptorWrites[i].dstSet);
 		// TBD I do not think this is correct. We are allowed to keep descriptor state for bindings not touched here from a previous call.
 		// Not sure how to handle this well, and not seen any content where this breaks anything, but should fix it...
-		if (clear) { tds->touched.clear(); tds->dynamic_buffers.clear(); }
+		if (clear)
+		{
+			tds->touched.clear();
+		}
 	}
 	for (unsigned i = 0; i < descriptorWriteCount; i++)
 	{
@@ -737,7 +752,12 @@ static void handle_VkWriteDescriptorSets(lava_file_writer& writer, uint32_t desc
 		case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC:
 			for (unsigned j = 0; j < pDescriptorWrites[i].descriptorCount; j++)
 			{
-				if (!push) tds->dynamic_buffers.push_back(pDescriptorWrites[i].pBufferInfo[j]);
+				if (!push)
+				{
+					const uint64_t slot = descriptor_dynamic_slot(pDescriptorWrites[i].dstBinding, pDescriptorWrites[i].dstArrayElement + j);
+					if (pDescriptorWrites[i].pBufferInfo[j].buffer == VK_NULL_HANDLE) tds->dynamic_buffers.erase(slot);
+					else tds->dynamic_buffers[slot] = pDescriptorWrites[i].pBufferInfo[j];
+				}
 			}
 			break;
 		case VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER:
@@ -1062,7 +1082,11 @@ static void handle_VkCopyDescriptorSets(lava_file_writer& writer, uint32_t descr
 		auto* src = writer.parent->records.VkDescriptorSet_index.at(pDescriptorCopies[i].srcSet);
 		auto* dst = writer.parent->records.VkDescriptorSet_index.at(pDescriptorCopies[i].dstSet);
 		merge_descriptor_touched(dst, src);
-		if (dst->dynamic_buffers.empty() && !src->dynamic_buffers.empty()) dst->dynamic_buffers = src->dynamic_buffers;
+		for (const auto& pair : src->dynamic_buffers)
+		{
+			if (pair.second.buffer == VK_NULL_HANDLE) dst->dynamic_buffers.erase(pair.first);
+			else dst->dynamic_buffers[pair.first] = pair.second;
+		}
 	}
 }
 
