@@ -856,12 +856,19 @@ layer_test(demo_descriptor_indexing demo_descriptor_indexing)
 layer_test(vkquake2 vkquake2)
 layer_test(anki_scene2 anki_scene2)
 #layer_test(display display)
-#layer_test(headless_surface headless_surface)
+#layer_test(headless_surface headless_surface) -- driver issues on nvidia
 layer_test(compute_device_generated compute_device_generated)
 layer_test(graphics_multi_draw graphics_multi_draw --multi-draw-mode alternate)
 layer_test(descriptor_heap_1 descriptor_heap_1)
 layer_test(opacity_micromap opacity_micromap)
 layer_test(raytracing_indirect_noop raytracing_indirect_noop)
+#layer_test(swapchain_maintenance1 swapchain_maintenance1)
+layer_test(surface_maintenance1 surface_maintenance1)
+#layer_test(demo_graphics_pipeline_library demo_graphics_pipeline_library) -- crashes
+#layer_test(external_fence_fd_capabilities external_fence_fd_capabilities)
+#layer_test(external_fence_core_capabilities external_fence_core_capabilities)
+#layer_test(external_memory_dma_buf external_memory_dma_buf)
+layer_test(linear_optimal_mix linear_optimal_mix)
 
 # The two below will fail as we lack support for interleaved data for VK_EXT_multi_draw for now
 #layer_test(graphics_multi_draw_stride16 graphics_multi_draw --multi-draw-mode indexed --stride-mode aligned16)
