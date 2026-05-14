@@ -92,6 +92,11 @@ endif()
 message(STATUS "Configuring spirv-simulator")
 add_subdirectory(external/spirv-simulator ${CMAKE_BINARY_DIR}/spirv-simulator)
 
+# --- zipcontainer ---
+
+message(STATUS "Configuring zipcontainer")
+add_subdirectory(external/zipcontainer ${CMAKE_BINARY_DIR}/zipcontainer)
+
 # --- tracetooltests ---
 
 if(NOT ${NO_TRACETOOLTESTS})
@@ -157,7 +162,7 @@ if(ANDROID)
 else()
     set(MOST_COMMON_LIBRARIES ${SANITIZER} stdc++ dl pthread ${ANDROID_LIBRARIES})
 endif()
-set(COMMON_LIBRARIES ${MOST_COMMON_LIBRARIES} unordered_dense::unordered_dense atomic density LZ4::LZ4 ${XCB_LIBRARIES} spirv_simulator_lib)
+set(COMMON_LIBRARIES ${MOST_COMMON_LIBRARIES} unordered_dense::unordered_dense atomic density LZ4::LZ4 ${XCB_LIBRARIES} spirv_simulator_lib zipcontainer)
 
 set(COMMON_INCLUDE
     PUBLIC ${SRC_ROOT}
