@@ -166,11 +166,166 @@ static bool is_known_replay_as_address(VkDeviceAddress address)
 	return false;
 }
 
+static void replay_clear_pending_commandbuffer(uint32_t commandbuffer_index)
+{
+	if (commandbuffer_index == CONTAINER_INVALID_INDEX) return;
+	trackedcmdbuffer& commandbuffer_data = VkCommandBuffer_index.at(commandbuffer_index);
+	if (commandbuffer_data.replay_submit_fence_index != CONTAINER_INVALID_INDEX &&
+		index_to_VkFence.contains(commandbuffer_data.replay_submit_fence_index))
+	{
+		trackedfence& fence_data = VkFence_index.at(commandbuffer_data.replay_submit_fence_index);
+		auto& pending = fence_data.replay_pending_commandbuffers;
+		pending.erase(std::remove(pending.begin(), pending.end(), commandbuffer_index), pending.end());
+	}
+	commandbuffer_data.replay_pending = false;
+	commandbuffer_data.replay_submit_queue = VK_NULL_HANDLE;
+	commandbuffer_data.replay_submit_fence_index = CONTAINER_INVALID_INDEX;
+}
+
+static void replay_mark_pending_commandbuffer(uint32_t commandbuffer_index, VkQueue queue, VkFence fence)
+{
+	if (commandbuffer_index == CONTAINER_INVALID_INDEX) return;
+	trackedcmdbuffer& commandbuffer_data = VkCommandBuffer_index.at(commandbuffer_index);
+	replay_clear_pending_commandbuffer(commandbuffer_index);
+	commandbuffer_data.replay_pending = true;
+	commandbuffer_data.replay_submit_queue = queue;
+	commandbuffer_data.replay_submit_fence_index = (fence == VK_NULL_HANDLE) ? CONTAINER_INVALID_INDEX : index_to_VkFence.index(fence);
+	if (commandbuffer_data.replay_submit_fence_index != CONTAINER_INVALID_INDEX)
+	{
+		VkFence_index.at(commandbuffer_data.replay_submit_fence_index).replay_pending_commandbuffers.push_back(commandbuffer_index);
+	}
+}
+
+static void replay_clear_pending_fence(uint32_t fence_index)
+{
+	if (fence_index == CONTAINER_INVALID_INDEX || !index_to_VkFence.contains(fence_index)) return;
+	trackedfence& fence_data = VkFence_index.at(fence_index);
+	const std::vector<uint32_t> pending = fence_data.replay_pending_commandbuffers;
+	for (uint32_t commandbuffer_index : pending)
+	{
+		if (commandbuffer_index == CONTAINER_INVALID_INDEX || !index_to_VkCommandBuffer.contains(commandbuffer_index)) continue;
+		trackedcmdbuffer& commandbuffer_data = VkCommandBuffer_index.at(commandbuffer_index);
+		if (commandbuffer_data.replay_submit_fence_index == fence_index)
+		{
+			commandbuffer_data.replay_pending = false;
+			commandbuffer_data.replay_submit_queue = VK_NULL_HANDLE;
+			commandbuffer_data.replay_submit_fence_index = CONTAINER_INVALID_INDEX;
+		}
+	}
+	fence_data.replay_pending_commandbuffers.clear();
+}
+
+static void replay_wait_for_pending_commandbuffer(lava_file_reader& reader, uint32_t commandbuffer_index, trackedcmdbuffer& commandbuffer_data,
+	bool allow_simultaneous_use)
+{
+	(void)reader;
+	if (!commandbuffer_data.replay_pending) return;
+	if (allow_simultaneous_use && (commandbuffer_data.replay_begin_flags & VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT)) return;
+
+	if (commandbuffer_data.replay_submit_fence_index != CONTAINER_INVALID_INDEX &&
+		index_to_VkFence.contains(commandbuffer_data.replay_submit_fence_index))
+	{
+		VkFence fence = index_to_VkFence.at(commandbuffer_data.replay_submit_fence_index);
+		const VkResult result = wrap_vkWaitForFences(commandbuffer_data.device, 1, &fence, VK_TRUE, UINT64_MAX);
+		if (result != VK_SUCCESS)
+		{
+			ABORT("Failed to wait for pending command buffer %u fence on replay: %s",
+				commandbuffer_index, errorString(result));
+		}
+		replay_clear_pending_fence(commandbuffer_data.replay_submit_fence_index);
+		return;
+	}
+
+	if (commandbuffer_data.replay_submit_queue != VK_NULL_HANDLE)
+	{
+		const VkResult result = wrap_vkQueueWaitIdle(commandbuffer_data.replay_submit_queue);
+		if (result != VK_SUCCESS)
+		{
+			ABORT("Failed to wait for pending command buffer %u queue on replay: %s",
+				commandbuffer_index, errorString(result));
+		}
+		replay_clear_pending_commandbuffer(commandbuffer_index);
+		return;
+	}
+
+	replay_clear_pending_commandbuffer(commandbuffer_index);
+}
+
+static VkDeviceSize align_device_size(VkDeviceSize value, VkDeviceSize alignment)
+{
+	if (alignment <= 1) return value;
+	return (value + alignment - 1) & ~(alignment - 1);
+}
+
+static VkDeviceSize replay_get_as_scratch_alignment(VkPhysicalDevice physical_device)
+{
+	VkPhysicalDeviceAccelerationStructurePropertiesKHR as_props = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_PROPERTIES_KHR, nullptr };
+	VkPhysicalDeviceProperties2 props2 = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2, &as_props };
+	wrap_vkGetPhysicalDeviceProperties2(physical_device, &props2);
+	return std::max<VkDeviceSize>(1, as_props.minAccelerationStructureScratchOffsetAlignment);
+}
+
+static bool replay_can_preserve_as_scratch_addresses(uint32_t infoCount, VkAccelerationStructureBuildGeometryInfoKHR* pInfos,
+	const std::vector<VkDeviceSize>& scratch_sizes)
+{
+	for (uint32_t i = 0; i < infoCount; i++)
+	{
+		if (scratch_sizes[i] == 0) continue;
+		if (pInfos[i].scratchData.deviceAddress == 0) return false;
+		VkDeviceSize buffer_offset = 0;
+		if (!find_buffer_by_replay_address(pInfos[i].scratchData.deviceAddress, scratch_sizes[i], buffer_offset)) return false;
+	}
+
+	if (infoCount <= 1) return true;
+
+	for (uint32_t i = 0; i < infoCount; i++)
+	{
+		if (scratch_sizes[i] == 0) continue;
+		VkDeviceSize first_offset = 0;
+		trackedbuffer* first_buffer = find_buffer_by_replay_address(pInfos[i].scratchData.deviceAddress, scratch_sizes[i], first_offset);
+		if (!first_buffer) return false;
+		const VkDeviceSize first_end = first_offset + scratch_sizes[i];
+
+		for (uint32_t j = i + 1; j < infoCount; j++)
+		{
+			if (scratch_sizes[j] == 0) continue;
+			VkDeviceSize second_offset = 0;
+			trackedbuffer* second_buffer = find_buffer_by_replay_address(pInfos[j].scratchData.deviceAddress, scratch_sizes[j], second_offset);
+			if (!second_buffer) return false;
+			if (first_buffer != second_buffer) continue;
+
+			const VkDeviceSize second_end = second_offset + scratch_sizes[j];
+			if (first_offset < second_end && second_offset < first_end) return false;
+		}
+	}
+
+	return true;
+}
+
 static void destroy_internal_buffer(VkDevice device, internal_buffer& buffer)
 {
 	if (buffer.buffer != VK_NULL_HANDLE) wrap_vkDestroyBuffer(device, buffer.buffer, nullptr);
 	if (buffer.memory != VK_NULL_HANDLE) wrap_vkFreeMemory(device, buffer.memory, nullptr);
 	buffer = {};
+}
+
+static void replay_destroy_commandbuffer_scratch_buffers(VkDevice device, trackedcmdbuffer& commandbuffer_data)
+{
+	for (internal_buffer& buffer : commandbuffer_data.replay_scratch_buffers)
+	{
+		destroy_internal_buffer(device, buffer);
+	}
+	commandbuffer_data.replay_scratch_buffers.clear();
+	commandbuffer_data.scratch_buffer = {};
+}
+
+static void replay_cleanup_commandbuffer_for_rerecord(lava_file_reader& reader, uint32_t commandbuffer_index, trackedcmdbuffer& commandbuffer_data)
+{
+	replay_wait_for_pending_commandbuffer(reader, commandbuffer_index, commandbuffer_data, false);
+	commandbuffer_data.raytracing_sbt_uses.clear();
+	commandbuffer_data.raytracing_instance_uses.clear();
+	commandbuffer_data.bound_raytracing_pipeline_index = CONTAINER_INVALID_INDEX;
+	replay_destroy_commandbuffer_scratch_buffers(commandbuffer_data.device, commandbuffer_data);
 }
 
 static bool create_internal_buffer(VkDevice device, VkPhysicalDevice physical_device, VkDeviceSize size, VkBufferUsageFlags usage,
@@ -560,6 +715,7 @@ void replay_pre_vkQueueSubmit2(lava_file_reader& reader, VkQueue queue, uint32_t
 			const uint32_t commandbuffer_index = index_to_VkCommandBuffer.index(command_buffer);
 			if (commandbuffer_index == CONTAINER_INVALID_INDEX) continue;
 			trackedcmdbuffer& commandbuffer_data = VkCommandBuffer_index.at(commandbuffer_index);
+			replay_wait_for_pending_commandbuffer(reader, commandbuffer_index, commandbuffer_data, true);
 			replay_fixup_commandbuffer_raytracing_instances(reader, commandbuffer_data);
 			replay_fixup_commandbuffer_raytracing_sbt(reader, commandbuffer_data);
 		}
@@ -582,6 +738,7 @@ void replay_pre_vkQueueSubmit(lava_file_reader& reader, VkQueue queue, uint32_t 
 			const uint32_t commandbuffer_index = index_to_VkCommandBuffer.index(command_buffer);
 			if (commandbuffer_index == CONTAINER_INVALID_INDEX) continue;
 			trackedcmdbuffer& commandbuffer_data = VkCommandBuffer_index.at(commandbuffer_index);
+			replay_wait_for_pending_commandbuffer(reader, commandbuffer_index, commandbuffer_data, true);
 			replay_fixup_commandbuffer_raytracing_instances(reader, commandbuffer_data);
 			replay_fixup_commandbuffer_raytracing_sbt(reader, commandbuffer_data);
 		}
@@ -590,26 +747,165 @@ void replay_pre_vkQueueSubmit(lava_file_reader& reader, VkQueue queue, uint32_t 
 
 void replay_pre_vkBeginCommandBuffer(lava_file_reader& reader, VkCommandBuffer commandBuffer, VkCommandBufferBeginInfo* pBeginInfo)
 {
-	(void)reader;
-	(void)pBeginInfo;
 	const uint32_t commandbuffer_index = index_to_VkCommandBuffer.index(commandBuffer);
 	if (commandbuffer_index == CONTAINER_INVALID_INDEX) return;
 	trackedcmdbuffer& commandbuffer_data = VkCommandBuffer_index.at(commandbuffer_index);
-	commandbuffer_data.raytracing_sbt_uses.clear();
-	commandbuffer_data.raytracing_instance_uses.clear();
-	commandbuffer_data.bound_raytracing_pipeline_index = CONTAINER_INVALID_INDEX;
+	replay_cleanup_commandbuffer_for_rerecord(reader, commandbuffer_index, commandbuffer_data);
+	commandbuffer_data.replay_begin_flags = pBeginInfo ? pBeginInfo->flags : 0;
 }
 
 void replay_pre_vkResetCommandBuffer(lava_file_reader& reader, VkCommandBuffer commandBuffer, VkCommandBufferResetFlags flags)
 {
-	(void)reader;
 	(void)flags;
 	const uint32_t commandbuffer_index = index_to_VkCommandBuffer.index(commandBuffer);
 	if (commandbuffer_index == CONTAINER_INVALID_INDEX) return;
 	trackedcmdbuffer& commandbuffer_data = VkCommandBuffer_index.at(commandbuffer_index);
-	commandbuffer_data.raytracing_sbt_uses.clear();
-	commandbuffer_data.raytracing_instance_uses.clear();
-	commandbuffer_data.bound_raytracing_pipeline_index = CONTAINER_INVALID_INDEX;
+	replay_cleanup_commandbuffer_for_rerecord(reader, commandbuffer_index, commandbuffer_data);
+}
+
+void replay_pre_vkResetCommandPool(lava_file_reader& reader, VkDevice device, VkCommandPool commandPool, VkCommandPoolResetFlags flags)
+{
+	(void)device;
+	(void)flags;
+	const uint32_t commandpool_index = index_to_VkCommandPool.index(commandPool);
+	if (commandpool_index == CONTAINER_INVALID_INDEX) return;
+	for (uint32_t commandbuffer_index = 1; commandbuffer_index < VkCommandBuffer_index.size(); commandbuffer_index++)
+	{
+		if (!index_to_VkCommandBuffer.contains(commandbuffer_index)) continue;
+		trackedcmdbuffer& commandbuffer_data = VkCommandBuffer_index.at(commandbuffer_index);
+		if (commandbuffer_data.pool_index != commandpool_index) continue;
+		replay_cleanup_commandbuffer_for_rerecord(reader, commandbuffer_index, commandbuffer_data);
+	}
+}
+
+void replay_pre_vkDestroyCommandPool(lava_file_reader& reader, VkDevice device, VkCommandPool commandPool, const VkAllocationCallbacks* pAllocator)
+{
+	(void)device;
+	(void)pAllocator;
+	const uint32_t commandpool_index = index_to_VkCommandPool.index(commandPool);
+	if (commandpool_index == CONTAINER_INVALID_INDEX) return;
+	for (uint32_t commandbuffer_index = 1; commandbuffer_index < VkCommandBuffer_index.size(); commandbuffer_index++)
+	{
+		if (!index_to_VkCommandBuffer.contains(commandbuffer_index)) continue;
+		trackedcmdbuffer& commandbuffer_data = VkCommandBuffer_index.at(commandbuffer_index);
+		if (commandbuffer_data.pool_index != commandpool_index) continue;
+		replay_cleanup_commandbuffer_for_rerecord(reader, commandbuffer_index, commandbuffer_data);
+	}
+}
+
+void replay_pre_vkFreeCommandBuffers(lava_file_reader& reader, VkDevice device, VkCommandPool commandPool, uint32_t commandBufferCount,
+	const VkCommandBuffer* pCommandBuffers)
+{
+	(void)device;
+	(void)commandPool;
+	if (!pCommandBuffers) return;
+	for (uint32_t i = 0; i < commandBufferCount; i++)
+	{
+		const uint32_t commandbuffer_index = index_to_VkCommandBuffer.index(pCommandBuffers[i]);
+		if (commandbuffer_index == CONTAINER_INVALID_INDEX) continue;
+		trackedcmdbuffer& commandbuffer_data = VkCommandBuffer_index.at(commandbuffer_index);
+		replay_cleanup_commandbuffer_for_rerecord(reader, commandbuffer_index, commandbuffer_data);
+	}
+}
+
+void replay_callback_vkQueueSubmit(callback_context& cb, VkQueue queue, uint32_t submitCount, const VkSubmitInfo* pSubmits, VkFence fence)
+{
+	if (!cb.reader.run || cb.result.vkresult != VK_SUCCESS) return;
+	for (uint32_t i = 0; i < submitCount; i++)
+	{
+		for (uint32_t j = 0; j < pSubmits[i].commandBufferCount; j++)
+		{
+			replay_mark_pending_commandbuffer(index_to_VkCommandBuffer.index(pSubmits[i].pCommandBuffers[j]), queue, fence);
+		}
+	}
+}
+
+void replay_callback_vkQueueSubmit2(callback_context& cb, VkQueue queue, uint32_t submitCount, const VkSubmitInfo2* pSubmits, VkFence fence)
+{
+	if (!cb.reader.run || cb.result.vkresult != VK_SUCCESS) return;
+	for (uint32_t i = 0; i < submitCount; i++)
+	{
+		for (uint32_t j = 0; j < pSubmits[i].commandBufferInfoCount; j++)
+		{
+			replay_mark_pending_commandbuffer(index_to_VkCommandBuffer.index(pSubmits[i].pCommandBufferInfos[j].commandBuffer), queue, fence);
+		}
+	}
+}
+
+void replay_callback_vkQueueSubmit2KHR(callback_context& cb, VkQueue queue, uint32_t submitCount, const VkSubmitInfo2* pSubmits, VkFence fence)
+{
+	replay_callback_vkQueueSubmit2(cb, queue, submitCount, pSubmits, fence);
+}
+
+void replay_callback_vkQueueWaitIdle(callback_context& cb, VkQueue queue)
+{
+	if (!cb.reader.run || cb.result.vkresult != VK_SUCCESS) return;
+	for (uint32_t commandbuffer_index = 1; commandbuffer_index < VkCommandBuffer_index.size(); commandbuffer_index++)
+	{
+		if (!index_to_VkCommandBuffer.contains(commandbuffer_index)) continue;
+		trackedcmdbuffer& commandbuffer_data = VkCommandBuffer_index.at(commandbuffer_index);
+		if (commandbuffer_data.replay_pending && commandbuffer_data.replay_submit_queue == queue)
+		{
+			replay_clear_pending_commandbuffer(commandbuffer_index);
+		}
+	}
+}
+
+void replay_callback_vkDeviceWaitIdle(callback_context& cb, VkDevice device)
+{
+	if (!cb.reader.run || cb.result.vkresult != VK_SUCCESS) return;
+	for (uint32_t commandbuffer_index = 1; commandbuffer_index < VkCommandBuffer_index.size(); commandbuffer_index++)
+	{
+		if (!index_to_VkCommandBuffer.contains(commandbuffer_index)) continue;
+		trackedcmdbuffer& commandbuffer_data = VkCommandBuffer_index.at(commandbuffer_index);
+		if (commandbuffer_data.replay_pending && commandbuffer_data.device == device)
+		{
+			replay_clear_pending_commandbuffer(commandbuffer_index);
+		}
+	}
+}
+
+void replay_callback_vkGetFenceStatus(callback_context& cb, VkDevice device, VkFence fence)
+{
+	(void)device;
+	if (!cb.reader.run || cb.result.vkresult != VK_SUCCESS) return;
+	replay_clear_pending_fence(index_to_VkFence.index(fence));
+}
+
+void replay_callback_vkResetFences(callback_context& cb, VkDevice device, uint32_t fenceCount, const VkFence* pFences)
+{
+	(void)device;
+	if (!cb.reader.run || cb.result.vkresult != VK_SUCCESS || !pFences) return;
+	for (uint32_t i = 0; i < fenceCount; i++)
+	{
+		replay_clear_pending_fence(index_to_VkFence.index(pFences[i]));
+	}
+}
+
+void replay_callback_vkWaitForFences(callback_context& cb, VkDevice device, uint32_t fenceCount, const VkFence* pFences, VkBool32 waitAll, uint64_t timeout)
+{
+	(void)timeout;
+	if (!cb.reader.run || !pFences) return;
+	if (waitAll)
+	{
+		if (cb.result.vkresult == VK_SUCCESS)
+		{
+			for (uint32_t i = 0; i < fenceCount; i++)
+			{
+				replay_clear_pending_fence(index_to_VkFence.index(pFences[i]));
+			}
+		}
+		return;
+	}
+	// For waitAll=FALSE, always check individual fence status regardless of overall result,
+	// since some fences may have signaled even when the overall result is VK_TIMEOUT.
+	for (uint32_t i = 0; i < fenceCount; i++)
+	{
+		if (wrap_vkGetFenceStatus(device, pFences[i]) == VK_SUCCESS)
+		{
+			replay_clear_pending_fence(index_to_VkFence.index(pFences[i]));
+		}
+	}
 }
 
 void replay_pre_vkCmdBuildAccelerationStructuresKHR(lava_file_reader& reader, VkCommandBuffer commandBuffer, uint32_t infoCount,
@@ -621,6 +917,7 @@ void replay_pre_vkCmdBuildAccelerationStructuresKHR(lava_file_reader& reader, Vk
 	trackedcmdbuffer& commandbuffer_data = VkCommandBuffer_index.at(commandbuffer_index);
 	const VkDevice device = commandbuffer_data.device;
 	const VkPhysicalDevice physical_device = commandbuffer_data.physicalDevice;
+	const VkDeviceSize scratch_alignment = replay_get_as_scratch_alignment(physical_device);
 
 	auto record_instance_uses = [&](const VkAccelerationStructureBuildGeometryInfoKHR& info, const VkAccelerationStructureBuildRangeInfoKHR* ranges)
 	{
@@ -650,6 +947,8 @@ void replay_pre_vkCmdBuildAccelerationStructuresKHR(lava_file_reader& reader, Vk
 		}
 	};
 
+	std::vector<VkDeviceSize> scratch_sizes(infoCount, 0);
+	VkDeviceSize total_scratch_size = 0;
 	for (uint32_t i = 0; i < infoCount; i++)
 	{
 		if (pInfos[i].geometryCount == 0) continue;
@@ -673,20 +972,34 @@ void replay_pre_vkCmdBuildAccelerationStructuresKHR(lava_file_reader& reader, Vk
 		}
 		if (scratch_size == 0) continue;
 
-		if (commandbuffer_data.scratch_buffer.buffer == VK_NULL_HANDLE || commandbuffer_data.scratch_buffer.size < scratch_size)
-		{
-			if (commandbuffer_data.scratch_buffer.buffer != VK_NULL_HANDLE)
-			{
-				destroy_internal_buffer(device, commandbuffer_data.scratch_buffer);
-			}
-			const VkBufferUsageFlags usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
-			if (!create_internal_buffer(device, physical_device, scratch_size, usage, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, commandbuffer_data.scratch_buffer))
-			{
-				ABORT("Failed to allocate scratch buffer for acceleration structure build (size=%lu)", (unsigned long)scratch_size);
-			}
-		}
+		scratch_sizes[i] = scratch_size;
+		total_scratch_size = align_device_size(total_scratch_size, scratch_alignment);
+		total_scratch_size += scratch_size;
+	}
 
-		pInfos[i].scratchData.deviceAddress = commandbuffer_data.scratch_buffer.device_address;
+	if (replay_can_preserve_as_scratch_addresses(infoCount, pInfos, scratch_sizes))
+	{
+		return;
+	}
+
+	if (total_scratch_size == 0) return;
+
+	internal_buffer scratch_buffer;
+	const VkBufferUsageFlags usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+	if (!create_internal_buffer(device, physical_device, total_scratch_size, usage, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, scratch_buffer))
+	{
+		ABORT("Failed to allocate scratch buffer for acceleration structure build (size=%lu)", (unsigned long)total_scratch_size);
+	}
+	commandbuffer_data.replay_scratch_buffers.push_back(scratch_buffer);
+	commandbuffer_data.scratch_buffer = scratch_buffer;
+
+	VkDeviceSize offset = 0;
+	for (uint32_t i = 0; i < infoCount; i++)
+	{
+		if (scratch_sizes[i] == 0) continue;
+		offset = align_device_size(offset, scratch_alignment);
+		pInfos[i].scratchData.deviceAddress = scratch_buffer.device_address + offset;
+		offset += scratch_sizes[i];
 	}
 }
 
@@ -700,6 +1013,7 @@ void replay_pre_vkCmdBuildAccelerationStructuresIndirectKHR(lava_file_reader& re
 	trackedcmdbuffer& commandbuffer_data = VkCommandBuffer_index.at(commandbuffer_index);
 	const VkDevice device = commandbuffer_data.device;
 	const VkPhysicalDevice physical_device = commandbuffer_data.physicalDevice;
+	const VkDeviceSize scratch_alignment = replay_get_as_scratch_alignment(physical_device);
 
 	auto load_ranges = [&](uint32_t info_idx, std::vector<VkAccelerationStructureBuildRangeInfoKHR>& ranges) -> bool
 	{
@@ -776,6 +1090,8 @@ void replay_pre_vkCmdBuildAccelerationStructuresIndirectKHR(lava_file_reader& re
 		}
 	};
 
+	std::vector<VkDeviceSize> scratch_sizes(infoCount, 0);
+	VkDeviceSize total_scratch_size = 0;
 	for (uint32_t i = 0; i < infoCount; i++)
 	{
 		if (pInfos[i].geometryCount == 0) continue;
@@ -804,20 +1120,34 @@ void replay_pre_vkCmdBuildAccelerationStructuresIndirectKHR(lava_file_reader& re
 		}
 		if (scratch_size == 0) continue;
 
-		if (commandbuffer_data.scratch_buffer.buffer == VK_NULL_HANDLE || commandbuffer_data.scratch_buffer.size < scratch_size)
-		{
-			if (commandbuffer_data.scratch_buffer.buffer != VK_NULL_HANDLE)
-			{
-				destroy_internal_buffer(device, commandbuffer_data.scratch_buffer);
-			}
-			const VkBufferUsageFlags usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
-			if (!create_internal_buffer(device, physical_device, scratch_size, usage, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, commandbuffer_data.scratch_buffer))
-			{
-				ABORT("Failed to allocate scratch buffer for acceleration structure build (size=%lu)", (unsigned long)scratch_size);
-			}
-		}
+		scratch_sizes[i] = scratch_size;
+		total_scratch_size = align_device_size(total_scratch_size, scratch_alignment);
+		total_scratch_size += scratch_size;
+	}
 
-		pInfos[i].scratchData.deviceAddress = commandbuffer_data.scratch_buffer.device_address;
+	if (replay_can_preserve_as_scratch_addresses(infoCount, pInfos, scratch_sizes))
+	{
+		return;
+	}
+
+	if (total_scratch_size == 0) return;
+
+	internal_buffer scratch_buffer;
+	const VkBufferUsageFlags usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+	if (!create_internal_buffer(device, physical_device, total_scratch_size, usage, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, scratch_buffer))
+	{
+		ABORT("Failed to allocate scratch buffer for acceleration structure build (size=%lu)", (unsigned long)total_scratch_size);
+	}
+	commandbuffer_data.replay_scratch_buffers.push_back(scratch_buffer);
+	commandbuffer_data.scratch_buffer = scratch_buffer;
+
+	VkDeviceSize offset = 0;
+	for (uint32_t i = 0; i < infoCount; i++)
+	{
+		if (scratch_sizes[i] == 0) continue;
+		offset = align_device_size(offset, scratch_alignment);
+		pInfos[i].scratchData.deviceAddress = scratch_buffer.device_address + offset;
+		offset += scratch_sizes[i];
 	}
 }
 
@@ -1062,6 +1392,7 @@ static bool fixup_sbt_region(lava_file_reader& reader, const trackeddevice& devi
 	const uint32_t capture_handle_size = pipeline_data.raytracing_group_handle_size;
 	const uint32_t replay_handle_size = pipeline_data.raytracing_group_handle_size_replay;
 	if (capture_handle_size == 0 || replay_handle_size == 0) return false;
+	if (region->stride == 0) return false;
 	if (replay_handle_size > region->stride)
 	{
 		ABORT("Ray tracing %s SBT stride=%llu is smaller than replay handle size=%u",
@@ -1071,10 +1402,6 @@ static bool fixup_sbt_region(lava_file_reader& reader, const trackeddevice& devi
 	{
 		ABORT("Ray tracing %s replay handle size=%u larger than capture handle size=%u",
 			label, replay_handle_size, capture_handle_size);
-	}
-	if (region->stride == 0)
-	{
-		ABORT("Ray tracing %s SBT stride is zero", label);
 	}
 	const uint32_t record_count = (uint32_t)(region->size / region->stride);
 	if (record_count == 0) return false;
@@ -1086,6 +1413,10 @@ static bool fixup_sbt_region(lava_file_reader& reader, const trackeddevice& devi
 		ABORT("Ray tracing %s SBT address 0x%llx is not mapped to a buffer", label, (unsigned long long)region->deviceAddress);
 	}
 	suballoc_location loc = device_data.allocator->find_buffer_memory(buffer_data->index);
+	if (!loc.mapped && (buffer_data->memory_flags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) == 0)
+	{
+		return false;
+	}
 	char* mapped = mem_map(reader, device, loc);
 	char* base = mapped + buffer_offset;
 
@@ -1408,6 +1739,60 @@ void replay_callback_vkGetAccelerationStructureDeviceAddressKHR(callback_context
 	const uint32_t as_index = index_to_VkAccelerationStructureKHR.index(pInfo->accelerationStructure);
 	if (as_index == CONTAINER_INVALID_INDEX) return;
 	VkAccelerationStructureKHR_index.at(as_index).device_address = cb.result.address;
+}
+
+static void replay_callback_vkBindBufferMemory2_common(VkResult result, uint32_t bindInfoCount, const VkBindBufferMemoryInfo* pBindInfos)
+{
+	if (result != VK_SUCCESS || !pBindInfos) return;
+	for (uint32_t i = 0; i < bindInfoCount; i++)
+	{
+		if (pBindInfos[i].buffer == VK_NULL_HANDLE) continue;
+		const uint32_t buffer_index = index_to_VkBuffer.index(pBindInfos[i].buffer);
+		if (buffer_index == CONTAINER_INVALID_INDEX) continue;
+		trackedbuffer& buffer_data = VkBuffer_index.at(buffer_index);
+		buffer_data.backing = pBindInfos[i].memory;
+		buffer_data.offset = pBindInfos[i].memoryOffset;
+		buffer_data.enter_bound();
+	}
+}
+
+void replay_callback_vkBindBufferMemory2(callback_context& cb, VkDevice device, uint32_t bindInfoCount, const VkBindBufferMemoryInfo* pBindInfos)
+{
+	(void)device;
+	replay_callback_vkBindBufferMemory2_common(cb.result.vkresult, bindInfoCount, pBindInfos);
+}
+
+void replay_callback_vkBindBufferMemory2KHR(callback_context& cb, VkDevice device, uint32_t bindInfoCount, const VkBindBufferMemoryInfo* pBindInfos)
+{
+	(void)device;
+	replay_callback_vkBindBufferMemory2_common(cb.result.vkresult, bindInfoCount, pBindInfos);
+}
+
+static void replay_callback_vkBindImageMemory2_common(VkResult result, uint32_t bindInfoCount, const VkBindImageMemoryInfo* pBindInfos)
+{
+	if (result != VK_SUCCESS || !pBindInfos) return;
+	for (uint32_t i = 0; i < bindInfoCount; i++)
+	{
+		if (pBindInfos[i].image == VK_NULL_HANDLE) continue;
+		const uint32_t image_index = index_to_VkImage.index(pBindInfos[i].image);
+		if (image_index == CONTAINER_INVALID_INDEX) continue;
+		trackedimage& image_data = VkImage_index.at(image_index);
+		image_data.backing = pBindInfos[i].memory;
+		image_data.offset = pBindInfos[i].memoryOffset;
+		image_data.enter_bound();
+	}
+}
+
+void replay_callback_vkBindImageMemory2(callback_context& cb, VkDevice device, uint32_t bindInfoCount, const VkBindImageMemoryInfo* pBindInfos)
+{
+	(void)device;
+	replay_callback_vkBindImageMemory2_common(cb.result.vkresult, bindInfoCount, pBindInfos);
+}
+
+void replay_callback_vkBindImageMemory2KHR(callback_context& cb, VkDevice device, uint32_t bindInfoCount, const VkBindImageMemoryInfo* pBindInfos)
+{
+	(void)device;
+	replay_callback_vkBindImageMemory2_common(cb.result.vkresult, bindInfoCount, pBindInfos);
 }
 
 void replay_callback_vkGetBufferDeviceAddressKHR(callback_context& cb, VkDevice device, const VkBufferDeviceAddressInfoKHR* pInfo)
@@ -2575,9 +2960,10 @@ void replay_pre_vkDestroyDevice(lava_file_reader& reader, VkDevice device, const
 
 			for (auto& cb : VkCommandBuffer_index)
 			{
-				if (cb.device_index == device_index && cb.scratch_buffer.buffer != VK_NULL_HANDLE)
+				if (cb.device_index == device_index &&
+					(cb.scratch_buffer.buffer != VK_NULL_HANDLE || !cb.replay_scratch_buffers.empty()))
 				{
-					destroy_internal_buffer(device, cb.scratch_buffer);
+					replay_destroy_commandbuffer_scratch_buffers(device, cb);
 				}
 			}
 		}

@@ -567,6 +567,7 @@ struct trackedfence : trackable
 {
 	using trackable::trackable; // inherit constructor
 	VkFenceCreateFlags flags = (VkFenceCreateFlags)0;
+	std::vector<uint32_t> replay_pending_commandbuffers;
 
 	// tracer only
 	int frame_delay = -1; // delay fuse uninitialized
@@ -711,6 +712,11 @@ struct trackedcmdbuffer : trackable
 	std::list<trackedcommand> commands; // track select commands for later processing
 	bool pending_raytracing_marker = false; // internal: prevent duplicate raytracing command markers
 	internal_buffer scratch_buffer;
+	std::vector<internal_buffer> replay_scratch_buffers;
+	VkCommandBufferUsageFlags replay_begin_flags = 0;
+	VkQueue replay_submit_queue = VK_NULL_HANDLE;
+	uint32_t replay_submit_fence_index = CONTAINER_INVALID_INDEX;
+	bool replay_pending = false;
 	uint32_t bound_raytracing_pipeline_index = CONTAINER_INVALID_INDEX;
 	struct raytracing_sbt_use
 	{

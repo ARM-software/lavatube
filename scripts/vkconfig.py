@@ -138,7 +138,7 @@ blackhole_ignore = [ 'vkGetQueryPoolResults' ]
 replay_pre_calls = [ 'vkDestroyInstance', 'vkDestroyDevice', 'vkCreateDevice', 'vkCreateSampler', 'vkQueuePresentKHR', 'vkCreateSwapchainKHR',
 	'vkCreateSharedSwapchainsKHR', 'vkCreateGraphicsPipelines', 'vkCreateComputePipelines', 'vkCreateRayTracingPipelinesKHR', 'vkCmdPushConstants2KHR',
 	'vkCmdPushConstants2', 'vkQueueSubmit', 'vkQueueSubmit2', 'vkQueueSubmit2KHR', 'vkDestroyPipelineCache', 'vkDestroySwapchainKHR', 'vkDestroyBuffer',
-	'vkBeginCommandBuffer', 'vkResetCommandBuffer', 'vkDestroySurfaceKHR',
+	'vkBeginCommandBuffer', 'vkResetCommandBuffer', 'vkResetCommandPool', 'vkDestroyCommandPool', 'vkFreeCommandBuffers', 'vkDestroySurfaceKHR',
 	'vkDestroyAccelerationStructureKHR', 'vkCreateInstance', 'vkCreateAccelerationStructureKHR', 'vkCmdBuildAccelerationStructuresKHR',
 	'vkCmdBuildAccelerationStructuresIndirectKHR',
 	'vkUpdateDescriptorSetWithTemplate', 'vkUpdateDescriptorSetWithTemplateKHR', 'vkCmdPushDescriptorSetWithTemplate', 'vkCmdPushDescriptorSetWithTemplateKHR' ]

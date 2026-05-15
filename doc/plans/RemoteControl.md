@@ -79,6 +79,11 @@ resources needing rights before we enter a sandbox level that prohibits them.
 
 # Open questions for later
 
+## lava-tool
+
+There might be some value in running `lava-tool` also in daemon mode with remote control,
+especially if debugging the spirv-simulator.
+
 ## Android
 
 Should daemon mode be the default? Then replay is always remote controlled from linux. Makes

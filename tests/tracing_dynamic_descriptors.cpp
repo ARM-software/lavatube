@@ -197,19 +197,20 @@ static void submit_bind(const vulkan_setup_t& vulkan, VkCommandPool cmdpool, VkQ
 	trace_vkFreeCommandBuffers(vulkan.device, cmdpool, 1, &cmd);
 }
 
-static void trace_null_dynamic_slot(const vulkan_setup_t& vulkan, VkDescriptorPool pool, VkCommandPool cmdpool, VkQueue queue)
+static void trace_dynamic_array_bind(const vulkan_setup_t& vulkan, VkDescriptorPool pool, VkCommandPool cmdpool, VkQueue queue)
 {
 	const descriptor_layout layout = create_dynamic_layout(vulkan, { 3 });
 	const VkDescriptorSet set = allocate_descriptor_set(vulkan, pool, layout.set_layout);
 
 	const traced_buffer first = create_traced_buffer(vulkan, 0x11);
+	const traced_buffer second = create_traced_buffer(vulkan, 0x22);
 	const traced_buffer third = create_traced_buffer(vulkan, 0x33);
 
 	std::array<VkDescriptorBufferInfo, 3> infos = {};
 	infos[0].buffer = first.buffer;
 	infos[0].offset = 0;
 	infos[0].range = dynamic_range;
-	infos[1].buffer = VK_NULL_HANDLE;
+	infos[1].buffer = second.buffer;
 	infos[1].offset = 0;
 	infos[1].range = dynamic_range;
 	infos[2].buffer = third.buffer;
@@ -230,6 +231,7 @@ static void trace_null_dynamic_slot(const vulkan_setup_t& vulkan, VkDescriptorPo
 	submit_bind(vulkan, cmdpool, queue, layout.pipeline_layout, set, 3, dynamic_offsets);
 
 	expected_updates.push_back({ first.index, dynamic_offsets[0], dynamic_range });
+	expected_updates.push_back({ second.index, dynamic_offsets[1], dynamic_range });
 	expected_updates.push_back({ third.index, dynamic_offsets[2], dynamic_range });
 }
 
@@ -413,7 +415,7 @@ static void trace()
 	trace_vkGetDeviceQueue(vulkan.device, 0, 0, &queue);
 	assert(queue != VK_NULL_HANDLE);
 
-	trace_null_dynamic_slot(vulkan, pool, cmdpool, queue);
+	trace_dynamic_array_bind(vulkan, pool, cmdpool, queue);
 	trace_dynamic_array_copy(vulkan, pool, cmdpool, queue);
 	trace_dynamic_binding_copy(vulkan, pool, cmdpool, queue);
 
