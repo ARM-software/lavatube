@@ -6,7 +6,9 @@
 #include <stdint.h>
 #include <errno.h>
 #include <vector>
+#include <cstring>
 #include "jsoncpp/json/value.h"
+#include "zipc.h"
 
 #define FAIL(_format, ...) do { fprintf(stderr, "%s:%d " _format "\n", __FILE__, __LINE__, ## __VA_ARGS__); exit(-1); } while(0)
 
@@ -17,6 +19,12 @@ struct packed
 	inline void read(void* ptr, uint_fast32_t _size)
 	{
 		assert(_size <= filesize - consumed);
+		if (zip_handle)
+		{
+			memcpy(ptr, static_cast<const char*>(zip_mapping.data) + consumed, _size);
+			consumed += _size;
+			return;
+		}
 		size_t actually_read = 0;
 		errno = 0;
 		do
@@ -28,7 +36,23 @@ struct packed
 		consumed += _size;
 	}
 
-	inline void close() { ::close(fd); fd = 0; filesize = 0; consumed = 0; }
+	inline void close()
+	{
+		if (zip_handle)
+		{
+			zipc_unmap_read(zip_handle, zip_mapping);
+			zipc_close(zip_handle);
+			zip_handle = nullptr;
+			zip_mapping = {};
+		}
+		if (fd != -1)
+		{
+			::close(fd);
+			fd = -1;
+		}
+		filesize = 0;
+		consumed = 0;
+	}
 
 	// treat these as private:
 	uint64_t filesize = 0;
@@ -36,6 +60,8 @@ struct packed
 	uint64_t last_idx_ptr_pos = 0; // position of last next-index pointer, if non-zero
 	int fd = -1;
 	int version = 0;
+	zipc* zip_handle = nullptr;
+	zipc_mapping zip_mapping = {};
 	std::string inside;
 	std::string pack;
 };

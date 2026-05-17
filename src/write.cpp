@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <fstream>
+#include <cstring>
 #include <errno.h>
 #include <unistd.h>
 
@@ -87,6 +88,24 @@ static void merge_tracking_field(Json::Value& dst, const Json::Value& src, const
 			dst_value[field] = src_value[field];
 		}
 	}
+}
+
+static bool has_suffix(const std::string& value, const char* suffix)
+{
+	const size_t suffix_len = strlen(suffix);
+	return value.size() >= suffix_len && value.compare(value.size() - suffix_len, suffix_len, suffix) == 0;
+}
+
+static const char* trace_pack_suffix()
+{
+	return p__zipcontainer ? ".api" : ".vk";
+}
+
+static std::string trace_pack_path(const std::string& path, bool explicit_output)
+{
+	if (has_suffix(path, ".vk") || has_suffix(path, ".api")) return path;
+	if (explicit_output) return path + trace_pack_suffix();
+	return path + trace_pack_suffix();
 }
 
 // --- trace file writer
@@ -192,7 +211,7 @@ lava_writer& lava_writer::instance()
 void lava_writer::set(const std::string& path)
 {
 	mPath = path + "_tmp";
-	mPack = path + ".vk";
+	mPack = trace_pack_path(path, false);
 	write_output = false;
 	ILOG("Base path is set to %s", mPath.c_str());
 
@@ -217,8 +236,8 @@ void lava_writer::set(const std::string& path)
 
 void lava_writer::set_output(const std::string& packed_path)
 {
-	mPath = packed_path + "_tmp";
-	mPack = packed_path;
+	mPack = trace_pack_path(packed_path, true);
+	mPath = mPack + "_tmp";
 	write_output = true;
 	ILOG("Output path is set to %s", mPack.c_str());
 

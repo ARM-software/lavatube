@@ -49,6 +49,44 @@ void file_reader::init(int fd, size_t uncompressed_size, size_t uncompressed_tar
 	decompressor_thread = std::thread(&file_reader::decompressor, this);
 }
 
+void file_reader::init_mapped(const packed& pf, size_t uncompressed_size, size_t uncompressed_target)
+{
+	if (total_left == 0) ABORT("Input file \"%s\" is empty!", mFilename.c_str());
+
+	assert(pf.zip_handle);
+	assert(pf.zip_mapping.data);
+	fstart = (char*)pf.zip_mapping.map_base;
+	compressed_data = (char*)pf.zip_mapping.data;
+	mapped_size = pf.zip_mapping.map_length;
+	assert(uncompressed_size > 0);
+	total_uncompressed = uncompressed_size;
+	uncompressed_wanted = uncompressed_target;
+
+	const char* magic_word = "LAVABIN";
+	if (memcmp(compressed_data, magic_word, strlen(magic_word)) == 0)
+	{
+		compressed_data += strlen(magic_word);
+		const uint8_t version = (uint8_t)compressed_data[0];
+		assert(version == 1 || version == 2);
+		stream_version = version;
+		compression_algorithm = compressed_data[1];
+		assert(compression_algorithm == LAVATUBE_COMPRESSION_DENSITY || compression_algorithm == LAVATUBE_COMPRESSION_LZ4 || compression_algorithm == LAVATUBE_COMPRESSION_UNCOMPRESSED);
+		const size_t header_bytes = strlen(magic_word) + 32;
+		assert(total_left >= header_bytes);
+		compressed_data += 32;
+		total_left -= header_bytes;
+	}
+	compressed_stream_start = compressed_data;
+	total_compressed_stream = total_left;
+	madvise(fstart, mapped_size, MADV_SEQUENTIAL);
+
+	const uint64_t padded_size = (compression_algorithm == LAVATUBE_COMPRESSION_DENSITY) ? density_decompress_safe_size(uncompressed_size) : uncompressed_size;
+	uncompressed_data = (char*)mmap(nullptr, padded_size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+
+	done_decompressing = false;
+	decompressor_thread = std::thread(&file_reader::decompressor, this);
+}
+
 file_reader::file_reader(const std::string& filename, unsigned mytid, size_t uncompressed_size, size_t uncompressed_target, bool preload_active)
 	: preload_activated(preload_active), tid(mytid), mFilename(filename)
 {
@@ -66,9 +104,19 @@ file_reader::file_reader(const std::string& filename, unsigned mytid, size_t unc
 file_reader::file_reader(packed pf, unsigned mytid, size_t uncompressed_size, size_t uncompressed_target, bool preload_active)
 	: preload_activated(preload_active), tid(mytid), mFilename(pf.inside)
 {
-	assert(pf.fd != -1);
 	total_left = pf.filesize;
-	init(pf.fd, uncompressed_size, uncompressed_target);
+	if (pf.zip_handle)
+	{
+		zip_handle = pf.zip_handle;
+		zip_mapping = pf.zip_mapping;
+		init_mapped(pf, uncompressed_size, uncompressed_target);
+	}
+	else
+	{
+		assert(pf.fd != -1);
+		init(pf.fd, uncompressed_size, uncompressed_target);
+		close(pf.fd);
+	}
 	DLOG("%u : %s opened for reading from inside %s (size %lu) and decompressor thread launched!", tid, pf.inside.c_str(), pf.pack.c_str(), (unsigned long)pf.filesize);
 }
 
@@ -108,7 +156,12 @@ file_reader::~file_reader()
 {
 	done_decompressing = true;
 	if (decompressor_thread.joinable()) decompressor_thread.join();
-	munmap(fstart, mapped_size);
+	if (zip_handle)
+	{
+		zipc_unmap_read(zip_handle, zip_mapping);
+		zipc_close(zip_handle);
+	}
+	else munmap(fstart, mapped_size);
 	const uint64_t padded_size = (compression_algorithm == LAVATUBE_COMPRESSION_DENSITY) ? density_decompress_safe_size(total_uncompressed) : total_uncompressed;
 	munmap(uncompressed_data, padded_size);
 }

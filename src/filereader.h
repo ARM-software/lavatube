@@ -218,6 +218,7 @@ public:
 private:
 	void decompressor(); // runs in separate thread, moves chunks from file to uncompressed chunks
 	void init(int fd, size_t uncompressed_size, size_t uncompressed_target);
+	void init_mapped(const packed& pf, size_t uncompressed_size, size_t uncompressed_target);
 
 	bool multithreaded_read = true;
 	size_t last_chunk_uncompressed_size = 0;
@@ -235,6 +236,8 @@ private:
 	std::atomic_uint64_t uncompressed_released_bytes { 0 };
 	/// Name of compressed input file
 	std::string mFilename;
+	zipc* zip_handle = nullptr;
+	zipc_mapping zip_mapping = {};
 	/// Start CPU usage for our worker thread
 	struct timespec worker_cpu_usage = {};
 	/// Start CPU usage for our runner thread

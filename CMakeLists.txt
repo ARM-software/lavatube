@@ -174,6 +174,7 @@ set(COMMON_INCLUDE
     PUBLIC ${SRC_ROOT}/external/tracetooltests/external/Vulkan-Headers/include
     PUBLIC ${SRC_ROOT}/external/tracetooltests/external/SPIRV-Headers/include
     PRIVATE ${SRC_ROOT}/external/jsoncpp
+    PRIVATE ${SRC_ROOT}/external/zipcontainer
 )
 
 set(VULKAN_TESTS_SRC
@@ -501,7 +502,7 @@ add_lavatube_test(write_test_4 COMMAND write4)
 
 add_executable(read4 tests/read4.cpp src/filereader.cpp src/util.cpp src/android_utils.cpp)
 target_include_directories(read4 ${COMMON_INCLUDE})
-target_link_libraries(read4 ${MOST_COMMON_LIBRARIES} density LZ4::LZ4)
+target_link_libraries(read4 ${MOST_COMMON_LIBRARIES} density LZ4::LZ4 zipcontainer)
 
 target_compile_options(read4 PRIVATE ${COMMON_FLAGS})
 add_dependencies(read4 sync_generated)
@@ -510,7 +511,7 @@ set_property(TEST read_test_4 APPEND PROPERTY DEPENDS write_test_4)
 
 add_executable(read_preload tests/read_preload.cpp src/filewriter.cpp src/filereader.cpp src/util.cpp src/android_utils.cpp)
 target_include_directories(read_preload ${COMMON_INCLUDE})
-target_link_libraries(read_preload ${MOST_COMMON_LIBRARIES} density LZ4::LZ4)
+target_link_libraries(read_preload ${MOST_COMMON_LIBRARIES} density LZ4::LZ4 zipcontainer)
 target_compile_options(read_preload PRIVATE ${COMMON_FLAGS})
 add_dependencies(read_preload sync_generated)
 add_lavatube_test(read_test_preload COMMAND read_preload)
@@ -518,7 +519,7 @@ set_tests_properties(read_test_preload PROPERTIES TIMEOUT 10)
 
 add_executable(write5 tests/write5.cpp src/filewriter.cpp src/filereader.cpp src/util.cpp src/android_utils.cpp)
 target_include_directories(write5 ${COMMON_INCLUDE})
-target_link_libraries(write5 ${MOST_COMMON_LIBRARIES} density LZ4::LZ4)
+target_link_libraries(write5 ${MOST_COMMON_LIBRARIES} density LZ4::LZ4 zipcontainer)
 
 target_compile_options(write5 PRIVATE ${COMMON_FLAGS})
 add_dependencies(write5 sync_generated)

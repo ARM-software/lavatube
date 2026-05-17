@@ -1,8 +1,10 @@
 #include "jsoncpp/json/reader.h"
 #include "packfile.h"
+#include "zipc_utility.h"
 #include "util.h"
 
 #include <sys/sendfile.h>
+#include <sys/mman.h>
 #include <string>
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -13,6 +15,11 @@
 #include <string.h>
 
 static const uint16_t filename_length = 40;
+
+static bool is_zip_pack(const std::string& packfile)
+{
+	return packfile.size() >= 4 && packfile.compare(packfile.size() - 4, 4, ".api") == 0;
+}
 
 struct fileentry {
 	uint64_t pos;
@@ -95,6 +102,16 @@ static std::vector<fileentry> get_packed_files(packed& pf)
 
 bool pack_add(const std::string& newfile, const std::string& pack)
 {
+	if (is_zip_pack(pack))
+	{
+		const enum zipc_status status = zipc_add_file(pack, newfile);
+		if (status != ZIPC_SUCCESS)
+		{
+			FAIL("Failed to add \"%s\" to \"%s\": %s", newfile.c_str(), pack.c_str(), zipc_strerror(status));
+		}
+		return true;
+	}
+
 	packed pfread = internal_packed_open(pack);
 	if (pfread.version == 0) FAIL("%s is version 0 and cannot be appended!", pack.c_str());
 	(void)get_packed_files(pfread); // just want pf.last_idx_ptr_pos to be set
@@ -144,8 +161,94 @@ bool pack_add(const std::string& newfile, const std::string& pack)
 	return true;
 }
 
+static bool pack_directory_zip(const std::string& pack, const std::string& directory, bool erase)
+{
+	struct dirent **namelist;
+	int n = scandir(directory.c_str(), &namelist, NULL, alphasort);
+	if (n < 0) FAIL("Failed to scan \"%s\": %s", directory.c_str(), strerror(errno));
+
+	enum zipc_status status = ZIPC_SUCCESS;
+	zipc* archive = zipc_open(pack.c_str(), "w", &status);
+	if (!archive) FAIL("Failed to create \"%s\": %s", pack.c_str(), zipc_strerror(status));
+
+	for (int i = 0; i < n; i++)
+	{
+		if (namelist[i]->d_name[0] == '.') continue;
+
+		const std::string name = directory + "/" + std::string(namelist[i]->d_name);
+		int flags = O_RDONLY;
+#ifndef __ANDROID__
+		flags |= O_NOATIME;
+#endif
+		int fd = openat(AT_FDCWD, name.c_str(), flags);
+		if (fd == -1) FAIL("Failed to open \"%s\": %s", name.c_str(), strerror(errno));
+
+		struct stat st;
+		int r = fstat(fd, &st);
+		if (r == -1) FAIL("Failed to stat \"%s\": %s", name.c_str(), strerror(errno));
+		if (!S_ISREG(st.st_mode)) FAIL("%s is not a regular file!", name.c_str());
+
+		if (st.st_size == 0)
+		{
+			status = zipc_write(archive, namelist[i]->d_name, 0, nullptr);
+		}
+		else
+		{
+			void* mapped = mmap(nullptr, st.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
+			if (mapped == MAP_FAILED) FAIL("Failed to map \"%s\": %s", name.c_str(), strerror(errno));
+			status = zipc_write(archive, namelist[i]->d_name, st.st_size, mapped);
+			int unmap_result = munmap(mapped, st.st_size);
+			if (unmap_result != 0) FAIL("Failed to unmap \"%s\": %s", name.c_str(), strerror(errno));
+		}
+
+		r = close(fd);
+		assert(r != -1);
+		if (status != ZIPC_SUCCESS) FAIL("Failed to add \"%s\" to \"%s\": %s", name.c_str(), pack.c_str(), zipc_strerror(status));
+	}
+
+	status = zipc_close(archive);
+	if (status != ZIPC_SUCCESS) FAIL("Failed to close \"%s\": %s", pack.c_str(), zipc_strerror(status));
+
+	for (int i = 0; i < n; i++)
+	{
+		if (erase && namelist[i]->d_name[0] != '.')
+		{
+			std::string name = directory + "/" + std::string(namelist[i]->d_name);
+			int res = remove(name.c_str());
+			if (res == -1) ELOG("Could not remove %s: %s", name.c_str(), strerror(errno));
+		}
+		free(namelist[i]);
+	}
+	free(namelist);
+	if (erase)
+	{
+		int res = rmdir(directory.c_str());
+		if (res == -1) ELOG("Could not remove %s: %s", directory.c_str(), strerror(errno));
+	}
+	return true;
+}
+
 packed packed_open(const std::string& inside, const std::string& pack)
 {
+	if (is_zip_pack(pack))
+	{
+		enum zipc_status status = ZIPC_SUCCESS;
+		packed pf;
+		pf.pack = pack;
+		pf.inside = inside;
+		pf.zip_handle = zipc_open(pack.c_str(), "r", &status);
+		if (!pf.zip_handle) FAIL("Cannot open zip file \"%s\": %s", pack.c_str(), zipc_strerror(status));
+		pf.zip_mapping = zipc_map_read(pf.zip_handle, inside.c_str(), &status);
+		if (!pf.zip_mapping.data)
+		{
+			zipc_close(pf.zip_handle);
+			pf.zip_handle = nullptr;
+			FAIL("Failed to open \"%s\" inside \"%s\": %s", inside.c_str(), pack.c_str(), zipc_strerror(status));
+		}
+		pf.filesize = pf.zip_mapping.size;
+		return pf;
+	}
+
 	packed pf = internal_packed_open(pack);
 	pf.inside = inside;
 	std::vector<fileentry> list = get_packed_files(pf);
@@ -166,6 +269,33 @@ packed packed_open(const std::string& inside, const std::string& pack)
 
 void packed_list(const std::string& pack)
 {
+	if (is_zip_pack(pack))
+	{
+		enum zipc_status status = ZIPC_SUCCESS;
+		zipc* archive = zipc_open(pack.c_str(), "r", &status);
+		if (!archive) FAIL("Cannot open zip file \"%s\": %s", pack.c_str(), zipc_strerror(status));
+		std::vector<std::string> list = zipc_files(pack);
+		if (list.empty())
+		{
+			zipc_close(archive);
+			return;
+		}
+		printf("%-40s : %-20s : %-20s\n", "Filename", "Position", "Size");
+		for (const auto& name : list)
+		{
+			uint64_t size = 0;
+			status = zipc_filesize(archive, name.c_str(), &size);
+			if (status != ZIPC_SUCCESS)
+			{
+				zipc_close(archive);
+				FAIL("Failed to stat \"%s\" inside \"%s\": %s", name.c_str(), pack.c_str(), zipc_strerror(status));
+			}
+			printf("%-40s : %20d : %20lu\n", name.c_str(), 0, (unsigned long)size);
+		}
+		zipc_close(archive);
+		return;
+	}
+
 	packed pf = internal_packed_open(pack);
 	if (pf.size() == 0) return;
 	std::vector<fileentry> list = get_packed_files(pf);
@@ -180,6 +310,11 @@ void packed_list(const std::string& pack)
 
 std::vector<std::string> packed_files(const std::string& pack, const std::string& startsWith)
 {
+	if (is_zip_pack(pack))
+	{
+		return zipc_files(pack, startsWith);
+	}
+
 	std::vector<std::string> retval;
 	packed pf = internal_packed_open(pack);
 	std::vector<fileentry> list = get_packed_files(pf);
@@ -230,6 +365,11 @@ void erase_directory(const std::string& directory)
 
 bool pack_directory(const std::string& pack, const std::string& directory, bool erase)
 {
+	if (is_zip_pack(pack))
+	{
+		return pack_directory_zip(pack, directory, erase);
+	}
+
 	struct dirent **namelist;
 	int n; // number of found entries in directory
 	const char* signature = "LAVA0001";
@@ -317,6 +457,71 @@ bool unpack_directory(const std::string& pack, const std::string& directory)
 {
 	int r = mkdir(directory.c_str(), 0777);
 	if (r == -1 && errno != EEXIST) ELOG("Could not create \"%s\": %s", directory.c_str(), strerror(errno));
+	if (is_zip_pack(pack))
+	{
+		const std::vector<std::string> files = zipc_files(pack);
+		enum zipc_status status = ZIPC_SUCCESS;
+		zipc* archive = zipc_open(pack.c_str(), "r", &status);
+		if (!archive) FAIL("Cannot open zip file \"%s\": %s", pack.c_str(), zipc_strerror(status));
+		std::vector<char> buffer(1024 * 1024);
+		for (const std::string& name : files)
+		{
+			uint64_t size = 0;
+			status = zipc_filesize(archive, name.c_str(), &size);
+			if (status != ZIPC_SUCCESS)
+			{
+				zipc_close(archive);
+				FAIL("Failed to stat \"%s\" inside \"%s\": %s", name.c_str(), pack.c_str(), zipc_strerror(status));
+			}
+			std::string target = directory + "/" + name;
+			int flags = O_CREAT | O_TRUNC | O_WRONLY;
+#ifndef __ANDROID__
+			flags |= O_NOATIME;
+#endif
+			int fd = openat(AT_FDCWD, target.c_str(), flags, 0664);
+			if (fd == -1)
+			{
+				zipc_close(archive);
+				FAIL("Failed to open \"%s\": %s", target.c_str(), strerror(errno));
+			}
+			zipc_mapping mapping = zipc_map_read(archive, name.c_str(), &status);
+			if (!mapping.data)
+			{
+				close(fd);
+				zipc_close(archive);
+				FAIL("Failed to read \"%s\" inside \"%s\": %s", name.c_str(), pack.c_str(), zipc_strerror(status));
+			}
+			uint64_t remaining = size;
+			const char* ptr = static_cast<const char*>(mapping.data);
+			while (remaining > 0)
+			{
+				const size_t chunk = std::min<uint64_t>(buffer.size(), remaining);
+				memcpy(buffer.data(), ptr, chunk);
+				ptr += chunk;
+				size_t written = 0;
+				while (written < chunk)
+				{
+					const ssize_t res = write(fd, buffer.data() + written, chunk - written);
+					if (res == -1 && errno == EINTR) continue;
+					if (res <= 0)
+					{
+						zipc_unmap_read(archive, mapping);
+						close(fd);
+						zipc_close(archive);
+						FAIL("Failed to write \"%s\": %s", target.c_str(), strerror(errno));
+					}
+					written += res;
+				}
+				remaining -= chunk;
+			}
+			zipc_unmap_read(archive, mapping);
+			r = close(fd);
+			assert(r != -1);
+		}
+		zipc_close(archive);
+		return true;
+	}
+
 	packed pf = internal_packed_open(pack);
 	std::vector<fileentry> list = get_packed_files(pf);
 	for (auto& v : list)

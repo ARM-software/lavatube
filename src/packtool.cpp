@@ -1088,8 +1088,22 @@ int main(int argc, char* argv[])
 		packed pf = packed_open(argv[2], argv[3]);
 		int fd = open(argv[2], O_CREAT | O_TRUNC | O_WRONLY | O_NOATIME, 0664);
 		if (fd == -1) FAIL("Failed to create target %s: %s", argv[2], strerror(errno));
-		int res = sendfile(fd, pf.fd, nullptr, pf.filesize);
-		if (res == -1) FAIL("Failed to write out the file: %s\n", strerror(errno));
+		std::vector<char> buffer(1024 * 1024);
+		uint64_t remaining = pf.size();
+		while (remaining > 0)
+		{
+			const size_t chunk = std::min<uint64_t>(buffer.size(), remaining);
+			pf.read(buffer.data(), chunk);
+			size_t written = 0;
+			while (written < chunk)
+			{
+				const ssize_t res = write(fd, buffer.data() + written, chunk - written);
+				if (res == -1 && errno == EINTR) continue;
+				if (res <= 0) FAIL("Failed to write out the file: %s\n", strerror(errno));
+				written += res;
+			}
+			remaining -= chunk;
+		}
 		pf.close();
 		close(fd);
 		return 0;
