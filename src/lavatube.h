@@ -698,6 +698,14 @@ struct trackedcommand // does _not_ inherit trackable
 			uint32_t depth;
 			VkDeviceAddress indirect_device_address;
 		} trace_rays;
+		struct build_acceleration_structures
+		{
+			uint32_t instance_count;
+			VkDeviceAddress* instance_addresses;
+			VkDeviceSize* primitive_offsets;
+			uint32_t* primitive_counts;
+			VkDeviceAddress* indirect_range_addresses;
+		} build_acceleration_structures;
 	} data;
 	bool trace_rays_valid = false;
 };

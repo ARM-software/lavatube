@@ -880,6 +880,13 @@ layer_test(linear_optimal_mix linear_optimal_mix)
 #layer_test(graphics_multi_draw_stride16 graphics_multi_draw --multi-draw-mode indexed --stride-mode aligned16)
 #layer_test(graphics_multi_draw_stride32 graphics_multi_draw --multi-draw-mode draw --stride-mode aligned32)
 
+# --- Simulator tests ---
+
+add_lavatube_test(markings_compare_rt4_generate COMMAND ${CMAKE_BINARY_DIR}/lava-tool -S ${CMAKE_BINARY_DIR}/vulkan_raytracing_4_raw.vk ${CMAKE_BINARY_DIR}/vulkan_raytracing_4_generated.vk)
+set_tests_properties(markings_compare_rt4_generate PROPERTIES FIXTURES_REQUIRED "raytracing_4" FIXTURES_SETUP "raytracing_4_generate_markings" SKIP_RETURN_CODE 77)
+add_lavatube_test(markings_compare_rt4_compare COMMAND ${CMAKE_BINARY_DIR}/packtool diff --assert-markings ${CMAKE_BINARY_DIR}/vulkan_raytracing_4.vk ${CMAKE_BINARY_DIR}/vulkan_raytracing_4_generated.vk)
+set_tests_properties(markings_compare_rt4_compare PROPERTIES FIXTURES_REQUIRED "raytracing_4_generate_markings" SKIP_RETURN_CODE 77)
+
 # --- Android emulator tracing test ---
 
 if (ANDROID)

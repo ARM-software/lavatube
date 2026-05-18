@@ -567,6 +567,8 @@ static void add_callbacks_for_first_round(bool enable_simulation, bool enable_su
 		CALLBACK(vkCreateComputePipelines);
 		CALLBACK(vkCreateDataGraphPipelinesARM);
 		CALLBACK(vkCmdBindPipeline);
+		CALLBACK(vkCmdBuildAccelerationStructuresKHR);
+		CALLBACK(vkCmdBuildAccelerationStructuresIndirectKHR);
 		CALLBACK(vkCmdDispatchDataGraphARM);
 		CALLBACK(vkCmdTraceRaysKHR);
 		CALLBACK(vkCmdTraceRaysIndirectKHR);

@@ -19,6 +19,11 @@ void postprocess_vkQueueSubmit2(callback_context& cb, VkQueue queue, uint32_t su
 void postprocess_vkQueueSubmit2KHR(callback_context& cb, VkQueue queue, uint32_t submitCount, const VkSubmitInfo2KHR* pSubmits, VkFence fence);
 void postprocess_vkQueueSubmit(callback_context& cb, VkQueue queue, uint32_t submitCount, const VkSubmitInfo* pSubmits, VkFence fence);
 void postprocess_vkCmdBindPipeline(callback_context& cb, VkCommandBuffer commandBuffer, VkPipelineBindPoint pipelineBindPoint, VkPipeline pipeline);
+void postprocess_vkCmdBuildAccelerationStructuresKHR(callback_context& cb, VkCommandBuffer commandBuffer, uint32_t infoCount,
+	const VkAccelerationStructureBuildGeometryInfoKHR* pInfos, const VkAccelerationStructureBuildRangeInfoKHR* const* ppBuildRangeInfos);
+void postprocess_vkCmdBuildAccelerationStructuresIndirectKHR(callback_context& cb, VkCommandBuffer commandBuffer, uint32_t infoCount,
+	const VkAccelerationStructureBuildGeometryInfoKHR* pInfos, const VkDeviceAddress* pIndirectDeviceAddresses,
+	const uint32_t* pIndirectStrides, const uint32_t* const* ppMaxPrimitiveCounts);
 void postprocess_vkCmdPushConstants(callback_context& cb, VkCommandBuffer commandBuffer, VkPipelineLayout layout, VkShaderStageFlags stageFlags, uint32_t offset, uint32_t size, const void* pValues);
 void postprocess_vkCmdPushConstants2KHR(callback_context& cb, VkCommandBuffer commandBuffer, const VkPushConstantsInfoKHR* pPushConstantsInfo);
 void postprocess_vkCmdPushConstants2(callback_context& cb, VkCommandBuffer commandBuffer, const VkPushConstantsInfo* pPushConstantsInfo);

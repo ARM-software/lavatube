@@ -301,6 +301,160 @@ void postprocess_vkCmdBindPipeline(callback_context& cb, VkCommandBuffer command
 	cmdbuffer_data.commands.push_back(cmd);
 }
 
+static void init_acceleration_structure_instance_uses(trackedcommand& cmd)
+{
+	cmd.data.build_acceleration_structures.instance_count = 0;
+	cmd.data.build_acceleration_structures.instance_addresses = nullptr;
+	cmd.data.build_acceleration_structures.primitive_offsets = nullptr;
+	cmd.data.build_acceleration_structures.primitive_counts = nullptr;
+	cmd.data.build_acceleration_structures.indirect_range_addresses = nullptr;
+}
+
+static void free_acceleration_structure_instance_uses(trackedcommand& cmd)
+{
+	free(cmd.data.build_acceleration_structures.instance_addresses);
+	free(cmd.data.build_acceleration_structures.primitive_offsets);
+	free(cmd.data.build_acceleration_structures.primitive_counts);
+	free(cmd.data.build_acceleration_structures.indirect_range_addresses);
+	cmd.data.build_acceleration_structures.instance_addresses = nullptr;
+	cmd.data.build_acceleration_structures.primitive_offsets = nullptr;
+	cmd.data.build_acceleration_structures.primitive_counts = nullptr;
+	cmd.data.build_acceleration_structures.indirect_range_addresses = nullptr;
+	cmd.data.build_acceleration_structures.instance_count = 0;
+}
+
+static void append_acceleration_structure_instance_use(trackedcommand& cmd, VkDeviceAddress address, VkDeviceSize primitive_offset, uint32_t primitive_count,
+	VkDeviceAddress indirect_range_address = 0)
+{
+	if (address == 0 || (primitive_count == 0 && indirect_range_address == 0)) return;
+	const uint32_t index = cmd.data.build_acceleration_structures.instance_count;
+	const uint32_t count = index + 1;
+	VkDeviceAddress* addresses = (VkDeviceAddress*)malloc(count * sizeof(VkDeviceAddress));
+	VkDeviceSize* offsets = (VkDeviceSize*)malloc(count * sizeof(VkDeviceSize));
+	uint32_t* counts = (uint32_t*)malloc(count * sizeof(uint32_t));
+	VkDeviceAddress* indirect_ranges = (VkDeviceAddress*)malloc(count * sizeof(VkDeviceAddress));
+	if (!addresses || !offsets || !counts || !indirect_ranges)
+	{
+		free(addresses);
+		free(offsets);
+		free(counts);
+		free(indirect_ranges);
+		ABORT("Failed to allocate acceleration structure instance tracking");
+	}
+	if (index > 0)
+	{
+		memcpy(addresses, cmd.data.build_acceleration_structures.instance_addresses, index * sizeof(VkDeviceAddress));
+		memcpy(offsets, cmd.data.build_acceleration_structures.primitive_offsets, index * sizeof(VkDeviceSize));
+		memcpy(counts, cmd.data.build_acceleration_structures.primitive_counts, index * sizeof(uint32_t));
+		memcpy(indirect_ranges, cmd.data.build_acceleration_structures.indirect_range_addresses, index * sizeof(VkDeviceAddress));
+	}
+	free(cmd.data.build_acceleration_structures.instance_addresses);
+	free(cmd.data.build_acceleration_structures.primitive_offsets);
+	free(cmd.data.build_acceleration_structures.primitive_counts);
+	free(cmd.data.build_acceleration_structures.indirect_range_addresses);
+	addresses[index] = address;
+	offsets[index] = primitive_offset;
+	counts[index] = primitive_count;
+	indirect_ranges[index] = indirect_range_address;
+	cmd.data.build_acceleration_structures.instance_count = count;
+	cmd.data.build_acceleration_structures.instance_addresses = addresses;
+	cmd.data.build_acceleration_structures.primitive_offsets = offsets;
+	cmd.data.build_acceleration_structures.primitive_counts = counts;
+	cmd.data.build_acceleration_structures.indirect_range_addresses = indirect_ranges;
+}
+
+void postprocess_vkCmdBuildAccelerationStructuresKHR(callback_context& cb, VkCommandBuffer commandBuffer, uint32_t infoCount,
+	const VkAccelerationStructureBuildGeometryInfoKHR* pInfos, const VkAccelerationStructureBuildRangeInfoKHR* const* ppBuildRangeInfos)
+{
+	if (!pInfos || !ppBuildRangeInfos || infoCount == 0) return;
+	const uint32_t cmdbuffer_index = index_to_VkCommandBuffer.index(commandBuffer);
+	auto& cmdbuffer_data = VkCommandBuffer_index.at(cmdbuffer_index);
+	trackedcommand cmd { VKCMDBUILDACCELERATIONSTRUCTURESKHR };
+	cmd.source = cb.reader.current;
+	init_acceleration_structure_instance_uses(cmd);
+
+	for (uint32_t info_idx = 0; info_idx < infoCount; info_idx++)
+	{
+		const VkAccelerationStructureBuildGeometryInfoKHR& info = pInfos[info_idx];
+		const VkAccelerationStructureBuildRangeInfoKHR* ranges = ppBuildRangeInfos[info_idx];
+		if (!ranges) continue;
+		for (uint32_t g = 0; g < info.geometryCount; g++)
+		{
+			const VkAccelerationStructureGeometryKHR* geometry = nullptr;
+			if (info.pGeometries) geometry = &info.pGeometries[g];
+			else if (info.ppGeometries) geometry = info.ppGeometries[g];
+			if (!geometry || geometry->geometryType != VK_GEOMETRY_TYPE_INSTANCES_KHR) continue;
+
+			const VkAccelerationStructureGeometryInstancesDataKHR& instances = geometry->geometry.instances;
+			if (instances.arrayOfPointers)
+			{
+				ABORT("vkCmdBuildAccelerationStructuresKHR postprocess does not support arrayOfPointers");
+			}
+			append_acceleration_structure_instance_use(cmd, instances.data.deviceAddress, ranges[g].primitiveOffset, ranges[g].primitiveCount);
+		}
+	}
+
+	if (cmd.data.build_acceleration_structures.instance_count == 0)
+	{
+		free_acceleration_structure_instance_uses(cmd);
+		return;
+	}
+	cmdbuffer_data.commands.push_back(cmd);
+}
+
+void postprocess_vkCmdBuildAccelerationStructuresIndirectKHR(callback_context& cb, VkCommandBuffer commandBuffer, uint32_t infoCount,
+	const VkAccelerationStructureBuildGeometryInfoKHR* pInfos, const VkDeviceAddress* pIndirectDeviceAddresses,
+	const uint32_t* pIndirectStrides, const uint32_t* const* ppMaxPrimitiveCounts)
+{
+	(void)ppMaxPrimitiveCounts;
+	if (!pInfos || !pIndirectDeviceAddresses || !pIndirectStrides || infoCount == 0) return;
+	const uint32_t cmdbuffer_index = index_to_VkCommandBuffer.index(commandBuffer);
+	auto& cmdbuffer_data = VkCommandBuffer_index.at(cmdbuffer_index);
+	trackedcommand cmd { VKCMDBUILDACCELERATIONSTRUCTURESKHR };
+	cmd.source = cb.reader.current;
+	init_acceleration_structure_instance_uses(cmd);
+
+	for (uint32_t info_idx = 0; info_idx < infoCount; info_idx++)
+	{
+		const VkAccelerationStructureBuildGeometryInfoKHR& info = pInfos[info_idx];
+		const VkDeviceAddress ranges_address = pIndirectDeviceAddresses[info_idx];
+		if (ranges_address == 0) continue;
+		const uint32_t stride = pIndirectStrides[info_idx];
+		for (uint32_t g = 0; g < info.geometryCount; g++)
+		{
+			const VkAccelerationStructureGeometryKHR* geometry = nullptr;
+			if (info.pGeometries) geometry = &info.pGeometries[g];
+			else if (info.ppGeometries) geometry = info.ppGeometries[g];
+			if (!geometry || geometry->geometryType != VK_GEOMETRY_TYPE_INSTANCES_KHR) continue;
+
+			const VkAccelerationStructureGeometryInstancesDataKHR& instances = geometry->geometry.instances;
+			if (instances.arrayOfPointers)
+			{
+				ABORT("vkCmdBuildAccelerationStructuresIndirectKHR postprocess does not support arrayOfPointers");
+			}
+			if (stride < sizeof(VkAccelerationStructureBuildRangeInfoKHR))
+			{
+				ABORT("vkCmdBuildAccelerationStructuresIndirectKHR postprocess got invalid indirect stride %u for build info %u",
+					(unsigned)stride, (unsigned)info_idx);
+			}
+			const VkDeviceAddress range_address = ranges_address + (VkDeviceAddress)g * stride;
+			if (range_address < ranges_address)
+			{
+				ABORT("vkCmdBuildAccelerationStructuresIndirectKHR indirect range address overflow for build info %u",
+					(unsigned)info_idx);
+			}
+			append_acceleration_structure_instance_use(cmd, instances.data.deviceAddress, 0, 0, range_address);
+		}
+	}
+
+	if (cmd.data.build_acceleration_structures.instance_count == 0)
+	{
+		free_acceleration_structure_instance_uses(cmd);
+		return;
+	}
+	cmdbuffer_data.commands.push_back(cmd);
+}
+
 void postprocess_draw_command(callback_context& cb, uint32_t commandbuffer_index, trackedcmdbuffer& commandbuffer_data)
 {
 	trackedcommand cmd { VKCMDDRAW };

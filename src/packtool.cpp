@@ -420,6 +420,39 @@ static bool markings_entry_less(const collected_markings_entry& a, const collect
 	return a.occurrence < b.occurrence;
 }
 
+static std::string markings_semantic_key(const collected_markings_entry& entry)
+{
+	std::string key = _to_string((unsigned)entry.instrtype);
+	if (!entry.markings)
+	{
+		key += "|missing";
+		return key;
+	}
+
+	const VkMarkedOffsetsARM* markings = entry.markings;
+	key += "|count=" + _to_string((unsigned)markings->count);
+	key += "|types=" + _to_string(markings->pMarkingTypes ? 1 : 0);
+	key += "|subtypes=" + _to_string(markings->pSubTypes ? 1 : 0);
+	key += "|offsets=" + _to_string(markings->pOffsets ? 1 : 0);
+	for (uint32_t i = 0; i < markings->count; i++)
+	{
+		const uint32_t type = markings->pMarkingTypes ? (uint32_t)markings->pMarkingTypes[i] : 0;
+		const uint64_t subtype = markings->pSubTypes ? markings->pSubTypes[i].reserved : 0;
+		const uint64_t offset = markings->pOffsets ? markings->pOffsets[i] : 0;
+		key += "|" + _to_string((unsigned long long)offset)
+			+ "," + _to_string((unsigned)type)
+			+ "," + _to_string((unsigned long long)subtype);
+	}
+	return key;
+}
+
+static bool markings_entry_semantic_less(const collected_markings_entry& a, const collected_markings_entry& b)
+{
+	const std::string a_key = markings_semantic_key(a);
+	const std::string b_key = markings_semantic_key(b);
+	return a_key < b_key;
+}
+
 static void free_collected_markings(std::vector<collected_markings_entry>& entries)
 {
 	for (collected_markings_entry& entry : entries)
@@ -490,6 +523,8 @@ static markings_compare_result compare_packed_file_markings(const std::string& p
 	std::vector<collected_markings_entry> markings_b = collect_trace_markings(pack_b);
 	markings_a.erase(std::remove_if(markings_a.begin(), markings_a.end(), is_capture_flush_leftover_markings), markings_a.end());
 	markings_b.erase(std::remove_if(markings_b.begin(), markings_b.end(), is_capture_flush_leftover_markings), markings_b.end());
+	std::sort(markings_a.begin(), markings_a.end(), markings_entry_semantic_less);
+	std::sort(markings_b.begin(), markings_b.end(), markings_entry_semantic_less);
 
 	size_t i = 0;
 	size_t j = 0;
@@ -497,13 +532,13 @@ static markings_compare_result compare_packed_file_markings(const std::string& p
 	{
 		const collected_markings_entry& a = markings_a[i];
 		const collected_markings_entry& b = markings_b[j];
-		if (markings_entry_less(a, b))
+		if (markings_entry_semantic_less(a, b))
 		{
 			result.identical = false;
 			result.messages.push_back("Markings only in A at " + markings_location_string(a));
 			break;
 		}
-		if (markings_entry_less(b, a))
+		if (markings_entry_semantic_less(b, a))
 		{
 			result.identical = false;
 			result.messages.push_back("Markings only in B at " + markings_location_string(b));

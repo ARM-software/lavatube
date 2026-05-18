@@ -489,6 +489,48 @@ static void collect_stages_from_sbt_region(const lava_file_reader& reader, const
 	}
 }
 
+static void collect_acceleration_structure_instance_markings(const lava_file_reader& reader, const trackeddevice& device_data, VkDeviceAddress address,
+	VkDeviceSize primitive_offset, uint32_t primitive_count, std::vector<discovered_buffer_marking>& discovered)
+{
+	if (address == 0 || primitive_count == 0) return;
+	address += primitive_offset;
+	const VkDeviceSize size = (VkDeviceSize)primitive_count * sizeof(VkAccelerationStructureInstanceKHR);
+	mapped_address_range mapping;
+	if (!map_device_address_range(reader, device_data, address, size, mapping, "acceleration structure instances")) return;
+
+	VkMarkingSubTypeARM subtype{};
+	subtype.deviceAddressType = VK_DEVICE_ADDRESS_TYPE_ACCELERATION_STRUCTURE_ARM;
+	for (uint32_t i = 0; i < primitive_count; i++)
+	{
+		const VkDeviceSize instance_offset = (VkDeviceSize)i * sizeof(VkAccelerationStructureInstanceKHR);
+		const std::byte* instance_ptr = mapping.ptr + instance_offset;
+		uint64_t reference = 0;
+		memcpy(&reference, instance_ptr + offsetof(VkAccelerationStructureInstanceKHR, accelerationStructureReference), sizeof(reference));
+		if (reference == 0) continue;
+		discovered.push_back({
+			.buffer_data = mapping.buffer_data,
+			.offset = mapping.buffer_offset + instance_offset + offsetof(VkAccelerationStructureInstanceKHR, accelerationStructureReference),
+			.size = sizeof(VkDeviceAddress),
+			.type = VK_MARKING_TYPE_DEVICE_ADDRESS_ARM,
+			.subtype = subtype,
+		});
+	}
+}
+
+static bool read_acceleration_structure_build_range(const lava_file_reader& reader, const trackeddevice& device_data,
+	VkDeviceAddress address, VkAccelerationStructureBuildRangeInfoKHR& range)
+{
+	if (address == 0) return false;
+	mapped_address_range mapping;
+	if (!map_device_address_range(reader, device_data, address, sizeof(VkAccelerationStructureBuildRangeInfoKHR),
+		mapping, "indirect acceleration structure build range"))
+	{
+		return false;
+	}
+	memcpy(&range, mapping.ptr, sizeof(range));
+	return true;
+}
+
 bool execute_commands(lava_file_reader& reader, const trackeddevice& device_data, VkCommandBuffer commandBuffer)
 {
 	std::vector<std::byte> push_constants; // current state of the push constants
@@ -647,6 +689,34 @@ bool execute_commands(lava_file_reader& reader, const trackeddevice& device_data
 				assert(pair.first == stage.stage);
 				stage.calls++;
 				run_spirv(device_data, stage, c.source, push_constants, descriptorsets, imagesets, opaquesets);
+			}
+			break;
+		case VKCMDBUILDACCELERATIONSTRUCTURESKHR:
+			{
+				std::vector<discovered_buffer_marking> discovered_markings;
+				for (uint32_t i = 0; i < c.data.build_acceleration_structures.instance_count; i++)
+				{
+					VkDeviceSize primitive_offset = c.data.build_acceleration_structures.primitive_offsets[i];
+					uint32_t primitive_count = c.data.build_acceleration_structures.primitive_counts[i];
+					const VkDeviceAddress indirect_range_address = c.data.build_acceleration_structures.indirect_range_addresses[i];
+					if (indirect_range_address != 0)
+					{
+						VkAccelerationStructureBuildRangeInfoKHR range = {};
+						if (!read_acceleration_structure_build_range(reader, device_data, indirect_range_address, range)) continue;
+						primitive_offset = range.primitiveOffset;
+						primitive_count = range.primitiveCount;
+					}
+					collect_acceleration_structure_instance_markings(reader, device_data,
+						c.data.build_acceleration_structures.instance_addresses[i],
+						primitive_offset,
+						primitive_count,
+						discovered_markings);
+				}
+				merge_discovered_markings(reader, discovered_markings);
+				free(c.data.build_acceleration_structures.instance_addresses);
+				free(c.data.build_acceleration_structures.primitive_offsets);
+				free(c.data.build_acceleration_structures.primitive_counts);
+				free(c.data.build_acceleration_structures.indirect_range_addresses);
 			}
 			break;
 		case VKCMDTRACERAYSKHR: // proxy for all raytracing commands
