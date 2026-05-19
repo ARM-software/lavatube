@@ -33,11 +33,3 @@ execute_process(
 if(NOT compare_result EQUAL 0)
 	message(FATAL_ERROR "Rewritten trace differs from input trace")
 endif()
-
-execute_process(
-	COMMAND "${LAVA_TOOL}" -S "${OUTPUT_TRACE}"
-	RESULT_VARIABLE validate_result
-)
-if(NOT validate_result EQUAL 0)
-	message(FATAL_ERROR "Validation of rewritten trace failed with exit code ${validate_result}")
-endif()

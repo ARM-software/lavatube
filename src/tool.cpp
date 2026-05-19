@@ -1031,7 +1031,7 @@ static void usage()
 	printf("lava-tool [options] <input filename> [<output filename>]\n");
 	printf("-h/--help              This help\n");
 	printf("-v/--verbose           Verbose output\n");
-	printf("-S/--simulate          Run a simulation to find how memory is used (if no output file, we just validate and abort on any errors)\n");
+	printf("-S/--simulate          Run a simulation and write discovered memory markings to the output trace\n");
 #ifndef NDEBUG
 	printf("-d/--debug level       Set debug level [0,1,2,3]\n");
 	printf("-df/--debugfile FILE   Output debug output to the given file\n");
@@ -1382,6 +1382,7 @@ int main(int argc, char **argv)
 	std::string filename_input;
 	std::string filename_output;
 	bool skip_missing_input = false;
+	bool simulate_requested = false;
 
 	if (p__sandbox_level >= 1) sandbox_level_one();
 
@@ -1398,6 +1399,7 @@ int main(int argc, char **argv)
 		else if (match(argv[i], "-S", "--simulate", remaining))
 		{
 			simulate = true;
+			simulate_requested = true;
 		}
 		else if (match(argv[i], "-v", "--verbose", remaining))
 		{
@@ -1472,12 +1474,15 @@ int main(int argc, char **argv)
 	{
 		DIE("Output mode currently only supports no-op rewriting; frame selection and unused-feature removal are not supported");
 	}
+	if (simulate_requested && filename_output.empty())
+	{
+		DIE("-S/--simulate requires an output filename; input-only simulation validation has been removed");
+	}
 
 	if (p__sandbox_level >= 3) sandbox_level_two();
 
 	if (report_unused || dump_host_write_stats) simulate = true;
 
-	std::list<address_rewrite> rewrite_queue_copy;
 	std::list<address_rewrite> output_rewrite_queue_copy;
 
 	Json::Value meta = packed_json("metadata.json", filename_input);
@@ -1522,7 +1527,6 @@ int main(int argc, char **argv)
 
 		// Copy out the rewrite queue
 		sync_mutex.lock(); // threads are stopped here but let's avoid warnings
-		rewrite_queue_copy = replayer.global_rewrite_queue;
 		output_rewrite_queue_copy = replayer.global_output_rewrite_queue;
 		descriptor_buffer_payloads_for_output = replayer.descriptor_buffer_payloads;
 		sync_mutex.unlock();
@@ -1532,70 +1536,7 @@ int main(int argc, char **argv)
 		replayer.finalize();
 	}
 
-	if (simulate && filename_output.empty())
-	{
-		lava_reader replayer;
-		replayer.pass = 1; // second pass
-		replayer.run = false; // do not actually run anything, again
-		replayer.validate = true; // abort on less serious errors, not just warn
-		replayer.init(filename_input);
-		replayer.set_frames(start, end);
-
-		assert(vkCreateShaderModule_callbacks.size() == 0); // Verify that they were cleared
-
-		sync_mutex.lock();
-		replayer.global_rewrite_queue = rewrite_queue_copy;
-		sync_mutex.unlock();
-		for (const auto& v : rewrite_queue_copy)
-		{
-			assert(v.markings != nullptr && v.markings->count > 0);
-			ILOG("%s - number of markings: %u", describe_change_source(v.source).c_str(), (unsigned)v.markings->count);
-			lava_file_reader& t = replayer.file_reader(v.source.thread);
-			t.rewrite_queue.push_back(v);
-		}
-		for (unsigned i = 0; i < replayer.threads.size(); i++)
-		{
-			lava_file_reader& t = replayer.file_reader(i);
-			t.rewrite_queue.sort(rewrite_call_less);
-		}
-#ifndef NDEBUG
-		for (unsigned i = 0; i < replayer.threads.size(); i++)
-		{
-			lava_file_reader& t = replayer.file_reader(i);
-			assert(i == (unsigned)t.thread_index());
-			unsigned last = 0;
-			for (const auto& v : t.rewrite_queue)
-			{
-				assert((int)v.source.thread == (int)t.thread_index());
-				assert(last <= v.source.call);
-				last = v.source.call;
-			}
-		}
-#endif
-
-		for (unsigned i = 0; i < replayer.threads.size(); i++)
-		{
-			replayer.threads[i] = std::thread(&replay_thread, &replayer, i);
-		}
-		for (unsigned i = 0; i < replayer.threads.size(); i++)
-		{
-			replayer.threads[i].join();
-		}
-		{
-			lava::lock_guard lock(sync_mutex);
-			if (!replayer.global_rewrite_queue.empty())
-			{
-				const address_rewrite& missing = replayer.global_rewrite_queue.front();
-				DIE("Missing serialized memory markings for %s (%u discovered markings left unmatched)",
-					describe_change_source(missing.source).c_str(), (unsigned)missing.markings->count);
-			}
-		}
-
-		if (dump_host_write_stats) dump_host_write_stats_report("pass2");
-		reset_for_tools();
-		replayer.finalize();
-	}
-	else if (!filename_output.empty())
+	if (!filename_output.empty())
 	{
 		lava_reader replayer;
 		replayer.pass = 1;

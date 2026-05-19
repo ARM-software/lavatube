@@ -611,12 +611,6 @@ static int find_raytracing_group_index(const trackedpipeline& pipeline_data, con
 	return -1;
 }
 
-struct discovered_markings_bucket
-{
-	change_source source;
-	std::vector<discovered_buffer_marking> entries;
-};
-
 struct discovered_output_markings_bucket
 {
 	change_source source;
@@ -679,7 +673,6 @@ static void merge_discovered_markings(lava_file_reader& reader, const std::vecto
 {
 	if (!reader.parent->validate || reader.write_output || reader.parent->pass != 0 || discovered.empty()) return;
 
-	std::vector<discovered_markings_bucket> buckets;
 	std::vector<discovered_output_markings_bucket> output_buckets;
 	for (const discovered_buffer_marking& marking : discovered)
 	{
@@ -692,21 +685,6 @@ static void merge_discovered_markings(lava_file_reader& reader, const std::vecto
 				pretty_print_VkObjectType(marking.buffer_data->object_type), marking.buffer_data->index,
 				(unsigned long long)marking.offset);
 			continue;
-		}
-		auto it = std::find_if(buckets.begin(), buckets.end(), [&](const discovered_markings_bucket& bucket)
-		{
-			return same_change_source(bucket.source, source);
-		});
-		if (it == buckets.end())
-		{
-			discovered_markings_bucket bucket;
-			bucket.source = source;
-			bucket.entries.push_back(marking);
-			buckets.push_back(std::move(bucket));
-		}
-		else
-		{
-			it->entries.push_back(marking);
 		}
 
 		auto output_it = std::find_if(output_buckets.begin(), output_buckets.end(), [&](const discovered_output_markings_bucket& bucket)
@@ -739,12 +717,6 @@ static void merge_discovered_markings(lava_file_reader& reader, const std::vecto
 	}
 
 	lava::lock_guard lock(sync_mutex);
-	for (const discovered_markings_bucket& bucket : buckets)
-	{
-		VkMarkedOffsetsARM* markings = build_marked_offsets(bucket.entries);
-		merge_rewrite_markings(reader.parent->global_rewrite_queue, bucket.source, markings);
-		free_marked_offsets(markings);
-	}
 	for (const discovered_output_markings_bucket& bucket : output_buckets)
 	{
 		VkMarkedOffsetsARM* markings = build_marked_offsets(bucket.entries);

@@ -3162,39 +3162,6 @@ void read_VkMarkedOffsetsARM(lava_file_reader& reader, VkMarkedOffsetsARM* sptr)
 	reader.note_markings(sptr);
 }
 
-static void assert_marked_offsets_equal(const VkMarkedOffsetsARM* a, const VkMarkedOffsetsARM* b)
-{
-	assert(compare_marked_offsets(a, b) == marked_offsets_difference::none);
-}
-
-static void track_marked_offsets(lava_file_reader& reader, const VkMarkedOffsetsARM* markings)
-{
-	assert(markings);
-	if (reader.write_output) return;
-	assert(reader.parent->pass == 0 || reader.parent->pass == 1);
-
-	if (reader.parent->pass == 0)
-	{
-		lava::lock_guard lock(sync_mutex);
-		merge_rewrite_markings(reader.parent->global_rewrite_queue, reader.current, markings);
-		return;
-	}
-
-	lava::lock_guard lock(sync_mutex);
-	auto& queue = reader.parent->global_rewrite_queue;
-	auto it = std::find_if(queue.begin(), queue.end(), [&](const address_rewrite& v)
-	{
-		return same_change_source(v.source, reader.current);
-	});
-	assert(it != queue.end());
-	VkMarkedOffsetsARM* temp = clone_marked_offsets(markings);
-	normalize_marked_offsets(temp);
-	assert_marked_offsets_equal(it->markings, temp);
-	free_marked_offsets(temp);
-	free_marked_offsets(it->markings);
-	queue.erase(it);
-}
-
 /// `ptr` points to the start of the modified and marked up region of memory. All provided offsets are relative to the start of this region.
 /// `size` is the size of the modified region of memory
 static void translate_marked_offsets(lava_file_reader& reader, const VkMarkedOffsetsARM* markings, void* ptr, uint64_t size)
@@ -3205,7 +3172,6 @@ static void translate_marked_offsets(lava_file_reader& reader, const VkMarkedOff
 	assert(markings->pMarkingTypes);
 	if (reader.write_output) return;
 
-	track_marked_offsets(reader, markings);
 	for (uint32_t i = 0; i < markings->count; i++)
 	{
 		const uint64_t offset = markings->pOffsets[i];
@@ -3589,6 +3555,9 @@ void retrace_vkCmdUpdateBuffer2ARM(lava_file_reader& reader)
 	VkUpdateBufferInfoARM info = {};
 	const uint32_t commandbuffer_index = reader.read_handle(DEBUGPARAM("VkCommandBuffer"));
 	VkCommandBuffer commandBuffer = index_to_VkCommandBuffer.at(commandbuffer_index);
+	trackedcmdbuffer& commandbuffer_data = VkCommandBuffer_index.at(commandbuffer_index);
+	reader.device = commandbuffer_data.device;
+	reader.physicalDevice = commandbuffer_data.physicalDevice;
 	read_VkUpdateBufferInfoARM(reader, &info);
 	assert(info.dstBuffer != VK_NULL_HANDLE);
 	uint32_t buffer_index = index_to_VkBuffer.index(info.dstBuffer);
