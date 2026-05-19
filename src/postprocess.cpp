@@ -682,7 +682,8 @@ void postprocess_vkCmdPushConstants2(callback_context& cb, VkCommandBuffer comma
 	postprocess_vkCmdPushConstants2KHR(cb, commandBuffer, pPushConstantsInfo);
 }
 
-static void copy_shader_stage(const trackedpipeline& pipeline_data, shader_stage& stage, const VkPipelineShaderStageCreateInfo& info)
+static void copy_shader_stage(const trackedpipeline& pipeline_data, shader_stage& stage, const VkPipelineShaderStageCreateInfo& info,
+	const change_source& source)
 {
 	stage.device_index = pipeline_data.device_index;
 	stage.flags = info.flags;
@@ -715,6 +716,11 @@ static void copy_shader_stage(const trackedpipeline& pipeline_data, shader_stage
 			info.pSpecializationInfo->mapEntryCount * sizeof(VkSpecializationMapEntry));
 		stage.specialization_data.resize(info.pSpecializationInfo->dataSize);
 		memcpy(stage.specialization_data.data(), info.pSpecializationInfo->pData, info.pSpecializationInfo->dataSize);
+		stage.specialization_sources.register_source(0, info.pSpecializationInfo->dataSize, source);
+		stage.specialization_sources_valid = info.pSpecializationInfo->dataSize > 0;
+		stage.specialization_source_object_type = VK_OBJECT_TYPE_PIPELINE;
+		stage.specialization_source_object_index = pipeline_data.index;
+		stage.specialization_source_stage_index = stage.index;
 	}
 	stage.self_test();
 }
@@ -724,8 +730,10 @@ static const VkDataGraphPipelineShaderModuleCreateInfoARM* find_data_graph_shade
 	return (const VkDataGraphPipelineShaderModuleCreateInfoARM*)find_extension(&info, VK_STRUCTURE_TYPE_DATA_GRAPH_PIPELINE_SHADER_MODULE_CREATE_INFO_ARM);
 }
 
-static void copy_data_graph_shader_stage(const trackedpipeline& pipeline_data, shader_stage& stage, const VkDataGraphPipelineShaderModuleCreateInfoARM& info)
+static void copy_data_graph_shader_stage(const trackedpipeline& pipeline_data, shader_stage& stage, const VkDataGraphPipelineShaderModuleCreateInfoARM& info,
+	const change_source& source)
 {
+	(void)source;
 	stage.device_index = pipeline_data.device_index;
 	stage.flags = (VkPipelineShaderStageCreateFlags)0;
 	stage.module = info.module;
@@ -815,7 +823,7 @@ void postprocess_vkCreateComputePipelines(callback_context& cb, VkDevice device,
 		trackedpipeline& pipeline_data = VkPipeline_index.at(pipeline_index);
 		pipeline_data.shader_stages.resize(1);
 		pipeline_data.shader_stages[0].index = 0;
-		copy_shader_stage(pipeline_data, pipeline_data.shader_stages[0], pCreateInfos[i].stage);
+		copy_shader_stage(pipeline_data, pipeline_data.shader_stages[0], pCreateInfos[i].stage, cb.reader.current);
 	}
 }
 
@@ -842,7 +850,7 @@ void postprocess_vkCreateDataGraphPipelinesARM(callback_context& cb, VkDevice de
 		}
 		pipeline_data.shader_stages.resize(1);
 		pipeline_data.shader_stages[0].index = 0;
-		copy_data_graph_shader_stage(pipeline_data, pipeline_data.shader_stages[0], *shader_info);
+		copy_data_graph_shader_stage(pipeline_data, pipeline_data.shader_stages[0], *shader_info, cb.reader.current);
 	}
 }
 
@@ -857,7 +865,7 @@ void postprocess_vkCreateGraphicsPipelines(callback_context& cb, VkDevice device
 		for (uint32_t stage = 0; stage < pCreateInfos[i].stageCount; stage++)
 		{
 			pipeline_data.shader_stages[stage].index = stage;
-			copy_shader_stage(pipeline_data, pipeline_data.shader_stages[stage], pCreateInfos[i].pStages[stage]);
+			copy_shader_stage(pipeline_data, pipeline_data.shader_stages[stage], pCreateInfos[i].pStages[stage], cb.reader.current);
 		}
 	}
 }
@@ -874,7 +882,7 @@ void postprocess_vkCreateRayTracingPipelinesKHR(callback_context& cb, VkDevice d
 		for (uint32_t stage = 0; stage < pCreateInfos[i].stageCount; stage++)
 		{
 			pipeline_data.shader_stages[stage].index = stage;
-			copy_shader_stage(pipeline_data, pipeline_data.shader_stages[stage], pCreateInfos[i].pStages[stage]);
+			copy_shader_stage(pipeline_data, pipeline_data.shader_stages[stage], pCreateInfos[i].pStages[stage], cb.reader.current);
 		}
 		pipeline_data.raytracing_group_count = pCreateInfos[i].groupCount;
 		pipeline_data.raytracing_groups.resize(pCreateInfos[i].groupCount);
@@ -932,6 +940,7 @@ void postprocess_vkGetRayTracingCaptureReplayShaderGroupHandlesKHR(callback_cont
 
 void postprocess_vkCreateShadersEXT(callback_context& cb, VkDevice device, uint32_t createInfoCount, const VkShaderCreateInfoEXT* pCreateInfos, const VkAllocationCallbacks* pAllocator, VkShaderEXT* pShaders)
 {
+	(void)cb;
 	for (uint32_t i = 0; i < createInfoCount; i++)
 	{
 		uint32_t shader_index = index_to_VkShaderEXT.index(pShaders[i]);

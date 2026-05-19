@@ -33,11 +33,13 @@ struct address_rewrite
 	change_source source;
 	VkObjectType object_type = VK_OBJECT_TYPE_UNKNOWN;
 	uint32_t object_index = CONTAINER_NULL_VALUE;
+	uint32_t stage_index = CONTAINER_NULL_VALUE;
 };
 
 bool same_change_source(const change_source& a, const change_source& b);
 void merge_rewrite_markings(std::list<address_rewrite>& queue, const change_source& source, const VkMarkedOffsetsARM* markings);
 void merge_rewrite_markings(std::list<address_rewrite>& queue, const change_source& source, const VkMarkedOffsetsARM* markings, VkObjectType object_type, uint32_t object_index);
+void merge_rewrite_markings(std::list<address_rewrite>& queue, const change_source& source, const VkMarkedOffsetsARM* markings, VkObjectType object_type, uint32_t object_index, uint32_t stage_index);
 
 struct descriptor_rewrite
 {

@@ -391,6 +391,11 @@ struct shader_stage
 	std::vector<uint32_t> code; // raw SPIR-V when sourced from VK_EXT_shader_object or maintenance 5
 	std::vector<VkSpecializationMapEntry> specialization_constants;
 	std::vector<char> specialization_data;
+	host_write_regions specialization_sources;
+	bool specialization_sources_valid = false;
+	VkObjectType specialization_source_object_type = VK_OBJECT_TYPE_UNKNOWN;
+	uint32_t specialization_source_object_index = CONTAINER_NULL_VALUE;
+	uint32_t specialization_source_stage_index = CONTAINER_NULL_VALUE;
 	uint32_t calls = 0; // numbere of times this shader was called
 
 	void self_test() const // use with post-processing only

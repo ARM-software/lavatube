@@ -1,5 +1,6 @@
 #define SPV_ENABLE_UTILITY_CODE 1
 #include <spirv/unified1/spirv.h>
+#include <algorithm>
 #include <deque>
 #include <unordered_set>
 #include <unordered_map>
@@ -26,11 +27,17 @@ struct simulator_buffer_range
 	uint32_t set = UINT32_MAX;
 	uint32_t binding = UINT32_MAX;
 	bool physical_address_backing = false;
+	VkObjectType source_object_type = VK_OBJECT_TYPE_UNKNOWN;
+	uint32_t source_object_index = CONTAINER_NULL_VALUE;
+	uint32_t source_stage_index = CONTAINER_NULL_VALUE;
 };
 
 struct discovered_buffer_marking
 {
 	trackedbuffer* buffer_data = nullptr;
+	VkObjectType output_object_type = VK_OBJECT_TYPE_UNKNOWN;
+	uint32_t output_object_index = CONTAINER_NULL_VALUE;
+	uint32_t output_stage_index = CONTAINER_NULL_VALUE;
 	VkDeviceSize offset = 0;
 	VkDeviceSize size = 0;
 	VkMarkingTypeARM type = (VkMarkingTypeARM)0;
@@ -48,13 +55,15 @@ static uint64_t simulator_pointer_bits(const void* ptr)
 
 static void register_simulator_buffer_range(std::vector<simulator_buffer_range>& ranges, const void* base_ptr, size_t size,
 	trackedbuffer* buffer_data, VkDeviceSize buffer_offset, uint32_t set = UINT32_MAX, uint32_t binding = UINT32_MAX, bool physical_address_backing = false,
-	const host_write_regions* source_regions = nullptr)
+	const host_write_regions* source_regions = nullptr, VkObjectType source_object_type = VK_OBJECT_TYPE_UNKNOWN, uint32_t source_object_index = CONTAINER_NULL_VALUE,
+	uint32_t source_stage_index = CONTAINER_NULL_VALUE)
 {
 	if (!base_ptr || (!buffer_data && !source_regions) || size == 0) return;
 	for (const simulator_buffer_range& existing : ranges)
 	{
 		if (existing.base_ptr == base_ptr && existing.size == size && existing.buffer_data == buffer_data
-			&& existing.buffer_offset == buffer_offset && existing.source_regions == source_regions && existing.physical_address_backing == physical_address_backing)
+			&& existing.buffer_offset == buffer_offset && existing.source_regions == source_regions && existing.physical_address_backing == physical_address_backing
+			&& existing.source_object_type == source_object_type && existing.source_object_index == source_object_index && existing.source_stage_index == source_stage_index)
 		{
 			return;
 		}
@@ -68,6 +77,9 @@ static void register_simulator_buffer_range(std::vector<simulator_buffer_range>&
 		.set = set,
 		.binding = binding,
 		.physical_address_backing = physical_address_backing,
+		.source_object_type = source_object_type,
+		.source_object_index = source_object_index,
+		.source_stage_index = source_stage_index,
 	});
 }
 
@@ -119,6 +131,22 @@ static const simulator_buffer_range* find_simulator_storage_class_range(const st
 	return nullptr;
 }
 
+static const simulator_buffer_range* find_simulator_source_range(const std::vector<simulator_buffer_range>& ranges,
+	const SPIRVSimulator::DataSourceBits& source, VkDeviceSize size, VkDeviceSize& out_offset)
+{
+	if (source.location == SPIRVSimulator::SpecConstant)
+	{
+		return find_simulator_range(ranges, source.source_ptr, source.byte_offset, size, out_offset);
+	}
+	if (source.location == SPIRVSimulator::StorageClass)
+	{
+		const simulator_buffer_range* range = find_simulator_range(ranges, source.source_ptr, source.byte_offset, size, out_offset);
+		if (!range) range = find_simulator_storage_class_range(ranges, source, size, out_offset);
+		return range;
+	}
+	return nullptr;
+}
+
 static bool get_range_source(const simulator_buffer_range& range, VkDeviceSize local_offset, VkDeviceSize size, change_source& out)
 {
 	if (range.source_regions)
@@ -144,6 +172,75 @@ static void abort_missing_range_source(const simulator_buffer_range& range, VkDe
 		context, (unsigned long long)(range.buffer_offset + local_offset), (unsigned long long)size);
 }
 
+static bool collect_contiguous_device_address_marking(const std::vector<simulator_buffer_range>& ranges,
+	const SPIRVSimulator::PhysicalAddressData& pointer_data, std::vector<discovered_buffer_marking>& discovered)
+{
+	struct source_component
+	{
+		const simulator_buffer_range* range = nullptr;
+		VkDeviceSize local_offset = 0;
+		uint64_t bitcount = 0;
+		uint64_t val_bit_offset = 0;
+	};
+
+	std::vector<source_component> components;
+	for (const SPIRVSimulator::DataSourceBits& source : pointer_data.bit_components)
+	{
+		if (source.location != SPIRVSimulator::StorageClass && source.location != SPIRVSimulator::SpecConstant) continue;
+		if (source.bit_offset != 0 || source.bitcount == 0 || source.bitcount % 8 != 0 || source.val_bit_offset % 8 != 0) continue;
+		if (source.val_bit_offset >= sizeof(VkDeviceAddress) * 8) continue;
+		if (source.val_bit_offset + source.bitcount > sizeof(VkDeviceAddress) * 8) continue;
+		VkDeviceSize local_offset = 0;
+		const simulator_buffer_range* range = find_simulator_source_range(ranges, source, source.bitcount / 8, local_offset);
+		if (!range) continue;
+		components.push_back({
+			.range = range,
+			.local_offset = local_offset,
+			.bitcount = source.bitcount,
+			.val_bit_offset = source.val_bit_offset,
+		});
+	}
+	if (components.empty()) return false;
+	std::sort(components.begin(), components.end(), [](const source_component& a, const source_component& b)
+	{
+		return a.val_bit_offset < b.val_bit_offset;
+	});
+
+	const simulator_buffer_range* range = components.front().range;
+	const VkDeviceSize base_offset = components.front().local_offset;
+	uint64_t covered_bits = 0;
+	for (const source_component& component : components)
+	{
+		if (component.range != range) return false;
+		if (component.val_bit_offset != covered_bits) return false;
+		const VkDeviceSize expected_offset = base_offset + component.val_bit_offset / 8;
+		if (component.local_offset != expected_offset) return false;
+		covered_bits += component.bitcount;
+	}
+	if (covered_bits != sizeof(VkDeviceAddress) * 8) return false;
+
+	change_source source_call;
+	if (!get_range_source(*range, base_offset, sizeof(VkDeviceAddress), source_call))
+	{
+		abort_missing_range_source(*range, base_offset, sizeof(VkDeviceAddress), "SPIR-V physical-address source marking");
+	}
+	VkMarkingSubTypeARM subtype{};
+	subtype.deviceAddressType = VK_DEVICE_ADDRESS_TYPE_BUFFER_ARM;
+	discovered.push_back({
+		.buffer_data = range->buffer_data,
+		.output_object_type = range->source_object_type,
+		.output_object_index = range->source_object_index,
+		.output_stage_index = range->source_stage_index,
+		.offset = range->buffer_offset + base_offset,
+		.size = sizeof(VkDeviceAddress),
+		.type = VK_MARKING_TYPE_DEVICE_ADDRESS_ARM,
+		.subtype = subtype,
+		.has_explicit_source = true,
+		.source = source_call,
+	});
+	return true;
+}
+
 static void collect_matching_device_address_markings(uint64_t address, const std::vector<simulator_buffer_range>& ranges,
 	std::vector<discovered_buffer_marking>& discovered)
 {
@@ -165,6 +262,9 @@ static void collect_matching_device_address_markings(uint64_t address, const std
 			}
 			discovered.push_back({
 				.buffer_data = range.buffer_data,
+				.output_object_type = range.source_object_type,
+				.output_object_index = range.source_object_index,
+				.output_stage_index = range.source_stage_index,
 				.offset = range.buffer_offset + offset,
 				.size = sizeof(VkDeviceAddress),
 				.type = VK_MARKING_TYPE_DEVICE_ADDRESS_ARM,
@@ -249,11 +349,10 @@ static void collect_simulator_physical_address_markings(const lava_file_reader& 
 		bool found_source = false;
 		for (const SPIRVSimulator::DataSourceBits& source : pointer_data.bit_components)
 		{
-			if (source.location != SPIRVSimulator::StorageClass) continue;
+			if (source.location != SPIRVSimulator::StorageClass && source.location != SPIRVSimulator::SpecConstant) continue;
 			if (source.bit_offset != 0 || source.val_bit_offset != 0 || source.bitcount != sizeof(VkDeviceAddress) * 8) continue;
 			VkDeviceSize local_offset = 0;
-			const simulator_buffer_range* range = find_simulator_range(ranges, source.source_ptr, source.byte_offset, sizeof(VkDeviceAddress), local_offset);
-			if (!range) range = find_simulator_storage_class_range(ranges, source, sizeof(VkDeviceAddress), local_offset);
+			const simulator_buffer_range* range = find_simulator_source_range(ranges, source, sizeof(VkDeviceAddress), local_offset);
 			if (!range) continue;
 			change_source source_call;
 			if (!get_range_source(*range, local_offset, sizeof(VkDeviceAddress), source_call))
@@ -262,6 +361,9 @@ static void collect_simulator_physical_address_markings(const lava_file_reader& 
 			}
 			discovered.push_back({
 				.buffer_data = range->buffer_data,
+				.output_object_type = range->source_object_type,
+				.output_object_index = range->source_object_index,
+				.output_stage_index = range->source_stage_index,
 				.offset = range->buffer_offset + local_offset,
 				.size = sizeof(VkDeviceAddress),
 				.type = VK_MARKING_TYPE_DEVICE_ADDRESS_ARM,
@@ -271,6 +373,7 @@ static void collect_simulator_physical_address_markings(const lava_file_reader& 
 			});
 			found_source = true;
 		}
+		if (!found_source) found_source = collect_contiguous_device_address_marking(ranges, pointer_data, discovered);
 		if (found_source || pointer_data.raw_pointer_value == 0) continue;
 		trackedobject* obj = reader.parent->device_address_remapping.get_by_address(pointer_data.raw_pointer_value);
 		if (!obj || obj->object_type != VK_OBJECT_TYPE_BUFFER) continue;
@@ -297,6 +400,12 @@ static bool run_spirv(lava_file_reader& reader, const trackeddevice& device_data
 	}
 	inputs.entry_point_op_name = stage.name;
 	inputs.specialization_constants = stage.specialization_data.empty() ? nullptr : stage.specialization_data.data();
+	if (!stage.specialization_data.empty() && stage.specialization_sources_valid)
+	{
+		register_simulator_buffer_range(simulator_ranges, stage.specialization_data.data(), stage.specialization_data.size(), nullptr, 0,
+			UINT32_MAX, UINT32_MAX, false, &stage.specialization_sources, stage.specialization_source_object_type, stage.specialization_source_object_index,
+			stage.specialization_source_stage_index);
+	}
 	for (const auto& v : stage.specialization_constants)
 	{
 		inputs.specialization_constant_offsets[v.constantID] = v.offset;
@@ -513,6 +622,7 @@ struct discovered_output_markings_bucket
 	change_source source;
 	VkObjectType object_type = VK_OBJECT_TYPE_UNKNOWN;
 	uint32_t object_index = CONTAINER_NULL_VALUE;
+	uint32_t stage_index = CONTAINER_NULL_VALUE;
 	std::vector<discovered_buffer_marking> entries;
 };
 
@@ -601,18 +711,24 @@ static void merge_discovered_markings(lava_file_reader& reader, const std::vecto
 
 		auto output_it = std::find_if(output_buckets.begin(), output_buckets.end(), [&](const discovered_output_markings_bucket& bucket)
 		{
-			const VkObjectType object_type = marking.buffer_data ? marking.buffer_data->object_type : VK_OBJECT_TYPE_UNKNOWN;
-			const uint32_t object_index = marking.buffer_data ? marking.buffer_data->index : CONTAINER_NULL_VALUE;
+			const VkObjectType object_type = (marking.output_object_type != VK_OBJECT_TYPE_UNKNOWN)
+				? marking.output_object_type : (marking.buffer_data ? marking.buffer_data->object_type : VK_OBJECT_TYPE_UNKNOWN);
+			const uint32_t object_index = (marking.output_object_type != VK_OBJECT_TYPE_UNKNOWN)
+				? marking.output_object_index : (marking.buffer_data ? marking.buffer_data->index : CONTAINER_NULL_VALUE);
 			return same_change_source(bucket.source, source)
 				&& bucket.object_type == object_type
-				&& bucket.object_index == object_index;
+				&& bucket.object_index == object_index
+				&& bucket.stage_index == marking.output_stage_index;
 		});
 		if (output_it == output_buckets.end())
 		{
 			discovered_output_markings_bucket bucket;
 			bucket.source = source;
-			bucket.object_type = marking.buffer_data ? marking.buffer_data->object_type : VK_OBJECT_TYPE_UNKNOWN;
-			bucket.object_index = marking.buffer_data ? marking.buffer_data->index : CONTAINER_NULL_VALUE;
+			bucket.object_type = (marking.output_object_type != VK_OBJECT_TYPE_UNKNOWN)
+				? marking.output_object_type : (marking.buffer_data ? marking.buffer_data->object_type : VK_OBJECT_TYPE_UNKNOWN);
+			bucket.object_index = (marking.output_object_type != VK_OBJECT_TYPE_UNKNOWN)
+				? marking.output_object_index : (marking.buffer_data ? marking.buffer_data->index : CONTAINER_NULL_VALUE);
+			bucket.stage_index = marking.output_stage_index;
 			bucket.entries.push_back(marking);
 			output_buckets.push_back(std::move(bucket));
 		}
@@ -632,7 +748,7 @@ static void merge_discovered_markings(lava_file_reader& reader, const std::vecto
 	for (const discovered_output_markings_bucket& bucket : output_buckets)
 	{
 		VkMarkedOffsetsARM* markings = build_marked_offsets(bucket.entries);
-		merge_rewrite_markings(reader.parent->global_output_rewrite_queue, bucket.source, markings, bucket.object_type, bucket.object_index);
+		merge_rewrite_markings(reader.parent->global_output_rewrite_queue, bucket.source, markings, bucket.object_type, bucket.object_index, bucket.stage_index);
 		free_marked_offsets(markings);
 	}
 }

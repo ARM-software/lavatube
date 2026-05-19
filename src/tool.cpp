@@ -208,6 +208,17 @@ static std::list<address_rewrite>::iterator find_api_rewrite_entry(lava_file_rea
 	});
 }
 
+static std::list<address_rewrite>::iterator find_stage_rewrite_entry(lava_file_reader& reader, VkObjectType object_type, uint32_t object_index, uint32_t stage_index)
+{
+	return std::find_if(reader.rewrite_queue.begin(), reader.rewrite_queue.end(), [&](const address_rewrite& entry)
+	{
+		return same_change_source(entry.source, reader.current)
+			&& entry.object_type == object_type
+			&& entry.object_index == object_index
+			&& entry.stage_index == stage_index;
+	});
+}
+
 static bool is_flush_markings_source(const change_source& source)
 {
 	return source.call_id != UINT16_MAX && strcmp(get_function_name(source.call_id), "vkFlushMappedMemoryRanges") == 0;
@@ -347,6 +358,75 @@ static const VkMarkedOffsetsARM* maybe_patch_push_constants_info(lava_file_reade
 	return desired;
 }
 
+static const VkMarkedOffsetsARM* patch_pipeline_shader_stage_info(lava_file_reader& reader, std::list<address_rewrite>::iterator it,
+	VkPipelineShaderStageCreateInfo& patched, const char* command_name)
+{
+	if (it == reader.rewrite_queue.end()) return nullptr;
+	if (!patched.pSpecializationInfo || !patched.pSpecializationInfo->pData)
+	{
+		ABORT("Cannot inject simulated specialization-constant markings on %s for %s without specialization data",
+			command_name, describe_change_source(reader.current).c_str());
+	}
+
+	VkMarkedOffsetsARM* desired = clone_marked_offsets(it->markings);
+	normalize_marked_offsets(desired);
+	const VkMarkedOffsetsARM* existing = (const VkMarkedOffsetsARM*)find_extension(&patched, VK_STRUCTURE_TYPE_MARKED_OFFSETS_ARM);
+	VkMarkedOffsetsARM* existing_clone = clone_marked_offsets(existing);
+	normalize_marked_offsets(existing_clone);
+	const marked_offsets_difference diff = compare_marked_offsets(existing_clone, desired);
+	free_marked_offsets(existing_clone);
+	if (diff == marked_offsets_difference::none)
+	{
+		free_marked_offsets(desired);
+		free_marked_offsets(it->markings);
+		reader.rewrite_queue.erase(it);
+		return nullptr;
+	}
+
+	ILOG("%s VkMarkedOffsetsARM on %s shader stage for %s (%u markings)",
+		existing ? "Replacing" : "Injecting",
+		command_name,
+		describe_change_source(reader.current).c_str(),
+		(unsigned)desired->count);
+	purge_extension_parent(&patched, VK_STRUCTURE_TYPE_MARKED_OFFSETS_ARM);
+	desired->pNext = patched.pNext;
+	patched.pNext = desired;
+	free_marked_offsets(it->markings);
+	reader.rewrite_queue.erase(it);
+	return desired;
+}
+
+static bool marked_offsets_fit_specialization_data(const VkMarkedOffsetsARM* markings, const VkPipelineShaderStageCreateInfo& stage)
+{
+	if (!markings || !stage.pSpecializationInfo || !stage.pSpecializationInfo->pData) return false;
+	if (markings->count == 0) return true;
+	if (!markings->pOffsets || !markings->pMarkingTypes) return false;
+	for (uint32_t i = 0; i < markings->count; i++)
+	{
+		VkDeviceSize size = 0;
+		switch (markings->pMarkingTypes[i])
+		{
+		case VK_MARKING_TYPE_DEVICE_ADDRESS_ARM:
+			size = sizeof(VkDeviceAddress);
+			break;
+		default:
+			return false;
+		}
+		if (markings->pOffsets[i] > stage.pSpecializationInfo->dataSize
+			|| size > stage.pSpecializationInfo->dataSize - markings->pOffsets[i])
+		{
+			return false;
+		}
+	}
+	return true;
+}
+
+static uint32_t pipeline_index_from_output_handle(VkPipeline pipeline)
+{
+	if (pipeline == VK_NULL_HANDLE) return CONTAINER_INVALID_INDEX;
+	return index_to_VkPipeline.index(pipeline);
+}
+
 static void output_vkCmdPushConstants2(callback_context& cb, VkCommandBuffer commandBuffer, const VkPushConstantsInfo* pPushConstantsInfo)
 {
 	assert(pPushConstantsInfo);
@@ -390,6 +470,122 @@ static void output_vkCmdPushConstants(callback_context& cb, VkCommandBuffer comm
 		trace_vkCmdPushConstants(commandBuffer, layout, stageFlags, offset, size, pValues);
 	}
 	free_marked_offsets(const_cast<VkMarkedOffsetsARM*>(injected));
+}
+
+static void output_vkCreateComputePipelines(callback_context& cb, VkDevice device, VkPipelineCache pipelineCache, uint32_t createInfoCount,
+	const VkComputePipelineCreateInfo* pCreateInfos, const VkAllocationCallbacks* pAllocator, VkPipeline* pPipelines)
+{
+	assert(pCreateInfos || createInfoCount == 0);
+	std::vector<VkComputePipelineCreateInfo> patched;
+	if (createInfoCount > 0) patched.assign(pCreateInfos, pCreateInfos + createInfoCount);
+	std::vector<const VkMarkedOffsetsARM*> injected(createInfoCount, nullptr);
+	for (uint32_t i = 0; i < createInfoCount; i++)
+	{
+		const uint32_t pipeline_index = pipeline_index_from_output_handle(pPipelines ? pPipelines[i] : VK_NULL_HANDLE);
+		if (pipeline_index == CONTAINER_INVALID_INDEX) continue;
+		auto rewrite_it = find_stage_rewrite_entry(cb.reader, VK_OBJECT_TYPE_PIPELINE, pipeline_index, 0);
+		if (rewrite_it == cb.reader.rewrite_queue.end()) continue;
+		if (!marked_offsets_fit_specialization_data(rewrite_it->markings, patched[i].stage))
+		{
+			ABORT("Simulated specialization-constant markings do not fit vkCreateComputePipelines pipeline=%u stage=0 for %s",
+				(unsigned)pipeline_index, describe_change_source(cb.reader.current).c_str());
+		}
+		injected[i] = patch_pipeline_shader_stage_info(cb.reader, rewrite_it, patched[i].stage, "vkCreateComputePipelines");
+	}
+
+	prepare_trace_callback(cb);
+	trace_vkCreateComputePipelines(device, pipelineCache, createInfoCount, createInfoCount ? patched.data() : nullptr, pAllocator, pPipelines);
+
+	for (const VkMarkedOffsetsARM* marking : injected)
+	{
+		free_marked_offsets(const_cast<VkMarkedOffsetsARM*>(marking));
+	}
+}
+
+static void output_vkCreateGraphicsPipelines(callback_context& cb, VkDevice device, VkPipelineCache pipelineCache, uint32_t createInfoCount,
+	const VkGraphicsPipelineCreateInfo* pCreateInfos, const VkAllocationCallbacks* pAllocator, VkPipeline* pPipelines)
+{
+	assert(pCreateInfos || createInfoCount == 0);
+	std::vector<VkGraphicsPipelineCreateInfo> patched;
+	if (createInfoCount > 0) patched.assign(pCreateInfos, pCreateInfos + createInfoCount);
+	std::vector<std::vector<VkPipelineShaderStageCreateInfo>> patched_stages(createInfoCount);
+	std::vector<const VkMarkedOffsetsARM*> injected;
+	for (uint32_t i = 0; i < createInfoCount; i++)
+	{
+		if (pCreateInfos[i].stageCount > 0 && pCreateInfos[i].pStages)
+		{
+			patched_stages[i].assign(pCreateInfos[i].pStages, pCreateInfos[i].pStages + pCreateInfos[i].stageCount);
+			patched[i].pStages = patched_stages[i].data();
+		}
+		else
+		{
+			continue;
+		}
+		const uint32_t pipeline_index = pipeline_index_from_output_handle(pPipelines ? pPipelines[i] : VK_NULL_HANDLE);
+		if (pipeline_index == CONTAINER_INVALID_INDEX) continue;
+		for (uint32_t stage = 0; stage < patched[i].stageCount; stage++)
+		{
+			auto rewrite_it = find_stage_rewrite_entry(cb.reader, VK_OBJECT_TYPE_PIPELINE, pipeline_index, stage);
+			if (rewrite_it == cb.reader.rewrite_queue.end()) continue;
+			if (!marked_offsets_fit_specialization_data(rewrite_it->markings, patched_stages[i][stage]))
+			{
+				ABORT("Simulated specialization-constant markings do not fit vkCreateGraphicsPipelines pipeline=%u stage=%u for %s",
+					(unsigned)pipeline_index, (unsigned)stage, describe_change_source(cb.reader.current).c_str());
+			}
+			injected.push_back(patch_pipeline_shader_stage_info(cb.reader, rewrite_it, patched_stages[i][stage], "vkCreateGraphicsPipelines"));
+		}
+	}
+
+	prepare_trace_callback(cb);
+	trace_vkCreateGraphicsPipelines(device, pipelineCache, createInfoCount, createInfoCount ? patched.data() : nullptr, pAllocator, pPipelines);
+
+	for (const VkMarkedOffsetsARM* marking : injected)
+	{
+		free_marked_offsets(const_cast<VkMarkedOffsetsARM*>(marking));
+	}
+}
+
+static void output_vkCreateRayTracingPipelinesKHR(callback_context& cb, VkDevice device, VkDeferredOperationKHR deferredOperation, VkPipelineCache pipelineCache,
+	uint32_t createInfoCount, const VkRayTracingPipelineCreateInfoKHR* pCreateInfos, const VkAllocationCallbacks* pAllocator, VkPipeline* pPipelines)
+{
+	assert(pCreateInfos || createInfoCount == 0);
+	std::vector<VkRayTracingPipelineCreateInfoKHR> patched;
+	if (createInfoCount > 0) patched.assign(pCreateInfos, pCreateInfos + createInfoCount);
+	std::vector<std::vector<VkPipelineShaderStageCreateInfo>> patched_stages(createInfoCount);
+	std::vector<const VkMarkedOffsetsARM*> injected;
+	for (uint32_t i = 0; i < createInfoCount; i++)
+	{
+		if (pCreateInfos[i].stageCount > 0 && pCreateInfos[i].pStages)
+		{
+			patched_stages[i].assign(pCreateInfos[i].pStages, pCreateInfos[i].pStages + pCreateInfos[i].stageCount);
+			patched[i].pStages = patched_stages[i].data();
+		}
+		else
+		{
+			continue;
+		}
+		const uint32_t pipeline_index = pipeline_index_from_output_handle(pPipelines ? pPipelines[i] : VK_NULL_HANDLE);
+		if (pipeline_index == CONTAINER_INVALID_INDEX) continue;
+		for (uint32_t stage = 0; stage < patched[i].stageCount; stage++)
+		{
+			auto rewrite_it = find_stage_rewrite_entry(cb.reader, VK_OBJECT_TYPE_PIPELINE, pipeline_index, stage);
+			if (rewrite_it == cb.reader.rewrite_queue.end()) continue;
+			if (!marked_offsets_fit_specialization_data(rewrite_it->markings, patched_stages[i][stage]))
+			{
+				ABORT("Simulated specialization-constant markings do not fit vkCreateRayTracingPipelinesKHR pipeline=%u stage=%u for %s",
+					(unsigned)pipeline_index, (unsigned)stage, describe_change_source(cb.reader.current).c_str());
+			}
+			injected.push_back(patch_pipeline_shader_stage_info(cb.reader, rewrite_it, patched_stages[i][stage], "vkCreateRayTracingPipelinesKHR"));
+		}
+	}
+
+	prepare_trace_callback(cb);
+	trace_vkCreateRayTracingPipelinesKHR(device, deferredOperation, pipelineCache, createInfoCount, createInfoCount ? patched.data() : nullptr, pAllocator, pPipelines);
+
+	for (const VkMarkedOffsetsARM* marking : injected)
+	{
+		free_marked_offsets(const_cast<VkMarkedOffsetsARM*>(marking));
+	}
 }
 
 static bool descriptor_output_marking_exists(uint32_t buffer_index, VkDeviceSize offset, VkDescriptorType type)
@@ -1461,6 +1657,12 @@ int main(int argc, char **argv)
 		if (simulate)
 		{
 			cache_existing_descriptor_output_markings(output_rewrite_queue_copy);
+			vkCreateGraphicsPipelines_callbacks.clear();
+			vkCreateGraphicsPipelines_callbacks.push_back(output_vkCreateGraphicsPipelines);
+			vkCreateComputePipelines_callbacks.clear();
+			vkCreateComputePipelines_callbacks.push_back(output_vkCreateComputePipelines);
+			vkCreateRayTracingPipelinesKHR_callbacks.clear();
+			vkCreateRayTracingPipelinesKHR_callbacks.push_back(output_vkCreateRayTracingPipelinesKHR);
 			vkGetDescriptorEXT_callbacks.clear();
 			vkGetDescriptorEXT_callbacks.push_back(output_vkGetDescriptorEXT);
 			vkCmdBindDescriptorBuffersEXT_callbacks.clear();
