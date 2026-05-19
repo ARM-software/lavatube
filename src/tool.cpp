@@ -6,6 +6,7 @@
 #include <errno.h>
 
 #include <algorithm>
+#include <deque>
 #include <vector>
 #include <string>
 
@@ -23,6 +24,7 @@
 #include "replay_callbacks.h"
 #include "replay_trace_adapter.h"
 #include "markings.h"
+#include "suballocator.h"
 
 extern lava::mutex sync_mutex;
 
@@ -33,6 +35,43 @@ static bool dump_shaders = false;
 static bool dump_host_write_stats = false;
 static bool write_output = false;
 static int invokation_count = 0;
+
+struct descriptor_output_marking_key
+{
+	uint32_t buffer_index = CONTAINER_NULL_VALUE;
+	VkDeviceSize offset = 0;
+	VkDescriptorType type = VK_DESCRIPTOR_TYPE_MAX_ENUM;
+};
+
+struct pending_descriptor_payload
+{
+	VkDescriptorType type = VK_DESCRIPTOR_TYPE_MAX_ENUM;
+	std::vector<uint8_t> bytes;
+};
+
+struct output_descriptor_buffer_binding
+{
+	uint32_t buffer_index = CONTAINER_INVALID_INDEX;
+	VkDeviceSize offset = 0;
+	VkDeviceSize size = 0;
+	VkBufferUsageFlags usage = 0;
+};
+
+struct pending_descriptor_buffer_update
+{
+	uint32_t buffer_index = CONTAINER_INVALID_INDEX;
+	VkDeviceSize offset = 0;
+	VkDescriptorType type = VK_DESCRIPTOR_TYPE_MAX_ENUM;
+	std::vector<uint8_t> bytes;
+};
+
+static std::vector<descriptor_output_marking_key> existing_descriptor_output_markings;
+static std::vector<descriptor_buffer_payload> descriptor_buffer_payloads_for_output;
+static thread_local std::deque<pending_descriptor_payload> pending_descriptor_payloads;
+static thread_local std::vector<pending_descriptor_payload> used_descriptor_payloads;
+static thread_local std::vector<output_descriptor_buffer_binding> output_descriptor_buffers;
+static thread_local std::vector<pending_descriptor_buffer_update> pending_descriptor_buffer_updates;
+static thread_local std::vector<pending_descriptor_buffer_update> emitted_descriptor_buffer_updates;
 
 static inline bool is_update_packet(uint8_t instrtype)
 {
@@ -160,6 +199,15 @@ static std::list<address_rewrite>::iterator find_output_rewrite_entry(lava_file_
 	});
 }
 
+static std::list<address_rewrite>::iterator find_api_rewrite_entry(lava_file_reader& reader)
+{
+	return std::find_if(reader.rewrite_queue.begin(), reader.rewrite_queue.end(), [&](const address_rewrite& entry)
+	{
+		if (!same_change_source(entry.source, reader.current)) return false;
+		return entry.object_type == VK_OBJECT_TYPE_UNKNOWN;
+	});
+}
+
 static bool is_flush_markings_source(const change_source& source)
 {
 	return source.call_id != UINT16_MAX && strcmp(get_function_name(source.call_id), "vkFlushMappedMemoryRanges") == 0;
@@ -255,6 +303,523 @@ static bool maybe_write_rewritten_update_packet(lava_file_reader& reader, lava_f
 	free_marked_offsets(it->markings);
 	reader.rewrite_queue.erase(it);
 	return true;
+}
+
+static const VkMarkedOffsetsARM* maybe_patch_push_constants_info(lava_file_reader& reader, VkPushConstantsInfo& patched)
+{
+	auto it = find_api_rewrite_entry(reader);
+	if (it == reader.rewrite_queue.end()) return nullptr;
+
+	if (patched.pNext)
+	{
+		const VkMarkedOffsetsARM* existing = (const VkMarkedOffsetsARM*)find_extension(&patched, VK_STRUCTURE_TYPE_MARKED_OFFSETS_ARM);
+		if (!existing)
+		{
+			ABORT("Unsupported vkCmdPushConstants2 pNext chain while injecting simulated markings for %s",
+				describe_change_source(reader.current).c_str());
+		}
+	}
+
+	VkMarkedOffsetsARM* desired = clone_marked_offsets(it->markings);
+	normalize_marked_offsets(desired);
+	const VkMarkedOffsetsARM* existing = (const VkMarkedOffsetsARM*)find_extension(&patched, VK_STRUCTURE_TYPE_MARKED_OFFSETS_ARM);
+	VkMarkedOffsetsARM* existing_clone = clone_marked_offsets(existing);
+	normalize_marked_offsets(existing_clone);
+	const marked_offsets_difference diff = compare_marked_offsets(existing_clone, desired);
+	free_marked_offsets(existing_clone);
+	if (diff == marked_offsets_difference::none)
+	{
+		free_marked_offsets(desired);
+		free_marked_offsets(it->markings);
+		reader.rewrite_queue.erase(it);
+		return nullptr;
+	}
+
+	ILOG("%s VkMarkedOffsetsARM on %s (%u markings)",
+		existing ? "Replacing" : "Injecting",
+		describe_change_source(reader.current).c_str(),
+		(unsigned)desired->count);
+	purge_extension_parent(&patched, VK_STRUCTURE_TYPE_MARKED_OFFSETS_ARM);
+	desired->pNext = patched.pNext;
+	patched.pNext = desired;
+	free_marked_offsets(it->markings);
+	reader.rewrite_queue.erase(it);
+	return desired;
+}
+
+static void output_vkCmdPushConstants2(callback_context& cb, VkCommandBuffer commandBuffer, const VkPushConstantsInfo* pPushConstantsInfo)
+{
+	assert(pPushConstantsInfo);
+	VkPushConstantsInfo patched = *pPushConstantsInfo;
+	const VkMarkedOffsetsARM* injected = maybe_patch_push_constants_info(cb.reader, patched);
+	prepare_trace_callback(cb);
+	trace_vkCmdPushConstants2(commandBuffer, &patched);
+	free_marked_offsets(const_cast<VkMarkedOffsetsARM*>(injected));
+}
+
+static void output_vkCmdPushConstants2KHR(callback_context& cb, VkCommandBuffer commandBuffer, const VkPushConstantsInfo* pPushConstantsInfo)
+{
+	assert(pPushConstantsInfo);
+	VkPushConstantsInfo patched = *pPushConstantsInfo;
+	const VkMarkedOffsetsARM* injected = maybe_patch_push_constants_info(cb.reader, patched);
+	prepare_trace_callback(cb);
+	trace_vkCmdPushConstants2KHR(commandBuffer, &patched);
+	free_marked_offsets(const_cast<VkMarkedOffsetsARM*>(injected));
+}
+
+static void output_vkCmdPushConstants(callback_context& cb, VkCommandBuffer commandBuffer, VkPipelineLayout layout, VkShaderStageFlags stageFlags,
+	uint32_t offset, uint32_t size, const void* pValues)
+{
+	VkPushConstantsInfo patched = {
+		.sType = VK_STRUCTURE_TYPE_PUSH_CONSTANTS_INFO,
+		.pNext = nullptr,
+		.layout = layout,
+		.stageFlags = stageFlags,
+		.offset = offset,
+		.size = size,
+		.pValues = pValues,
+	};
+	const VkMarkedOffsetsARM* injected = maybe_patch_push_constants_info(cb.reader, patched);
+	prepare_trace_callback(cb);
+	if (injected)
+	{
+		trace_vkCmdPushConstants2KHR(commandBuffer, &patched);
+	}
+	else
+	{
+		trace_vkCmdPushConstants(commandBuffer, layout, stageFlags, offset, size, pValues);
+	}
+	free_marked_offsets(const_cast<VkMarkedOffsetsARM*>(injected));
+}
+
+static bool descriptor_output_marking_exists(uint32_t buffer_index, VkDeviceSize offset, VkDescriptorType type)
+{
+	return std::any_of(existing_descriptor_output_markings.begin(), existing_descriptor_output_markings.end(),
+		[&](const descriptor_output_marking_key& key)
+		{
+			return key.buffer_index == buffer_index && key.offset == offset && key.type == type;
+		});
+}
+
+static void cache_existing_descriptor_output_markings(const std::list<address_rewrite>& queue)
+{
+	existing_descriptor_output_markings.clear();
+	for (const address_rewrite& rewrite : queue)
+	{
+		if (rewrite.object_type != VK_OBJECT_TYPE_BUFFER || !rewrite.markings) continue;
+		const VkMarkedOffsetsARM* markings = rewrite.markings;
+		if (!markings->pMarkingTypes || !markings->pSubTypes || !markings->pOffsets) continue;
+		for (uint32_t i = 0; i < markings->count; i++)
+		{
+			if (markings->pMarkingTypes[i] != VK_MARKING_TYPE_DESCRIPTOR_ARM) continue;
+			existing_descriptor_output_markings.push_back({
+				.buffer_index = rewrite.object_index,
+				.offset = markings->pOffsets[i],
+				.type = markings->pSubTypes[i].descriptorType,
+			});
+		}
+	}
+}
+
+static trackedbuffer* find_output_descriptor_buffer(VkDeviceAddress address, VkDeviceSize size, VkDeviceSize& out_offset)
+{
+	for (uint32_t i = 0; i < index_to_VkBuffer.size(); i++)
+	{
+		trackedbuffer& buffer = VkBuffer_index.at(i);
+		if (buffer.device_address == 0 || buffer.size == 0) continue;
+		if (address < buffer.device_address) continue;
+		const VkDeviceSize offset = address - buffer.device_address;
+		if (offset + size > buffer.size) continue;
+		out_offset = offset;
+		return &buffer;
+	}
+	return nullptr;
+}
+
+static bool pop_pending_descriptor_payload(VkDescriptorType type, const std::vector<uint8_t>* captured_bytes, std::vector<uint8_t>& bytes)
+{
+	auto it = std::find_if(pending_descriptor_payloads.begin(), pending_descriptor_payloads.end(),
+		[type, captured_bytes](const pending_descriptor_payload& payload)
+		{
+			if (payload.type != type) return false;
+			if (!captured_bytes) return true;
+			return payload.bytes == *captured_bytes;
+		});
+	if (it == pending_descriptor_payloads.end()) return false;
+	bytes = std::move(it->bytes);
+	pending_descriptor_payloads.erase(it);
+	return true;
+}
+
+static bool find_pending_descriptor_payload(VkDescriptorType type, const std::vector<uint8_t>& captured_bytes, std::vector<uint8_t>& bytes)
+{
+	auto it = std::find_if(pending_descriptor_payloads.begin(), pending_descriptor_payloads.end(),
+		[type, &captured_bytes](const pending_descriptor_payload& payload)
+		{
+			return payload.type == type && payload.bytes == captured_bytes;
+		});
+	if (it == pending_descriptor_payloads.end()) return false;
+	bytes = it->bytes;
+	return true;
+}
+
+static bool find_unique_pending_descriptor_payload(VkDescriptorType type, std::vector<uint8_t>& bytes)
+{
+	bool found = false;
+	for (const pending_descriptor_payload& payload : pending_descriptor_payloads)
+	{
+		if (payload.type != type) continue;
+		if (!found)
+		{
+			bytes = payload.bytes;
+			found = true;
+			continue;
+		}
+		if (payload.bytes != bytes) return false;
+	}
+	return found;
+}
+
+static void note_used_descriptor_payload(VkDescriptorType type, const std::vector<uint8_t>& bytes)
+{
+	auto it = std::find_if(used_descriptor_payloads.begin(), used_descriptor_payloads.end(),
+		[type, &bytes](const pending_descriptor_payload& payload)
+		{
+			return payload.type == type && payload.bytes == bytes;
+		});
+	if (it != used_descriptor_payloads.end()) return;
+	used_descriptor_payloads.push_back({
+		.type = type,
+		.bytes = bytes,
+	});
+}
+
+static void erase_used_descriptor_payloads()
+{
+	for (const pending_descriptor_payload& used : used_descriptor_payloads)
+	{
+		for (auto it = pending_descriptor_payloads.begin(); it != pending_descriptor_payloads.end();)
+		{
+			if (it->type == used.type && it->bytes == used.bytes)
+			{
+				it = pending_descriptor_payloads.erase(it);
+			}
+			else
+			{
+				++it;
+			}
+		}
+	}
+	used_descriptor_payloads.clear();
+}
+
+static bool read_output_descriptor_buffer_payload(uint32_t buffer_index, VkDeviceSize offset, size_t size, std::vector<uint8_t>& bytes)
+{
+	if (size == 0) return false;
+	trackedbuffer& buffer = VkBuffer_index.at(buffer_index);
+	if (offset > buffer.size || size > buffer.size - offset) return false;
+	if (buffer.parent_device_index == CONTAINER_INVALID_INDEX) return false;
+	const trackeddevice& device = VkDevice_index.at(buffer.parent_device_index);
+	if (!device.allocator) return false;
+	suballoc_location loc = device.allocator->find_buffer_memory(buffer_index);
+	if (!loc.mapped) return false;
+	bytes.resize(size);
+	memcpy(bytes.data(), loc.mapped + offset, size);
+	return true;
+}
+
+static bool same_descriptor_buffer_update(const pending_descriptor_buffer_update& update,
+	uint32_t buffer_index, VkDeviceSize offset, VkDescriptorType type, const std::vector<uint8_t>& bytes)
+{
+	return update.buffer_index == buffer_index && update.offset == offset && update.type == type && update.bytes == bytes;
+}
+
+static bool descriptor_buffer_update_already_queued(uint32_t buffer_index, VkDeviceSize offset, VkDescriptorType type,
+	const std::vector<uint8_t>& bytes)
+{
+	return std::any_of(pending_descriptor_buffer_updates.begin(), pending_descriptor_buffer_updates.end(),
+			[&](const pending_descriptor_buffer_update& update)
+			{
+				return same_descriptor_buffer_update(update, buffer_index, offset, type, bytes);
+			})
+		|| std::any_of(emitted_descriptor_buffer_updates.begin(), emitted_descriptor_buffer_updates.end(),
+			[&](const pending_descriptor_buffer_update& update)
+			{
+				return same_descriptor_buffer_update(update, buffer_index, offset, type, bytes);
+			});
+}
+
+static void queue_synthetic_descriptor_buffer_update(uint32_t buffer_index, VkDeviceSize offset, VkDescriptorType type)
+{
+	std::vector<uint8_t> bytes;
+	auto payload_entry = std::find_if(descriptor_buffer_payloads_for_output.begin(), descriptor_buffer_payloads_for_output.end(),
+		[&](const descriptor_buffer_payload& payload)
+		{
+			return payload.buffer_index == buffer_index && payload.offset == offset && payload.type == type;
+		});
+	if (payload_entry != descriptor_buffer_payloads_for_output.end())
+	{
+		const uint32_t matching_payload_slots = std::count_if(descriptor_buffer_payloads_for_output.begin(), descriptor_buffer_payloads_for_output.end(),
+			[&](const descriptor_buffer_payload& payload)
+			{
+				return payload.type == type && payload.bytes == payload_entry->bytes;
+			});
+		if (matching_payload_slots > 1) bytes = payload_entry->bytes;
+	}
+	if (bytes.empty())
+	{
+		if (descriptor_output_marking_exists(buffer_index, offset, type)) return;
+		std::vector<uint8_t> captured_bytes;
+		const std::vector<uint8_t>* captured_bytes_ptr = nullptr;
+		auto payload_it = std::find_if(pending_descriptor_payloads.begin(), pending_descriptor_payloads.end(),
+			[type](const pending_descriptor_payload& payload)
+			{
+				return payload.type == type;
+			});
+		if (payload_it != pending_descriptor_payloads.end()
+			&& read_output_descriptor_buffer_payload(buffer_index, offset, payload_it->bytes.size(), captured_bytes))
+		{
+			captured_bytes_ptr = &captured_bytes;
+		}
+		const bool found_payload = (captured_bytes_ptr && find_pending_descriptor_payload(type, captured_bytes, bytes))
+			|| find_unique_pending_descriptor_payload(type, bytes)
+			|| pop_pending_descriptor_payload(type, captured_bytes_ptr, bytes)
+			|| (captured_bytes_ptr && pop_pending_descriptor_payload(type, nullptr, bytes));
+		if (!found_payload)
+		{
+			return;
+		}
+	}
+	if (bytes.empty()) return;
+	if (descriptor_buffer_update_already_queued(buffer_index, offset, type, bytes)) return;
+	note_used_descriptor_payload(type, bytes);
+	pending_descriptor_buffer_update update = {
+		.buffer_index = buffer_index,
+		.offset = offset,
+		.type = type,
+		.bytes = std::move(bytes),
+	};
+	emitted_descriptor_buffer_updates.push_back(update);
+	pending_descriptor_buffer_updates.push_back(std::move(update));
+}
+
+static void write_descriptor_buffer_update_packet(lava_file_writer& writer, uint32_t buffer_index,
+	const std::vector<pending_descriptor_buffer_update>& updates)
+{
+	if (updates.empty()) return;
+	const trackedbuffer& reader_buffer = VkBuffer_index.at(buffer_index);
+	VkDevice device = index_to_VkDevice.at(reader_buffer.parent_device_index);
+	VkBuffer buffer = index_to_VkBuffer.at(buffer_index);
+	trackeddevice* writer_device = writer.parent->records.VkDevice_index.at(device);
+	trackedbuffer* writer_buffer = writer.parent->records.VkBuffer_index.at(buffer);
+	if (!writer_device || !writer_buffer) ABORT("Failed to resolve writer-side descriptor buffer update target");
+
+	std::vector<VkDeviceSize> offsets;
+	std::vector<VkMarkingTypeARM> types;
+	std::vector<VkMarkingSubTypeARM> subtypes;
+	offsets.reserve(updates.size());
+	types.reserve(updates.size());
+	subtypes.reserve(updates.size());
+	for (const pending_descriptor_buffer_update& update : updates)
+	{
+		VkMarkingSubTypeARM subtype{};
+		subtype.descriptorType = update.type;
+		offsets.push_back(update.offset);
+		types.push_back(VK_MARKING_TYPE_DESCRIPTOR_ARM);
+		subtypes.push_back(subtype);
+	}
+	VkMarkedOffsetsARM markings = {
+		.sType = VK_STRUCTURE_TYPE_MARKED_OFFSETS_ARM,
+		.pNext = nullptr,
+		.count = static_cast<uint32_t>(updates.size()),
+		.pMarkingTypes = types.data(),
+		.pSubTypes = subtypes.data(),
+		.pOffsets = offsets.data(),
+	};
+
+	writer.write_uint8_t((uint8_t)PACKET_BUFFER_UPDATE2);
+	writer.write_handle(writer_device);
+	writer.write_handle(writer_buffer);
+	uint64_t* sizeptr = writer.write_later_uint64_t();
+	const uint64_t packet_payload_start = writer.uncompressed_bytes;
+	writer.write_uint16_t(PACKET_FLAG_HAS_PNEXT);
+	write_marked_offsets_extension(writer, &markings);
+
+	std::vector<const pending_descriptor_buffer_update*> sorted;
+	sorted.reserve(updates.size());
+	for (const pending_descriptor_buffer_update& update : updates) sorted.push_back(&update);
+	std::sort(sorted.begin(), sorted.end(), [](const auto* a, const auto* b) { return a->offset < b->offset; });
+	VkDeviceSize cursor = 0;
+	uint64_t written = 0;
+	for (const pending_descriptor_buffer_update* update : sorted)
+	{
+		if (update->offset < cursor) ABORT("Overlapping synthetic descriptor buffer updates are not supported");
+		writer.write_uint32_t(static_cast<uint32_t>(update->offset - cursor));
+		writer.write_uint32_t(static_cast<uint32_t>(update->bytes.size()));
+		writer.write_array(reinterpret_cast<const char*>(update->bytes.data()), update->bytes.size());
+		cursor = update->offset + update->bytes.size();
+		written += update->bytes.size();
+	}
+	writer.write_uint32_t(0);
+	writer.write_uint32_t(0);
+	writer_buffer->updates++;
+	writer_buffer->written += written;
+	*sizeptr = writer.uncompressed_bytes - packet_payload_start;
+	writer.thaw();
+}
+
+static void flush_synthetic_descriptor_buffer_updates()
+{
+	if (pending_descriptor_buffer_updates.empty())
+	{
+		erase_used_descriptor_payloads();
+		return;
+	}
+	std::sort(pending_descriptor_buffer_updates.begin(), pending_descriptor_buffer_updates.end(),
+		[](const pending_descriptor_buffer_update& a, const pending_descriptor_buffer_update& b)
+		{
+			if (a.buffer_index != b.buffer_index) return a.buffer_index < b.buffer_index;
+			return a.offset < b.offset;
+		});
+
+	lava_file_writer& writer = lava_writer::instance().file_writer();
+	std::vector<pending_descriptor_buffer_update> group;
+	uint32_t current_buffer = CONTAINER_INVALID_INDEX;
+	for (const pending_descriptor_buffer_update& update : pending_descriptor_buffer_updates)
+	{
+		if (current_buffer != update.buffer_index)
+		{
+			write_descriptor_buffer_update_packet(writer, current_buffer, group);
+			group.clear();
+			current_buffer = update.buffer_index;
+		}
+		group.push_back(update);
+	}
+	write_descriptor_buffer_update_packet(writer, current_buffer, group);
+	pending_descriptor_buffer_updates.clear();
+	erase_used_descriptor_payloads();
+}
+
+static void output_note_descriptor_buffer_offsets(VkPipelineLayout layout, uint32_t firstSet, uint32_t setCount,
+	const uint32_t* pBufferIndices, const VkDeviceSize* pOffsets)
+{
+	const uint32_t layout_index = index_to_VkPipelineLayout.index(layout);
+	if (layout_index == CONTAINER_INVALID_INDEX) return;
+	const trackedpipelinelayout& layout_data = VkPipelineLayout_index.at(layout_index);
+	for (uint32_t i = 0; i < setCount; i++)
+	{
+		const uint32_t set = firstSet + i;
+		if (set >= layout_data.layouts.size()) continue;
+		const uint32_t descriptor_buffer_index = pBufferIndices ? pBufferIndices[i] : 0;
+		if (descriptor_buffer_index >= output_descriptor_buffers.size()) continue;
+		const output_descriptor_buffer_binding& descriptor_buffer = output_descriptor_buffers[descriptor_buffer_index];
+		if (descriptor_buffer.buffer_index == CONTAINER_INVALID_INDEX) continue;
+		const VkDeviceSize set_offset = pOffsets ? pOffsets[i] : 0;
+		const uint32_t set_layout_index = index_to_VkDescriptorSetLayout.index(layout_data.layouts[set]);
+		if (set_layout_index == CONTAINER_INVALID_INDEX) continue;
+		const trackeddescriptorsetlayout& set_layout_data = VkDescriptorSetLayout_index.at(set_layout_index);
+		for (const auto& binding_pair : set_layout_data.binding_types)
+		{
+			const uint32_t binding = binding_pair.first;
+			const auto offset_it = set_layout_data.offsets.find(binding);
+			const VkDeviceSize binding_offset = offset_it != set_layout_data.offsets.end() ? offset_it->second : 0;
+			queue_synthetic_descriptor_buffer_update(descriptor_buffer.buffer_index,
+				descriptor_buffer.offset + set_offset + binding_offset, binding_pair.second);
+		}
+	}
+}
+
+static void output_vkGetDescriptorEXT(callback_context& cb, VkDevice device, const VkDescriptorGetInfoEXT* pDescriptorInfo,
+	size_t dataSize, void* pDescriptor)
+{
+	prepare_trace_callback(cb);
+	trace_vkGetDescriptorEXT(device, pDescriptorInfo, dataSize, pDescriptor);
+	if (!pDescriptorInfo || !pDescriptor || dataSize == 0) return;
+	pending_descriptor_payload payload;
+	payload.type = pDescriptorInfo->type;
+	payload.bytes.resize(dataSize);
+	memcpy(payload.bytes.data(), pDescriptor, dataSize);
+	pending_descriptor_payloads.push_back(std::move(payload));
+}
+
+static void note_descriptor_payload(callback_context& cb, VkDevice device, const VkDescriptorGetInfoEXT* pDescriptorInfo,
+	size_t dataSize, void* pDescriptor)
+{
+	(void)device;
+	if (!pDescriptorInfo || !pDescriptor || dataSize == 0) return;
+	descriptor_rewrite payload;
+	payload.type = pDescriptorInfo->type;
+	payload.capture_bytes.resize(dataSize);
+	payload.bytes.resize(dataSize);
+	payload.source = cb.reader.current;
+	memcpy(payload.capture_bytes.data(), pDescriptor, dataSize);
+	memcpy(payload.bytes.data(), pDescriptor, dataSize);
+	lava::lock_guard lock(sync_mutex);
+	cb.reader.parent->pending_descriptor_rewrites.push_back(std::move(payload));
+}
+
+static void output_vkCmdBindDescriptorBuffersEXT(callback_context& cb, VkCommandBuffer commandBuffer, uint32_t bufferCount,
+	const VkDescriptorBufferBindingInfoEXT* pBindingInfos)
+{
+	prepare_trace_callback(cb);
+	trace_vkCmdBindDescriptorBuffersEXT(commandBuffer, bufferCount, pBindingInfos);
+
+	output_descriptor_buffers.clear();
+	output_descriptor_buffers.resize(bufferCount);
+	if (!pBindingInfos) return;
+	for (uint32_t i = 0; i < bufferCount; i++)
+	{
+		VkDeviceSize buffer_offset = 0;
+		trackedbuffer* buffer = find_output_descriptor_buffer(pBindingInfos[i].address, 1, buffer_offset);
+		if (!buffer) continue;
+		output_descriptor_buffers[i] = {
+			.buffer_index = buffer->index,
+			.offset = buffer_offset,
+			.size = buffer->size - buffer_offset,
+			.usage = pBindingInfos[i].usage,
+		};
+	}
+}
+
+static void output_vkCmdSetDescriptorBufferOffsetsEXT(callback_context& cb, VkCommandBuffer commandBuffer,
+	VkPipelineBindPoint pipelineBindPoint, VkPipelineLayout layout, uint32_t firstSet, uint32_t setCount,
+	const uint32_t* pBufferIndices, const VkDeviceSize* pOffsets)
+{
+	prepare_trace_callback(cb);
+	trace_vkCmdSetDescriptorBufferOffsetsEXT(commandBuffer, pipelineBindPoint, layout, firstSet, setCount, pBufferIndices, pOffsets);
+	output_note_descriptor_buffer_offsets(layout, firstSet, setCount, pBufferIndices, pOffsets);
+}
+
+static void output_vkCmdSetDescriptorBufferOffsets2EXT(callback_context& cb, VkCommandBuffer commandBuffer,
+	const VkSetDescriptorBufferOffsetsInfoEXT* pSetDescriptorBufferOffsetsInfo)
+{
+	prepare_trace_callback(cb);
+	trace_vkCmdSetDescriptorBufferOffsets2EXT(commandBuffer, pSetDescriptorBufferOffsetsInfo);
+	if (!pSetDescriptorBufferOffsetsInfo) return;
+	output_note_descriptor_buffer_offsets(pSetDescriptorBufferOffsetsInfo->layout, pSetDescriptorBufferOffsetsInfo->firstSet,
+		pSetDescriptorBufferOffsetsInfo->setCount, pSetDescriptorBufferOffsetsInfo->pBufferIndices,
+		pSetDescriptorBufferOffsetsInfo->pOffsets);
+}
+
+static void output_vkQueueSubmit(callback_context& cb, VkQueue queue, uint32_t submitCount, const VkSubmitInfo* pSubmits, VkFence fence)
+{
+	flush_synthetic_descriptor_buffer_updates();
+	prepare_trace_callback(cb);
+	trace_vkQueueSubmit(queue, submitCount, pSubmits, fence);
+}
+
+static void output_vkQueueSubmit2(callback_context& cb, VkQueue queue, uint32_t submitCount, const VkSubmitInfo2* pSubmits, VkFence fence)
+{
+	flush_synthetic_descriptor_buffer_updates();
+	prepare_trace_callback(cb);
+	trace_vkQueueSubmit2(queue, submitCount, pSubmits, fence);
+}
+
+static void output_vkQueueSubmit2KHR(callback_context& cb, VkQueue queue, uint32_t submitCount, const VkSubmitInfo2* pSubmits, VkFence fence)
+{
+	flush_synthetic_descriptor_buffer_updates();
+	prepare_trace_callback(cb);
+	trace_vkQueueSubmit2KHR(queue, submitCount, pSubmits, fence);
 }
 
 // Utility funcs
@@ -582,6 +1147,12 @@ static void add_callbacks_for_first_round(bool enable_simulation, bool enable_su
 		CALLBACK(vkCmdBindDescriptorSets2KHR);
 		CALLBACK(vkCmdBindDescriptorSets);
 		CALLBACK(vkCmdBindDescriptorSets2);
+		CALLBACK(vkCreateDescriptorSetLayout);
+		CALLBACK(vkCreatePipelineLayout);
+		CALLBACK(vkGetDescriptorSetLayoutBindingOffsetEXT);
+		CALLBACK(vkCmdBindDescriptorBuffersEXT);
+		CALLBACK(vkCmdSetDescriptorBufferOffsetsEXT);
+		CALLBACK(vkCmdSetDescriptorBufferOffsets2EXT);
 		CALLBACK(vkCmdPushDescriptorSet2KHR);
 		CALLBACK(vkCmdPushDescriptorSet2);
 		CALLBACK(vkCmdPushDescriptorSetKHR);
@@ -602,6 +1173,7 @@ static void add_callbacks_for_first_round(bool enable_simulation, bool enable_su
 		vkGetAccelerationStructureDeviceAddressKHR_callbacks.push_back(replay_callback_vkGetAccelerationStructureDeviceAddressKHR);
 		vkCreateBuffer_callbacks.push_back(replay_callback_vkCreateBuffer);
 		vkCreateAccelerationStructureKHR_callbacks.push_back(replay_callback_vkCreateAccelerationStructureKHR);
+		vkGetDescriptorEXT_callbacks.push_back(note_descriptor_payload);
 	}
 #undef CALLBACK
 }
@@ -756,6 +1328,7 @@ int main(int argc, char **argv)
 		sync_mutex.lock(); // threads are stopped here but let's avoid warnings
 		rewrite_queue_copy = replayer.global_rewrite_queue;
 		output_rewrite_queue_copy = replayer.global_output_rewrite_queue;
+		descriptor_buffer_payloads_for_output = replayer.descriptor_buffer_payloads;
 		sync_mutex.unlock();
 
 		if (dump_host_write_stats) dump_host_write_stats_report("pass1");
@@ -853,6 +1426,12 @@ int main(int argc, char **argv)
 		writer.prepare_threads(replayer.threads.size());
 		bootstrap_write_side_state(filename_input);
 		add_callbacks_for_output();
+		vkCreateDescriptorSetLayout_callbacks.push_back(postprocess_vkCreateDescriptorSetLayout);
+		vkCreatePipelineLayout_callbacks.push_back(postprocess_vkCreatePipelineLayout);
+		vkGetDescriptorSetLayoutBindingOffsetEXT_callbacks.push_back(postprocess_vkGetDescriptorSetLayoutBindingOffsetEXT);
+		vkGetBufferDeviceAddress_callbacks.push_back(replay_callback_vkGetBufferDeviceAddress);
+		vkGetBufferDeviceAddressKHR_callbacks.push_back(replay_callback_vkGetBufferDeviceAddressKHR);
+		vkGetBufferDeviceAddressEXT_callbacks.push_back(replay_callback_vkGetBufferDeviceAddressEXT);
 		vkBindBufferMemory_callbacks.clear();
 		vkBindBufferMemory_callbacks.push_back(replay_trace_callback_with_pre<trace_vkBindBufferMemory, sync_output_vkBindBufferMemory>::call);
 		vkBindImageMemory_callbacks.clear();
@@ -873,6 +1452,30 @@ int main(int argc, char **argv)
 		vkBindTensorMemoryARM_callbacks.push_back(replay_trace_callback_with_pre<trace_vkBindTensorMemoryARM, sync_output_vkBindTensorMemoryARM>::call);
 		vkBindDataGraphPipelineSessionMemoryARM_callbacks.clear();
 		vkBindDataGraphPipelineSessionMemoryARM_callbacks.push_back(replay_trace_callback_with_pre<trace_vkBindDataGraphPipelineSessionMemoryARM, sync_output_vkBindDataGraphPipelineSessionMemoryARM>::call);
+		vkCmdPushConstants_callbacks.clear();
+		vkCmdPushConstants_callbacks.push_back(output_vkCmdPushConstants);
+		vkCmdPushConstants2_callbacks.clear();
+		vkCmdPushConstants2_callbacks.push_back(output_vkCmdPushConstants2);
+		vkCmdPushConstants2KHR_callbacks.clear();
+		vkCmdPushConstants2KHR_callbacks.push_back(output_vkCmdPushConstants2KHR);
+		if (simulate)
+		{
+			cache_existing_descriptor_output_markings(output_rewrite_queue_copy);
+			vkGetDescriptorEXT_callbacks.clear();
+			vkGetDescriptorEXT_callbacks.push_back(output_vkGetDescriptorEXT);
+			vkCmdBindDescriptorBuffersEXT_callbacks.clear();
+			vkCmdBindDescriptorBuffersEXT_callbacks.push_back(output_vkCmdBindDescriptorBuffersEXT);
+			vkCmdSetDescriptorBufferOffsetsEXT_callbacks.clear();
+			vkCmdSetDescriptorBufferOffsetsEXT_callbacks.push_back(output_vkCmdSetDescriptorBufferOffsetsEXT);
+			vkCmdSetDescriptorBufferOffsets2EXT_callbacks.clear();
+			vkCmdSetDescriptorBufferOffsets2EXT_callbacks.push_back(output_vkCmdSetDescriptorBufferOffsets2EXT);
+			vkQueueSubmit_callbacks.clear();
+			vkQueueSubmit_callbacks.push_back(output_vkQueueSubmit);
+			vkQueueSubmit2_callbacks.clear();
+			vkQueueSubmit2_callbacks.push_back(output_vkQueueSubmit2);
+			vkQueueSubmit2KHR_callbacks.clear();
+			vkQueueSubmit2KHR_callbacks.push_back(output_vkQueueSubmit2KHR);
+		}
 		write_output = true;
 
 		for (unsigned i = 0; i < replayer.threads.size(); i++)

@@ -642,6 +642,21 @@ struct trackedcommand // does _not_ inherit trackable
 			uint32_t dynamicOffsetCount;
 			uint32_t* pDynamicOffsets;
 		} bind_descriptorsets;
+		struct bind_descriptor_buffers_ext
+		{
+			uint32_t bufferCount;
+			VkDeviceAddress* addresses;
+			VkBufferUsageFlags* usages;
+		} bind_descriptor_buffers_ext;
+		struct set_descriptor_buffer_offsets_ext
+		{
+			VkPipelineBindPoint pipelineBindPoint;
+			VkPipelineLayout layout;
+			uint32_t firstSet;
+			uint32_t setCount;
+			uint32_t* pBufferIndices;
+			VkDeviceSize* pOffsets;
+		} set_descriptor_buffer_offsets_ext;
 		struct push_descriptorset
 		{
 			VkPipelineBindPoint pipelineBindPoint;
@@ -831,6 +846,7 @@ struct trackeddescriptorsetlayout : trackable
 	using trackable::trackable; // inherit constructor
 	VkDeviceSize size = 0;
 	std::unordered_map<int, VkDeviceSize> offsets;
+	std::unordered_map<uint32_t, VkDescriptorType> binding_types;
 };
 
 struct trackeddescriptorset : trackable

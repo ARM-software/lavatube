@@ -7,6 +7,12 @@ void postprocess_vkCmdPushDescriptorSet(callback_context& cb, VkCommandBuffer co
 void postprocess_vkCmdPushDescriptorSet2KHR(callback_context& cb, VkCommandBuffer commandBuffer, const VkPushDescriptorSetInfoKHR* pPushDescriptorSetInfo);
 void postprocess_vkCmdPushDescriptorSet2(callback_context& cb, VkCommandBuffer commandBuffer, const VkPushDescriptorSetInfo* pPushDescriptorSetInfo);
 void postprocess_vkUpdateDescriptorSets(callback_context& cb, VkDevice device, uint32_t descriptorWriteCount, const VkWriteDescriptorSet* pDescriptorWrites, uint32_t descriptorCopyCount, const VkCopyDescriptorSet* pDescriptorCopies);
+void postprocess_vkCreateDescriptorSetLayout(callback_context& cb, VkDevice device, const VkDescriptorSetLayoutCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkDescriptorSetLayout* pSetLayout);
+void postprocess_vkCreatePipelineLayout(callback_context& cb, VkDevice device, const VkPipelineLayoutCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkPipelineLayout* pPipelineLayout);
+void postprocess_vkGetDescriptorSetLayoutBindingOffsetEXT(callback_context& cb, VkDevice device, VkDescriptorSetLayout layout, uint32_t binding, VkDeviceSize* pOffset);
+void postprocess_vkCmdBindDescriptorBuffersEXT(callback_context& cb, VkCommandBuffer commandBuffer, uint32_t bufferCount, const VkDescriptorBufferBindingInfoEXT* pBindingInfos);
+void postprocess_vkCmdSetDescriptorBufferOffsetsEXT(callback_context& cb, VkCommandBuffer commandBuffer, VkPipelineBindPoint pipelineBindPoint, VkPipelineLayout layout, uint32_t firstSet, uint32_t setCount, const uint32_t* pBufferIndices, const VkDeviceSize* pOffsets);
+void postprocess_vkCmdSetDescriptorBufferOffsets2EXT(callback_context& cb, VkCommandBuffer commandBuffer, const VkSetDescriptorBufferOffsetsInfoEXT* pSetDescriptorBufferOffsetsInfo);
 void postprocess_vkCmdUpdateBuffer(callback_context& cb, VkCommandBuffer commandBuffer, VkBuffer dstBuffer, VkDeviceSize dstOffset, VkDeviceSize dataSize, const void* pData);
 void postprocess_vkCmdCopyBuffer(callback_context& cb, VkCommandBuffer commandBuffer, VkBuffer srcBuffer, VkBuffer dstBuffer, uint32_t regionCount, const VkBufferCopy* pRegions);
 void postprocess_vkCmdCopyBuffer2(callback_context& cb, VkCommandBuffer commandBuffer, const VkCopyBufferInfo2* pCopyBufferInfo);

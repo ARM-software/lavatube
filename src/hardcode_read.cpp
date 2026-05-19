@@ -1885,7 +1885,8 @@ static VkPhysicalDevice descriptor_buffer_physical_device(lava_file_reader& read
 	reader.throw_stop_requested();
 }
 
-static void queue_descriptor_rewrite(lava_file_reader& reader, VkPhysicalDevice physical_device, VkDescriptorType descriptor_type, const void* bytes, size_t data_size)
+static void queue_descriptor_rewrite(lava_file_reader& reader, VkPhysicalDevice physical_device, VkDescriptorType descriptor_type,
+	const void* capture_bytes, const void* replay_bytes, size_t data_size)
 {
 	size_t descriptor_size = descriptor_buffer_descriptor_size(physical_device, descriptor_type);
 	if (descriptor_size == 0) descriptor_size = data_size;
@@ -1897,9 +1898,11 @@ static void queue_descriptor_rewrite(lava_file_reader& reader, VkPhysicalDevice 
 
 	descriptor_rewrite rewrite;
 	rewrite.type = descriptor_type;
+	rewrite.capture_bytes.resize(descriptor_size);
 	rewrite.bytes.resize(descriptor_size);
 	rewrite.source = reader.current;
-	memcpy(rewrite.bytes.data(), bytes, descriptor_size);
+	memcpy(rewrite.capture_bytes.data(), capture_bytes ? capture_bytes : replay_bytes, descriptor_size);
+	memcpy(rewrite.bytes.data(), replay_bytes ? replay_bytes : capture_bytes, descriptor_size);
 
 	lava::lock_guard lock(sync_mutex);
 	reader.parent->pending_descriptor_rewrites.push_back(std::move(rewrite));
@@ -1907,9 +1910,7 @@ static void queue_descriptor_rewrite(lava_file_reader& reader, VkPhysicalDevice 
 
 void replay_callback_vkGetDescriptorEXT(callback_context& cb, VkDevice device, const VkDescriptorGetInfoEXT* pDescriptorInfo, size_t dataSize, void* pDescriptor)
 {
-	(void)pDescriptor;
-
-	if (!cb.reader.run || !pDescriptorInfo || device == VK_NULL_HANDLE) return;
+	if (!cb.reader.run || !pDescriptorInfo || !pDescriptor || device == VK_NULL_HANDLE) return;
 
 	const VkPhysicalDevice physical_device = descriptor_buffer_physical_device(cb.reader, device);
 
@@ -1921,14 +1922,9 @@ void replay_callback_vkGetDescriptorEXT(callback_context& cb, VkDevice device, c
 		skip_descriptor_buffer_portability(cb.reader, pDescriptorInfo->type, dataSize, descriptor_size);
 	}
 
-	descriptor_rewrite rewrite;
-	rewrite.type = pDescriptorInfo->type;
-	rewrite.bytes.resize(descriptor_size);
-	rewrite.source = cb.reader.current;
-	wrap_vkGetDescriptorEXT(device, pDescriptorInfo, descriptor_size, rewrite.bytes.data());
-
-	lava::lock_guard lock(sync_mutex);
-	cb.reader.parent->pending_descriptor_rewrites.push_back(std::move(rewrite));
+	std::vector<uint8_t> replay_bytes(descriptor_size);
+	wrap_vkGetDescriptorEXT(device, pDescriptorInfo, descriptor_size, replay_bytes.data());
+	queue_descriptor_rewrite(cb.reader, physical_device, pDescriptorInfo->type, pDescriptor, replay_bytes.data(), dataSize);
 }
 
 void replay_callback_vkWriteSamplerDescriptorsEXT(callback_context& cb, VkDevice device, uint32_t samplerCount, const VkSamplerCreateInfo* pSamplers,
@@ -1941,7 +1937,7 @@ void replay_callback_vkWriteSamplerDescriptorsEXT(callback_context& cb, VkDevice
 	for (uint32_t i = 0; i < samplerCount; i++)
 	{
 		if (!pDescriptors[i].address || pDescriptors[i].size == 0) continue;
-		queue_descriptor_rewrite(cb.reader, physical_device, VK_DESCRIPTOR_TYPE_SAMPLER, pDescriptors[i].address, pDescriptors[i].size);
+		queue_descriptor_rewrite(cb.reader, physical_device, VK_DESCRIPTOR_TYPE_SAMPLER, pDescriptors[i].address, pDescriptors[i].address, pDescriptors[i].size);
 	}
 }
 
@@ -1954,7 +1950,7 @@ void replay_callback_vkWriteResourceDescriptorsEXT(callback_context& cb, VkDevic
 	for (uint32_t i = 0; i < resourceCount; i++)
 	{
 		if (!pDescriptors[i].address || pDescriptors[i].size == 0) continue;
-		queue_descriptor_rewrite(cb.reader, physical_device, pResources[i].type, pDescriptors[i].address, pDescriptors[i].size);
+		queue_descriptor_rewrite(cb.reader, physical_device, pResources[i].type, pDescriptors[i].address, pDescriptors[i].address, pDescriptors[i].size);
 	}
 }
 
@@ -3237,16 +3233,19 @@ static void translate_marked_offsets(lava_file_reader& reader, const VkMarkedOff
 			{
 				const VkDescriptorType descriptor_type = markings->pSubTypes[i].descriptorType;
 				std::vector<uint8_t> descriptor_bytes;
+				const uint8_t* captured_descriptor = reinterpret_cast<const uint8_t*>((char*)ptr + offset);
 				lava::lock_guard lock(sync_mutex);
 				auto& queue = reader.parent->pending_descriptor_rewrites;
 				auto it = std::find_if(queue.begin(), queue.end(), [&](const descriptor_rewrite& candidate)
 				{
-					return candidate.type == descriptor_type;
+					return candidate.type == descriptor_type
+						&& !candidate.capture_bytes.empty()
+						&& offset + candidate.capture_bytes.size() <= size
+						&& memcmp(captured_descriptor, candidate.capture_bytes.data(), candidate.capture_bytes.size()) == 0;
 				});
 				if (it != queue.end())
 				{
-					descriptor_bytes = std::move(it->bytes);
-					queue.erase(it);
+					descriptor_bytes = it->bytes;
 				}
 				assert(!descriptor_bytes.empty() || !reader.run);
 				assert(offset + descriptor_bytes.size() <= size);

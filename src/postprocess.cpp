@@ -200,6 +200,116 @@ void postprocess_vkUpdateDescriptorSets(callback_context& cb, VkDevice device, u
 	handle_VkCopyDescriptorSets(descriptorCopyCount, pDescriptorCopies);
 }
 
+void postprocess_vkCreateDescriptorSetLayout(callback_context& cb, VkDevice device, const VkDescriptorSetLayoutCreateInfo* pCreateInfo,
+	const VkAllocationCallbacks* pAllocator, VkDescriptorSetLayout* pSetLayout)
+{
+	(void)device;
+	(void)pAllocator;
+	if (cb.result.vkresult != VK_SUCCESS || !pCreateInfo || !pSetLayout || *pSetLayout == VK_NULL_HANDLE) return;
+	const uint32_t layout_index = index_to_VkDescriptorSetLayout.index(*pSetLayout);
+	if (layout_index == CONTAINER_INVALID_INDEX) return;
+	auto& layout_data = VkDescriptorSetLayout_index.at(layout_index);
+	for (uint32_t i = 0; i < pCreateInfo->bindingCount; i++)
+	{
+		const VkDescriptorSetLayoutBinding& binding = pCreateInfo->pBindings[i];
+		layout_data.binding_types[binding.binding] = binding.descriptorType;
+	}
+}
+
+void postprocess_vkCreatePipelineLayout(callback_context& cb, VkDevice device, const VkPipelineLayoutCreateInfo* pCreateInfo,
+	const VkAllocationCallbacks* pAllocator, VkPipelineLayout* pPipelineLayout)
+{
+	(void)device;
+	(void)pAllocator;
+	if (cb.result.vkresult != VK_SUCCESS || !pCreateInfo || !pPipelineLayout || *pPipelineLayout == VK_NULL_HANDLE) return;
+	const uint32_t layout_index = index_to_VkPipelineLayout.index(*pPipelineLayout);
+	if (layout_index == CONTAINER_INVALID_INDEX) return;
+	auto& layout_data = VkPipelineLayout_index.at(layout_index);
+	layout_data.layouts.clear();
+	for (uint32_t i = 0; i < pCreateInfo->setLayoutCount; i++)
+	{
+		layout_data.layouts.push_back(pCreateInfo->pSetLayouts[i]);
+	}
+}
+
+void postprocess_vkGetDescriptorSetLayoutBindingOffsetEXT(callback_context& cb, VkDevice device, VkDescriptorSetLayout layout,
+	uint32_t binding, VkDeviceSize* pOffset)
+{
+	(void)cb;
+	(void)device;
+	if (!pOffset || layout == VK_NULL_HANDLE) return;
+	const uint32_t layout_index = index_to_VkDescriptorSetLayout.index(layout);
+	if (layout_index == CONTAINER_INVALID_INDEX) return;
+	auto& layout_data = VkDescriptorSetLayout_index.at(layout_index);
+	layout_data.offsets[binding] = *pOffset;
+}
+
+void postprocess_vkCmdBindDescriptorBuffersEXT(callback_context& cb, VkCommandBuffer commandBuffer, uint32_t bufferCount,
+	const VkDescriptorBufferBindingInfoEXT* pBindingInfos)
+{
+	const uint32_t cmdbuffer_index = index_to_VkCommandBuffer.index(commandBuffer);
+	auto& cmdbuffer_data = VkCommandBuffer_index.at(cmdbuffer_index);
+	trackedcommand cmd { VKCMDBINDDESCRIPTORBUFFERSEXT };
+	cmd.source = cb.reader.current;
+	cmd.data.bind_descriptor_buffers_ext.bufferCount = bufferCount;
+	if (bufferCount > 0 && pBindingInfos)
+	{
+		cmd.data.bind_descriptor_buffers_ext.addresses = (VkDeviceAddress*)malloc(bufferCount * sizeof(VkDeviceAddress));
+		cmd.data.bind_descriptor_buffers_ext.usages = (VkBufferUsageFlags*)malloc(bufferCount * sizeof(VkBufferUsageFlags));
+		if (!cmd.data.bind_descriptor_buffers_ext.addresses || !cmd.data.bind_descriptor_buffers_ext.usages) ABORT("Failed to allocate descriptor buffer binding command data");
+		for (uint32_t i = 0; i < bufferCount; i++)
+		{
+			cmd.data.bind_descriptor_buffers_ext.addresses[i] = pBindingInfos[i].address;
+			cmd.data.bind_descriptor_buffers_ext.usages[i] = pBindingInfos[i].usage;
+		}
+	}
+	else
+	{
+		cmd.data.bind_descriptor_buffers_ext.addresses = nullptr;
+		cmd.data.bind_descriptor_buffers_ext.usages = nullptr;
+	}
+	cmdbuffer_data.commands.push_back(cmd);
+}
+
+void postprocess_vkCmdSetDescriptorBufferOffsetsEXT(callback_context& cb, VkCommandBuffer commandBuffer, VkPipelineBindPoint pipelineBindPoint,
+	VkPipelineLayout layout, uint32_t firstSet, uint32_t setCount, const uint32_t* pBufferIndices, const VkDeviceSize* pOffsets)
+{
+	const uint32_t cmdbuffer_index = index_to_VkCommandBuffer.index(commandBuffer);
+	auto& cmdbuffer_data = VkCommandBuffer_index.at(cmdbuffer_index);
+	trackedcommand cmd { VKCMDSETDESCRIPTORBUFFEROFFSETSEXT };
+	cmd.source = cb.reader.current;
+	cmd.data.set_descriptor_buffer_offsets_ext.pipelineBindPoint = pipelineBindPoint;
+	cmd.data.set_descriptor_buffer_offsets_ext.layout = layout;
+	cmd.data.set_descriptor_buffer_offsets_ext.firstSet = firstSet;
+	cmd.data.set_descriptor_buffer_offsets_ext.setCount = setCount;
+	if (setCount > 0 && pBufferIndices)
+	{
+		cmd.data.set_descriptor_buffer_offsets_ext.pBufferIndices = (uint32_t*)malloc(setCount * sizeof(uint32_t));
+		if (!cmd.data.set_descriptor_buffer_offsets_ext.pBufferIndices) ABORT("Failed to allocate descriptor buffer index command data");
+		memcpy(cmd.data.set_descriptor_buffer_offsets_ext.pBufferIndices, pBufferIndices, setCount * sizeof(uint32_t));
+	}
+	else cmd.data.set_descriptor_buffer_offsets_ext.pBufferIndices = nullptr;
+	if (setCount > 0 && pOffsets)
+	{
+		cmd.data.set_descriptor_buffer_offsets_ext.pOffsets = (VkDeviceSize*)malloc(setCount * sizeof(VkDeviceSize));
+		if (!cmd.data.set_descriptor_buffer_offsets_ext.pOffsets) ABORT("Failed to allocate descriptor buffer offset command data");
+		memcpy(cmd.data.set_descriptor_buffer_offsets_ext.pOffsets, pOffsets, setCount * sizeof(VkDeviceSize));
+	}
+	else cmd.data.set_descriptor_buffer_offsets_ext.pOffsets = nullptr;
+	cmdbuffer_data.commands.push_back(cmd);
+}
+
+void postprocess_vkCmdSetDescriptorBufferOffsets2EXT(callback_context& cb, VkCommandBuffer commandBuffer,
+	const VkSetDescriptorBufferOffsetsInfoEXT* pSetDescriptorBufferOffsetsInfo)
+{
+	assert(pSetDescriptorBufferOffsetsInfo);
+	const VkPipelineBindPoint bind_point = (pSetDescriptorBufferOffsetsInfo->stageFlags & VK_SHADER_STAGE_COMPUTE_BIT)
+		? VK_PIPELINE_BIND_POINT_COMPUTE : VK_PIPELINE_BIND_POINT_GRAPHICS;
+	postprocess_vkCmdSetDescriptorBufferOffsetsEXT(cb, commandBuffer, bind_point, pSetDescriptorBufferOffsetsInfo->layout,
+		pSetDescriptorBufferOffsetsInfo->firstSet, pSetDescriptorBufferOffsetsInfo->setCount,
+		pSetDescriptorBufferOffsetsInfo->pBufferIndices, pSetDescriptorBufferOffsetsInfo->pOffsets);
+}
+
 void postprocess_vkCmdBindDescriptorSets(callback_context& cb, VkCommandBuffer commandBuffer, VkPipelineBindPoint pipelineBindPoint, VkPipelineLayout layout,
 	uint32_t firstSet, uint32_t descriptorSetCount, const VkDescriptorSet* pDescriptorSets, uint32_t dynamicOffsetCount, const uint32_t* pDynamicOffsets)
 {

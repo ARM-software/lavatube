@@ -145,25 +145,28 @@ public:
 
 	change_source get_source(uint64_t address, uint32_t size) const
 	{
-		std::shared_lock lock(mutex);
-		assert(size > 0);
-		std::vector<source_span> spans;
-		if (!collect_spans_unlocked(tracker, fragment_sources, address, size, spans))
+		change_source source;
+		if (!try_get_source(address, size, source))
 		{
 			assert(false && "host_write_regions missing coverage");
 			return {};
 		}
+		return source;
+	}
+
+	bool try_get_source(uint64_t address, uint32_t size, change_source& source) const
+	{
+		std::shared_lock lock(mutex);
+		assert(size > 0);
+		std::vector<source_span> spans;
+		if (!collect_spans_unlocked(tracker, fragment_sources, address, size, spans)) return false;
 		assert(!spans.empty());
-		const change_source source = spans.front().source;
+		source = spans.front().source;
 		for (const source_span& span : spans)
 		{
-			if (!same_source(span.source, source))
-			{
-				assert(false && "host_write_regions mixed sources");
-				return source;
-			}
+			if (!same_source(span.source, source)) return false;
 		}
-		return source;
+		return true;
 	}
 
 	stats get_stats() const

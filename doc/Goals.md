@@ -38,8 +38,9 @@ the Aztec Ruins scene with 100fps fixed-rate and comparing against gfxreconstruc
 CPU-bound on high-end desktop. We pick average of three runs.
 
 How to measure:
-- Time to completion and time to completion: /usr/bin/time -f "%e,%M" <command>
-- Power: perf stat -e power/energy-pkg/ <command>
+- Time to completion and time to completion: `/usr/bin/time -f "%e,%M" <command>`
+- Power: `perf stat -e power/energy-pkg/ <command>`
+  If `power/energy-gpu/` is available, we should gather this one as well.
 
 Latest results (less is better):
 
