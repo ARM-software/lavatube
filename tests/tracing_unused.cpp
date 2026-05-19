@@ -60,6 +60,7 @@ static bool extension_list_contains(const char* const* names, uint32_t count, co
 	return false;
 }
 
+#ifdef DEBUG
 static bool json_array_contains(const Json::Value& array, const char* name)
 {
 	if (!array.isArray()) return false;
@@ -69,6 +70,7 @@ static bool json_array_contains(const Json::Value& array, const char* name)
 	}
 	return false;
 }
+#endif
 
 static void record_vkCreateInstance(callback_context& cb, const VkInstanceCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkInstance* pInstance)
 {

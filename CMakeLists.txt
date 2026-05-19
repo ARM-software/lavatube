@@ -882,10 +882,23 @@ layer_test(linear_optimal_mix linear_optimal_mix)
 
 # --- Simulator tests ---
 
-add_lavatube_test(markings_compare_rt4_generate COMMAND ${CMAKE_BINARY_DIR}/lava-tool -S ${CMAKE_BINARY_DIR}/vulkan_raytracing_4_raw.vk ${CMAKE_BINARY_DIR}/vulkan_raytracing_4_generated.vk)
-set_tests_properties(markings_compare_rt4_generate PROPERTIES FIXTURES_REQUIRED "raytracing_4" FIXTURES_SETUP "raytracing_4_generate_markings" SKIP_RETURN_CODE 77)
-add_lavatube_test(markings_compare_rt4_compare COMMAND ${CMAKE_BINARY_DIR}/packtool diff --assert-markings ${CMAKE_BINARY_DIR}/vulkan_raytracing_4.vk ${CMAKE_BINARY_DIR}/vulkan_raytracing_4_generated.vk)
-set_tests_properties(markings_compare_rt4_compare PROPERTIES FIXTURES_REQUIRED "raytracing_4_generate_markings" SKIP_RETURN_CODE 77)
+function(markings_test test_name)
+	add_lavatube_test(markings_compare_${ARGV0}_generate COMMAND ${CMAKE_BINARY_DIR}/lava-tool -S ${CMAKE_BINARY_DIR}/vulkan_${ARGV0}_raw.vk ${CMAKE_BINARY_DIR}/vulkan_${ARGV0}_generated.vk)
+	set_tests_properties(markings_compare_${ARGV0}_generate PROPERTIES FIXTURES_REQUIRED "${ARGV0}" FIXTURES_SETUP "${ARGV0}_generate_markings" SKIP_RETURN_CODE 77)
+	add_lavatube_test(markings_compare_${ARGV0}_compare COMMAND ${CMAKE_BINARY_DIR}/packtool diff --assert-markings ${CMAKE_BINARY_DIR}/vulkan_${ARGV0}.vk ${CMAKE_BINARY_DIR}/vulkan_${ARGV0}_generated.vk)
+	set_tests_properties(markings_compare_${ARGV0}_compare PROPERTIES FIXTURES_REQUIRED "${ARGV0}_generate_markings" SKIP_RETURN_CODE 77)
+endfunction()
+
+markings_test(raytracing_1)
+markings_test(raytracing_2)
+markings_test(raytracing_3)
+markings_test(raytracing_4)
+markings_test(as_2)
+markings_test(as_3)
+markings_test(as_4)
+markings_test(as_5)
+markings_test(as_6)
+markings_test(as_7)
 
 # --- Android emulator tracing test ---
 

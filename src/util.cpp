@@ -407,7 +407,7 @@ std::string get_vulkan_lib_path()
 			ABORT("Giving up");
 		}
 
-		ILOG("Found system Vulkan library: %s", filepath.c_str());
+		DLOG("Found system Vulkan library: %s", filepath.c_str());
 	}
 	else // get specified vulkan library
 	{
@@ -416,7 +416,7 @@ std::string get_vulkan_lib_path()
 		{
 			filepath = std::string(path) + std::string("/") + (soname.empty() ? "libvulkan.so" : soname);
 		}
-		ILOG("Found Vulkan library: %s", filepath.c_str());
+		DLOG("Found Vulkan library: %s", filepath.c_str());
 	}
 
 	return filepath;

@@ -346,7 +346,7 @@ class parameter(spec.base_parameter):
 			z.loop_begin()
 			z.do('uint64_t stored_address = reader.read_uint64_t();')
 			z.do('%s[k] = reader.write_output ? stored_address : reader.parent->device_address_remapping.translate_address(stored_address);' % tmpname)
-			z.do('ILOG("%s changing device address from %%lu to %%lu at array position %%u", (unsigned long)stored_address, (unsigned long)%s[k], (unsigned)k);' % (self.funcname, tmpname))
+			z.do('DLOG("%s changing device address from %%lu to %%lu at array position %%u", (unsigned long)stored_address, (unsigned long)%s[k], (unsigned)k);' % (self.funcname, tmpname))
 			z.loop_end()
 			z.do('%s = %s;' % (varname, tmpname))
 		elif ('Address' in self.name or self.name == 'address') and self.type == 'VkDeviceAddress':
@@ -355,7 +355,7 @@ class parameter(spec.base_parameter):
 			z.decl('uint64_t', 'stored_address')
 			z.do('stored_address = reader.read_uint64_t();')
 			z.do('%s = reader.write_output ? stored_address : reader.parent->device_address_remapping.translate_address(stored_address);' % varname)
-			z.do('ILOG("%s changing device address from %%lu to %%lu", (unsigned long)stored_address, (unsigned long)%s);' % (self.funcname, varname))
+			z.do('DLOG("%s changing device address from %%lu to %%lu", (unsigned long)stored_address, (unsigned long)%s);' % (self.funcname, varname))
 		elif self.name == 'queueFamilyIndex':
 			z.decl('uint32_t', self.name)
 			z.do('%s = reader.read_uint32_t();' % self.name)
@@ -517,7 +517,7 @@ class parameter(spec.base_parameter):
 			z.decl('uint64_t', 'stored_address')
 			z.do('stored_address = reader.read_uint64_t();')
 			z.do('%s.deviceAddress = reader.write_output ? stored_address : reader.parent->device_address_remapping.translate_address(stored_address); // assume device address since we do not support host addresses' % varname)
-			z.do('ILOG("%s changing device address from %%lu to %%lu", (unsigned long)stored_address, (unsigned long)%s.deviceAddress);' % (self.funcname, varname))
+			z.do('DLOG("%s changing device address from %%lu to %%lu", (unsigned long)stored_address, (unsigned long)%s.deviceAddress);' % (self.funcname, varname))
 		elif self.selector: # well-defined union
 			assert self.type in spec.unions, '%s used by %s with %s as selector is not in spec.unions!' % (self.type, self.name, self.selector)
 			z.do('switch (%s)' % (owner + self.selector))
@@ -552,7 +552,7 @@ class parameter(spec.base_parameter):
 						z.decl('uint64_t', 'stored_address')
 						z.do('stored_address = reader.read_uint64_t();')
 						z.do('%s.%s = reader.write_output ? stored_address : reader.parent->device_address_remapping.translate_address(stored_address);' % (varname, tname))
-						z.do('ILOG("%s %s.%s changing device address from %%lu to %%lu inside union", (unsigned long)stored_address, (unsigned long)%s.%s);' % (self.funcname, varname, tname, varname, tname))
+						z.do('DLOG("%s %s.%s changing device address from %%lu to %%lu inside union", (unsigned long)stored_address, (unsigned long)%s.%s);' % (self.funcname, varname, tname, varname, tname))
 					elif ttype in spec.type_mappings:
 						storedtype = spec.type_mappings[ttype]
 						z.do('%s.%s = reader.read_%s();' % (varname, tname, storedtype))
@@ -1459,7 +1459,7 @@ def load_add_pre(name):
 			z.do('device_data.allocator->self_test();')
 			z.do('device_data.allocator->destroy();')
 			z.do('suballoc_metrics sm = device_data.allocator->performance();')
-			z.do('ILOG("Suballocator used=%lu allocated=%lu heaps=%u objects=%u efficiency=%g", (unsigned long)sm.used, (unsigned long)sm.allocated, (unsigned)sm.heaps, (unsigned)sm.objects, sm.efficiency);')
+			z.do('DLOG("Suballocator used=%lu allocated=%lu heaps=%u objects=%u efficiency=%g", (unsigned long)sm.used, (unsigned long)sm.allocated, (unsigned)sm.heaps, (unsigned)sm.objects, sm.efficiency);')
 			z.do('assert(device_data.allocator->self_test() == 0);')
 			z.do('delete device_data.allocator;')
 			z.do('device_data.allocator = nullptr;')

@@ -3650,7 +3650,7 @@ static void read_VkAccelerationStructureBuildGeometryInfoKHR(lava_file_reader& r
 
 	const uint64_t stored_address = reader.read_uint64_t();
 	sptr->scratchData.deviceAddress = reader.write_output ? stored_address : reader.parent->device_address_remapping.translate_address(stored_address);
-	ILOG("VkAccelerationStructureBuildGeometryInfoKHR changing device address from %lu to %lu", (unsigned long)stored_address, (unsigned long)sptr->scratchData.deviceAddress);
+	DLOG("VkAccelerationStructureBuildGeometryInfoKHR changing device address from %lu to %lu", (unsigned long)stored_address, (unsigned long)sptr->scratchData.deviceAddress);
 }
 
 void retrace_vkGetSwapchainImagesKHR(lava_file_reader& reader)
