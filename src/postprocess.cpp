@@ -226,9 +226,11 @@ void postprocess_vkCreatePipelineLayout(callback_context& cb, VkDevice device, c
 	if (layout_index == CONTAINER_INVALID_INDEX) return;
 	auto& layout_data = VkPipelineLayout_index.at(layout_index);
 	layout_data.layouts.clear();
+	layout_data.layout_indices.clear();
 	for (uint32_t i = 0; i < pCreateInfo->setLayoutCount; i++)
 	{
 		layout_data.layouts.push_back(pCreateInfo->pSetLayouts[i]);
+		layout_data.layout_indices.push_back(index_to_VkDescriptorSetLayout.index(pCreateInfo->pSetLayouts[i]));
 	}
 }
 

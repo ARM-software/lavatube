@@ -921,13 +921,18 @@ bool execute_commands(lava_file_reader& reader, const trackeddevice& device_data
 				for (uint32_t i = 0; i < c.data.set_descriptor_buffer_offsets_ext.setCount; i++)
 				{
 					const uint32_t set = c.data.set_descriptor_buffer_offsets_ext.firstSet + i;
-					if (set >= layout_data.layouts.size()) continue;
+					if (set >= layout_data.descriptor_set_layout_count()) continue;
 					const uint32_t binding_index = c.data.set_descriptor_buffer_offsets_ext.pBufferIndices ? c.data.set_descriptor_buffer_offsets_ext.pBufferIndices[i] : 0;
 					if (binding_index >= descriptor_buffers.size()) continue;
 					const descriptor_buffer_binding_state& descriptor_buffer = descriptor_buffers[binding_index];
 					if (!descriptor_buffer.buffer_data) continue;
 					const VkDeviceSize set_offset = c.data.set_descriptor_buffer_offsets_ext.pOffsets ? c.data.set_descriptor_buffer_offsets_ext.pOffsets[i] : 0;
-					const uint32_t set_layout_index = index_to_VkDescriptorSetLayout.index(layout_data.layouts[set]);
+					uint32_t set_layout_index = CONTAINER_INVALID_INDEX;
+					if (set < layout_data.layout_indices.size()) set_layout_index = layout_data.layout_indices[set];
+					if (set_layout_index == CONTAINER_INVALID_INDEX && set < layout_data.layouts.size())
+					{
+						set_layout_index = index_to_VkDescriptorSetLayout.index(layout_data.layouts[set]);
+					}
 					if (set_layout_index == CONTAINER_INVALID_INDEX) continue;
 					const trackeddescriptorsetlayout& set_layout_data = VkDescriptorSetLayout_index.at(set_layout_index);
 					for (const auto& binding_pair : set_layout_data.binding_types)

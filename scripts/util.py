@@ -1233,7 +1233,8 @@ def save_add_tracking(name):
 			z.do('for (uint32_t i = 0; i < pCreateInfo->pushConstantRangeCount; i++) { const auto& v = pCreateInfo->pPushConstantRanges[i]; if (add->push_constant_space_used < v.offset + v.size) add->push_constant_space_used = v.offset + v.size; }')
 			z.do('add->flags = pCreateInfo->flags;')
 			z.do('add->layouts.reserve(pCreateInfo->setLayoutCount);')
-			z.do('for (uint32_t i = 0; i < pCreateInfo->setLayoutCount; i++) add->layouts.push_back(pCreateInfo->pSetLayouts[i]);')
+			z.do('add->layout_indices.reserve(pCreateInfo->setLayoutCount);')
+			z.do('for (uint32_t i = 0; i < pCreateInfo->setLayoutCount; i++) { add->layouts.push_back(pCreateInfo->pSetLayouts[i]); auto* dsl = writer.parent->records.VkDescriptorSetLayout_index.contains(pCreateInfo->pSetLayouts[i]) ? writer.parent->records.VkDescriptorSetLayout_index.at(pCreateInfo->pSetLayouts[i]) : nullptr; add->layout_indices.push_back(dsl ? dsl->index : CONTAINER_INVALID_INDEX); }')
 		elif type == 'VkDescriptorUpdateTemplate':
 			z.do('add->data_size = descriptor_update_template_data_size(pCreateInfo);')
 			z.do('add->flags = pCreateInfo->flags;')

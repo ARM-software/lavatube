@@ -617,6 +617,12 @@ struct trackedpipelinelayout : trackable
 	uint32_t push_constant_space_used = 0;
 	VkPipelineLayoutCreateFlags flags = 0;
 	std::vector<VkDescriptorSetLayout> layouts;
+	std::vector<uint32_t> layout_indices;
+
+	uint32_t descriptor_set_layout_count() const
+	{
+		return layout_indices.size() > layouts.size() ? layout_indices.size() : layouts.size();
+	}
 
 	void self_test() const
 	{

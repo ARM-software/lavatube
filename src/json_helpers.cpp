@@ -263,6 +263,14 @@ Json::Value trackedpipelinelayout_json(const trackedpipelinelayout* t)
 {
 	Json::Value v = trackable_json(t);
 	v["push_constant_space_used"] = t->push_constant_space_used;
+	if (!t->layout_indices.empty())
+	{
+		v["layout_indices"] = Json::arrayValue;
+		for (uint32_t layout_index : t->layout_indices)
+		{
+			v["layout_indices"].append(layout_index);
+		}
+	}
 	return v;
 }
 
@@ -614,6 +622,13 @@ trackedpipelinelayout trackedpipelinelayout_json(const Json::Value& v)
 	trackedpipelinelayout t;
 	trackable_helper(t, v);
 	if (v.isMember("push_constant_space_used")) t.push_constant_space_used = v["push_constant_space_used"].asUInt();
+	if (v.isMember("layout_indices"))
+	{
+		for (const auto& layout_index : v["layout_indices"])
+		{
+			t.layout_indices.push_back(layout_index.asUInt());
+		}
+	}
 	t.enter_initialized();
 	return t;
 }
