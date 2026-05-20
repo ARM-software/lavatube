@@ -547,6 +547,7 @@ static uint64_t object_lookup(VkObjectType type, uint32_t index)
 	case VK_OBJECT_TYPE_DATA_GRAPH_PIPELINE_SESSION_ARM: return (uint64_t)index_to_VkDataGraphPipelineSessionARM.at(index);
 
 	// these are not supported:
+	case VK_OBJECT_TYPE_GPA_SESSION_AMD:
 	case VK_OBJECT_TYPE_EXTERNAL_COMPUTE_QUEUE_NV:
 	case VK_OBJECT_TYPE_OPTICAL_FLOW_SESSION_NV:
 	case VK_OBJECT_TYPE_BUFFER_COLLECTION_FUCHSIA:
@@ -615,6 +616,7 @@ static uint64_t object_lookup_output(VkObjectType type, uint32_t index)
 	case VK_OBJECT_TYPE_DATA_GRAPH_PIPELINE_SESSION_ARM: return (uint64_t)fake_handle<VkDataGraphPipelineSessionARM>(index);
 
 	// these are not supported:
+	case VK_OBJECT_TYPE_GPA_SESSION_AMD:
 	case VK_OBJECT_TYPE_EXTERNAL_COMPUTE_QUEUE_NV:
 	case VK_OBJECT_TYPE_OPTICAL_FLOW_SESSION_NV:
 	case VK_OBJECT_TYPE_BUFFER_COLLECTION_FUCHSIA:
@@ -684,6 +686,7 @@ trackable& object_trackable(VkObjectType type, uint64_t handle)
 	case VK_OBJECT_TYPE_DATA_GRAPH_PIPELINE_SESSION_ARM: return VkDataGraphPipelineSessionARM_index.at(index_to_VkDataGraphPipelineSessionARM.index((VkDataGraphPipelineSessionARM)handle));
 
 	// these are not supported:
+	case VK_OBJECT_TYPE_GPA_SESSION_AMD:
 	case VK_OBJECT_TYPE_EXTERNAL_COMPUTE_QUEUE_NV:
 	case VK_OBJECT_TYPE_OPTICAL_FLOW_SESSION_NV:
 	case VK_OBJECT_TYPE_BUFFER_COLLECTION_FUCHSIA:

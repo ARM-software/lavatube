@@ -144,6 +144,7 @@ static trackable* object_trackable(const trace_records& r, VkObjectType type, ui
 	case VK_OBJECT_TYPE_DATA_GRAPH_PIPELINE_SESSION_ARM: return r.VkDataGraphPipelineSessionARM_index.at((const VkDataGraphPipelineSessionARM)object);
 	case VK_OBJECT_TYPE_SHADER_INSTRUMENTATION_ARM: return r.VkShaderInstrumentationARM_index.at((const VkShaderInstrumentationARM)object);
 	// not supported:
+	case VK_OBJECT_TYPE_GPA_SESSION_AMD:
 	case VK_OBJECT_TYPE_EXTERNAL_COMPUTE_QUEUE_NV:
 	case VK_OBJECT_TYPE_CU_MODULE_NVX:
 	case VK_OBJECT_TYPE_CU_FUNCTION_NVX:
