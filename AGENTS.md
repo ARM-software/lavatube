@@ -44,6 +44,7 @@
 - At the lowest level of file processing we handle chunks, at the higher level we process packets. One chunk may contain many packets.
 - We try to avoid using mutexes. Avoid modifying another thread's state directly, instead leave information for it be pick up and let it
   modify itself before processing its next packet. This way we keep thread state consistent while processing a packet.
+- Each trace file contains a command dictionary that we remap on replay, so we do not need to worry about changing command ID numbers.
 
 ## Debugging
 - For troubleshooting, set `LAVATUBE_DEBUG` environment variable, value from 1 (some extra logging) to 3 (the most verbose).

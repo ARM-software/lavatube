@@ -3234,11 +3234,19 @@ static void translate_marked_offsets(lava_file_reader& reader, const VkMarkedOff
 				{
 					descriptor_bytes = it->bytes;
 				}
-				assert(!descriptor_bytes.empty() || !reader.run);
+				if (descriptor_bytes.empty())
+				{
+					DLOG("%u: Leaving descriptor value at offset %lu unchanged; no pending rewrite matched", (unsigned)i, (unsigned long)offset);
+					break;
+				}
 				assert(offset + descriptor_bytes.size() <= size);
 				DLOG("%u: Changing descriptor value at offset %lu", (unsigned)i, (unsigned long)offset);
 				memcpy((char*)ptr + offset, descriptor_bytes.data(), descriptor_bytes.size());
 			}
+			break;
+		case VK_MARKING_TYPE_DESCRIPTOR_SIZE_ARM:
+		case VK_MARKING_TYPE_DESCRIPTOR_OFFSET_ARM:
+			DLOG("%u: Leaving descriptor metadata marking at offset %lu unchanged", (unsigned)i, (unsigned long)offset);
 			break;
 		case VK_MARKING_TYPE_SHADER_GROUP_HANDLE_ARM:
 			{
@@ -3590,6 +3598,35 @@ void retrace_vkCmdUpdateBuffer2ARM(lava_file_reader& reader)
 	tbuf.last_modified = reader.current;
 	callback_context cb_context{ reader };
 	for (auto* c : vkCmdUpdateBuffer2ARM_callbacks) c(cb_context, commandBuffer, &info);
+}
+
+void retrace_vkCmdUpdateMemory2ARM(lava_file_reader& reader)
+{
+	VkUpdateMemoryInfoARM info = {};
+	const uint32_t commandbuffer_index = reader.read_handle(DEBUGPARAM("VkCommandBuffer"));
+	VkCommandBuffer commandBuffer = index_to_VkCommandBuffer.at(commandbuffer_index);
+	trackedcmdbuffer& commandbuffer_data = VkCommandBuffer_index.at(commandbuffer_index);
+	reader.device = commandbuffer_data.device;
+	reader.physicalDevice = commandbuffer_data.physicalDevice;
+	read_VkUpdateMemoryInfoARM(reader, &info);
+	trackedbuffer* buffer_data = nullptr;
+	if (info.pDstRange && info.pDstRange->address)
+	{
+		VkDeviceSize size = info.dataSize;
+		if (size == VK_WHOLE_SIZE)
+		{
+			size = info.pDstRange->size;
+		}
+		VkDeviceSize buffer_offset = 0;
+		buffer_data = find_buffer_by_replay_address(info.pDstRange->address, size ? size : 1, buffer_offset);
+	}
+	VkMarkedOffsetsARM* ar = (VkMarkedOffsetsARM*)find_extension(&info, VK_STRUCTURE_TYPE_MARKED_OFFSETS_ARM);
+	// -- Execute --
+	if (ar) translate_marked_offsets(reader, ar, const_cast<void*>(info.pData), info.dataSize);
+	if (reader.run) wrap_vkCmdUpdateMemoryKHR(commandBuffer, info.pDstRange, info.dstFlags, info.dataSize, info.pData);
+	if (buffer_data) buffer_data->last_modified = reader.current;
+	callback_context cb_context{ reader };
+	for (auto* c : vkCmdUpdateMemory2ARM_callbacks) c(cb_context, commandBuffer, &info);
 }
 
 static void read_VkAccelerationStructureBuildGeometryInfoKHR(lava_file_reader& reader, VkAccelerationStructureBuildGeometryInfoKHR* sptr)

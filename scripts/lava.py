@@ -11,7 +11,7 @@ import vkconfig as vk
 
 # New functions that we implement
 fake_functions = [ 'vkAssertBufferARM', 'vkSyncBufferTRACETOOLTEST', 'vkGetDeviceTracingObjectPropertyTRACETOOLTEST',
-	'vkCmdUpdateBuffer2ARM', 'vkAssertMemoryARM' ]
+	'vkCmdUpdateBuffer2ARM', 'vkCmdUpdateMemory2ARM', 'vkAssertMemoryARM' ]
 
 def output_fake_callback(name):
 	if name == 'vkAssertBufferARM':
@@ -20,6 +20,8 @@ def output_fake_callback(name):
 		return 'replay_trace_callback<trace_vkSyncBufferTRACETOOLTEST_output>::call'
 	if name == 'vkCmdUpdateBuffer2ARM':
 		return 'replay_trace_callback<trace_vkCmdUpdateBuffer2ARM>::call'
+	if name == 'vkCmdUpdateMemory2ARM':
+		return 'replay_trace_callback<trace_vkCmdUpdateMemory2ARM>::call'
 	if name == 'vkAssertMemoryARM':
 		return 'replay_trace_callback<trace_vkAssertMemoryARM>::call'
 	return None
@@ -381,6 +383,8 @@ for f in fake_functions:
 		out([rh], 'typedef void(*replay_vkGetDeviceTracingObjectPropertyTRACETOOLTEST_callback)(callback_context& cb, VkDevice device, VkObjectType objectType, uint64_t objectHandle, VkTracingObjectPropertyTRACETOOLTEST valueType);')
 	elif f == 'vkCmdUpdateBuffer2ARM':
 		out([rh], 'typedef void(*replay_vkCmdUpdateBuffer2ARM_callback)(callback_context& cb, VkCommandBuffer commandBuffer, const VkUpdateBufferInfoARM* pInfo);')
+	elif f == 'vkCmdUpdateMemory2ARM':
+		out([rh], 'typedef void(*replay_vkCmdUpdateMemory2ARM_callback)(callback_context& cb, VkCommandBuffer commandBuffer, const VkUpdateMemoryInfoARM* pInfo);')
 	elif f == 'vkAssertMemoryARM':
 		out([rh], 'typedef void(*replay_vkAssertMemoryARM_callback)(callback_context& cb, VkDevice device, const VkUpdateMemoryInfoARM* pInfo, uint32_t* checksum, const char* comment);')
 	else:
@@ -395,6 +399,8 @@ for f in fake_functions:
 		out([wh], 'VKAPI_ATTR uint64_t VKAPI_CALL trace_vkGetDeviceTracingObjectPropertyTRACETOOLTEST(VkDevice device, VkObjectType objectType, uint64_t objectHandle, VkTracingObjectPropertyTRACETOOLTEST valueType);')
 	elif f == 'vkCmdUpdateBuffer2ARM':
 		out([wh], 'VKAPI_ATTR void trace_vkCmdUpdateBuffer2ARM(VkCommandBuffer commandBuffer, const VkUpdateBufferInfoARM* pInfo);')
+	elif f == 'vkCmdUpdateMemory2ARM':
+		out([wh], 'VKAPI_ATTR void trace_vkCmdUpdateMemory2ARM(VkCommandBuffer commandBuffer, const VkUpdateMemoryInfoARM* pInfo);')
 	elif f == 'vkAssertMemoryARM':
 		out([wh], 'VKAPI_ATTR VkResult VKAPI_CALL trace_vkAssertMemoryARM(VkDevice device, const VkUpdateMemoryInfoARM* pInfo, uint32_t* checksum, const char* comment);')
 	else:

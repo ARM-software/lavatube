@@ -901,6 +901,10 @@ layer_test(surface_maintenance1 surface_maintenance1)
 #layer_test(external_fence_core_capabilities external_fence_core_capabilities)
 #layer_test(external_memory_dma_buf external_memory_dma_buf)
 layer_test(linear_optimal_mix linear_optimal_mix)
+layer_test(demo_descriptor_heap_minimal demo_descriptor_heap_minimal)
+layer_test(compute_descriptor_heap compute_descriptor_heap)
+layer_test(compute_bda_sc_shader_object compute_bda_sc_shader_object)
+layer_test(compute_bda_sc_shader_object_multi compute_bda_sc_shader_object --multi-create-info)
 
 # The two below will fail as we lack support for interleaved data for VK_EXT_multi_draw for now
 #layer_test(graphics_multi_draw_stride16 graphics_multi_draw --multi-draw-mode indexed --stride-mode aligned16)

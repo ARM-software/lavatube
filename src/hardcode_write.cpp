@@ -2824,6 +2824,41 @@ VKAPI_ATTR void trace_vkCmdUpdateBuffer2ARM(VkCommandBuffer commandBuffer, const
 	if (writer.run) wrap_vkCmdUpdateBuffer(commandBuffer, pInfo->dstBuffer, pInfo->dstOffset, pInfo->dataSize, pInfo->pData);
 }
 
+VKAPI_ATTR void trace_vkCmdUpdateMemory2ARM(VkCommandBuffer commandBuffer, const VkUpdateMemoryInfoARM* pInfo)
+{
+	lava_file_writer& writer = write_header("vkCmdUpdateMemory2ARM", VKCMDUPDATEMEMORY2ARM);
+	auto* commandbuffer_data = writer.parent->records.VkCommandBuffer_index.at(commandBuffer);
+	assert(pInfo);
+	trackedbuffer* buffer_data = nullptr;
+	if (pInfo->pDstRange && pInfo->pDstRange->address)
+	{
+		VkDeviceSize size = pInfo->dataSize;
+		if (size == VK_WHOLE_SIZE)
+		{
+			size = pInfo->pDstRange->size;
+		}
+		VkDeviceSize buffer_offset = 0;
+		buffer_data = find_buffer_by_device_address(writer.parent->records, pInfo->pDstRange->address, size ? size : 1, buffer_offset);
+	}
+	if (commandbuffer_data) commandbuffer_data->self_test();
+	writer.write_handle(commandbuffer_data);
+	if (commandbuffer_data)
+	{
+		commandbuffer_data->last_modified = writer.current;
+		commandbuffer_data->self_test();
+	}
+	if (buffer_data)
+	{
+		buffer_data->last_modified = writer.current;
+		buffer_data->self_test();
+	}
+	writer.commandBuffer = commandBuffer;
+	writer.device = commandbuffer_data->device;
+	writer.physicalDevice = commandbuffer_data->physicalDevice;
+	write_VkUpdateMemoryInfoARM(writer, pInfo);
+	if (writer.run) wrap_vkCmdUpdateMemoryKHR(commandBuffer, pInfo->pDstRange, pInfo->dstFlags, pInfo->dataSize, pInfo->pData);
+}
+
 VKAPI_ATTR VkResult VKAPI_CALL trace_vkAssertBufferARM(VkDevice device, const VkUpdateBufferInfoARM* pInfo, uint32_t* checksum, const char* comment)
 {
 	lava_file_writer& writer = write_header("vkAssertBufferARM", VKASSERTBUFFERARM);
