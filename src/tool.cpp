@@ -219,6 +219,62 @@ static std::list<address_rewrite>::iterator find_stage_rewrite_entry(lava_file_r
 	});
 }
 
+static uint32_t read_unaligned_u32(const char* data)
+{
+	uint32_t value = 0;
+	memcpy(&value, data, sizeof(value));
+	return value;
+}
+
+static uint16_t read_unaligned_u16(const char* data)
+{
+	uint16_t value = 0;
+	memcpy(&value, data, sizeof(value));
+	return value;
+}
+
+static const char* write_output_version2_handle(lava_file_writer& writer, const char* src)
+{
+	writer.write_uint32_t(read_unaligned_u32(src));
+	src += sizeof(uint32_t);
+	writer.write_int8_t(*src);
+	src += sizeof(int8_t);
+	writer.write_uint32_t(read_unaligned_u16(src));
+	src += sizeof(uint16_t);
+	return src;
+}
+
+static void write_output_update_packet_prefix(lava_file_reader& reader, lava_file_writer& writer, uint64_t packet_start, uint64_t header_start)
+{
+	if (reader.version() == 2)
+	{
+		writer.write_array(reader.stream_data(packet_start), header_start - packet_start);
+		return;
+	}
+
+	assert(reader.version() == 1);
+	const char* src = reader.stream_data(packet_start);
+	writer.write_uint8_t((uint8_t)*src);
+	src++;
+	src = write_output_version2_handle(writer, src);
+	src = write_output_version2_handle(writer, src);
+	assert(src == reader.stream_data(header_start));
+}
+
+static void write_output_update_packet(lava_file_reader& reader, lava_file_writer& writer, uint64_t packet_start, uint64_t packet_end)
+{
+	if (reader.version() == 2)
+	{
+		writer.write_array(reader.stream_data(packet_start), packet_end - packet_start);
+		return;
+	}
+
+	const uint64_t version1_handle_size = sizeof(uint32_t) + sizeof(int8_t) + sizeof(uint16_t);
+	const uint64_t header_start = packet_start + sizeof(uint8_t) + version1_handle_size * 2;
+	write_output_update_packet_prefix(reader, writer, packet_start, header_start);
+	writer.write_array(reader.stream_data(header_start), packet_end - header_start);
+}
+
 static bool is_flush_markings_source(const change_source& source)
 {
 	return source.call_id != UINT16_MAX && strcmp(get_function_name(source.call_id), "vkFlushMappedMemoryRanges") == 0;
@@ -301,7 +357,7 @@ static bool maybe_write_rewritten_update_packet(lava_file_reader& reader, lava_f
 		ILOG("Injecting VkMarkedOffsetsARM on %s (%u markings)", describe_change_source(reader.current).c_str(), (unsigned)desired->count);
 	}
 
-	writer.write_array(reader.stream_data(packet_start), update.header_start - packet_start);
+	write_output_update_packet_prefix(reader, writer, packet_start, update.header_start);
 	const uint64_t payload_bytes = packet_end - update.payload_start;
 	const uint64_t new_header_bytes = sizeof(uint16_t) + marked_offsets_extension_size(desired);
 	writer.write_uint64_t(payload_bytes + new_header_bytes);
@@ -1244,7 +1300,7 @@ static void replay_thread(lava_reader* replayer, int thread_id)
 				const uint64_t packet_end = t.stream_position();
 				if (!simulate || !maybe_write_rewritten_update_packet(t, *output_writer, packet_start, packet_end))
 				{
-					output_writer->write_array(t.stream_data(packet_start), packet_end - packet_start);
+					write_output_update_packet(t, *output_writer, packet_start, packet_end);
 				}
 			}
 			if (write_output && instrtype == PACKET_VULKAN_API_CALL && output_writer->current.call != output_call + 1)
