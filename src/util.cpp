@@ -319,6 +319,10 @@ std::string get_trace_path(const std::string& base)
 	{
 		return std::string(value);
 	}
+	if (!base.empty() && base[0] != '/')
+	{
+		return "/data/local/tmp/" + base;
+	}
 	return base;
 #else
 	const char* outpath = getenv("LAVATUBE_DESTINATION");

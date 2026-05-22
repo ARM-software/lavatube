@@ -166,11 +166,9 @@ static void trace_2(int variant)
 	queueCreateInfo.queueCount = 1;
 	float queuePriorities[] = { 1.0f };
 	queueCreateInfo.pQueuePriorities = queuePriorities;
-	VkPhysicalDevice16BitStorageFeatures pd16bit = {};
-	pd16bit.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_16BIT_STORAGE_FEATURES;
 	VkDeviceCreateInfo deviceInfo = {};
 	deviceInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
-	deviceInfo.pNext = &pd16bit;
+	deviceInfo.pNext = nullptr;
 	deviceInfo.queueCreateInfoCount = 1;
 	deviceInfo.pQueueCreateInfos = &queueCreateInfo;
 	deviceInfo.enabledLayerCount = 0;
