@@ -2842,13 +2842,13 @@ const char* const* instance_extensions(lava_file_reader& reader, uint32_t& len)
 	}
 
 	// Add instance extensions
-	backing.push_back(VK_KHR_SURFACE_EXTENSION_NAME);
+	if (!is_noscreen()) backing.push_back(VK_KHR_SURFACE_EXTENSION_NAME);
 	if (is_debug() || is_validation())
 	{
 		if (has_debug_report) backing.push_back(VK_EXT_DEBUG_REPORT_EXTENSION_NAME);
 	}
 #ifdef VK_USE_PLATFORM_ANDROID_KHR
-	backing.push_back(VK_KHR_ANDROID_SURFACE_EXTENSION_NAME);
+	if (!is_noscreen()) backing.push_back(VK_KHR_ANDROID_SURFACE_EXTENSION_NAME);
 #else
 	const char* winsys = window_winsys();
 #ifdef VK_USE_PLATFORM_XCB_KHR
