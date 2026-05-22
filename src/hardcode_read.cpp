@@ -12,7 +12,6 @@ static bool has_pipeline_feedback = false;
 static bool has_pipeline_control = false;
 static bool has_debug_report = false;
 static bool has_debug_utils = false;
-static int has_dedicated_allocation = 0;
 static uint32_t selected_queue_family_index = 0xdeadbeef;
 static VkPhysicalDeviceFeatures2 stored_VkPhysicalDeviceFeatures2 = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2, nullptr };
 static VkPhysicalDeviceVulkan11Features stored_VkPhysicalDeviceVulkan11Features = {};
@@ -49,7 +48,6 @@ void reset_for_tools()
 	has_pipeline_control = false;
 	has_debug_report = false;
 	has_debug_utils = false;
-	has_dedicated_allocation = 0;
 	selected_queue_family_index = 0xdeadbeef;
 	callback_initialized = false;
 	stored_instance = VK_NULL_HANDLE;
@@ -1715,8 +1713,16 @@ void replay_callback_vkSubmitDebugUtilsMessageEXT(callback_context& cb,
 	if (!pCallbackData) return;
 	if (pCallbackData->pObjects && pCallbackData->objectCount > 0 && pCallbackData->pMessage)
 	{
-		trackable& t = object_trackable(pCallbackData->pObjects[0].objectType, pCallbackData->pObjects[0].objectHandle);
-		DLOG("Marker for %s[%d]: " MAKEBLUE("%s"), pretty_print_VkObjectType(pCallbackData->pObjects[0].objectType), (int)t.index, pCallbackData->pMessage);
+		const VkObjectType object_type = pCallbackData->pObjects[0].objectType;
+		if (object_type == VK_OBJECT_TYPE_PHYSICAL_DEVICE || object_type == VK_OBJECT_TYPE_DEVICE_MEMORY || object_type == VK_OBJECT_TYPE_QUEUE)
+		{
+			DLOG("Marker for untracked %s: " MAKEBLUE("%s"), pretty_print_VkObjectType(object_type), pCallbackData->pMessage);
+		}
+		else
+		{
+			trackable& t = object_trackable(object_type, pCallbackData->pObjects[0].objectHandle);
+			DLOG("Marker for %s[%d]: " MAKEBLUE("%s"), pretty_print_VkObjectType(object_type), (int)t.index, pCallbackData->pMessage);
+		}
 	}
 	else if (pCallbackData->pMessage)
 	{
@@ -2596,6 +2602,10 @@ void replay_pre_vkCreateInstance(lava_file_reader& reader, VkInstanceCreateInfo*
 	}
 	pApplicationInfo->apiVersion = std::max(VK_API_VERSION_1_3, pApplicationInfo->apiVersion);
 	pCreateInfo->pApplicationInfo = pApplicationInfo;
+	if (!has_debug_utils)
+	{
+		purge_extension_parent(pCreateInfo, VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT);
+	}
 }
 
 void replay_callback_vkCreateInstance(callback_context& cb, const VkInstanceCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkInstance* pInstance)
@@ -2634,6 +2644,7 @@ void replay_callback_vkCreateInstance(callback_context& cb, const VkInstanceCrea
 const char* const* device_extensions(VkDeviceCreateInfo* sptr, lava_file_reader& reader, VkPhysicalDevice physicalDevice, uint32_t& len)
 {
 	bool trace_has_frame_boundary = false;
+	bool trace_has_swapchain = false;
 	static std::vector<const char *> dst;
 	static std::vector<std::string> backing;
 	const char* const* stored = reader.read_string_array(len); // all extensions used in original
@@ -2670,6 +2681,12 @@ const char* const* device_extensions(VkDeviceCreateInfo* sptr, lava_file_reader&
 			}
 		}
 
+		if (strcmp(ext_name, VK_KHR_SWAPCHAIN_EXTENSION_NAME) == 0)
+		{
+			trace_has_swapchain = true;
+			nocopy = true; // add it later
+		}
+
 		if (strcmp(ext_name, "VK_EXT_frame_boundary") == 0)
 		{
 			trace_has_frame_boundary = true;
@@ -2701,11 +2718,9 @@ const char* const* device_extensions(VkDeviceCreateInfo* sptr, lava_file_reader&
 		if (strcmp(s.extensionName, VK_KHR_SWAPCHAIN_EXTENSION_NAME) == 0) has_swapchain = true;
 		if (strcmp(s.extensionName, VK_EXT_PIPELINE_CREATION_FEEDBACK_EXTENSION_NAME) == 0) has_pipeline_feedback = true;
 		if (strcmp(s.extensionName, VK_EXT_PIPELINE_CREATION_CACHE_CONTROL_EXTENSION_NAME) == 0) has_pipeline_control = true;
-		if (strcmp(s.extensionName, VK_KHR_DEDICATED_ALLOCATION_EXTENSION_NAME) == 0) has_dedicated_allocation++;
-		if (strcmp(s.extensionName, VK_KHR_GET_MEMORY_REQUIREMENTS_2_EXTENSION_NAME) == 0) has_dedicated_allocation++;
 		if (strcmp(s.extensionName, VK_EXT_FRAME_BOUNDARY_EXTENSION_NAME) == 0) host_has_frame_boundary = true;
 	}
-	if (!has_swapchain) ABORT("No swapchain extension found - cannot proceed!");
+	if (trace_has_swapchain && !has_swapchain) ABORT("No swapchain extension found - cannot proceed!");
 
 	if (!host_has_frame_boundary && trace_has_frame_boundary)
 	{
@@ -2718,12 +2733,9 @@ const char* const* device_extensions(VkDeviceCreateInfo* sptr, lava_file_reader&
 	}
 
 	// Add device extensions
-	backing.push_back(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
-	if (use_dedicated_allocation())
+	if (trace_has_swapchain)
 	{
-		if (has_dedicated_allocation < 2) ABORT("No dedicated allocation support found - aborting!");
-		backing.push_back(VK_KHR_GET_MEMORY_REQUIREMENTS_2_EXTENSION_NAME);
-		backing.push_back(VK_KHR_DEDICATED_ALLOCATION_EXTENSION_NAME);
+		backing.push_back(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
 	}
 
 	if (has_pipeline_feedback)
@@ -2791,6 +2803,7 @@ const char* const* instance_extensions(lava_file_reader& reader, uint32_t& len)
 		if (strcmp(s.extensionName, VK_EXT_DEBUG_UTILS_EXTENSION_NAME) == 0) has_debug_utils = true;
 		DLOG("\t%s", s.extensionName);
 	}
+	if (!has_debug_utils) DLOG("Replay host lacks %s; debug utils calls will be handled by lavatube", VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
 	if (!has_debug_report && is_debug()) ELOG("Warning: Debug report extension missing - debug mode will not be fully operational!");
 	if (!has_debug_report && is_validation()) ELOG("Warning: Debug report extension missing - validation layer will not be able to report anything!");
 	assert(has_surface);
@@ -2812,6 +2825,11 @@ const char* const* instance_extensions(lava_file_reader& reader, uint32_t& len)
 		if (is_noscreen() && strcmp(ext_name, "VK_KHR_display") == 0)
 		{
 			ABORT("Cannot use VK_KHR_display with none wsi yet");
+		}
+
+		if (!has_debug_utils && strcmp(ext_name, VK_EXT_DEBUG_UTILS_EXTENSION_NAME) == 0)
+		{
+			nocopy = true;
 		}
 
 		if (!nocopy)

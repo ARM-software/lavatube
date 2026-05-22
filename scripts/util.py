@@ -1064,7 +1064,7 @@ class parameter(spec.base_parameter):
 		if self.funcname == 'VkDebugMarkerObjectNameInfoEXT' and self.name == 'pObjectName':
 			z.do('if (sptr->pObjectName) object_data->name = sptr->pObjectName;')
 		if self.funcname == 'VkDebugUtilsObjectNameInfoEXT' and self.name == 'pObjectName':
-			z.do('if (sptr->pObjectName) object_data->name = sptr->pObjectName;')
+			z.do('if (sptr->pObjectName && object_data) object_data->name = sptr->pObjectName;')
 		if self.type == 'VkDevice' and self.funcname[0] == 'v' and self.name == 'device':
 			z.do('writer.device = device;')
 			z.do('writer.physicalDevice = device_data->physicalDevice;')
@@ -2009,6 +2009,11 @@ def savefunc(name, node, target, header):
 		z.do('VkResult retval = VK_SUCCESS;')
 		z.do('VkFlushRangesFlagsARM* frf = (VkFlushRangesFlagsARM*)find_extension(pMemoryRanges, VK_STRUCTURE_TYPE_FLUSH_RANGES_FLAGS_ARM);')
 		z.do('if (writer.run && (!frf || !(frf->flags & VK_FLUSH_OPERATION_INFORMATIVE_BIT_ARM))) retval = wrap_%s(%s);' % (name, ', '.join(call_list)))
+	elif name == 'vkCreateDebugUtilsMessengerEXT':
+		z.do('VkResult retval = VK_SUCCESS;')
+		z.do('if (writer.run && wrap_vkCreateDebugUtilsMessengerEXT) retval = wrap_vkCreateDebugUtilsMessengerEXT(%s);' % ', '.join(call_list))
+		z.do('else if (writer.run) *pMessenger = fake_handle<VkDebugUtilsMessengerEXT>(writer.parent->records.VkDebugUtilsMessengerEXT_index.size());')
+		z.do('else retval = writer.use_result.result;')
 	elif name in vk.ignore_on_trace:
 		z.do('// native call skipped')
 		if retval == 'VkResult':
@@ -2020,8 +2025,11 @@ def savefunc(name, node, target, header):
 		elif retval == 'VkResult': z.do('%s retval = VK_RESULT_MAX_ENUM;' % retval)
 		elif retval != 'void': z.do('%s retval = (%s)0x7FFFFFFF; // hopefully an invalid value' % (retval, retval))
 		if retval != 'void':
-			z.do('if (writer.run%s) retval = wrap_%s(%s);' % (extra, name, ', '.join(call_list)))
-			if retval == 'VkResult': z.do('else retval = writer.use_result.result;')
+			z.do('if (writer.run %s) retval = wrap_%s(%s);' % (extra, name, ', '.join(call_list)))
+			if retval == 'VkResult':
+				if name in ['vkSetDebugUtilsObjectNameEXT', 'vkSetDebugUtilsObjectTagEXT']:
+					z.do('else if (writer.run) retval = VK_SUCCESS;')
+				z.do('else retval = writer.use_result.result;')
 			elif retval == 'VkDeviceAddress': z.do('else retval = writer.use_result.device_address;')
 			elif retval == 'VkDeviceSize': z.do('else retval = writer.use_result.device_size;')
 			elif retval == 'uint32_t': z.do('else retval = writer.use_result.uint_32;')
@@ -2030,7 +2038,10 @@ def savefunc(name, node, target, header):
 			elif retval == 'PFN_vkVoidFunction': z.do('else retval = writer.use_result.function;')
 			else: assert False, 'Unhandled return type %s' % retval
 		else:
-			z.do('if (writer.run%s) wrap_%s(%s);' % (extra, name, ', '.join(call_list)))
+			if name in ['vkQueueBeginDebugUtilsLabelEXT', 'vkQueueEndDebugUtilsLabelEXT', 'vkQueueInsertDebugUtilsLabelEXT']:
+				z.do('if (writer.run && !p__virtualqueues %s) wrap_%s(%s);' % (extra, name, ', '.join(call_list)))
+			else:
+				z.do('if (writer.run%s) wrap_%s(%s);' % (extra, name, ', '.join(call_list)))
 	if name in vk.extra_sync:
 		z.do('frame_mutex.unlock();')
 	z.do('// -- Post --')

@@ -719,6 +719,38 @@ function(layer_test test_name test_exe)
 endfunction()
 
 layer_test(general general)
+if(NOT NO_TRACETOOLTESTS AND NOT ANDROID)
+	set(LAVATUBE_CHAMELEON_VULKANCORE_1_4_GPU_PATH "${PROJECT_SOURCE_DIR}/external/tracetooltests/share/chameleon/devices/VulkanCore-1.4")
+	set(LAVATUBE_CHAMELEON_VULKANCORE_1_4_ENV "VK_DRIVER_FILES=${CMAKE_CURRENT_BINARY_DIR}/tracetooltests/chameleon_icd.json;CHAMELEON_GPU=${LAVATUBE_CHAMELEON_VULKANCORE_1_4_GPU_PATH}")
+	set(LAVATUBE_CHAMELEON_LAYER_ENV "${LAVATUBE_CHAMELEON_VULKANCORE_1_4_ENV};LAVATUBE_VIRTUAL_QUEUES=1;LAVATUBE_DELETE_EMPTY_TRACE=1;LAVATUBE_DESTINATION=vulkan_general_chameleon_vulkancore_1_4;VK_LAYER_PATH=${CMAKE_CURRENT_BINARY_DIR}/implicit_layer.d;VK_INSTANCE_LAYERS=VK_LAYER_ARM_lavatube;LD_LIBRARY_PATH=${CMAKE_CURRENT_BINARY_DIR}/implicit_layer.d")
+	set(LAVATUBE_RUN_IF_EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/cmake/run_if_exists.sh)
+	set(LAVATUBE_CHAMELEON_TRACE ${CMAKE_CURRENT_BINARY_DIR}/vulkan_general_chameleon_vulkancore_1_4.vk)
+	set(LAVATUBE_GENERAL_TRACE ${CMAKE_CURRENT_BINARY_DIR}/vulkan_general.vk)
+
+	add_lavatube_test(layer_test_general_chameleon_vulkancore_1_4 COMMAND vulkan_general --gpu --no-trace-helpers)
+	set_tests_properties(layer_test_general_chameleon_vulkancore_1_4 PROPERTIES
+		FIXTURES_SETUP general_chameleon_vulkancore_1_4
+		ENVIRONMENT "${LAVATUBE_CHAMELEON_LAYER_ENV}"
+		SKIP_RETURN_CODE 77
+		LABELS "chameleon;icd;lavatube"
+	)
+
+	add_lavatube_test(layer_test_general_chameleon_vulkancore_1_4_replay COMMAND ${LAVATUBE_RUN_IF_EXISTS} ${LAVATUBE_CHAMELEON_TRACE} $<TARGET_FILE:lava-replay> -V -w none --swapchain offscreen vulkan_general_chameleon_vulkancore_1_4.vk)
+	set_tests_properties(layer_test_general_chameleon_vulkancore_1_4_replay PROPERTIES
+		FIXTURES_REQUIRED general_chameleon_vulkancore_1_4
+		ENVIRONMENT "${LAVATUBE_CHAMELEON_VULKANCORE_1_4_ENV}"
+		SKIP_RETURN_CODE 77
+		LABELS "chameleon;icd;lavatube"
+	)
+
+	add_lavatube_test(layer_test_general_replay_chameleon_vulkancore_1_4 COMMAND ${LAVATUBE_RUN_IF_EXISTS} ${LAVATUBE_GENERAL_TRACE} $<TARGET_FILE:lava-replay> -V -w none --swapchain offscreen vulkan_general.vk)
+	set_tests_properties(layer_test_general_replay_chameleon_vulkancore_1_4 PROPERTIES
+		FIXTURES_REQUIRED general
+		ENVIRONMENT "${LAVATUBE_CHAMELEON_VULKANCORE_1_4_ENV}"
+		SKIP_RETURN_CODE 77
+		LABELS "chameleon;icd;lavatube"
+	)
+endif()
 #layer_test(fence_delay fence_delay) # Disabling -- too many intermittent errors
 add_test(NAME script_test_copying_1 COMMAND ${PROJECT_SOURCE_DIR}/scripts/lava-capture.py -o script_test_copying_1.vk --dedicated-buffer --gpu 0 --layer-path ${CMAKE_CURRENT_BINARY_DIR}/implicit_layer.d ${CMAKE_CURRENT_BINARY_DIR}/tracetooltests/vulkan_copying_1 -V 2)
 add_test(NAME script_test_copying_nomp COMMAND ${PROJECT_SOURCE_DIR}/scripts/lava-capture.py -o script_test_copying_nomp.vk --no-multithread --automate --layer-path ${CMAKE_CURRENT_BINARY_DIR}/implicit_layer.d ${CMAKE_CURRENT_BINARY_DIR}/tracetooltests/vulkan_copying_1 -V 3)

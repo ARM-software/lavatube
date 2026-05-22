@@ -97,7 +97,9 @@ static trackable* object_trackable(const trace_records& r, VkObjectType type, ui
 	switch (type)
 	{
 	case VK_OBJECT_TYPE_INSTANCE: return r.VkInstance_index.at((VkInstance)object);
-	case VK_OBJECT_TYPE_PHYSICAL_DEVICE: return r.VkPhysicalDevice_index.at((VkPhysicalDevice)object);
+	case VK_OBJECT_TYPE_PHYSICAL_DEVICE:
+		if (r.VkPhysicalDevice_index.contains((VkPhysicalDevice)object)) return r.VkPhysicalDevice_index.at((VkPhysicalDevice)object);
+		else return nullptr;
 	case VK_OBJECT_TYPE_DEVICE: return r.VkDevice_index.at((VkDevice)object);
 	case VK_OBJECT_TYPE_QUEUE: return (p__virtualqueues) ? (trackable*)object : r.VkQueue_index.at((const VkQueue)object);
 	case VK_OBJECT_TYPE_DEVICE_MEMORY: return r.VkDeviceMemory_index.at((const VkDeviceMemory)object);
@@ -168,8 +170,17 @@ static void trace_post_vkSubmitDebugUtilsMessageEXT(lava_file_writer& writer,
 	if (!pCallbackData) return;
 	if (pCallbackData->pObjects && pCallbackData->objectCount > 0 && pCallbackData->pMessage)
 	{
-		trackable* t = object_trackable(writer.parent->records, pCallbackData->pObjects[0].objectType, pCallbackData->pObjects[0].objectHandle);
-		DLOG("Marker for %s[%d]: " MAKEBLUE("%s"), pretty_print_VkObjectType(pCallbackData->pObjects[0].objectType), (int)t->index, pCallbackData->pMessage);
+		const VkObjectType object_type = pCallbackData->pObjects[0].objectType;
+		if (object_type == VK_OBJECT_TYPE_PHYSICAL_DEVICE || object_type == VK_OBJECT_TYPE_DEVICE_MEMORY || object_type == VK_OBJECT_TYPE_QUEUE)
+		{
+			DLOG("Marker for untracked %s: " MAKEBLUE("%s"), pretty_print_VkObjectType(object_type), pCallbackData->pMessage);
+		}
+		else
+		{
+			trackable* t = object_trackable(writer.parent->records, object_type, pCallbackData->pObjects[0].objectHandle);
+			if (t) DLOG("Marker for %s[%d]: " MAKEBLUE("%s"), pretty_print_VkObjectType(object_type), (int)t->index, pCallbackData->pMessage);
+			else DLOG("Marker for untracked %s: " MAKEBLUE("%s"), pretty_print_VkObjectType(object_type), pCallbackData->pMessage);
+		}
 	}
 	else if (pCallbackData->pMessage)
 	{
@@ -1855,6 +1866,21 @@ static VkExtensionProperties extension_property_from_name(const std::string& nam
 	return property;
 }
 
+static bool driver_supports_instance_extension(const char* name)
+{
+	uint32_t propertyCount = 0;
+	VkResult result = wrap_vkEnumerateInstanceExtensionProperties(nullptr, &propertyCount, nullptr);
+	if (result != VK_SUCCESS) ABORT("Failed reading instance extension property count");
+	std::vector<VkExtensionProperties> properties(propertyCount);
+	result = wrap_vkEnumerateInstanceExtensionProperties(nullptr, &propertyCount, properties.data());
+	if (result != VK_SUCCESS) ABORT("Failed reading instance extension properties");
+	for (const auto& property : properties)
+	{
+		if (strcmp(property.extensionName, name) == 0) return true;
+	}
+	return false;
+}
+
 static void bootstrap_instance_extensions_from_metadata() REQUIRES(frame_mutex)
 {
 	lava_writer& instance = lava_writer::instance();
@@ -1909,6 +1935,16 @@ static void modify_instance_extensions() REQUIRES(frame_mutex)
 	{
 		r["instancePresented"]["extensions"].append(ext.extensionName);
 		instance.meta.device.instance_extensions.insert(ext.extensionName);
+	}
+
+	if (!driver_supports_instance_extension(VK_EXT_DEBUG_UTILS_EXTENSION_NAME))
+	{
+		VkExtensionProperties property = extension_property_from_name(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+		property.specVersion = VK_EXT_DEBUG_UTILS_SPEC_VERSION;
+		tmp_instance_extension_properties.push_back(property);
+		r["instancePresented"]["extensions"].append(property.extensionName);
+		instance.meta.device.instance_extensions.insert(property.extensionName);
+		DLOG("Presenting layer-implemented instance extension %s", property.extensionName);
 	}
 
 	for (const auto &ext : tmp_instance_extension_properties)
@@ -2316,9 +2352,19 @@ static void trace_pre_vkCreateInstance(VkInstanceCreateInfo* pCreateInfo, const 
 	// Remove built-in extensions before sending the requested extension list to the driver
 	char** nameptrs = writer.pool.allocate<char*>(pCreateInfo->enabledExtensionCount); // reserve space for all
 	unsigned newcount = 0;
+	const bool driver_has_debug_utils = driver_supports_instance_extension(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+	if (!driver_has_debug_utils)
+	{
+		purge_extension_parent(pCreateInfo, VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT);
+	}
 	DLOG("Requesting enabled instance extension from the driver:");
 	for (unsigned i = 0; i < pCreateInfo->enabledExtensionCount; i++)
 	{
+		if (!driver_has_debug_utils && strcmp(pCreateInfo->ppEnabledExtensionNames[i], VK_EXT_DEBUG_UTILS_EXTENSION_NAME) == 0)
+		{
+			DLOG("    %s (handled by lavatube)", pCreateInfo->ppEnabledExtensionNames[i]);
+			continue;
+		}
 		const int size = strlen(pCreateInfo->ppEnabledExtensionNames[i]) + 1;
 		char* name = writer.pool.allocate<char>(size);
 		memset(name, 0, size);
