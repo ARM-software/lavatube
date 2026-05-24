@@ -1564,6 +1564,7 @@ int main(int argc, char **argv)
 		lava_reader replayer;
 		replayer.run = false; // do not actually run anything
 		replayer.validate = simulate; // abort on less serious errors, not just warn
+		replayer.simulate = simulate;
 		replayer.pass = 0; // first pass
 		replayer.set_frames(start, end);
 		replayer.init(filename_input);
@@ -1604,6 +1605,7 @@ int main(int argc, char **argv)
 		replayer.run = false;
 		replayer.write_output = true;
 		replayer.validate = false;
+		replayer.simulate = false;
 		replayer.init(filename_input);
 		replayer.set_frames(start, end);
 		if (simulate)

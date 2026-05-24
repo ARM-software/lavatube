@@ -182,6 +182,9 @@ public:
 	/// Whether we should abort on less serious errors or just warn
 	bool validate = false;
 
+	/// Whether we should run the spirv simulator
+	bool simulate = false;
+
 	/// If we are run first or second pass
 	int pass = 0;
 

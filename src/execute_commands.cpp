@@ -671,8 +671,6 @@ static VkMarkedOffsetsARM* build_marked_offsets(const std::vector<discovered_buf
 
 static void merge_discovered_markings(lava_file_reader& reader, const std::vector<discovered_buffer_marking>& discovered)
 {
-	if (!reader.parent->validate || reader.write_output || reader.parent->pass != 0 || discovered.empty()) return;
-
 	std::vector<discovered_output_markings_bucket> output_buckets;
 	for (const discovered_buffer_marking& marking : discovered)
 	{
@@ -843,6 +841,8 @@ static void record_descriptor_buffer_payload(lava_file_reader& reader, const tra
 
 bool execute_commands(lava_file_reader& reader, const trackeddevice& device_data, VkCommandBuffer commandBuffer)
 {
+	assert(reader.parent->simulate);
+	assert(!reader.write_output && reader.parent->pass == 0);
 	std::vector<std::byte> push_constants; // current state of the push constants
 	host_write_regions push_constant_sources;
 	uint32_t compute_pipeline_bound = CONTAINER_INVALID_INDEX; // currently bound pipeline

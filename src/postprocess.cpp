@@ -366,6 +366,9 @@ void postprocess_vkCmdBindDescriptorSets2(callback_context& cb, VkCommandBuffer 
 
 void postprocess_vkQueueSubmit2(callback_context& cb, VkQueue queue, uint32_t submitCount, const VkSubmitInfo2* pSubmits, VkFence fence)
 {
+	if (!cb.reader.parent->simulate) return;
+	assert(cb.reader.parent->pass == 0);
+	assert(!cb.reader.write_output);
 	const uint32_t queue_index = index_to_VkQueue.index(queue);
 	auto& queue_data = VkQueue_index.at(queue_index);
 	const uint32_t device_index = queue_data.device_index;
@@ -387,6 +390,9 @@ void postprocess_vkQueueSubmit2KHR(callback_context& cb, VkQueue queue, uint32_t
 
 void postprocess_vkQueueSubmit(callback_context& cb, VkQueue queue, uint32_t submitCount, const VkSubmitInfo* pSubmits, VkFence fence)
 {
+	if (!cb.reader.parent->simulate) return;
+	assert(cb.reader.parent->pass == 0);
+	assert(!cb.reader.write_output);
 	const uint32_t queue_index = index_to_VkQueue.index(queue);
 	auto& queue_data = VkQueue_index.at(queue_index);
 	const uint32_t device_index = queue_data.device_index;
