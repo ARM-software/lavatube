@@ -12,36 +12,8 @@
 #include "execute_commands.h"
 
 #include "read_auto.h"
-#include "read.h"
 #include "markings.h"
-#include "util_auto.h"
 #include "suballocator.h"
-
-struct command_execution_data
-{
-	const trackeddevice& device_data;
-	const trackedcmdbuffer& cmdbuffer_data;
-	const address_remapper<trackedobject>& device_address_remapping;
-	std::unordered_map<uint32_t, std::unordered_map<uint32_t, buffer_access>> descriptorsets; // descriptorset binding : set internal binding point : buffer
-	std::unordered_map<uint32_t, std::unordered_map<uint32_t, image_access>> imagesets; // descriptorset binding : set internal binding point : image
-	std::unordered_map<uint32_t, std::unordered_map<uint32_t, uint64_t>> opaquesets; // descriptorset binding : set internal binding point : opaque descriptor payload
-	std::vector<std::byte> push_constants; // current state of the push constants
-	host_write_regions push_constant_sources;
-	std::list<address_rewrite>& global_output_rewrite_queue;
-	std::deque<descriptor_rewrite>& pending_descriptor_rewrites;
-	std::vector<descriptor_buffer_payload>& descriptor_buffer_payloads;
-	struct
-	{
-		int commands = 0;
-		int execution_commands = 0;
-		struct
-		{
-			int shader_module_index = -1;
-			VkShaderStageFlagBits stage = VK_SHADER_STAGE_FLAG_BITS_MAX_ENUM;
-			uint64_t run_time_ns = 0;
-		} slowest;
-	} stats;
-};
 
 struct simulator_buffer_range
 {
@@ -860,7 +832,7 @@ static void record_descriptor_buffer_payload(const command_execution_data& data,
 	}
 }
 
-static bool execute_commands_internal(command_execution_data& data)
+bool execute_commands(command_execution_data& data)
 {
 	std::vector<std::byte> push_constants; // current state of the push constants
 	host_write_regions push_constant_sources;
@@ -1262,31 +1234,4 @@ static bool execute_commands_internal(command_execution_data& data)
 		}
 	}
 	return true;
-}
-
-bool execute_commands(lava_file_reader& reader, const trackeddevice& device_data, VkCommandBuffer commandBuffer)
-{
-	const uint64_t command_buffer_start = gettime();
-	assert(reader.parent->simulate);
-	assert(!reader.write_output && reader.parent->pass == 0);
-	const uint32_t cmdbuffer_index = index_to_VkCommandBuffer.index(commandBuffer);
-	lava::lock_guard lock(sync_mutex);
-	command_execution_data data {
-		.device_data = device_data,
-		.cmdbuffer_data = VkCommandBuffer_index.at(cmdbuffer_index),
-		.device_address_remapping = reader.parent->device_address_remapping,
-		.global_output_rewrite_queue = reader.parent->global_output_rewrite_queue,
-		.pending_descriptor_rewrites = reader.parent->pending_descriptor_rewrites,
-		.descriptor_buffer_payloads = reader.parent->descriptor_buffer_payloads,
-	};
-	const bool r = execute_commands_internal(data);
-	VkCommandBuffer_index.at(cmdbuffer_index).commands.clear();
-	const uint64_t command_buffer_time_ns = gettime() - command_buffer_start;
-	if (data.stats.execution_commands > 0 && command_buffer_time_ns > 0)
-	{
-		DLOG("Simulator execution of cmd_buffer=%u frame=%u call=%u thread=%u simulator_time=%.2fms commands=%d execution_commands=%d slowest_shader=%d slowest_type=%s slowest_time=%.2fms", (unsigned)cmdbuffer_index,
-		     (unsigned)reader.current.frame, (unsigned)reader.current.call, (unsigned)reader.current.thread, ns_to_ms(command_buffer_time_ns), data.stats.commands,
-		     data.stats.execution_commands, (int)data.stats.slowest.shader_module_index, shader_stage_name(data.stats.slowest.stage), ns_to_ms(data.stats.slowest.run_time_ns));
-	}
-	return r;
 }

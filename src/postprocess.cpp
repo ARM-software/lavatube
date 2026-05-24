@@ -12,6 +12,33 @@
 #pragma GCC diagnostic ignored "-Wunused-but-set-variable"
 #endif
 
+static bool setup_execute_commands(lava_file_reader& reader, const trackeddevice& device_data, VkCommandBuffer commandBuffer)
+{
+	const uint64_t command_buffer_start = gettime();
+	assert(reader.parent->simulate);
+	assert(!reader.write_output && reader.parent->pass == 0);
+	const uint32_t cmdbuffer_index = index_to_VkCommandBuffer.index(commandBuffer);
+	lava::lock_guard lock(sync_mutex);
+	command_execution_data data {
+		.device_data = device_data,
+		.cmdbuffer_data = VkCommandBuffer_index.at(cmdbuffer_index),
+		.device_address_remapping = reader.parent->device_address_remapping,
+		.global_output_rewrite_queue = reader.parent->global_output_rewrite_queue,
+		.pending_descriptor_rewrites = reader.parent->pending_descriptor_rewrites,
+		.descriptor_buffer_payloads = reader.parent->descriptor_buffer_payloads,
+	};
+	const bool r = execute_commands(data);
+	VkCommandBuffer_index.at(cmdbuffer_index).commands.clear();
+	const uint64_t command_buffer_time_ns = gettime() - command_buffer_start;
+	if (data.stats.execution_commands > 0 && command_buffer_time_ns > 0)
+	{
+		DLOG("Simulator execution of cmd_buffer=%u frame=%u call=%u thread=%u simulator_time=%.2fms commands=%d execution_commands=%d slowest_shader=%d slowest_type=%s slowest_time=%.2fms", (unsigned)cmdbuffer_index,
+		     (unsigned)reader.current.frame, (unsigned)reader.current.call, (unsigned)reader.current.thread, ns_to_ms(command_buffer_time_ns), data.stats.commands,
+		     data.stats.execution_commands, (int)data.stats.slowest.shader_module_index, shader_stage_name(data.stats.slowest.stage), ns_to_ms(data.stats.slowest.run_time_ns));
+	}
+	return r;
+}
+
 static void handle_VkWriteDescriptorSets(uint32_t descriptorWriteCount, const VkWriteDescriptorSet* pDescriptorWrites, bool clear)
 {
 	(void)clear;
@@ -378,7 +405,7 @@ void postprocess_vkQueueSubmit2(callback_context& cb, VkQueue queue, uint32_t su
 	{
 		for (uint32_t j = 0; j < pSubmits[i].commandBufferInfoCount; j++)
 		{
-			execute_commands(cb.reader, device_data, pSubmits[i].pCommandBufferInfos[j].commandBuffer);
+			setup_execute_commands(cb.reader, device_data, pSubmits[i].pCommandBufferInfos[j].commandBuffer);
 		}
 	}
 }
@@ -402,7 +429,7 @@ void postprocess_vkQueueSubmit(callback_context& cb, VkQueue queue, uint32_t sub
 	{
 		for (uint32_t j = 0; j < pSubmits[i].commandBufferCount; j++)
 		{
-			execute_commands(cb.reader, device_data, pSubmits[i].pCommandBuffers[j]);
+			setup_execute_commands(cb.reader, device_data, pSubmits[i].pCommandBuffers[j]);
 		}
 	}
 }

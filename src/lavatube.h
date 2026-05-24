@@ -71,6 +71,31 @@ struct memory_requirements
 	VkMemoryAllocateFlags allocate_flags { 0 };
 };
 
+struct address_rewrite
+{
+	VkMarkedOffsetsARM* markings = nullptr; // pointer content malloc'ed, free after second pass usage
+	change_source source;
+	VkObjectType object_type = VK_OBJECT_TYPE_UNKNOWN;
+	uint32_t object_index = CONTAINER_NULL_VALUE;
+	uint32_t stage_index = CONTAINER_NULL_VALUE;
+};
+
+struct descriptor_rewrite
+{
+	VkDescriptorType type = VK_DESCRIPTOR_TYPE_MAX_ENUM;
+	std::vector<uint8_t> capture_bytes;
+	std::vector<uint8_t> bytes;
+	change_source source;
+};
+
+struct descriptor_buffer_payload
+{
+	uint32_t buffer_index = CONTAINER_INVALID_INDEX;
+	VkDeviceSize offset = 0;
+	VkDescriptorType type = VK_DESCRIPTOR_TYPE_MAX_ENUM;
+	std::vector<uint8_t> bytes;
+};
+
 struct callback_context
 {
 	lava_file_reader& reader;

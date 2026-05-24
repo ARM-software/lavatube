@@ -325,6 +325,13 @@ target_compile_options(host_write_regions_test PRIVATE ${COMMON_FLAGS})
 add_lavatube_test(host_write_regions_test COMMAND host_write_regions_test)
 add_dependencies(host_write_regions_test sync_generated)
 
+add_executable(command_execution_test tests/command_execution_test.cpp)
+target_include_directories(command_execution_test ${COMMON_INCLUDE})
+target_link_libraries(command_execution_test ${COMMON_LIBRARIES} lavatube)
+target_compile_options(command_execution_test PRIVATE ${COMMON_FLAGS})
+add_lavatube_test(command_execution_test COMMAND command_execution_test)
+add_dependencies(command_execution_test sync_generated)
+
 add_executable(rangetrack tests/rangetrack.cpp)
 target_include_directories(rangetrack ${COMMON_INCLUDE})
 target_link_libraries(rangetrack ${MOST_COMMON_LIBRARIES})

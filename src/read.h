@@ -27,35 +27,10 @@ using lava_markings_observer = void (*)(const change_source&, const VkMarkedOffs
 
 extern lava::mutex sync_mutex;
 
-struct address_rewrite
-{
-	VkMarkedOffsetsARM* markings = nullptr; // pointer content malloc'ed, free after second pass usage
-	change_source source;
-	VkObjectType object_type = VK_OBJECT_TYPE_UNKNOWN;
-	uint32_t object_index = CONTAINER_NULL_VALUE;
-	uint32_t stage_index = CONTAINER_NULL_VALUE;
-};
-
 bool same_change_source(const change_source& a, const change_source& b);
 void merge_rewrite_markings(std::list<address_rewrite>& queue, const change_source& source, const VkMarkedOffsetsARM* markings);
 void merge_rewrite_markings(std::list<address_rewrite>& queue, const change_source& source, const VkMarkedOffsetsARM* markings, VkObjectType object_type, uint32_t object_index);
 void merge_rewrite_markings(std::list<address_rewrite>& queue, const change_source& source, const VkMarkedOffsetsARM* markings, VkObjectType object_type, uint32_t object_index, uint32_t stage_index);
-
-struct descriptor_rewrite
-{
-	VkDescriptorType type = VK_DESCRIPTOR_TYPE_MAX_ENUM;
-	std::vector<uint8_t> capture_bytes;
-	std::vector<uint8_t> bytes;
-	change_source source;
-};
-
-struct descriptor_buffer_payload
-{
-	uint32_t buffer_index = CONTAINER_INVALID_INDEX;
-	VkDeviceSize offset = 0;
-	VkDescriptorType type = VK_DESCRIPTOR_TYPE_MAX_ENUM;
-	std::vector<uint8_t> bytes;
-};
 
 struct output_update_packet
 {
