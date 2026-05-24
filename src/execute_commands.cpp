@@ -17,6 +17,21 @@
 #include "util_auto.h"
 #include "suballocator.h"
 
+struct command_execution_data
+{
+	const trackeddevice& device_data;
+	const trackedcmdbuffer& cmdbuffer_data;
+	const address_remapper<trackedobject>& device_address_remapping;
+	std::unordered_map<uint32_t, std::unordered_map<uint32_t, buffer_access>> descriptorsets; // descriptorset binding : set internal binding point : buffer
+	std::unordered_map<uint32_t, std::unordered_map<uint32_t, image_access>> imagesets; // descriptorset binding : set internal binding point : image
+	std::unordered_map<uint32_t, std::unordered_map<uint32_t, uint64_t>> opaquesets; // descriptorset binding : set internal binding point : opaque descriptor payload
+	std::vector<std::byte> push_constants; // current state of the push constants
+	host_write_regions push_constant_sources;
+	std::list<address_rewrite>& global_output_rewrite_queue;
+	std::deque<descriptor_rewrite>& pending_descriptor_rewrites;
+	std::vector<descriptor_buffer_payload>& descriptor_buffer_payloads;
+};
+
 struct simulator_buffer_range
 {
 	const void* base_ptr = nullptr;
@@ -46,7 +61,7 @@ struct discovered_buffer_marking
 	change_source source;
 };
 
-static void merge_discovered_markings(lava_file_reader& reader, const std::vector<discovered_buffer_marking>& discovered);
+static void merge_discovered_markings(command_execution_data& data, const std::vector<discovered_buffer_marking>& discovered);
 
 static uint64_t simulator_pointer_bits(const void* ptr)
 {
@@ -339,7 +354,7 @@ static void merge_simulator_memory_metadata(const change_source& source, const s
 	}
 }
 
-static void collect_simulator_physical_address_markings(const lava_file_reader& reader, const std::vector<simulator_buffer_range>& ranges,
+static void collect_simulator_physical_address_markings(const command_execution_data& data, const std::vector<simulator_buffer_range>& ranges,
 	const SPIRVSimulator::SimulationResults& results, std::vector<discovered_buffer_marking>& discovered)
 {
 	VkMarkingSubTypeARM subtype{};
@@ -375,28 +390,24 @@ static void collect_simulator_physical_address_markings(const lava_file_reader& 
 		}
 		if (!found_source) found_source = collect_contiguous_device_address_marking(ranges, pointer_data, discovered);
 		if (found_source || pointer_data.raw_pointer_value == 0) continue;
-		trackedobject* obj = reader.parent->device_address_remapping.get_by_address(pointer_data.raw_pointer_value);
+		trackedobject* obj = data.device_address_remapping.get_by_address(pointer_data.raw_pointer_value);
 		if (!obj || obj->object_type != VK_OBJECT_TYPE_BUFFER) continue;
 		collect_matching_device_address_markings(pointer_data.raw_pointer_value, ranges, discovered);
 	}
 }
 
-static bool run_spirv(lava_file_reader& reader, const trackeddevice& device_data, const shader_stage& stage, const change_source& source,
-	const std::vector<std::byte>& push_constants, const host_write_regions& push_constant_sources,
-	const std::unordered_map<uint32_t, std::unordered_map<uint32_t, buffer_access>>& descriptorsets,
-	const std::unordered_map<uint32_t, std::unordered_map<uint32_t, image_access>>& imagesets,
-	const std::unordered_map<uint32_t, std::unordered_map<uint32_t, uint64_t>>& opaquesets)
+static bool run_spirv(command_execution_data& data, const shader_stage& stage, const change_source& source)
 {
 	SPIRVSimulator::SimulationData inputs;
 	SPIRVSimulator::SimulationResults results;
 	std::deque<uint64_t> opaque_storage;
 	std::vector<simulator_buffer_range> simulator_ranges;
 	std::unordered_map<const void*, simulator_buffer_range> range_lookup;
-	inputs.push_constants = push_constants.empty() ? nullptr : push_constants.data();
-	if (!push_constants.empty())
+	inputs.push_constants = data.push_constants.empty() ? nullptr : data.push_constants.data();
+	if (!data.push_constants.empty())
 	{
-		register_simulator_buffer_range(simulator_ranges, push_constants.data(), push_constants.size(), nullptr, 0, UINT32_MAX, UINT32_MAX, false, &push_constant_sources);
-		inputs.rt_array_lengths[simulator_pointer_bits(push_constants.data())][0] = push_constants.size();
+		register_simulator_buffer_range(simulator_ranges, data.push_constants.data(), data.push_constants.size(), nullptr, 0, UINT32_MAX, UINT32_MAX, false, &data.push_constant_sources);
+		inputs.rt_array_lengths[simulator_pointer_bits(data.push_constants.data())][0] = data.push_constants.size();
 	}
 	inputs.entry_point_op_name = stage.name;
 	inputs.specialization_constants = stage.specialization_data.empty() ? nullptr : stage.specialization_data.data();
@@ -410,7 +421,7 @@ static bool run_spirv(lava_file_reader& reader, const trackeddevice& device_data
 	{
 		inputs.specialization_constant_offsets[v.constantID] = v.offset;
 	}
-	for (const auto& set_pair : descriptorsets)
+	for (const auto& set_pair : data.descriptorsets)
 	{
 		auto& set_bindings = inputs.bindings[set_pair.first];
 		for (const auto& binding_pair : set_pair.second)
@@ -418,7 +429,7 @@ static bool run_spirv(lava_file_reader& reader, const trackeddevice& device_data
 			const buffer_access& access = binding_pair.second;
 			if (!access.buffer_data) continue;
 			const uint32_t buffer_index = access.buffer_data->index;
-			suballoc_location loc = device_data.allocator->find_buffer_memory(buffer_index);
+			suballoc_location loc = data.device_data.allocator->find_buffer_memory(buffer_index);
 			assert(loc.mapped);
 			std::byte* base = (std::byte*)loc.mapped;
 			std::byte* binding_ptr = base + access.offset;
@@ -436,7 +447,7 @@ static bool run_spirv(lava_file_reader& reader, const trackeddevice& device_data
 			}
 		}
 	}
-	for (const auto& set_pair : imagesets)
+	for (const auto& set_pair : data.imagesets)
 	{
 		auto& set_bindings = inputs.bindings[set_pair.first];
 		for (const auto& binding_pair : set_pair.second)
@@ -446,7 +457,7 @@ static bool run_spirv(lava_file_reader& reader, const trackeddevice& device_data
 			void* binding_ptr = nullptr;
 			if (access.image_data)
 			{
-				suballoc_location loc = device_data.allocator->find_image_memory(access.image_data->index);
+				suballoc_location loc = data.device_data.allocator->find_image_memory(access.image_data->index);
 				assert(loc.mapped);
 				std::byte* base = (std::byte*)loc.mapped;
 				binding_ptr = base;
@@ -459,7 +470,7 @@ static bool run_spirv(lava_file_reader& reader, const trackeddevice& device_data
 			set_bindings[binding_pair.first] = binding_ptr;
 		}
 	}
-	for (const auto& set_pair : opaquesets)
+	for (const auto& set_pair : data.opaquesets)
 	{
 		auto& set_bindings = inputs.bindings[set_pair.first];
 		for (const auto& binding_pair : set_pair.second)
@@ -472,10 +483,10 @@ static bool run_spirv(lava_file_reader& reader, const trackeddevice& device_data
 
 	for (trackedbuffer& buffer_data : VkBuffer_index)
 	{
-		if (buffer_data.parent_device_index != device_data.index) continue;
+		if (buffer_data.parent_device_index != data.device_data.index) continue;
 		if (!buffer_data.is_state(trackedobject::states::bound)) continue;
 		if (buffer_data.size == 0) continue;
-		suballoc_location loc = device_data.allocator->find_buffer_memory(buffer_data.index);
+		suballoc_location loc = data.device_data.allocator->find_buffer_memory(buffer_data.index);
 		if (!loc.mapped) continue;
 		std::byte* base = (std::byte*)loc.mapped;
 		const uint64_t visible_address = buffer_data.capture_device_address ? buffer_data.capture_device_address : buffer_data.device_address;
@@ -519,8 +530,8 @@ static bool run_spirv(lava_file_reader& reader, const trackeddevice& device_data
 	}
 
 	std::vector<discovered_buffer_marking> discovered_markings;
-	collect_simulator_physical_address_markings(reader, simulator_ranges, results, discovered_markings);
-	merge_discovered_markings(reader, discovered_markings);
+	collect_simulator_physical_address_markings(data, simulator_ranges, results, discovered_markings);
+	merge_discovered_markings(data, discovered_markings);
 	merge_simulator_output_candidates(stage, source, range_lookup, results);
 	merge_simulator_memory_metadata(source, simulator_ranges, memory_flag_tracker);
 
@@ -535,18 +546,17 @@ struct mapped_address_range
 	trackedbuffer* buffer_data = nullptr;
 };
 
-static bool map_device_address_range(const lava_file_reader& reader, const trackeddevice& device_data, VkDeviceAddress address, VkDeviceSize size,
-	mapped_address_range& out, const char* label)
+static bool map_device_address_range(const command_execution_data& data, VkDeviceAddress address, VkDeviceSize size, mapped_address_range& out, const char* label)
 {
 	if (address == 0 || size == 0) return false;
-	trackedobject* obj = reader.parent->device_address_remapping.get_by_address(address);
+	trackedobject* obj = data.device_address_remapping.get_by_address(address);
 	if (!obj || obj->object_type != VK_OBJECT_TYPE_BUFFER)
 	{
 		DLOG("Ray tracing %s address 0x%llx is not a buffer", label, (unsigned long long)address);
 		return false;
 	}
 	trackedbuffer* buffer_data = static_cast<trackedbuffer*>(obj);
-	const uint64_t translated = reader.parent->device_address_remapping.translate_address(address);
+	const uint64_t translated = data.device_address_remapping.translate_address(address);
 	if (translated == 0)
 	{
 		DLOG("Ray tracing %s address 0x%llx could not be remapped", label, (unsigned long long)address);
@@ -559,7 +569,7 @@ static bool map_device_address_range(const lava_file_reader& reader, const track
 			(unsigned long long)size, (unsigned long long)buffer_data->size);
 		return false;
 	}
-	suballoc_location loc = device_data.allocator->find_buffer_memory(buffer_data->index);
+	suballoc_location loc = data.device_data.allocator->find_buffer_memory(buffer_data->index);
 	assert(loc.mapped);
 	std::byte* base = (std::byte*)loc.mapped;
 	out.ptr = base + offset;
@@ -669,7 +679,7 @@ static VkMarkedOffsetsARM* build_marked_offsets(const std::vector<discovered_buf
 	return markings;
 }
 
-static void merge_discovered_markings(lava_file_reader& reader, const std::vector<discovered_buffer_marking>& discovered)
+static void merge_discovered_markings(command_execution_data& data, const std::vector<discovered_buffer_marking>& discovered)
 {
 	std::vector<discovered_output_markings_bucket> output_buckets;
 	for (const discovered_buffer_marking& marking : discovered)
@@ -714,17 +724,16 @@ static void merge_discovered_markings(lava_file_reader& reader, const std::vecto
 		}
 	}
 
-	lava::lock_guard lock(sync_mutex);
 	for (const discovered_output_markings_bucket& bucket : output_buckets)
 	{
 		VkMarkedOffsetsARM* markings = build_marked_offsets(bucket.entries);
-		merge_rewrite_markings(reader.parent->global_output_rewrite_queue, bucket.source, markings, bucket.object_type, bucket.object_index, bucket.stage_index);
+		merge_rewrite_markings(data.global_output_rewrite_queue, bucket.source, markings, bucket.object_type, bucket.object_index, bucket.stage_index);
 		free_marked_offsets(markings);
 	}
 }
 
-static void collect_stages_from_sbt_region(const lava_file_reader& reader, const trackeddevice& device_data, const trackedpipeline& pipeline_data,
-	const VkStridedDeviceAddressRegionKHR& region, const char* label, std::unordered_set<uint32_t>& stages, std::vector<discovered_buffer_marking>* discovered = nullptr)
+static void collect_stages_from_sbt_region(const command_execution_data& data, const trackedpipeline& pipeline_data, const VkStridedDeviceAddressRegionKHR& region,
+	const char* label, std::unordered_set<uint32_t>& stages, std::vector<discovered_buffer_marking>* discovered = nullptr)
 {
 	if (region.deviceAddress == 0 || region.size == 0) return;
 	if (pipeline_data.raytracing_group_handle_size == 0 || pipeline_data.raytracing_group_handles.empty()) return;
@@ -736,7 +745,7 @@ static void collect_stages_from_sbt_region(const lava_file_reader& reader, const
 		return;
 	}
 	mapped_address_range mapping;
-	if (!map_device_address_range(reader, device_data, region.deviceAddress, region.size, mapping, label)) return;
+	if (!map_device_address_range(data, region.deviceAddress, region.size, mapping, label)) return;
 	const uint32_t record_count = (uint32_t)(region.size / stride);
 	for (uint32_t i = 0; i < record_count; i++)
 	{
@@ -757,14 +766,14 @@ static void collect_stages_from_sbt_region(const lava_file_reader& reader, const
 	}
 }
 
-static void collect_acceleration_structure_instance_markings(const lava_file_reader& reader, const trackeddevice& device_data, VkDeviceAddress address,
+static void collect_acceleration_structure_instance_markings(const command_execution_data& data, VkDeviceAddress address,
 	VkDeviceSize primitive_offset, uint32_t primitive_count, std::vector<discovered_buffer_marking>& discovered)
 {
 	if (address == 0 || primitive_count == 0) return;
 	address += primitive_offset;
 	const VkDeviceSize size = (VkDeviceSize)primitive_count * sizeof(VkAccelerationStructureInstanceKHR);
 	mapped_address_range mapping;
-	if (!map_device_address_range(reader, device_data, address, size, mapping, "acceleration structure instances")) return;
+	if (!map_device_address_range(data, address, size, mapping, "acceleration structure instances")) return;
 
 	VkMarkingSubTypeARM subtype{};
 	subtype.deviceAddressType = VK_DEVICE_ADDRESS_TYPE_ACCELERATION_STRUCTURE_ARM;
@@ -785,13 +794,11 @@ static void collect_acceleration_structure_instance_markings(const lava_file_rea
 	}
 }
 
-static bool read_acceleration_structure_build_range(const lava_file_reader& reader, const trackeddevice& device_data,
-	VkDeviceAddress address, VkAccelerationStructureBuildRangeInfoKHR& range)
+static bool read_acceleration_structure_build_range(const command_execution_data& data, VkDeviceAddress address, VkAccelerationStructureBuildRangeInfoKHR& range)
 {
 	if (address == 0) return false;
 	mapped_address_range mapping;
-	if (!map_device_address_range(reader, device_data, address, sizeof(VkAccelerationStructureBuildRangeInfoKHR),
-		mapping, "indirect acceleration structure build range"))
+	if (!map_device_address_range(data, address, sizeof(VkAccelerationStructureBuildRangeInfoKHR), mapping, "indirect acceleration structure build range"))
 	{
 		return false;
 	}
@@ -807,29 +814,26 @@ struct descriptor_buffer_binding_state
 	VkBufferUsageFlags usage = 0;
 };
 
-static void record_descriptor_buffer_payload(lava_file_reader& reader, const trackeddevice& device_data,
-	uint32_t buffer_index, VkDeviceSize offset, VkDescriptorType type)
+static void record_descriptor_buffer_payload(const command_execution_data& data, uint32_t buffer_index, VkDeviceSize offset, VkDescriptorType type)
 {
-	if (reader.parent->pass != 0) return;
 	trackedbuffer& buffer_data = VkBuffer_index.at(buffer_index);
-	suballoc_location loc = device_data.allocator->find_buffer_memory(buffer_index);
+	suballoc_location loc = data.device_data.allocator->find_buffer_memory(buffer_index);
 	if (!loc.mapped) return;
 
-	lava::lock_guard lock(sync_mutex);
-	for (const descriptor_rewrite& payload : reader.parent->pending_descriptor_rewrites)
+	for (const descriptor_rewrite& payload : data.pending_descriptor_rewrites)
 	{
 		if (payload.type != type || payload.capture_bytes.empty()) continue;
 		if (offset > buffer_data.size || payload.capture_bytes.size() > buffer_data.size - offset) continue;
 		if (memcmp(loc.mapped + offset, payload.capture_bytes.data(), payload.capture_bytes.size()) != 0) continue;
 
-		auto existing = std::find_if(reader.parent->descriptor_buffer_payloads.begin(), reader.parent->descriptor_buffer_payloads.end(),
+		auto existing = std::find_if(data.descriptor_buffer_payloads.begin(), data.descriptor_buffer_payloads.end(),
 			[&](const descriptor_buffer_payload& entry)
 			{
 				return entry.buffer_index == buffer_index && entry.offset == offset && entry.type == type && entry.bytes == payload.capture_bytes;
 			});
-		if (existing != reader.parent->descriptor_buffer_payloads.end()) return;
+		if (existing != data.descriptor_buffer_payloads.end()) return;
 
-		reader.parent->descriptor_buffer_payloads.push_back({
+		data.descriptor_buffer_payloads.push_back({
 			.buffer_index = buffer_index,
 			.offset = offset,
 			.type = type,
@@ -839,24 +843,15 @@ static void record_descriptor_buffer_payload(lava_file_reader& reader, const tra
 	}
 }
 
-bool execute_commands(lava_file_reader& reader, const trackeddevice& device_data, VkCommandBuffer commandBuffer)
+static bool execute_commands_internal(command_execution_data& data)
 {
-	assert(reader.parent->simulate);
-	assert(!reader.write_output && reader.parent->pass == 0);
-	std::vector<std::byte> push_constants; // current state of the push constants
-	host_write_regions push_constant_sources;
 	uint32_t compute_pipeline_bound = CONTAINER_INVALID_INDEX; // currently bound pipeline
 	uint32_t data_graph_pipeline_bound = CONTAINER_INVALID_INDEX; // currently bound pipeline
 	std::unordered_map<VkShaderStageFlagBits, uint32_t> shader_objects;
 	uint32_t graphics_pipeline_bound = CONTAINER_INVALID_INDEX; // currently bound pipeline
 	uint32_t raytracing_pipeline_bound = CONTAINER_INVALID_INDEX; // currently bound pipeline
-	uint32_t cmdbuffer_index = index_to_VkCommandBuffer.index(commandBuffer);
-	auto& cmdbuffer_data = VkCommandBuffer_index.at(cmdbuffer_index);
-	std::unordered_map<uint32_t, std::unordered_map<uint32_t, buffer_access>> descriptorsets; // descriptorset binding : set internal binding point : buffer
-	std::unordered_map<uint32_t, std::unordered_map<uint32_t, image_access>> imagesets; // descriptorset binding : set internal binding point : image
-	std::unordered_map<uint32_t, std::unordered_map<uint32_t, uint64_t>> opaquesets; // descriptorset binding : set internal binding point : opaque descriptor payload
 	std::vector<descriptor_buffer_binding_state> descriptor_buffers;
-	for (const auto& c : cmdbuffer_data.commands)
+	for (const auto& c : data.cmdbuffer_data.commands)
 	{
 		switch (c.id)
 		{
@@ -867,15 +862,15 @@ bool execute_commands(lava_file_reader& reader, const trackeddevice& device_data
 				auto& tds = VkDescriptorSet_index.at(c.data.bind_descriptorsets.pDescriptorSets[i]); // is index now
 				for (auto pair : tds.bound_buffers)
 				{
-					descriptorsets[set][pair.first] = pair.second;
+					data.descriptorsets[set][pair.first] = pair.second;
 				}
 				for (auto pair : tds.bound_images)
 				{
-					imagesets[set][pair.first] = pair.second;
+					data.imagesets[set][pair.first] = pair.second;
 				}
 				for (auto pair : tds.bound_opaque_descriptors)
 				{
-					opaquesets[set][pair.first] = pair.second;
+					data.opaquesets[set][pair.first] = pair.second;
 				}
 				uint32_t binding = 0;
 				for (auto pair : tds.dynamic_buffers)
@@ -888,7 +883,7 @@ bool execute_commands(lava_file_reader& reader, const trackeddevice& device_data
 					if (c.data.bind_descriptorsets.pDynamicOffsets) access.offset += c.data.bind_descriptorsets.pDynamicOffsets[binding];
 					access.size = pair.second.range;
 					if (access.size == VK_WHOLE_SIZE) access.size = buffer_data.size - access.offset;
-					descriptorsets[set][pair.first] = access;
+					data.descriptorsets[set][pair.first] = access;
 					binding++;
 					assert(!c.data.bind_descriptorsets.pDynamicOffsets || c.data.bind_descriptorsets.dynamicOffsetCount >= binding);
 				}
@@ -902,7 +897,7 @@ bool execute_commands(lava_file_reader& reader, const trackeddevice& device_data
 			for (uint32_t i = 0; i < c.data.bind_descriptor_buffers_ext.bufferCount; i++)
 			{
 				mapped_address_range mapping;
-				if (map_device_address_range(reader, device_data, c.data.bind_descriptor_buffers_ext.addresses[i], 1, mapping, "descriptor buffer binding"))
+				if (map_device_address_range(data, c.data.bind_descriptor_buffers_ext.addresses[i], 1, mapping, "descriptor buffer binding"))
 				{
 					descriptor_buffers[i].buffer_data = mapping.buffer_data;
 					descriptor_buffers[i].offset = mapping.buffer_offset;
@@ -942,7 +937,7 @@ bool execute_commands(lava_file_reader& reader, const trackeddevice& device_data
 						const VkDeviceSize binding_offset = offset_it != set_layout_data.offsets.end() ? offset_it->second : 0;
 						const VkDeviceSize descriptor_offset = descriptor_buffer.offset + set_offset + binding_offset;
 						if (descriptor_offset >= descriptor_buffer.buffer_data->size) continue;
-						descriptorsets[set][binding] = {
+						data.descriptorsets[set][binding] = {
 							.buffer_data = descriptor_buffer.buffer_data,
 							.offset = descriptor_offset,
 							.size = descriptor_buffer.buffer_data->size - descriptor_offset,
@@ -957,8 +952,8 @@ bool execute_commands(lava_file_reader& reader, const trackeddevice& device_data
 							.type = VK_MARKING_TYPE_DESCRIPTOR_ARM,
 							.subtype = subtype,
 						});
-						merge_discovered_markings(reader, discovered_markings);
-						record_descriptor_buffer_payload(reader, device_data, descriptor_buffer.buffer_data->index, descriptor_offset, binding_pair.second);
+						merge_discovered_markings(data, discovered_markings);
+						record_descriptor_buffer_payload(data, descriptor_buffer.buffer_data->index, descriptor_offset, binding_pair.second);
 					}
 				}
 			}
@@ -967,8 +962,8 @@ bool execute_commands(lava_file_reader& reader, const trackeddevice& device_data
 			break;
 		case VKCMDCOPYBUFFER:
 			{
-				suballoc_location src = device_data.allocator->find_buffer_memory(c.data.copy_buffer.src_buffer_index);
-				suballoc_location dst = device_data.allocator->find_buffer_memory(c.data.copy_buffer.dst_buffer_index);
+				suballoc_location src = data.device_data.allocator->find_buffer_memory(c.data.copy_buffer.src_buffer_index);
+				suballoc_location dst = data.device_data.allocator->find_buffer_memory(c.data.copy_buffer.dst_buffer_index);
 				trackedbuffer& src_buffer = VkBuffer_index.at(c.data.copy_buffer.src_buffer_index);
 				trackedbuffer& dst_buffer = VkBuffer_index.at(c.data.copy_buffer.dst_buffer_index);
 				for (uint32_t i = 0; i < c.data.copy_buffer.regionCount; i++)
@@ -982,7 +977,7 @@ bool execute_commands(lava_file_reader& reader, const trackeddevice& device_data
 			break;
 		case VKCMDUPDATEBUFFER:
 			{
-				suballoc_location sub = device_data.allocator->find_buffer_memory(c.data.update_buffer.buffer_index);
+				suballoc_location sub = data.device_data.allocator->find_buffer_memory(c.data.update_buffer.buffer_index);
 				trackedbuffer& dst_buffer = VkBuffer_index.at(c.data.update_buffer.buffer_index);
 				memcpy((char*)sub.memory + c.data.update_buffer.offset, c.data.update_buffer.values, c.data.update_buffer.size);
 				dst_buffer.source.register_source(c.data.update_buffer.offset, c.data.update_buffer.size, c.source);
@@ -991,9 +986,9 @@ bool execute_commands(lava_file_reader& reader, const trackeddevice& device_data
 			break;
 		case VKCMDPUSHCONSTANTS:
 		case VKCMDPUSHCONSTANTS2KHR:
-			if (push_constants.size() < c.data.push_constants.offset + c.data.push_constants.size) push_constants.resize(c.data.push_constants.offset + c.data.push_constants.size);
-			memcpy(push_constants.data() + c.data.push_constants.offset, c.data.push_constants.values, c.data.push_constants.size);
-			push_constant_sources.register_source(c.data.push_constants.offset, c.data.push_constants.size, c.source);
+			if (data.push_constants.size() < c.data.push_constants.offset + c.data.push_constants.size) data.push_constants.resize(c.data.push_constants.offset + c.data.push_constants.size);
+			memcpy(data.push_constants.data() + c.data.push_constants.offset, c.data.push_constants.values, c.data.push_constants.size);
+			data.push_constant_sources.register_source(c.data.push_constants.offset, c.data.push_constants.size, c.source);
 			free(c.data.push_constants.values);
 			break;
 		case VKCMDBINDPIPELINE:
@@ -1024,13 +1019,13 @@ bool execute_commands(lava_file_reader& reader, const trackeddevice& device_data
 				assert(pipeline_data.shader_stages.size() == 1);
 				assert(pipeline_data.shader_stages[0].stage == VK_SHADER_STAGE_COMPUTE_BIT);
 				pipeline_data.shader_stages[0].calls++;
-				run_spirv(reader, device_data, pipeline_data.shader_stages[0], c.source, push_constants, push_constant_sources, descriptorsets, imagesets, opaquesets);
+				run_spirv(data, pipeline_data.shader_stages[0], c.source);
 			}
 			else // shader objects
 			{
 				auto& shader_object_data = VkShaderEXT_index.at(shader_objects.at(VK_SHADER_STAGE_COMPUTE_BIT));
 				shader_object_data.stage.calls++;
-				run_spirv(reader, device_data, shader_object_data.stage, c.source, push_constants, push_constant_sources, descriptorsets, imagesets, opaquesets);
+				run_spirv(data, shader_object_data.stage, c.source);
 			}
 			break;
 		case VKCMDDISPATCHDATAGRAPHARM:
@@ -1060,7 +1055,7 @@ bool execute_commands(lava_file_reader& reader, const trackeddevice& device_data
 				{
 					if (stage.stage == VK_SHADER_STAGE_COMPUTE_BIT) continue;
 					stage.calls++;
-					run_spirv(reader, device_data, stage, c.source, push_constants, push_constant_sources, descriptorsets, imagesets, opaquesets);
+					run_spirv(data, stage, c.source);
 				}
 			}
 			else for (auto& pair : shader_objects) // shader objects
@@ -1070,7 +1065,7 @@ bool execute_commands(lava_file_reader& reader, const trackeddevice& device_data
 				shader_stage& stage = shader_object_data.stage;
 				assert(pair.first == stage.stage);
 				stage.calls++;
-				run_spirv(reader, device_data, stage, c.source, push_constants, push_constant_sources, descriptorsets, imagesets, opaquesets);
+				run_spirv(data, stage, c.source);
 			}
 			break;
 		case VKCMDBUILDACCELERATIONSTRUCTURESKHR:
@@ -1084,17 +1079,17 @@ bool execute_commands(lava_file_reader& reader, const trackeddevice& device_data
 					if (indirect_range_address != 0)
 					{
 						VkAccelerationStructureBuildRangeInfoKHR range = {};
-						if (!read_acceleration_structure_build_range(reader, device_data, indirect_range_address, range)) continue;
+						if (!read_acceleration_structure_build_range(data, indirect_range_address, range)) continue;
 						primitive_offset = range.primitiveOffset;
 						primitive_count = range.primitiveCount;
 					}
-					collect_acceleration_structure_instance_markings(reader, device_data,
+					collect_acceleration_structure_instance_markings(data,
 						c.data.build_acceleration_structures.instance_addresses[i],
 						primitive_offset,
 						primitive_count,
 						discovered_markings);
 				}
-				merge_discovered_markings(reader, discovered_markings);
+				merge_discovered_markings(data, discovered_markings);
 				free(c.data.build_acceleration_structures.instance_addresses);
 				free(c.data.build_acceleration_structures.primitive_offsets);
 				free(c.data.build_acceleration_structures.primitive_counts);
@@ -1111,7 +1106,7 @@ bool execute_commands(lava_file_reader& reader, const trackeddevice& device_data
 					for (auto& stage : pipeline_data.shader_stages)
 					{
 						stage.calls++;
-						run_spirv(reader, device_data, stage, c.source, push_constants, push_constant_sources, descriptorsets, imagesets, opaquesets);
+						run_spirv(data, stage, c.source);
 					}
 					break;
 				}
@@ -1128,7 +1123,7 @@ bool execute_commands(lava_file_reader& reader, const trackeddevice& device_data
 				if (c.data.trace_rays.mode == trackedcommand::TRACE_RAYS_INDIRECT)
 				{
 					mapped_address_range mapping;
-					if (map_device_address_range(reader, device_data, c.data.trace_rays.indirect_device_address, sizeof(VkTraceRaysIndirectCommandKHR), mapping, "indirect"))
+					if (map_device_address_range(data, c.data.trace_rays.indirect_device_address, sizeof(VkTraceRaysIndirectCommandKHR), mapping, "indirect"))
 					{
 						const VkTraceRaysIndirectCommandKHR* indirect = reinterpret_cast<const VkTraceRaysIndirectCommandKHR*>(mapping.ptr);
 						width = indirect->width;
@@ -1143,7 +1138,7 @@ bool execute_commands(lava_file_reader& reader, const trackeddevice& device_data
 				else if (c.data.trace_rays.mode == trackedcommand::TRACE_RAYS_INDIRECT2)
 				{
 					mapped_address_range mapping;
-					if (map_device_address_range(reader, device_data, c.data.trace_rays.indirect_device_address, sizeof(VkTraceRaysIndirectCommand2KHR), mapping, "indirect2"))
+					if (map_device_address_range(data, c.data.trace_rays.indirect_device_address, sizeof(VkTraceRaysIndirectCommand2KHR), mapping, "indirect2"))
 					{
 						const VkTraceRaysIndirectCommand2KHR* indirect = reinterpret_cast<const VkTraceRaysIndirectCommand2KHR*>(mapping.ptr);
 						VkMarkingSubTypeARM address_subtype{};
@@ -1211,18 +1206,18 @@ bool execute_commands(lava_file_reader& reader, const trackeddevice& device_data
 				}
 
 				std::unordered_set<uint32_t> stages_to_run;
-				collect_stages_from_sbt_region(reader, device_data, pipeline_data, raygen, "raygen", stages_to_run, &discovered_markings);
-				collect_stages_from_sbt_region(reader, device_data, pipeline_data, miss, "miss", stages_to_run, &discovered_markings);
-				collect_stages_from_sbt_region(reader, device_data, pipeline_data, hit, "hit", stages_to_run, &discovered_markings);
-				collect_stages_from_sbt_region(reader, device_data, pipeline_data, callable, "callable", stages_to_run, &discovered_markings);
-				merge_discovered_markings(reader, discovered_markings);
+				collect_stages_from_sbt_region(data, pipeline_data, raygen, "raygen", stages_to_run, &discovered_markings);
+				collect_stages_from_sbt_region(data, pipeline_data, miss, "miss", stages_to_run, &discovered_markings);
+				collect_stages_from_sbt_region(data, pipeline_data, hit, "hit", stages_to_run, &discovered_markings);
+				collect_stages_from_sbt_region(data, pipeline_data, callable, "callable", stages_to_run, &discovered_markings);
+				merge_discovered_markings(data, discovered_markings);
 
 				if (stages_to_run.empty())
 				{
 					for (auto& stage : pipeline_data.shader_stages)
 					{
 						stage.calls++;
-						run_spirv(reader, device_data, stage, c.source, push_constants, push_constant_sources, descriptorsets, imagesets, opaquesets);
+						run_spirv(data, stage, c.source);
 					}
 				}
 				else
@@ -1230,7 +1225,7 @@ bool execute_commands(lava_file_reader& reader, const trackeddevice& device_data
 					for (uint32_t stage_index : stages_to_run)
 					{
 						pipeline_data.shader_stages[stage_index].calls++;
-						run_spirv(reader, device_data, pipeline_data.shader_stages[stage_index], c.source, push_constants, push_constant_sources, descriptorsets, imagesets, opaquesets);
+						run_spirv(data, pipeline_data.shader_stages[stage_index], c.source);
 					}
 				}
 				(void)width;
@@ -1242,6 +1237,24 @@ bool execute_commands(lava_file_reader& reader, const trackeddevice& device_data
 			break;
 		}
 	}
-	cmdbuffer_data.commands.clear();
 	return true;
+}
+
+bool execute_commands(lava_file_reader& reader, const trackeddevice& device_data, VkCommandBuffer commandBuffer)
+{
+	assert(reader.parent->simulate);
+	assert(!reader.write_output && reader.parent->pass == 0);
+	const uint32_t cmdbuffer_index = index_to_VkCommandBuffer.index(commandBuffer);
+	lava::lock_guard lock(sync_mutex);
+	command_execution_data data {
+		.device_data = device_data,
+		.cmdbuffer_data = VkCommandBuffer_index.at(cmdbuffer_index),
+		.device_address_remapping = reader.parent->device_address_remapping,
+		.global_output_rewrite_queue = reader.parent->global_output_rewrite_queue,
+		.pending_descriptor_rewrites = reader.parent->pending_descriptor_rewrites,
+		.descriptor_buffer_payloads = reader.parent->descriptor_buffer_payloads,
+	};
+	const bool r = execute_commands_internal(data);
+	VkCommandBuffer_index.at(cmdbuffer_index).commands.clear();
+	return r;
 }
