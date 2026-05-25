@@ -103,3 +103,77 @@ of it.
 ## Inspiration
 
 * [Renderdoc's CLI tool](https://github.com/BANANASJIM/rdc-cli)
+
+## Implementation
+
+Raw berkeley sockets seems like the best match. We need a separate control thread in the
+tool that we communicate with. We can connect to Android using `adb forward`.
+
+For capture, by default we attempt to wait for a connection for some time (eg 200 ms) before
+spawning a thread to keep waiting. This means our client must hammer the capture platform
+with requests roughly once every 100 ms to have a good chance of connecting from the very
+start. We can change the wait time with env var `LAVATUBE_WAIT_TIME`, set to zero for no
+waiting, -1 to wait forever, or any other positive value to wait this many milliseconds.
+
+For replay, we only spawn a control thread when explicitly requested to do so, and in this
+case we wait for a connection before proceeding. We spawn our control thread only after we
+have received a connection and been told to proceed.
+
+If there is a disconnect during capture, we keep going. There is no good other option here.
+If there is a disconnect during replay, we have more options, but keep going is the least
+invasive, so we should go with this to begin with at least.
+
+## Additional questions to resolve (from Gemini review)
+
+### Port Discovery and Android Constraints
+
+* **The Config File:** The plan mentions writing the bound TCP port to `~/.lavatube/config.json`.
+ On Android, writing to a home directory like `~/` won't work due to app sandboxing. You would
+ have to write to the app's internal storage directory, which `lava-cli` on the host machine
+ cannot easily read without additional `adb shell run-as` tricks.
+
+* **Recommendation:** For Android, it's usually best to rely on a **fixed default port** (e.g.,
+ `19100`) that can be overridden via a command-line flag or environment variable. This allows
+ the user to blindly set up `adb forward tcp:19100 tcp:19100` before running the app, without
+ needing to extract a dynamically assigned port from a config file. For Linux, printing the
+ port to `stdout` before backgrounding might be cleaner than a global config file, especially
+ if multiple traces are being replayed simultaneously.
+
+### Global vs. Per-Command Hooks
+
+* **Autogeneration Overhead:** The plan states: *"We need to autogenerate the sentinel callback
+ functions for every command."*
+
+* **Alternative:** Instead of autogenerating and attaching hundreds of individual callbacks, you
+ might want to place a single, fast check inside the main command reading/dispatch loop. An
+ `if (unlikely(global_control_state.should_pause())) { block_on_cv(); }` check is very cheap and
+ avoids the complexity of managing per-command sentinels unless you specifically need the
+ `goto <command>` functionality. For `goto`, you could just check the command ID against a target
+ ID in that same central loop.
+
+### Thread Pausing Behavior
+
+* **Synchronization Points:** The plan mentions: *"If we pause one thread, the other threads
+ will continue until they hit their next synchronization point."*
+
+* **Risk:** Vulkan apps can have worker threads that just process compute shaders or build
+ command buffers for a long time without hitting a heavy Vulkan synchronization primitive. If
+ you wait for them to hit a sync point before giving control to `lava-cli`, the tool might hang
+ indefinitely.
+
+* **Recommendation:** When a pause is requested (or a breakpoint/step completes), you should
+ probably flip a global `atomic<bool> is_paused` flag. **All** threads should check this flag
+ right before they dispatch their next Vulkan command. This ensures all threads freeze at their
+ current command boundaries almost immediately, rather than waiting for an API-level
+ synchronization point.
+
+### Stepping Semantics Across Threads
+
+* **The "Step" Command:** When you `lava-cli step call 1` on Thread A, what should Thread B do?
+
+* **Recommendation:** Usually, in debuggers, if you step a specific thread, the other threads
+ remain frozen to prevent the state from changing under your feet. You should explicitly define
+ this behavior in the plan. If `lava-cli step` only advances the active thread while keeping
+ others blocked on a condition variable, you need to ensure this doesn't cause deadlocks if
+ Thread A's next command is waiting on a fence signaled by Thread B. Providing a `step-all`
+ vs `step-thread` distinction might be necessary eventually.
