@@ -57,21 +57,17 @@ int main(int argc, char **argv)
 		}
 		else if (match(argv[i], "-df", "--debugfile", remaining))
 		{
-			if (remaining < 1) usage();
 			std::string val = get_str(argv[++i], remaining);
 			if (p__debug_destination != stdout) ABORT("We already have a different debug file destination!");
 			p__debug_destination = fopen(val.c_str(), "w");
 		}
-		else if (strcmp(argv[i], "--") == 0) // eg in case you have a file named -f ...
-		{
-			remaining--;
-			keyword = get_str(argv[++i], remaining);
-			if (remaining > 0) usage();
-			break; // stop parsing cmd line options
-		}
 		else
 		{
 			keyword = get_str(argv[i], remaining);
+			if (keyword == "info" && remaining)
+			{
+				keyword += " " + get_str(argv[++i], remaining);
+			}
 			if (remaining > 0)
 			{
 				printf("Invalid options\n\n");
@@ -81,11 +77,6 @@ int main(int argc, char **argv)
 	}
 
 	if (keyword.empty()) usage();
-
-	if (keyword == "status") keyword = "STATUS";
-	else if (keyword == "continue") keyword = "CONTINUE";
-	else if (keyword == "stop") keyword = "STOP";
-	else usage();
 
 	if (verbose)
 	{

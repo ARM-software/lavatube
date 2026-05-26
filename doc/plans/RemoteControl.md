@@ -36,15 +36,19 @@ More instructions to implement - in prioritized order:
 * `lava-cli step [calls X|frames X]` - step the given number of calls or frames ahead
    in the current thread, then pause again
 - `lava-cli break [call|frame X]` - replay until we get to the given call or frame
-* `lava-cli info` - show input parameters and important state
+* `lava-cli info <topic>` - show input parameters and important state
+	- 'threads' - show all threads, with gdb thread id
+	- 'objects' - show all non-zero object types, with pending, created, bound (if applicable) and destroyed columns
+	- 'queues'
+	- 'swapchains' - show image index numbers of real and fake swapchains
 * `lava-cli tell <parameter name>` - print given input parameter (nested if a chain of structs)
 * `lava-cli show <object type> [index|id] <number>` - print given globally tracked object and its metadata
 * `lava-cli list <object type>` - list all objects of given type tracked globally and their status
 * `lava-cli goto <command...>` - continue until we encounter the first command with given name on
   the current thread (eventually from the given comma-separated list and match regex), fail and inform
   if not matching any known Vulkan command
-* `lava-cli save-image <image index> <filename>` - write contents of image given by index to the given filename
-* `lava-cli save-buffer <buffer index> <filename>` - write contents of buffer given by index to the given filename
+* `lava-cli save image <image index> <filename>` - write contents of image given by index to the given filename
+* `lava-cli save buffer <buffer index> <filename>` - write contents of buffer given by index to the given filename
 * `lava-cli debug <level>` - change global debug level
 
 ## How
@@ -74,6 +78,12 @@ eg see if we are at the next synchronization point or not).
 One issue we will have is our use of spinlocks for most replay thread synchronizations. This
 means even though the process is in 'pause' state, it will consume quite a bit of CPU. (Also
 the moment we step beyond a waiting point, threads waiting for it will race ahead.)
+
+## State machine
+
+We should have a very simple state machine: We can be in states `paused`, `running` or `done`.
+When in `running` state we only accept the `stop` command. For most commands, we need to be
+in the `paused` state.
 
 ## Security
 
@@ -113,6 +123,11 @@ easy debug always easy.
 We already have the ability to stream debug output to file. We can use our control channel
 to fetch the current contents of the file - possibly with an offset if we already fetched parts
 of it.
+
+## Output format
+
+Allow choice of display of tabular data in either markdown or CSV (or TSV, tab separated).
+We have a new class in `src/datatable.h` for abstracting away the choice.
 
 ## Inspiration
 

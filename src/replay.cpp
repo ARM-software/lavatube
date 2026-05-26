@@ -22,9 +22,10 @@
 #include "allocators.h"
 #include "replay_callbacks.h"
 #include "sandbox.h"
+#include "datatable.h"
 
 static lava_reader replayer;
-static std::atomic<bool> start_var { false };
+static std::atomic<bool> running { true };
 static std::atomic<bool> done_var { false };
 static std::atomic<bool> replay_done { false };
 static std::atomic<bool> service_stop_requested { false };
@@ -136,28 +137,45 @@ static void service_listener()
 
 		const std::string keyword = lava_tcp_receive_line(client_fd);
 		std::string response;
-		if (keyword == "STATUS")
+		if (keyword == "status")
 		{
 			if (replay_done.load(std::memory_order_acquire)) response = "DONE\n";
-			else if (start_var.load(std::memory_order_acquire)) response = "RUNNING\n";
+			else if (running.load(std::memory_order_acquire)) response = "RUNNING\n";
 			else response = "PAUSED frame=" + std::to_string(replayer.global_frame)
 			     + "/" + std::to_string(replayer.global_frame_count) + "\n";
 		}
-		else if (keyword == "CONTINUE")
+		else if (keyword == "continue")
 		{
-			start_var.store(true, std::memory_order_release);
-			start_var.notify_all();
+			running.store(true, std::memory_order_release);
+			running.notify_all();
 			response = "OK\n";
 		}
-		else if (keyword == "STOP")
+		else if (keyword == "stop")
 		{
 			service_stop_requested.store(true, std::memory_order_release);
-			start_var.store(true, std::memory_order_release);
-			start_var.notify_all();
+			running.store(true, std::memory_order_release);
+			running.notify_all();
 			replayer.request_stop();
 			done_var.store(true, std::memory_order_release);
 			done_var.notify_all();
 			response = "OK\n";
+		}
+		else if (keyword == "info") // general info
+		{
+			response = "INFO\n"; // TODO just a placeholder for now
+		}
+		else if (keyword == "info threads") // list thread info
+		{
+			// TODO check state, must be paused
+			data_table out;
+			out.set_headers({"Thread", "Name", "State"});
+			for (unsigned i = 0; i < replayer.threads.size(); i++)
+			{
+				char thread_name[16];
+				get_thread_name(thread_name);
+				out.add_row({std::to_string(i), thread_name, "-"});
+			}
+			response = out.to_markdown();
 		}
 		else
 		{
@@ -501,7 +519,7 @@ int main(int argc, char **argv)
 
 	if (service)
 	{
-		start_var.wait(false);
+		running.wait(false);
 		if (service_stop_requested.load(std::memory_order_acquire))
 		{
 			service_thread.join();
