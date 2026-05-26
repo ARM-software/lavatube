@@ -103,7 +103,7 @@ public:
 	{
 		mStart = start;
 		mEnd = end;
-		if (mEnd != -1) mGlobalFrames = end - start;
+		if (mEnd != -1) global_frame_count = end - start;
 	}
 
 	/// Dump trace information to stdout
@@ -140,6 +140,9 @@ public:
 
 	/// Count of completed global frames. After a frame boundary this is the just-finished frame index plus one.
 	std::atomic_int global_frame{ 0 };
+
+	/// Total number of global frames in the trace
+	int global_frame_count = 0;
 
 	void set_screenshot_ranges(std::vector<replay_screenshot_range>&& ranges)
 	{
@@ -216,7 +219,6 @@ private:
 	std::vector<lava_file_reader*> thread_streams;
 	int mStart = 0;
 	int mEnd = -1;
-	int mGlobalFrames = 0;
 	FILE* out_fptr = nullptr;
 	replay_screenshot_handler mReplayScreenshots;
 };

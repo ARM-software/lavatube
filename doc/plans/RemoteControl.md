@@ -23,10 +23,19 @@ Already implemented instructions:
 * `lava-cli stop` - stops the replay
 
 More instructions to implement - in prioritized order:
+* `lava-cli status` - show more info in PAUSE state (since all threads are paused, we can inspect them safely)
+  on initial line:
+	- current thread + max threads
+	- current call number (in current thread)
+	- current global frame number (+ max global frames)
+  on subsequent lines:
+	- for each thread, current call number, current API/packet call name
+	- bonus: is it possible to show what we are waiting on?
 * `lava-cli thread N` - updates the stored current thread index
 * `lava-cli continue` - also receive debug info from all threads, and if replay fails then print the last debug information received
-* `lava-cli step [frame|call|calls X|frames X]` - step the given number of calls or frames ahead
+* `lava-cli step [calls X|frames X]` - step the given number of calls or frames ahead
    in the current thread, then pause again
+- `lava-cli break [call|frame X]` - replay until we get to the given call or frame
 * `lava-cli info` - show input parameters and important state
 * `lava-cli tell <parameter name>` - print given input parameter (nested if a chain of structs)
 * `lava-cli show <object type> [index|id] <number>` - print given globally tracked object and its metadata
@@ -61,6 +70,10 @@ to make sure we let all threads hit their next synchronization point before we r
 to `lava-cli` (possibly means that we need an atomic state machine status in each running
 thread to say whether we are running or waiting, unless there is some other way to check this,
 eg see if we are at the next synchronization point or not).
+
+One issue we will have is our use of spinlocks for most replay thread synchronizations. This
+means even though the process is in 'pause' state, it will consume quite a bit of CPU. (Also
+the moment we step beyond a waiting point, threads waiting for it will race ahead.)
 
 ## Security
 

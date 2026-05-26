@@ -140,7 +140,8 @@ static void service_listener()
 		{
 			if (replay_done.load(std::memory_order_acquire)) response = "DONE\n";
 			else if (start_var.load(std::memory_order_acquire)) response = "RUNNING\n";
-			else response = "PAUSED\n";
+			else response = "PAUSED frame=" + std::to_string(replayer.global_frame)
+			     + "/" + std::to_string(replayer.global_frame_count) + "\n";
 		}
 		else if (keyword == "CONTINUE")
 		{
@@ -482,13 +483,6 @@ int main(int argc, char **argv)
 	if (service)
 	{
 		service_thread = std::thread(service_listener);
-		start_var.wait(false);
-		if (service_stop_requested.load(std::memory_order_acquire))
-		{
-			service_thread.join();
-			close_debug_destination();
-			return replayer.exit_status;
-		}
 	}
 
 	if (p__sandbox_level >= 2) sandbox_level_two();
@@ -503,6 +497,17 @@ int main(int argc, char **argv)
 	{
 		replayer.dump_info();
 		exit(EXIT_SUCCESS);
+	}
+
+	if (service)
+	{
+		start_var.wait(false);
+		if (service_stop_requested.load(std::memory_order_acquire))
+		{
+			service_thread.join();
+			close_debug_destination();
+			return replayer.exit_status;
+		}
 	}
 
 	run_multithreaded();

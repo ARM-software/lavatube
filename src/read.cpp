@@ -182,11 +182,11 @@ lava_reader::~lava_reader()
 void lava_reader::finalize()
 {
 	const double total_time_ms = ((gettime() - mStartTime.load()) / 1000000UL);
-	const double fps = (total_time_ms > 0.0) ? ((double)mGlobalFrames / (total_time_ms / 1000.0)) : 0.0;
-	ILOG("==== %.2f ms, %u frames (%.2f fps) ====", total_time_ms, mGlobalFrames, fps);
+	const double fps = (total_time_ms > 0.0) ? ((double)global_frame_count / (total_time_ms / 1000.0)) : 0.0;
+	ILOG("==== %.2f ms, %u frames (%.2f fps) ====", total_time_ms, global_frame_count, fps);
 	Json::Value out;
 	out["fps"] = fps;
-	out["frames"] = mGlobalFrames;
+	out["frames"] = global_frame_count;
 	out["time"] = total_time_ms;
 	uint64_t runner = 0;
 	uint64_t worker = 0;
@@ -266,7 +266,7 @@ void lava_reader::init(const std::string& path)
 
 	Json::Value meta = packed_json("metadata.json", mPackedFile);
 	const int num_threads = meta["threads"].asInt();
-	mGlobalFrames = meta["global_frames"].asInt();
+	global_frame_count = meta["global_frames"].asInt();
 	stored_version_major = meta["lavatube_version_major"].asInt();
 	stored_version_minor = meta["lavatube_version_minor"].asInt();
 	stored_version_patch = meta["lavatube_version_patch"].asInt();
@@ -290,7 +290,7 @@ void lava_reader::init(const std::string& path)
 				if (v["global_frame"] == mEnd + 1) { uncompressed_target = v["position"].asUInt(); break; }
 			}
 		}
-		thread_streams[thread_id] = new lava_file_reader(this, mPackedFile, thread_id, mGlobalFrames, frameinfo, uncompressed_size, uncompressed_target, mStart, mEnd);
+		thread_streams[thread_id] = new lava_file_reader(this, mPackedFile, thread_id, global_frame_count, frameinfo, uncompressed_size, uncompressed_target, mStart, mEnd);
 	}
 
 	if (create_results_file)
