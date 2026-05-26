@@ -3,6 +3,9 @@
 #include "jsoncpp/json/writer.h"
 
 #include <string.h>
+#include <errno.h>
+#include <netdb.h>
+#include <sys/socket.h>
 #include <vulkan/vulkan_format_traits.hpp>
 #include <spirv/unified1/spirv.h>
 
@@ -132,6 +135,144 @@ FILE* get_env_file(const char* name, FILE* fallback)
 	return fallback;
 }
 
+static std::string port_to_service(int port)
+{
+	if (port <= 0 || port > 65535)
+	{
+		DIE("Invalid TCP port %d", port);
+	}
+	return _to_string(port);
+}
+
+int lava_tcp_connect(const std::string& hostname, int port)
+{
+	const std::string service = port_to_service(port);
+	struct addrinfo hints = {};
+	hints.ai_family = AF_UNSPEC;
+	hints.ai_socktype = SOCK_STREAM;
+
+	struct addrinfo* result = nullptr;
+	const int gai = getaddrinfo(hostname.c_str(), service.c_str(), &hints, &result);
+	if (gai != 0)
+	{
+		DIE("Failed to resolve %s:%d: %s", hostname.c_str(), port, gai_strerror(gai));
+	}
+
+	int last_error = 0;
+	int fd = -1;
+	for (struct addrinfo* ai = result; ai != nullptr; ai = ai->ai_next)
+	{
+		fd = socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
+		if (fd < 0)
+		{
+			last_error = errno;
+			continue;
+		}
+		if (connect(fd, ai->ai_addr, ai->ai_addrlen) == 0)
+		{
+			break;
+		}
+		last_error = errno;
+		close(fd);
+		fd = -1;
+	}
+	freeaddrinfo(result);
+
+	if (fd < 0)
+	{
+		DIE("Failed to connect to %s:%d: %s", hostname.c_str(), port, strerror(last_error));
+	}
+	return fd;
+}
+
+int lava_tcp_listen(const std::string& hostname, int port)
+{
+	const std::string service = port_to_service(port);
+	struct addrinfo hints = {};
+	hints.ai_family = AF_UNSPEC;
+	hints.ai_socktype = SOCK_STREAM;
+	hints.ai_flags = AI_PASSIVE;
+
+	struct addrinfo* result = nullptr;
+	const char* node = hostname.empty() ? nullptr : hostname.c_str();
+	const int gai = getaddrinfo(node, service.c_str(), &hints, &result);
+	if (gai != 0)
+	{
+		DIE("Failed to resolve listen address %s:%d: %s", hostname.c_str(), port, gai_strerror(gai));
+	}
+
+	int last_error = 0;
+	int fd = -1;
+	for (struct addrinfo* ai = result; ai != nullptr; ai = ai->ai_next)
+	{
+		fd = socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
+		if (fd < 0)
+		{
+			last_error = errno;
+			continue;
+		}
+		const int reuse = 1;
+		(void)setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
+		if (bind(fd, ai->ai_addr, ai->ai_addrlen) == 0 && listen(fd, 16) == 0)
+		{
+			break;
+		}
+		last_error = errno;
+		close(fd);
+		fd = -1;
+	}
+	freeaddrinfo(result);
+
+	if (fd < 0)
+	{
+		DIE("Failed to listen on %s:%d: %s", hostname.c_str(), port, strerror(last_error));
+	}
+	return fd;
+}
+
+bool lava_tcp_send_all(int fd, const std::string& message)
+{
+	const char* ptr = message.data();
+	size_t left = message.size();
+	while (left > 0)
+	{
+#ifdef MSG_NOSIGNAL
+		const int flags = MSG_NOSIGNAL;
+#else
+		const int flags = 0;
+#endif
+		const ssize_t written = send(fd, ptr, left, flags);
+		if (written < 0)
+		{
+			if (errno == EINTR) continue;
+			return false;
+		}
+		if (written == 0) return false;
+		ptr += written;
+		left -= written;
+	}
+	return true;
+}
+
+std::string lava_tcp_receive_line(int fd, size_t max_size)
+{
+	std::string message;
+	message.reserve(max_size < 128 ? max_size : 128);
+	while (message.size() < max_size)
+	{
+		char c = 0;
+		const ssize_t ret = recv(fd, &c, 1, 0);
+		if (ret < 0)
+		{
+			if (errno == EINTR) continue;
+			return "";
+		}
+		if (ret == 0 || c == '\n') break;
+		if (c != '\r') message.push_back(c);
+	}
+	return message;
+}
+
 void close_debug_destination()
 {
 	if (p__debug_destination == nullptr)
@@ -184,6 +325,7 @@ int_fast32_t p__suballocator_heap_size = get_env_int("LAVATUBE_SUBALLOCATOR_HEAP
 uint_fast8_t p__delete_empty_trace = get_env_bool("LAVATUBE_DELETE_EMPTY_TRACE", 0);
 uint_fast8_t p__skip_remove_unused = get_env_bool("LAVATUBE_SKIP_REMOVE_UNUSED", 0);
 uint_fast8_t p__zipcontainer = get_env_bool("LAVATUBE_ZIPFILE", 0);
+uint_fast16_t p__port = get_env_int("LAVATUBE_PORT", 11901);
 
 void copy_recorded_memory_requirements(memory_requirements& dst, const VkMemoryRequirements2* src)
 {

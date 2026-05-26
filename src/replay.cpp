@@ -3,8 +3,12 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <unistd.h>
+#include <errno.h>
+#include <sys/socket.h>
 
+#include <atomic>
 #include <algorithm>
+#include <thread>
 #include <vector>
 #include <string>
 
@@ -20,6 +24,12 @@
 #include "sandbox.h"
 
 static lava_reader replayer;
+static std::atomic<bool> start_var { false };
+static std::atomic<bool> done_var { false };
+static std::atomic<bool> replay_done { false };
+static std::atomic<bool> service_stop_requested { false };
+static int port = -1;
+static std::string hostname = "localhost";
 
 static void register_replay_callbacks()
 {
@@ -66,7 +76,7 @@ static void register_replay_callbacks()
 	vkCmdTraceRaysIndirect2KHR_callbacks.push_back(replay_fixup_vkCmdTraceRaysIndirect2KHR);
 }
 
-static void usage()
+void usage()
 {
 	printf("lava-replay %d.%d.%d-" RELTYPE " command line options\n", LAVATUBE_VERSION_MAJOR, LAVATUBE_VERSION_MINOR, LAVATUBE_VERSION_PATCH);
 	printf("-h/--help              This help\n");
@@ -92,6 +102,10 @@ static void usage()
 	printf("--no-multithreaded-io  Do not do decompression and file read in a separate thread. May save some CPU load and memory.\n");
 	printf("-s/--sandbox level     Set security sandbox level (from 1 to 3, with 3 the most strict, default %d)\n", (int)p__sandbox_level);
 	printf("--skip-remove-unused   Do not attempt to cleverly remove unused features and extensions\n");
+	printf("Service specific options:\n");
+	printf("--service              Turn replay into a provided service listening on a network port\n");
+	printf("-P/--port PORT         Port number (default %d)\n", (int)p__port);
+	printf("-H/--host HOST         Host name\n");
 	printf("Vulkan specific options:\n");
 	printf("--swapchain mode       Swapchain mode [virtual, captured, offscreen]\n"); // swapchain offscreen == wsi none
 	printf("--virtualperfmode      Performance measurement mode - do not blit from our virtual swapchain to the real swapchain\n");
@@ -104,34 +118,58 @@ static void usage()
 	exit(-1);
 }
 
-static inline bool match(const char* in, const char* short_form, const char* long_form, int& remaining)
+static void service_listener()
 {
-	if ((short_form && strcmp(in, short_form) == 0) || (long_form && strcmp(in, long_form) == 0))
-	{
-		remaining--;
-		return true;
-	}
-	return false;
-}
+	set_thread_name("replay-listener");
+	const int listen_fd = lava_tcp_listen(hostname, port);
+	ILOG("Remote control listening on %s:%d", hostname.c_str(), port);
 
-static int get_int(const char* in, int& remaining)
-{
-	if (remaining == 0)
+	while (!done_var.load(std::memory_order_acquire))
 	{
-		usage();
-	}
-	remaining--;
-	return atoi(in);
-}
+		const int client_fd = accept(listen_fd, nullptr, nullptr);
+		if (client_fd < 0)
+		{
+			if (errno == EINTR) continue;
+			ELOG("Failed to accept remote control connection: %s", strerror(errno));
+			continue;
+		}
 
-static std::string get_str(const char* in, int& remaining)
-{
-	if (remaining == 0)
-	{
-		usage();
+		const std::string keyword = lava_tcp_receive_line(client_fd);
+		std::string response;
+		if (keyword == "STATUS")
+		{
+			if (replay_done.load(std::memory_order_acquire)) response = "DONE\n";
+			else if (start_var.load(std::memory_order_acquire)) response = "RUNNING\n";
+			else response = "PAUSED\n";
+		}
+		else if (keyword == "CONTINUE")
+		{
+			start_var.store(true, std::memory_order_release);
+			start_var.notify_all();
+			response = "OK\n";
+		}
+		else if (keyword == "STOP")
+		{
+			service_stop_requested.store(true, std::memory_order_release);
+			start_var.store(true, std::memory_order_release);
+			start_var.notify_all();
+			replayer.request_stop();
+			done_var.store(true, std::memory_order_release);
+			done_var.notify_all();
+			response = "OK\n";
+		}
+		else
+		{
+			response = "ERROR\n";
+		}
+
+		if (!lava_tcp_send_all(client_fd, response))
+		{
+			ELOG("Failed to send remote control response: %s", strerror(errno));
+		}
+		close(client_fd);
 	}
-	remaining--;
-	return in;
+	close(listen_fd);
 }
 
 static void replay_thread(int thread_id)
@@ -222,7 +260,10 @@ int main(int argc, char **argv)
 	std::vector<replay_screenshot_range> screenshot_ranges;
 	std::string screenshot_prefix = "screenshot_frame_";
 	bool screenshot_prefix_set = false;
+	bool service = false;
+	std::thread service_thread;
 
+	port = p__port;
 	if (p__sandbox_level >= 1) sandbox_level_one();
 
 	// override defaults
@@ -274,13 +315,23 @@ int main(int argc, char **argv)
 		}
 		else if (match(argv[i], nullptr, "--swapchainimages", remaining))
 		{
-			if (remaining < 1) usage();
 			p__realimages = get_int(argv[++i], remaining);
 		}
 		else if (match(argv[i], "-D", "--device", remaining))
 		{
-			if (remaining < 1) usage();
 			p__device = get_int(argv[++i], remaining);
+		}
+		else if (match(argv[i], "-P", "--port", remaining))
+		{
+			port = get_int(argv[++i], remaining);
+		}
+		else if (match(argv[i], "-H", "--host", remaining))
+		{
+			hostname = get_str(argv[++i], remaining);
+		}
+		else if (match(argv[i], nullptr, "--service", remaining))
+		{
+			service = true;
 		}
 		else if (match(argv[i], "-C", "--cpu", remaining))
 		{
@@ -411,6 +462,7 @@ int main(int argc, char **argv)
 	if (screenshot_prefix_set && screenshot_ranges.empty()) DIE("The --screenshot-prefix option requires --screenshots");
 	if (!screenshot_ranges.empty() && !p__virtualswap) DIE("The --screenshots option currently only supports the virtual/offscreen swapchain path");
 	if (!screenshot_ranges.empty() && p__blackhole) DIE("The --screenshots option cannot be used together with --blackhole");
+	if (service && infodump) DIE("The --service option cannot be used together with --info");
 
 	if (filename.empty())
 	{
@@ -427,6 +479,18 @@ int main(int argc, char **argv)
 	if (wsi.empty()) wsi_initialize(nullptr);
 	else wsi_initialize(wsi.c_str());
 
+	if (service)
+	{
+		service_thread = std::thread(service_listener);
+		start_var.wait(false);
+		if (service_stop_requested.load(std::memory_order_acquire))
+		{
+			service_thread.join();
+			close_debug_destination();
+			return replayer.exit_status;
+		}
+	}
+
 	if (p__sandbox_level >= 2) sandbox_level_two();
 
 	VkuVulkanLibrary library = vkuCreateWrapper();
@@ -442,6 +506,12 @@ int main(int argc, char **argv)
 	}
 
 	run_multithreaded();
+	if (service)
+	{
+		replay_done.store(true, std::memory_order_release);
+		done_var.wait(false);
+		service_thread.join();
+	}
 	replayer.destroy_screenshot_resources();
 	replayer.finalize();
 	if (p__custom_allocator) allocators_print(stdout);

@@ -125,6 +125,7 @@ extern int_fast32_t p__suballocator_heap_size;
 extern uint_fast8_t p__delete_empty_trace;
 extern uint_fast8_t p__skip_remove_unused;
 extern uint_fast8_t p__zipcontainer;
+extern uint_fast16_t p__port;
 
 /// Logging to be enable as needed by source recompilation
 #define NEVER(_format, ...)
@@ -310,3 +311,40 @@ FILE* get_env_file(const char* name, FILE* fallback);
 
 uint64_t descriptor_update_template_data_size(const VkDescriptorUpdateTemplateCreateInfo* info);
 uint64_t descriptor_update_template_entry_size(VkDescriptorType type);
+
+int lava_tcp_connect(const std::string& hostname, int port);
+int lava_tcp_listen(const std::string& hostname, int port);
+bool lava_tcp_send_all(int fd, const std::string& message);
+std::string lava_tcp_receive_line(int fd, size_t max_size = 1024);
+
+void usage(); // forward declared only, implemented in each tool
+
+static inline bool match(const char* in, const char* short_form, const char* long_form, int& remaining)
+{
+	if ((short_form && strcmp(in, short_form) == 0) || (long_form && strcmp(in, long_form) == 0))
+	{
+		remaining--;
+		return true;
+	}
+	return false;
+}
+
+static inline int get_int(const char* in, int& remaining)
+{
+	if (remaining == 0)
+	{
+		usage();
+	}
+	remaining--;
+	return atoi(in);
+}
+
+static inline std::string get_str(const char* in, int& remaining)
+{
+	if (remaining == 0)
+	{
+		usage();
+	}
+	remaining--;
+	return in;
+}

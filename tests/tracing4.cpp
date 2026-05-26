@@ -22,7 +22,7 @@ static std::string filename()
 	return "tracing_4_q" + _to_string(queue_variant) + "_m" + _to_string(map_variant) + "_F" + _to_string(flush_variant);
 }
 
-static void usage()
+void usage()
 {
 	printf("Usage: tracing4\n");
 	printf("-h/--help              This help\n");
@@ -47,26 +47,6 @@ static void usage()
 	printf("\t0 - explicit memory flushing\n");
 	printf("\t1 - no explicit memory flushing\n");
 	exit(-1);
-}
-
-static bool match(const char* in, const char* short_form, const char* long_form, int& remaining)
-{
-	if (strcmp(in, short_form) == 0 || strcmp(in, long_form) == 0)
-	{
-		remaining--;
-		return true;
-	}
-	return false;
-}
-
-static int get_int(const char* in, int& remaining)
-{
-	if (remaining == 0)
-	{
-		usage();
-	}
-	remaining--;
-	return atoi(in);
 }
 
 static void waitfence(vulkan_setup_t& vulkan, VkFence fence)

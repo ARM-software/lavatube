@@ -587,6 +587,15 @@ add_lavatube_test(trace_test_tracing1_tool_rewrite
 		-P ${PROJECT_SOURCE_DIR}/tests/lava_tool_rewrite.cmake)
 install(TARGETS lava-tool RUNTIME)
 
+# --- lava-cli ---
+
+add_executable(lava-cli src/cli.cpp)
+target_include_directories(lava-cli ${COMMON_INCLUDE})
+target_link_libraries(lava-cli ${COMMON_LIBRARIES} lavatube)
+target_compile_options(lava-cli PRIVATE ${COMMON_FLAGS})
+add_dependencies(lava-cli sync_generated)
+install(TARGETS lava-cli RUNTIME)
+
 # --- traces ---
 
 function(trace_test test_name trace_file)

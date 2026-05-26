@@ -1086,7 +1086,7 @@ static bool rewrite_call_less(const address_rewrite& a, const address_rewrite& b
 	return a.source.call < b.source.call;
 }
 
-static void usage()
+void usage()
 {
 	printf("lava-tool %d.%d.%d-" RELTYPE " command line options\n", LAVATUBE_VERSION_MAJOR, LAVATUBE_VERSION_MINOR, LAVATUBE_VERSION_PATCH);
 	printf("lava-tool [options] <input filename> [<output filename>]\n");
@@ -1119,36 +1119,6 @@ static void discard_ignored_flush_rewrites(std::list<address_rewrite>& queue)
 		free_marked_offsets(it->markings);
 		it = queue.erase(it);
 	}
-}
-
-static inline bool match(const char* in, const char* short_form, const char* long_form, int& remaining)
-{
-	if ((short_form && strcmp(in, short_form) == 0) || (long_form && strcmp(in, long_form) == 0))
-	{
-		remaining--;
-		return true;
-	}
-	return false;
-}
-
-static int get_int(const char* in, int& remaining)
-{
-	if (remaining == 0)
-	{
-		usage();
-	}
-	remaining--;
-	return atoi(in);
-}
-
-static std::string get_str(const char* in, int& remaining)
-{
-	if (remaining == 0)
-	{
-		usage();
-	}
-	remaining--;
-	return in;
 }
 
 static void dump_host_write_stats_report(const char* label)
