@@ -30,6 +30,17 @@ struct command_execution_data
 	std::list<address_rewrite>& global_output_rewrite_queue;
 	std::deque<descriptor_rewrite>& pending_descriptor_rewrites;
 	std::vector<descriptor_buffer_payload>& descriptor_buffer_payloads;
+	struct
+	{
+		int commands = 0;
+		int execution_commands = 0;
+		struct
+		{
+			int shader_module_index = -1;
+			VkShaderStageFlagBits stage = VK_SHADER_STAGE_FLAG_BITS_MAX_ENUM;
+			uint64_t run_time_ns = 0;
+		} slowest;
+	} stats;
 };
 
 struct simulator_buffer_range
@@ -62,6 +73,8 @@ struct discovered_buffer_marking
 };
 
 static void merge_discovered_markings(command_execution_data& data, const std::vector<discovered_buffer_marking>& discovered);
+
+static SPIRVSimulator::InternalPersistentData simulator_persistent_data;
 
 static uint64_t simulator_pointer_bits(const void* ptr)
 {
@@ -509,8 +522,16 @@ static bool run_spirv(command_execution_data& data, const shader_stage& stage, c
 
 	inputs.shader_id = stage.unique_index;
 	SPIRVSimulator::MemoryFlagTracker memory_flag_tracker;
-	SPIRVSimulator::SPIRVSimulator sim(stage.code, &memory_flag_tracker, &inputs, &results, nullptr, false, ERROR_RAISE_ON_BUFFERS_INCOMPLETE);
+	SPIRVSimulator::SPIRVSimulator sim(stage.code, &memory_flag_tracker, &inputs, &results, &simulator_persistent_data, false, ERROR_RAISE_ON_BUFFERS_INCOMPLETE);
+	const uint64_t simulator_start = gettime();
 	sim.Run();
+	const uint64_t simulator_run_time_ns = gettime() - simulator_start;
+	if (simulator_run_time_ns > data.stats.slowest.run_time_ns)
+	{
+		data.stats.slowest.run_time_ns = simulator_run_time_ns;
+		data.stats.slowest.stage = stage.stage;
+		data.stats.slowest.shader_module_index = stage.shader_module_index;
+	}
 
 	if (results.full_dispatch_needed)
 	{
@@ -519,10 +540,6 @@ static bool run_spirv(command_execution_data& data, const shader_stage& stage, c
 	if (results.aborted_long_loop)
 	{
 		DLOG("SPIRV simulator aborted long loop while executing shader %s", stage.name.c_str());
-	}
-	if (results.had_arbitrary_write)
-	{
-		DLOG("SPIRV simulator saw arbitrary external write while executing shader %s", stage.name.c_str());
 	}
 	if (!results.physical_address_data.empty())
 	{
@@ -845,6 +862,8 @@ static void record_descriptor_buffer_payload(const command_execution_data& data,
 
 static bool execute_commands_internal(command_execution_data& data)
 {
+	std::vector<std::byte> push_constants; // current state of the push constants
+	host_write_regions push_constant_sources;
 	uint32_t compute_pipeline_bound = CONTAINER_INVALID_INDEX; // currently bound pipeline
 	uint32_t data_graph_pipeline_bound = CONTAINER_INVALID_INDEX; // currently bound pipeline
 	std::unordered_map<VkShaderStageFlagBits, uint32_t> shader_objects;
@@ -853,6 +872,7 @@ static bool execute_commands_internal(command_execution_data& data)
 	std::vector<descriptor_buffer_binding_state> descriptor_buffers;
 	for (const auto& c : data.cmdbuffer_data.commands)
 	{
+		data.stats.commands++;
 		switch (c.id)
 		{
 		case VKCMDBINDDESCRIPTORSETS:
@@ -1013,6 +1033,7 @@ static bool execute_commands_internal(command_execution_data& data)
 			free(c.data.bind_shaders_ext.shader_objects);
 			break;
 		case VKCMDDISPATCH: // proxy for all compute commands
+			data.stats.execution_commands++;
 			if (compute_pipeline_bound != CONTAINER_INVALID_INDEX) // old style pipeline
 			{
 				auto& pipeline_data = VkPipeline_index.at(compute_pipeline_bound);
@@ -1029,6 +1050,7 @@ static bool execute_commands_internal(command_execution_data& data)
 			}
 			break;
 		case VKCMDDISPATCHDATAGRAPHARM:
+			data.stats.execution_commands++;
 			{
 				const uint32_t session_index = c.data.dispatch_data_graph.session_index;
 				if (session_index == CONTAINER_INVALID_INDEX) break;
@@ -1048,6 +1070,7 @@ static bool execute_commands_internal(command_execution_data& data)
 			}
 			break;
 		case VKCMDDRAW: // proxy for all draw commands
+			data.stats.execution_commands++;
 			if (graphics_pipeline_bound != CONTAINER_INVALID_INDEX) // old style pipeline
 			{
 				auto& pipeline_data = VkPipeline_index.at(graphics_pipeline_bound);
@@ -1097,6 +1120,7 @@ static bool execute_commands_internal(command_execution_data& data)
 			}
 			break;
 		case VKCMDTRACERAYSKHR: // proxy for all raytracing commands
+			data.stats.execution_commands++;
 			{
 				if (raytracing_pipeline_bound == CONTAINER_INVALID_INDEX) break;
 				auto& pipeline_data = VkPipeline_index.at(raytracing_pipeline_bound);
@@ -1242,6 +1266,7 @@ static bool execute_commands_internal(command_execution_data& data)
 
 bool execute_commands(lava_file_reader& reader, const trackeddevice& device_data, VkCommandBuffer commandBuffer)
 {
+	const uint64_t command_buffer_start = gettime();
 	assert(reader.parent->simulate);
 	assert(!reader.write_output && reader.parent->pass == 0);
 	const uint32_t cmdbuffer_index = index_to_VkCommandBuffer.index(commandBuffer);
@@ -1256,5 +1281,12 @@ bool execute_commands(lava_file_reader& reader, const trackeddevice& device_data
 	};
 	const bool r = execute_commands_internal(data);
 	VkCommandBuffer_index.at(cmdbuffer_index).commands.clear();
+	const uint64_t command_buffer_time_ns = gettime() - command_buffer_start;
+	if (data.stats.execution_commands > 0 && command_buffer_time_ns > 0)
+	{
+		DLOG("Simulator execution of cmd_buffer=%u frame=%u call=%u thread=%u simulator_time=%.2fms commands=%d execution_commands=%d slowest_shader=%d slowest_type=%s slowest_time=%.2fms", (unsigned)cmdbuffer_index,
+		     (unsigned)reader.current.frame, (unsigned)reader.current.call, (unsigned)reader.current.thread, ns_to_ms(command_buffer_time_ns), data.stats.commands,
+		     data.stats.execution_commands, (int)data.stats.slowest.shader_module_index, shader_stage_name(data.stats.slowest.stage), ns_to_ms(data.stats.slowest.run_time_ns));
+	}
 	return r;
 }

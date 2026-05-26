@@ -1093,10 +1093,8 @@ void usage()
 	printf("-h/--help              This help\n");
 	printf("-v/--verbose           Verbose output\n");
 	printf("-S/--simulate          Run a simulation and write discovered memory markings to the output trace\n");
-#ifndef NDEBUG
 	printf("-d/--debug level       Set debug level [0,1,2,3]\n");
 	printf("-df/--debugfile FILE   Output debug output to the given file\n");
-#endif
 	printf("-f/--frames start end  Select a frame range\n");
 	printf("-u/--unused            Find any found unused features and extensions in the trace file; remove them from the output file\n");
 	printf("-DS/--dump-shaders     Dump any shaders found to disk\n");

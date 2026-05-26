@@ -384,6 +384,7 @@ struct shader_stage
 	uint32_t index = CONTAINER_INVALID_INDEX; // our position in our local array of stages
 	uint64_t unique_index = UINT64_MAX; // something unique to identify this shader
 	uint32_t device_index = CONTAINER_INVALID_INDEX; // device we belong to
+	uint32_t shader_module_index = CONTAINER_INVALID_INDEX; // shader module we got it from, if any
 	VkPipelineShaderStageCreateFlags flags = VK_PIPELINE_SHADER_STAGE_CREATE_FLAG_BITS_MAX_ENUM;
 	VkShaderStageFlagBits stage = VK_SHADER_STAGE_FLAG_BITS_MAX_ENUM;
 	VkShaderModule module = VK_NULL_HANDLE;

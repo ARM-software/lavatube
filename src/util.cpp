@@ -682,3 +682,25 @@ uint64_t descriptor_update_template_data_size(const VkDescriptorUpdateTemplateCr
 	}
 	return max_size;
 }
+
+const char* shader_stage_name(VkShaderStageFlagBits stage)
+{
+	switch (stage)
+	{
+	case VK_SHADER_STAGE_VERTEX_BIT: return "vertex";
+	case VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT: return "tessellation_control";
+	case VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT: return "tessellation_evaluation";
+	case VK_SHADER_STAGE_GEOMETRY_BIT: return "geometry";
+	case VK_SHADER_STAGE_FRAGMENT_BIT: return "fragment";
+	case VK_SHADER_STAGE_COMPUTE_BIT: return "compute";
+	case VK_SHADER_STAGE_TASK_BIT_EXT: return "task";
+	case VK_SHADER_STAGE_MESH_BIT_EXT: return "mesh";
+	case VK_SHADER_STAGE_RAYGEN_BIT_KHR: return "raygen";
+	case VK_SHADER_STAGE_ANY_HIT_BIT_KHR: return "any_hit";
+	case VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR: return "closest_hit";
+	case VK_SHADER_STAGE_MISS_BIT_KHR: return "miss";
+	case VK_SHADER_STAGE_INTERSECTION_BIT_KHR: return "intersection";
+	case VK_SHADER_STAGE_CALLABLE_BIT_KHR: return "callable";
+	default: return "unknown";
+	}
+}

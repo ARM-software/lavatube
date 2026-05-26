@@ -199,6 +199,7 @@ int STOI(const std::string& value) __attribute__((pure));
 
 static inline std::string version_to_string(uint32_t v) { return _to_string(VK_VERSION_MAJOR(v)) + "." + _to_string(VK_VERSION_MINOR(v)) + "." + _to_string(VK_VERSION_PATCH(v)); }
 const char* errorString(const VkResult errorCode);
+const char* shader_stage_name(VkShaderStageFlagBits stage);
 
 struct memory_requirements;
 
@@ -348,3 +349,5 @@ static inline std::string get_str(const char* in, int& remaining)
 	remaining--;
 	return in;
 }
+
+static inline double ns_to_ms(uint64_t ns) { return (double)ns / 1000000.0; }

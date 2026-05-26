@@ -713,6 +713,7 @@ static void copy_shader_stage(const trackedpipeline& pipeline_data, shader_stage
 		const uint32_t shader_index = index_to_VkShaderModule.index(stage.module);
 		const auto& shader_data = VkShaderModule_index.at(shader_index);
 		stage.code = shader_data.code;
+		stage.shader_module_index = shader_index;
 	}
 	stage.name = info.pName;
 	stage.stage = info.stage;
@@ -760,6 +761,7 @@ static void copy_data_graph_shader_stage(const trackedpipeline& pipeline_data, s
 		const uint32_t shader_index = index_to_VkShaderModule.index(stage.module);
 		const auto& shader_data = VkShaderModule_index.at(shader_index);
 		stage.code = shader_data.code;
+		stage.shader_module_index = shader_index;
 	}
 	stage.name = info.pName ? info.pName : "";
 	stage.stage = VK_SHADER_STAGE_COMPUTE_BIT; // Reuse the existing single-stage metadata path until GraphARM execution is modeled separately.
