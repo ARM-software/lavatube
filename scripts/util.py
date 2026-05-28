@@ -422,7 +422,7 @@ class parameter(spec.base_parameter):
 			elif self.funcname == 'VkInstanceCreateInfo' and self.name == 'ppEnabledLayerNames':
 				z.do('%s = instance_layers(reader, sptr->%s);' % (varname, strlen))
 			elif self.funcname == 'VkDeviceCreateInfo' and self.name == 'ppEnabledExtensionNames':
-				z.do('%s = device_extensions(sptr, reader, reader.physicalDevice, sptr->%s);' % (varname, strlen))
+				z.do('%s = device_extensions(sptr, reader, sptr->%s);' % (varname, strlen))
 			elif self.funcname == 'VkDeviceCreateInfo' and self.name == 'ppEnabledLayerNames':
 				z.do('%s = device_layers(reader, sptr->%s);' % (varname, strlen))
 			else:

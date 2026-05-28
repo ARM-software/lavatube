@@ -46,6 +46,9 @@
   modify itself before processing its next packet. This way we keep thread state consistent while processing a packet.
 - Each trace file contains a command dictionary that we remap on replay, so we do not need to worry about changing command ID numbers.
 
+## Code reviews
+- Do not run compilation or tests as part of code reviews.
+
 ## Debugging
 - For troubleshooting, set `LAVATUBE_DEBUG` environment variable, value from 1 (some extra logging) to 3 (the most verbose).
 - Trace files are actually containers that contain other files. Some of these may contain useful information for debugging, and these

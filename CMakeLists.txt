@@ -211,6 +211,8 @@ set(COMMON_SRC
     ${PROJECT_SOURCE_DIR}/src/write.cpp
     ${PROJECT_SOURCE_DIR}/src/write.h
     ${PROJECT_SOURCE_DIR}/src/rangetracking.h
+    ${PROJECT_SOURCE_DIR}/src/helpers_write.cpp
+    ${PROJECT_SOURCE_DIR}/src/helpers_write.h
 
     ${PROJECT_SOURCE_DIR}/generated/vk_wrapper_auto.cpp
     ${PROJECT_SOURCE_DIR}/generated/vk_wrapper_auto.h
@@ -222,6 +224,8 @@ set(COMMON_SRC
     ${PROJECT_SOURCE_DIR}/generated/write_resource_auto.h
     ${PROJECT_SOURCE_DIR}/generated/tostring.cpp
     ${PROJECT_SOURCE_DIR}/generated/tostring.h
+    ${PROJECT_SOURCE_DIR}/generated/struct_write_auto.cpp
+    ${PROJECT_SOURCE_DIR}/generated/struct_write_auto.h
 )
 
 set(LAVATUBE_SRC
@@ -244,9 +248,13 @@ set(LAVATUBE_SRC
     ${PROJECT_SOURCE_DIR}/src/postprocess.h
     ${PROJECT_SOURCE_DIR}/src/execute_commands.cpp
     ${PROJECT_SOURCE_DIR}/src/execute_commands.h
+    ${PROJECT_SOURCE_DIR}/src/helpers_read.cpp
+    ${PROJECT_SOURCE_DIR}/src/helpers_read.h
 
     ${PROJECT_SOURCE_DIR}/generated/read_auto.cpp
     ${PROJECT_SOURCE_DIR}/generated/read_auto.h
+    ${PROJECT_SOURCE_DIR}/generated/struct_read_auto.cpp
+    ${PROJECT_SOURCE_DIR}/generated/struct_read_auto.h
 )
 
 add_custom_command(

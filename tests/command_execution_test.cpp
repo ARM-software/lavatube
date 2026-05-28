@@ -10,6 +10,16 @@
 #include <list>
 #include <vector>
 
+#pragma GCC diagnostic ignored "-Wunused-variable"
+#pragma GCC diagnostic ignored "-Wunused-function"
+#if (__clang_major__ > 12) || (!defined(__llvm__) && defined(__GNUC__))
+#pragma GCC diagnostic ignored "-Wunused-but-set-variable"
+#endif
+#ifndef __clang__
+#pragma GCC diagnostic ignored "-Warray-bounds"
+#pragma GCC diagnostic ignored "-Wstringop-overflow"
+#endif
+
 static const unsigned char command_execution_compute_spv[] = {
 	0x03, 0x02, 0x23, 0x07, 0x00, 0x00, 0x01, 0x00, 0x0b, 0x00, 0x08, 0x00,
 	0x17, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x11, 0x00, 0x02, 0x00,
