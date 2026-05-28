@@ -54,6 +54,7 @@ enum
 	PACKET_TENSOR_UPDATE = 7,
 	PACKET_IMAGE_UPDATE2 = 8,
 	PACKET_BUFFER_UPDATE2 = 9,
+	PACKET_JUMP = 10, // an instruction to jump to another trace file at given uncompressed offset
 };
 
 enum lava_tiling // generalize memory tiling

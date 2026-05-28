@@ -9,6 +9,8 @@
 #include <vulkan/vulkan_format_traits.hpp>
 #include <spirv/unified1/spirv.h>
 
+#include <algorithm>
+
 #ifdef VK_USE_PLATFORM_ANDROID_KHR
 #include <sys/system_properties.h>
 #endif
@@ -269,6 +271,26 @@ std::string lava_tcp_receive_line(int fd, size_t max_size)
 		}
 		if (ret == 0 || c == '\n') break;
 		if (c != '\r') message.push_back(c);
+	}
+	return message;
+}
+
+std::string lava_tcp_receive_all(int fd, size_t max_size)
+{
+	std::string message;
+	message.reserve(max_size < 4096 ? max_size : 4096);
+	while (message.size() < max_size)
+	{
+		char buffer[4096];
+		const size_t wanted = std::min(sizeof(buffer), max_size - message.size());
+		const ssize_t ret = recv(fd, buffer, wanted, 0);
+		if (ret < 0)
+		{
+			if (errno == EINTR) continue;
+			return "";
+		}
+		if (ret == 0) break;
+		message.append(buffer, ret);
 	}
 	return message;
 }

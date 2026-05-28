@@ -317,6 +317,7 @@ int lava_tcp_connect(const std::string& hostname, int port);
 int lava_tcp_listen(const std::string& hostname, int port);
 bool lava_tcp_send_all(int fd, const std::string& message);
 std::string lava_tcp_receive_line(int fd, size_t max_size = 1024);
+std::string lava_tcp_receive_all(int fd, size_t max_size = 1024 * 1024);
 
 void usage(); // forward declared only, implemented in each tool
 

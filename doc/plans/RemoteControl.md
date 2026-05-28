@@ -21,21 +21,17 @@ Already implemented instructions:
 * `lava-cli status` - show our basic status
 * `lava-cli continue` - continues the replay until the end
 * `lava-cli stop` - stops the replay
+* `lava-cli step [calls X]` - step the given number of calls ahead
 
 More instructions to implement - in prioritized order:
-* `lava-cli status` - show more info in PAUSE state (since all threads are paused, we can inspect them safely)
-  on initial line:
-	- current thread + max threads
-	- current call number (in current thread)
-	- current global frame number (+ max global frames)
+* `lava-cli status`
   on subsequent lines:
 	- for each thread, current call number, current API/packet call name
 	- bonus: is it possible to show what we are waiting on?
 * `lava-cli thread N` - updates the stored current thread index
 * `lava-cli continue` - also receive debug info from all threads, and if replay fails then print the last debug information received
-* `lava-cli step [calls X|frames X]` - step the given number of calls or frames ahead
-   in the current thread, then pause again
-- `lava-cli break [call|frame X]` - replay until we get to the given call or frame
+* `lava-cli step frames X` - step the given number of frames ahead in the current thread, then pause again
+- `lava-cli goto [call X|frame X|command X]` - replay until we get to the given call or frame or command by name
 * `lava-cli info <topic>` - show input parameters and important state
 	- 'threads' - show all threads, with gdb thread id
 	- 'objects' - show all non-zero object types, with pending, created, bound (if applicable) and destroyed columns
@@ -44,12 +40,10 @@ More instructions to implement - in prioritized order:
 * `lava-cli tell <parameter name>` - print given input parameter (nested if a chain of structs)
 * `lava-cli show <object type> [index|id] <number>` - print given globally tracked object and its metadata
 * `lava-cli list <object type>` - list all objects of given type tracked globally and their status
-* `lava-cli goto <command...>` - continue until we encounter the first command with given name on
-  the current thread (eventually from the given comma-separated list and match regex), fail and inform
-  if not matching any known Vulkan command
 * `lava-cli save image <image index> <filename>` - write contents of image given by index to the given filename
 * `lava-cli save buffer <buffer index> <filename>` - write contents of buffer given by index to the given filename
 * `lava-cli debug <level>` - change global debug level
+* `lava-cli save jumpfile <name>` - write out state recreation to current position + frame boundary + jump packet to file <name>
 
 ## How
 
@@ -128,6 +122,15 @@ of it.
 
 Allow choice of display of tabular data in either markdown or CSV (or TSV, tab separated).
 We have a new class in `src/datatable.h` for abstracting away the choice.
+
+We should also allow saving directly to file. JSON/JSONL is often recommended for accuracy
+for nested or mixed data, while CSV/TSV for strictly regular data.
+
+There is no perfect format for neither accuracy nor token efficiency, it all depends on the
+data.
+
+Output type may therefore depend on `--human-readable` vs `--machine-readable` or similar
+option. May also want `--always-ndjson`.
 
 ## Inspiration
 

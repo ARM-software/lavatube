@@ -1938,6 +1938,7 @@ def loadfunc(name, node, target, header):
 		z.do('if (!reader.run) postprocess_compute_command(cb_context, commandbuffer_index, commandbuffer_data);')
 	if name in spec.raytracing_commands:
 		z.do('if (!reader.run) postprocess_raytracing_command(cb_context, commandbuffer_index, commandbuffer_data);')
+	z.do('while (check_cli(cb_context)) /* here we can run any number of callbacks for lava-cli */;')
 	z.dump()
 	print('}', file=target)
 	func_common_end(name, target=target, header=header, add_dummy=True)

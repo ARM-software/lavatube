@@ -14,7 +14,7 @@ static bool verbose = false;
 void usage()
 {
 	printf("lava-cli %d.%d.%d-" RELTYPE " command line options\n", LAVATUBE_VERSION_MAJOR, LAVATUBE_VERSION_MINOR, LAVATUBE_VERSION_PATCH);
-	printf("lava-cli [options] <status|continue|stop>\n");
+	printf("lava-cli [options] <status|continue|stop|step [calls N]>\n");
 	printf("-h/--help              This help\n");
 	printf("-v/--verbose           Verbose output\n");
 	printf("-P/--port PORT         Port number (default %d)\n", (int)p__port);
@@ -64,14 +64,9 @@ int main(int argc, char **argv)
 		else
 		{
 			keyword = get_str(argv[i], remaining);
-			if (keyword == "info" && remaining)
+			while (remaining > 0)
 			{
 				keyword += " " + get_str(argv[++i], remaining);
-			}
-			if (remaining > 0)
-			{
-				printf("Invalid options\n\n");
-				usage();
 			}
 		}
 	}
@@ -88,11 +83,11 @@ int main(int argc, char **argv)
 	{
 		DIE("Failed to send %s command to %s:%d: %s", keyword.c_str(), hostname.c_str(), port, strerror(errno));
 	}
-	const std::string response = lava_tcp_receive_line(fd);
+	const std::string response = lava_tcp_receive_all(fd);
 	close(fd);
 
-	printf("%s\n", response.c_str());
-	if (response == "ERROR") return 1;
+	printf("%s", response.c_str());
+	if (response.empty() || response == "ERROR\n" || response == "ERROR") return 1;
 
 	return 0;
 }

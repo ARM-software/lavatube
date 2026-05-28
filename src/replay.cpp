@@ -8,6 +8,9 @@
 
 #include <atomic>
 #include <algorithm>
+#include <cstdlib>
+#include <limits>
+#include <sstream>
 #include <thread>
 #include <vector>
 #include <string>
@@ -25,12 +28,62 @@
 #include "datatable.h"
 
 static lava_reader replayer;
-static std::atomic<bool> running { true };
 static std::atomic<bool> done_var { false };
 static std::atomic<bool> replay_done { false };
 static std::atomic<bool> service_stop_requested { false };
 static int port = -1;
 static std::string hostname = "localhost";
+
+static std::vector<std::string> split_command(const std::string& keyword)
+{
+	std::istringstream in(keyword);
+	std::vector<std::string> tokens;
+	std::string token;
+	while (in >> token)
+	{
+		tokens.push_back(token);
+	}
+	return tokens;
+}
+
+static bool parse_positive_u32(const std::string& text, uint32_t& out)
+{
+	char* end = nullptr;
+	errno = 0;
+	const unsigned long value = strtoul(text.c_str(), &end, 10);
+	if (errno != 0 || end == text.c_str() || *end != '\0' || value == 0 || value > std::numeric_limits<uint32_t>::max())
+	{
+		return false;
+	}
+	out = (uint32_t)value;
+	return true;
+}
+
+static bool cli_thread_ready()
+{
+	const int thread_id = replayer.cli_thread.load(std::memory_order_acquire);
+	return thread_id >= 0 && thread_id < (int)replayer.threads.size();
+}
+
+static uint32_t cli_completed_call(lava_file_reader& reader)
+{
+	const uint32_t paused_call = reader.cli_paused_call.load(std::memory_order_acquire);
+	if (paused_call != 0) return paused_call;
+	return replayer.thread_call_numbers->at(reader.thread_index()).load(std::memory_order_relaxed);
+}
+
+static std::string cli_paused_command_response(lava_file_reader& reader)
+{
+	const char* api_name = "-";
+	if (reader.current.call_id != UINT16_MAX)
+	{
+		api_name = get_function_name(reader.current.call_id);
+	}
+	const int thread_id = replayer.cli_thread.load(std::memory_order_acquire);
+	return "PAUSED @ call=" + std::to_string(cli_completed_call(reader)) + " api=" + api_name + " frame="
+	       + std::to_string(replayer.global_frame) + "/" + std::to_string(replayer.global_frame_count)
+	       + " thread=" + std::to_string(thread_id) + "\n";
+}
 
 static void register_replay_callbacks()
 {
@@ -136,44 +189,101 @@ static void service_listener()
 		}
 
 		const std::string keyword = lava_tcp_receive_line(client_fd);
+		const std::vector<std::string> command = split_command(keyword);
 		std::string response;
-		if (keyword == "status")
+		if (command.empty())
+		{
+			response = "ERROR\n";
+		}
+		else if (command.size() == 1 && command[0] == "status")
 		{
 			if (replay_done.load(std::memory_order_acquire)) response = "DONE\n";
-			else if (running.load(std::memory_order_acquire)) response = "RUNNING\n";
-			else response = "PAUSED frame=" + std::to_string(replayer.global_frame)
-			     + "/" + std::to_string(replayer.global_frame_count) + "\n";
+			else if (replayer.cli_running.load(std::memory_order_acquire)) response = "RUNNING\n";
+			else
+			{
+				const int thread_id = replayer.cli_thread.load(std::memory_order_acquire);
+				lava_file_reader& reader = replayer.file_reader(thread_id);
+				if (cli_thread_ready()) response = cli_paused_command_response(reader);
+				else response = "PAUSED";
+				response += "\n";
+			}
 		}
-		else if (keyword == "continue")
+		else if (command.size() == 1 && command[0] == "continue")
 		{
-			running.store(true, std::memory_order_release);
-			running.notify_all();
+			if (cli_thread_ready())
+			{
+				lava_file_reader& reader = replayer.file_reader(replayer.cli_thread.load(std::memory_order_acquire));
+				reader.cli_call.store(UINT32_MAX, std::memory_order_release);
+			}
+			replayer.cli_running.store(true, std::memory_order_release);
+			replayer.cli_running.notify_all();
 			response = "OK\n";
 		}
-		else if (keyword == "stop")
+		else if (command.size() == 1 && command[0] == "stop")
 		{
 			service_stop_requested.store(true, std::memory_order_release);
-			running.store(true, std::memory_order_release);
-			running.notify_all();
+			replayer.cli_running.store(true, std::memory_order_release);
+			replayer.cli_running.notify_all();
 			replayer.request_stop();
 			done_var.store(true, std::memory_order_release);
 			done_var.notify_all();
 			response = "OK\n";
 		}
-		else if (keyword == "info") // general info
+		else if (command[0] == "step")
+		{
+			uint32_t calls = 1;
+			if (command.size() == 3 && command[1] == "calls")
+			{
+				if (!parse_positive_u32(command[2], calls))
+				{
+					response = "ERROR\n";
+				}
+			}
+			else if (command.size() != 1)
+			{
+				response = "ERROR\n";
+			}
+			if (response.empty())
+			{
+				if (replay_done.load(std::memory_order_acquire) || replayer.cli_running.load(std::memory_order_acquire) || !cli_thread_ready())
+				{
+					response = "ERROR\n";
+				}
+				else
+				{
+					const int thread_id = replayer.cli_thread.load(std::memory_order_acquire);
+					lava_file_reader& reader = replayer.file_reader(thread_id);
+					const uint32_t base_call = cli_completed_call(reader);
+					if (calls > UINT32_MAX - base_call)
+					{
+						response = "ERROR\n";
+					}
+					else
+					{
+						reader.cli_call.store(base_call + calls, std::memory_order_release);
+						replayer.cli_running.store(true, std::memory_order_release);
+						replayer.cli_running.notify_all();
+						replayer.cli_running.wait(true);
+						response = cli_paused_command_response(reader);
+					}
+				}
+			}
+			// TODO we should not return until _all_ threads are back in pause state
+		}
+		else if (command.size() == 1 && command[0] == "info") // general info
 		{
 			response = "INFO\n"; // TODO just a placeholder for now
 		}
-		else if (keyword == "info threads") // list thread info
+		else if (command.size() == 2 && command[0] == "info" && command[1] == "threads") // list thread info
 		{
-			// TODO check state, must be paused
 			data_table out;
 			out.set_headers({"Thread", "Name", "State"});
+			ILOG("Threads = %d", (int)replayer.threads.size());
 			for (unsigned i = 0; i < replayer.threads.size(); i++)
 			{
-				char thread_name[16];
-				get_thread_name(thread_name);
+				const char* thread_name = replayer.file_reader(i).get_trace_thread_name();
 				out.add_row({std::to_string(i), thread_name, "-"});
+				ILOG("Adding thread %u : %s", i, thread_name);
 			}
 			response = out.to_markdown();
 		}
@@ -519,7 +629,8 @@ int main(int argc, char **argv)
 
 	if (service)
 	{
-		running.wait(false);
+		replayer.cli_thread.store(0, std::memory_order_release); // set currently probed thread, indicates active CLI operation
+		replayer.cli_running.wait(false);
 		if (service_stop_requested.load(std::memory_order_acquire))
 		{
 			service_thread.join();
@@ -532,6 +643,8 @@ int main(int argc, char **argv)
 	if (service)
 	{
 		replay_done.store(true, std::memory_order_release);
+		replayer.cli_running.store(false, std::memory_order_release);
+		replayer.cli_running.notify_all();
 		done_var.wait(false);
 		service_thread.join();
 	}

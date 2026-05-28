@@ -2999,6 +2999,7 @@ void replay_pre_vkDestroyInstance(lava_file_reader& reader, VkInstance instance,
 
 void retrace_vkGetDeviceProcAddr(lava_file_reader& reader)
 {
+	// FIXME We no longer trace this function. Replace the below with an assert later.
 	const uint32_t device_index = reader.read_handle(DEBUGPARAM("VkDevice"));
 	VkDevice device = index_to_VkDevice.at(device_index);
 	const char* pName = reader.read_string();
@@ -3008,6 +3009,7 @@ void retrace_vkGetDeviceProcAddr(lava_file_reader& reader)
 
 void retrace_vkGetInstanceProcAddr(lava_file_reader& reader)
 {
+	// FIXME We no longer trace this function. Replace the below with an assert later.
 	const uint32_t instance_index = reader.read_handle(DEBUGPARAM("VkInstance"));
 	VkInstance instance = index_to_VkInstance.at(instance_index);
 	const char* pName = reader.read_string();
@@ -3017,6 +3019,7 @@ void retrace_vkGetInstanceProcAddr(lava_file_reader& reader)
 
 void retrace_vkGetDeviceTracingObjectPropertyTRACETOOLTEST(lava_file_reader& reader)
 {
+	// We never traced this function
 	assert(false);
 }
 
@@ -3030,9 +3033,10 @@ void retrace_vkSyncBufferTRACETOOLTEST(lava_file_reader& reader)
 	reader.physicalDevice = VkDevice_index.at(device_index).physicalDevice;
 	callback_context cb_context{ reader };
 	for (auto* c : vkSyncBufferTRACETOOLTEST_callbacks) c(cb_context, device, buffer);
+	while (check_cli(cb_context)) /* here we can run any number of callbacks for lava-cli */;
 }
 
-static uint32_t retrace_checksum_buffer_range(const trackeddevice& device_data, uint32_t buffer_index, VkDeviceSize offset, VkDeviceSize size)
+static uint32_t checksum_buffer_range(const trackeddevice& device_data, uint32_t buffer_index, VkDeviceSize offset, VkDeviceSize size)
 {
 	trackedbuffer& buffer_data = VkBuffer_index.at(buffer_index);
 	suballoc_location loc = device_data.allocator->find_buffer_memory(buffer_index);
@@ -3059,13 +3063,12 @@ void retrace_vkAssertBufferARM(lava_file_reader& reader)
 	VkUpdateBufferInfoARM info = {};
 	read_VkUpdateBufferInfoARM(reader, &info);
 	const char* comment = reader.read_string();
-	const uint32_t checksum = reader.read_uint32_t();
+	uint32_t checksum = reader.read_uint32_t();
 	if (!reader.run)
 	{
-		uint32_t checksum_copy = checksum;
 		callback_context cb_context{ reader };
 		cb_context.result.vkresult = VK_SUCCESS;
-		for (auto* c : vkAssertBufferARM_callbacks) c(cb_context, device, &info, &checksum_copy, comment);
+		for (auto* c : vkAssertBufferARM_callbacks) c(cb_context, device, &info, &checksum, comment);
 		return;
 	}
 	uint32_t checksum_new = adler32(nullptr, 0);
@@ -3073,13 +3076,17 @@ void retrace_vkAssertBufferARM(lava_file_reader& reader)
 	if (info.dstBuffer != VK_NULL_HANDLE)
 	{
 		buffer_index = index_to_VkBuffer.index(info.dstBuffer);
-		checksum_new = retrace_checksum_buffer_range(device_data, buffer_index, info.dstOffset, info.dataSize);
+		checksum_new = checksum_buffer_range(device_data, buffer_index, info.dstOffset, info.dataSize);
 		DLOG2("buffer %s[%u] validation checksum origchecksum=%u newchecksum=%u", comment, buffer_index, checksum, checksum_new);
 	}
 	if (checksum != checksum_new && !is_blackhole_mode())
 	{
 		ABORT("Buffer checksum failed: %s", comment);
 	}
+	callback_context cb_context{ reader };
+	cb_context.result.vkresult = VK_SUCCESS;
+	for (auto* c : vkAssertBufferARM_callbacks) c(cb_context, device, &info, &checksum, comment);
+	while (check_cli(cb_context)) /* here we can run any number of callbacks for lava-cli */;
 }
 
 void retrace_vkAssertMemoryARM(lava_file_reader& reader)
@@ -3092,13 +3099,12 @@ void retrace_vkAssertMemoryARM(lava_file_reader& reader)
 	VkUpdateMemoryInfoARM info = {};
 	read_VkUpdateMemoryInfoARM(reader, &info);
 	const char* comment = reader.read_string();
-	const uint32_t checksum = reader.read_uint32_t();
+	uint32_t checksum = reader.read_uint32_t();
 	if (!reader.run)
 	{
-		uint32_t checksum_copy = checksum;
 		callback_context cb_context{ reader };
 		cb_context.result.vkresult = VK_SUCCESS;
-		for (auto* c : vkAssertMemoryARM_callbacks) c(cb_context, device, &info, &checksum_copy, comment);
+		for (auto* c : vkAssertMemoryARM_callbacks) c(cb_context, device, &info, &checksum, comment);
 		return;
 	}
 	uint32_t checksum_new = adler32(nullptr, 0);
@@ -3116,13 +3122,17 @@ void retrace_vkAssertMemoryARM(lava_file_reader& reader)
 			ABORT("vkAssertMemoryARM address 0x%llx (size=%llu) is not mapped to a buffer",
 				(unsigned long long)info.pDstRange->address, (unsigned long long)size);
 		}
-		checksum_new = retrace_checksum_buffer_range(device_data, buffer_data->index, buffer_offset, size);
+		checksum_new = checksum_buffer_range(device_data, buffer_data->index, buffer_offset, size);
 		NEVER("memory %s[%u] validation checksum origchecksum=%u newchecksum=%u", comment, buffer_data->index, checksum, checksum_new);
 	}
 	if (checksum != checksum_new && !is_blackhole_mode())
 	{
 		ABORT("Memory checksum failed: %s", comment);
 	}
+	callback_context cb_context{ reader };
+	cb_context.result.vkresult = VK_SUCCESS;
+	for (auto* c : vkAssertMemoryARM_callbacks) c(cb_context, device, &info, &checksum, comment);
+	while (check_cli(cb_context)) /* here we can run any number of callbacks for lava-cli */;
 }
 
 static void read_VkDataGraphPipelineConstantARM(lava_file_reader& reader, VkDataGraphPipelineConstantARM* sptr)
@@ -3518,6 +3528,7 @@ static void mem_unmap(lava_file_reader& reader, VkDevice device, const suballoc_
 
 void retrace_vkThreadBarrierTRACETOOLTEST(lava_file_reader& reader)
 {
+	// FIXME This is no longer used, to be removed
 	const unsigned size = reader.read_uint32_t();
 	for (int i = 0; i < (int)size; i++)
 	{
@@ -3598,6 +3609,7 @@ void retrace_vkCmdUpdateBuffer2ARM(lava_file_reader& reader)
 	tbuf.last_modified = reader.current;
 	callback_context cb_context{ reader };
 	for (auto* c : vkCmdUpdateBuffer2ARM_callbacks) c(cb_context, commandBuffer, &info);
+	while (check_cli(cb_context)) /* here we can run any number of callbacks for lava-cli */;
 }
 
 void retrace_vkCmdUpdateMemory2ARM(lava_file_reader& reader)
@@ -3627,6 +3639,7 @@ void retrace_vkCmdUpdateMemory2ARM(lava_file_reader& reader)
 	if (buffer_data) buffer_data->last_modified = reader.current;
 	callback_context cb_context{ reader };
 	for (auto* c : vkCmdUpdateMemory2ARM_callbacks) c(cb_context, commandBuffer, &info);
+	while (check_cli(cb_context)) /* here we can run any number of callbacks for lava-cli */;
 }
 
 static void read_VkAccelerationStructureBuildGeometryInfoKHR(lava_file_reader& reader, VkAccelerationStructureBuildGeometryInfoKHR* sptr)
@@ -3815,12 +3828,10 @@ void retrace_vkGetSwapchainImagesKHR(lava_file_reader& reader)
 		data.initialized = true; // in case this function is called more than once
 	}
 
-	if (reader.write_output)
-	{
-		callback_context cb_context{ reader };
-		cb_context.result.vkresult = result;
-		for (auto* c : vkGetSwapchainImagesKHR_callbacks) c(cb_context, device, swapchain, &pSwapchainImageCount, pSwapchainImages);
-	}
+	callback_context cb_context{ reader };
+	cb_context.result.vkresult = result;
+	for (auto* c : vkGetSwapchainImagesKHR_callbacks) c(cb_context, device, swapchain, &pSwapchainImageCount, pSwapchainImages);
+	while (check_cli(cb_context)) /* here we can run any number of callbacks for lava-cli */;
 }
 
 static surface_create_packet decode_vkCreateSurfaceKHR_packet(lava_file_reader& reader, uint32_t expected_sType)
@@ -3880,6 +3891,8 @@ static void replay_vkCreateSurfaceKHR_packet(lava_file_reader& reader, const sur
 	else pSurface = fake_handle<VkSurfaceKHR>(packet.surface_index);
 	if (pSurface) index_to_VkSurfaceKHR.set(packet.surface_index, pSurface);
 	// TBD we should create some window-common callback a user can attach to and trigger here
+	callback_context cb_context{ reader };
+	while (check_cli(cb_context)) /* FIXME we need something special here */;
 }
 
 static surface_create_packet output_vkCreateSurfaceKHR_packet(const surface_create_packet& packet)
@@ -4024,6 +4037,7 @@ void retrace_vkGetDeviceQueue2(lava_file_reader& reader)
 	}
 	callback_context cb_context{ reader };
 	for (auto* c : vkGetDeviceQueue2_callbacks) c(cb_context, device, &info_real, &queue);
+	while (check_cli(cb_context)) /* here we can run any number of callbacks for lava-cli */;
 }
 
 void retrace_vkGetDeviceQueue(lava_file_reader& reader)
@@ -4096,6 +4110,7 @@ void retrace_vkGetDeviceQueue(lava_file_reader& reader)
 	}
 	callback_context cb_context{ reader };
 	for (auto* c : vkGetDeviceQueue_callbacks) c(cb_context, device, queueFamilyIndex, queueIndex, &queue);
+	while (check_cli(cb_context)) /* here we can run any number of callbacks for lava-cli */;
 }
 
 void read_hw_buffer(lava_file_reader& reader)
@@ -4133,6 +4148,9 @@ void retrace_vkGetAndroidHardwareBufferPropertiesANDROID(lava_file_reader& reade
 
 	const uint64_t pProperties_allocationSize = reader.read_uint64_t();
 	const uint32_t memoryTypeBits = reader.read_uint32_t();
+
+	// FIXME
+	//while (check_cli(cb_context)) /* here we can run any number of callbacks for lava-cli */;
 }
 
 // TBD - this needs fixing
@@ -4155,6 +4173,9 @@ void retrace_vkGetMemoryAndroidHardwareBufferANDROID(lava_file_reader& reader)
 
 	// Unused metadata
 	read_hw_buffer(reader);
+
+	// FIXME
+	//while (check_cli(cb_context)) /* here we can run any number of callbacks for lava-cli */;
 }
 
 void retrace_vkEnumerateInstanceLayerProperties(lava_file_reader& reader)
@@ -4188,6 +4209,7 @@ void retrace_vkEnumerateInstanceLayerProperties(lava_file_reader& reader)
 		pProperties_ptr = reader.run ? pProperties.data() : &tool_property;
 	}
 	for (auto* c : vkEnumerateInstanceLayerProperties_callbacks) c(cb_context, pPropertyCount_ptr, pProperties_ptr);
+	while (check_cli(cb_context)) /* here we can run any number of callbacks for lava-cli */;
 }
 
 void retrace_vkEnumerateInstanceExtensionProperties(lava_file_reader& reader)
@@ -4223,6 +4245,7 @@ void retrace_vkEnumerateInstanceExtensionProperties(lava_file_reader& reader)
 		pProperties_ptr = reader.run ? pProperties.data() : &tool_property;
 	}
 	for (auto* c : vkEnumerateInstanceExtensionProperties_callbacks) c(cb_context, pLayerName, pPropertyCount_ptr, pProperties_ptr);
+	while (check_cli(cb_context)) /* here we can run any number of callbacks for lava-cli */;
 }
 
 void retrace_vkEnumerateDeviceLayerProperties(lava_file_reader& reader)
@@ -4267,6 +4290,7 @@ void retrace_vkEnumerateDeviceLayerProperties(lava_file_reader& reader)
 		pProperties_ptr = reader.run ? pProperties.data() : &tool_property;
 	}
 	for (auto* c : vkEnumerateDeviceLayerProperties_callbacks) c(cb_context, physicalDevice, pPropertyCount_ptr, pProperties_ptr);
+	while (check_cli(cb_context)) /* here we can run any number of callbacks for lava-cli */;
 }
 
 void retrace_vkEnumerateDeviceExtensionProperties(lava_file_reader& reader)
@@ -4312,6 +4336,7 @@ void retrace_vkEnumerateDeviceExtensionProperties(lava_file_reader& reader)
 		pProperties_ptr = reader.run ? pProperties.data() : &tool_property;
 	}
 	for (auto* c : vkEnumerateDeviceExtensionProperties_callbacks) c(cb_context, physicalDevice, pLayerName, pPropertyCount_ptr, pProperties_ptr);
+	while (check_cli(cb_context)) /* here we can run any number of callbacks for lava-cli */;
 }
 
 #ifdef VK_USE_PLATFORM_XLIB_KHR
@@ -4335,6 +4360,7 @@ void retrace_vkGetPhysicalDeviceXlibPresentationSupportKHR(lava_file_reader& rea
 	callback_context cb_context{ reader };
 	cb_context.result.vkbool = retval;
 	for (auto* c : vkGetPhysicalDeviceXlibPresentationSupportKHR_callbacks) c(cb_context, physicalDevice, queueFamilyIndex, nullptr, 0);
+	while (check_cli(cb_context)) /* here we can run any number of callbacks for lava-cli */;
 }
 
 #else
@@ -4368,6 +4394,7 @@ void retrace_vkGetPhysicalDeviceXcbPresentationSupportKHR(lava_file_reader& read
 	callback_context cb_context{ reader };
 	cb_context.result.vkbool = retval;
 	for (auto* c : vkGetPhysicalDeviceXcbPresentationSupportKHR_callbacks) c(cb_context, physicalDevice, queueFamilyIndex, nullptr, visual_id);
+	while (check_cli(cb_context)) /* here we can run any number of callbacks for lava-cli */;
 }
 
 #else

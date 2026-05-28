@@ -183,6 +183,10 @@ public:
 	void* markings_observer_data = nullptr;
 	bool create_results_file = true;
 
+	// CLI stuff
+	std::atomic_int cli_thread{ -1 };
+	std::atomic_bool cli_running{ false };
+
 private:
 	/// Start time of frame range
 	std::atomic_uint64_t mStartTime{ 0 };
@@ -220,6 +224,10 @@ public:
 	void bind_trace_thread_name() const
 	{
 		if (trace_thread_name[0] != '\0') set_thread_name(trace_thread_name);
+	}
+	const char* get_trace_thread_name() const
+	{
+		return trace_thread_name[0] != '\0' ? trace_thread_name : "-";
 	}
 
 	void note_markings(const VkMarkedOffsetsARM* markings);
@@ -312,6 +320,10 @@ public:
 	bool run = true;
 	bool write_output = false;
 
+	// CLI stuff
+	std::atomic_uint_fast32_t cli_call{ UINT32_MAX };
+	std::atomic_uint_fast32_t cli_paused_call{ 0 };
+
 	// Replay-only: per-thread queue for AS build sizes and internal AS buffers.
 	std::deque<VkAccelerationStructureBuildSizesInfoKHR> pending_as_build_sizes;
 	std::deque<internal_buffer> pending_as_storage_buffers;
@@ -388,4 +400,27 @@ inline uint32_t lava_file_reader::read_handle(DEBUGPARAM(const char* name))
 		currentcall = parent->thread_call_numbers->at(req_thread).load(std::memory_order_relaxed);
 	}
 	return index;
+}
+
+static inline bool check_cli(const callback_context& cb)
+{
+	lava_reader* parent = cb.reader.parent;
+	const int req_thread = parent->cli_thread.load(std::memory_order_acquire);
+	if (req_thread == -1) return false; // fast out if not running under CLI control
+	if (req_thread != cb.reader.current.thread) return false; // not current CLI thread, continue until we hit a sync point
+	if (parent->stop_requested()) cb.reader.throw_stop_requested();
+	const uint32_t completed_call = cb.reader.current.call + 1;
+	if (parent->cli_running.load(std::memory_order_acquire))
+	{
+		const uint32_t req_call = cb.reader.cli_call.load(std::memory_order_acquire);
+		if (completed_call < req_call)
+		{
+			return false;
+		}
+	}
+	cb.reader.cli_paused_call.store(completed_call, std::memory_order_release);
+	parent->cli_running.store(false, std::memory_order_release);
+	parent->cli_running.notify_all();
+	usleep(50);
+	return true; // loop in caller until lava-cli resumes replay
 }
