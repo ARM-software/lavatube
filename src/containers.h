@@ -31,9 +31,10 @@
 struct change_source
 {
 	uint32_t call = UINT32_MAX;
-	uint32_t frame = UINT32_MAX;
-	uint16_t thread = UINT16_MAX;
-	uint16_t call_id = UINT16_MAX;
+	uint32_t frame = UINT32_MAX; // global frame
+	uint8_t thread = UINT8_MAX;
+	uint8_t packet_type = UINT8_MAX;
+	uint16_t call_id = UINT16_MAX; // type of call
 
 	void self_test() const
 	{

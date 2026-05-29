@@ -700,3 +700,13 @@ void write_json(const std::string& path, const Json::Value& v)
 	write_json(fp, v);
 	fclose(fp);
 }
+
+Json::Value from_change_source(const change_source& c)
+{
+	Json::Value v;
+	v["index"] = c.call;
+	v["frame"] = c.frame;
+	v["thread"] = c.thread;
+	v["name"] = get_packet_name((packet_type)c.packet_type, c.call_id);
+	return v;
+}

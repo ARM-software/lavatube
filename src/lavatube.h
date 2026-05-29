@@ -44,7 +44,7 @@ enum
 	PACKET_FLAG_HAS_PNEXT = 0x1,
 };
 
-enum
+enum packet_type
 {
 	PACKET_VULKAN_API_CALL = 2,
 	PACKET_THREAD_BARRIER = 3,
@@ -1086,4 +1086,22 @@ inline void trackedmemory::unbind(trackedobject* obj)
 inline std::string describe_change_source(const change_source& src)
 {
 	return "Memory last written to by " + std::string(get_function_name(src.call_id)) + " at frame " + std::to_string(src.frame) + " call number " + std::to_string(src.call) + " thread " + std::to_string(src.thread);
+}
+
+inline const char* get_packet_name(packet_type type, uint16_t call_id)
+{
+	switch (type)
+	{
+	case PACKET_VULKAN_API_CALL: return get_function_name(call_id);
+	case PACKET_THREAD_BARRIER: return "thread_barrier";
+	case PACKET_IMAGE_UPDATE: return "legacy_image_update";
+	case PACKET_BUFFER_UPDATE: return "legacy_buffer_update";
+	case PACKET_VULKANSC_API_CALL: assert(false); return "TBD";
+	case PACKET_TENSOR_UPDATE: return "tensor_update";
+	case PACKET_IMAGE_UPDATE2: return "image_update";
+	case PACKET_BUFFER_UPDATE2: return "buffer_update";
+	case PACKET_JUMP: return "jump_point";
+	}
+	assert(false);
+	return "error";
 }

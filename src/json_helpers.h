@@ -67,3 +67,7 @@ trackeddescriptorsetlayout trackeddescriptorsetlayout_json(const Json::Value& v)
 trackeddescriptorupdatetemplate trackeddescriptorupdatetemplate_json(const Json::Value& v);
 trackedshaderobject trackedshaderobject_json(const Json::Value& v);
 trackedsurface trackedsurface_json(const Json::Value& v);
+
+// --- Other ---
+
+Json::Value from_change_source(const change_source& c);
