@@ -65,27 +65,36 @@ static bool cli_thread_ready()
 	return thread_id >= 0 && thread_id < (int)replayer.threads.size();
 }
 
-static uint32_t cli_completed_call(lava_file_reader& reader)
-{
-	const uint32_t paused_call = reader.cli_paused_call.load(std::memory_order_acquire);
-	if (paused_call != 0) return paused_call;
-	return replayer.thread_call_numbers->at(reader.thread_index()).load(std::memory_order_relaxed);
-}
-
 static bool cli_has_paused_command(lava_file_reader& reader)
 {
 	return reader.cli_paused_call.load(std::memory_order_acquire) != 0;
 }
 
+static uint32_t cli_current_packet(lava_file_reader& reader)
+{
+	const uint32_t completed_packets = reader.cli_packet.load(std::memory_order_relaxed);
+	return cli_has_paused_command(reader) ? completed_packets + 1 : completed_packets;
+}
+
+static uint32_t cli_current_call(lava_file_reader& reader)
+{
+	const uint32_t completed_calls = reader.current.call;
+	if (cli_has_paused_command(reader) && reader.current.packet_type == PACKET_VULKAN_API_CALL) return completed_calls + 1;
+	return completed_calls;
+}
+
+static uint32_t cli_completed_count(lava_file_reader& reader, cli_step_mode mode)
+{
+	return mode == cli_step_mode::calls ? cli_current_call(reader) : cli_current_packet(reader);
+}
+
 static std::string cli_paused_command_response(lava_file_reader& reader)
 {
-	const char* api_name = "-";
-	if (reader.current.call_id != UINT16_MAX)
-	{
-		api_name = get_function_name(reader.current.call_id);
-	}
+	if (!cli_has_paused_command(reader)) return "PAUSED\n";
+	const char* packet_name = get_packet_name((packet_type)reader.current.packet_type, reader.current.call_id);
 	const int thread_id = replayer.cli_thread.load(std::memory_order_acquire);
-	return "PAUSED @ call=" + std::to_string(cli_completed_call(reader)) + " api=" + api_name + " frame="
+	return "PAUSED @ packet=" + std::to_string(cli_current_packet(reader)) + " call=" + std::to_string(cli_current_call(reader))
+	       + " name=" + packet_name + " frame="
 	       + std::to_string(replayer.global_frame) + "/" + std::to_string(replayer.global_frame_count)
 	       + " thread=" + std::to_string(thread_id) + "\n";
 }
@@ -209,8 +218,7 @@ static void service_listener()
 				const int thread_id = replayer.cli_thread.load(std::memory_order_acquire);
 				lava_file_reader& reader = replayer.file_reader(thread_id);
 				if (cli_thread_ready()) response = cli_paused_command_response(reader);
-				else response = "PAUSED";
-				response += "\n";
+				else response = "PAUSED\n";
 			}
 		}
 		else if (command.size() == 1 && command[0] == "continue")
@@ -236,10 +244,12 @@ static void service_listener()
 		}
 		else if (command[0] == "step")
 		{
-			uint32_t calls = 1;
-			if (command.size() == 3 && command[1] == "calls")
+			uint32_t count = 1;
+			cli_step_mode step_mode = cli_step_mode::packets;
+			if (command.size() == 3 && (command[1] == "calls" || command[1] == "packets"))
 			{
-				if (!parse_positive_u32(command[2], calls))
+				step_mode = command[1] == "calls" ? cli_step_mode::calls : cli_step_mode::packets;
+				if (!parse_positive_u32(command[2], count))
 				{
 					response = "ERROR\n";
 				}
@@ -258,14 +268,15 @@ static void service_listener()
 				{
 					const int thread_id = replayer.cli_thread.load(std::memory_order_acquire);
 					lava_file_reader& reader = replayer.file_reader(thread_id);
-					const uint32_t base_call = cli_completed_call(reader);
-					if (calls > UINT32_MAX - base_call)
+					const uint32_t base_count = cli_completed_count(reader, step_mode);
+					if (count > UINT32_MAX - base_count)
 					{
 						response = "ERROR\n";
 					}
 					else
 					{
-						reader.cli_call.store(base_call + calls, std::memory_order_release);
+						reader.cli_step.store(step_mode, std::memory_order_release);
+						reader.cli_call.store(base_count + count, std::memory_order_release);
 						replayer.cli_running.store(true, std::memory_order_release);
 						replayer.cli_running.notify_all();
 						replayer.cli_running.wait(true);
@@ -341,6 +352,14 @@ static void replay_thread(int thread_id)
 		while ((instrtype = t.step()))
 		{
 			switchboard_packet(instrtype, t);
+			callback_context cb_context{ t };
+			const bool needs_packet_pause = instrtype != PACKET_VULKAN_API_CALL || t.cli_step.load(std::memory_order_acquire) == cli_step_mode::packets;
+			while (needs_packet_pause && check_cli(cb_context))
+			{
+				if (instrtype == PACKET_VULKAN_API_CALL) cli_params_unavailable(cb_context);
+				else cli_params_packet(cb_context);
+			}
+			t.cli_packet.fetch_add(1, std::memory_order_relaxed);
 		}
 	}
 	catch (const replay_stop_requested&)

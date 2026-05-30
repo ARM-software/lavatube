@@ -23,6 +23,12 @@
 
 class lava_file_reader;
 using lava_replay_func = void (*)(lava_file_reader&);
+
+enum class cli_step_mode : uint8_t
+{
+	packets = 0,
+	calls = 1,
+};
 using lava_markings_observer = void (*)(const change_source&, const VkMarkedOffsetsARM*, void*);
 
 extern lava::mutex sync_mutex;
@@ -326,6 +332,8 @@ public:
 	// CLI stuff
 	std::atomic_uint_fast32_t cli_call{ UINT32_MAX };
 	std::atomic_uint_fast32_t cli_paused_call{ 0 };
+	std::atomic_uint_fast32_t cli_packet{ 0 };
+	std::atomic<cli_step_mode> cli_step{ cli_step_mode::packets };
 
 	// Replay-only: per-thread queue for AS build sizes and internal AS buffers.
 	std::deque<VkAccelerationStructureBuildSizesInfoKHR> pending_as_build_sizes;
@@ -412,7 +420,17 @@ static inline bool check_cli(const callback_context& cb)
 	if (req_thread == -1) return false; // fast out if not running under CLI control
 	if (req_thread != cb.reader.current.thread) return false; // not current CLI thread, continue until we hit a sync point
 	if (parent->stop_requested()) cb.reader.throw_stop_requested();
-	const uint32_t completed_call = cb.reader.current.call + 1;
+	uint32_t completed_call = 0;
+	const cli_step_mode step_mode = cb.reader.cli_step.load(std::memory_order_acquire);
+	if (step_mode == cli_step_mode::calls)
+	{
+		if (cb.reader.current.packet_type != PACKET_VULKAN_API_CALL) return false;
+		completed_call = cb.reader.current.call + 1;
+	}
+	else
+	{
+		completed_call = cb.reader.cli_packet.load(std::memory_order_relaxed) + 1;
+	}
 	if (parent->cli_running.load(std::memory_order_acquire))
 	{
 		const uint32_t req_call = cb.reader.cli_call.load(std::memory_order_acquire);
@@ -431,3 +449,4 @@ static inline bool check_cli(const callback_context& cb)
 Json::Value cli_params_base_json(const callback_context& cb);
 void cli_params_publish(callback_context& cb, Json::Value v);
 void cli_params_unavailable(callback_context& cb);
+void cli_params_packet(callback_context& cb);

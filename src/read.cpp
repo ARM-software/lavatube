@@ -139,6 +139,7 @@ uint8_t lava_file_reader::step()
 	const uint8_t r = read_uint8_t();
 	assert(r != 0); // invalid value for instrtype
 	current.packet_type = r;
+	if (r != PACKET_VULKAN_API_CALL) current.call_id = UINT16_MAX;
 	return r;
 }
 
@@ -190,6 +191,34 @@ void cli_params_unavailable(callback_context& cb)
 	if (!parent->cli_params_requested.exchange(false, std::memory_order_acq_rel)) return;
 	Json::Value v = cli_params_base_json(cb);
 	v["parameters"]["TODO"] = "parameter serialization is not implemented for this hardcoded replay path";
+	cli_params_publish(cb, v);
+}
+
+void cli_params_packet(callback_context& cb)
+{
+	lava_reader* parent = cb.reader.parent;
+	if (!parent->cli_params_requested.exchange(false, std::memory_order_acq_rel)) return;
+	Json::Value v = cli_params_base_json(cb);
+	Json::Value params;
+	const output_update_packet& update = cb.reader.current_update_packet;
+	if (update.valid)
+	{
+		params["packet_type"] = update.instrtype;
+		params["device_index"] = update.device_index;
+		params["object_index"] = update.object_index;
+		params["size"] = (Json::UInt64)update.size;
+		if (update.sptr != nullptr) params["pNext"]["TODO"] = "update packet pNext serialization not implemented";
+		else params["pNext"] = Json::Value();
+	}
+	else if (cb.reader.current.packet_type == PACKET_THREAD_BARRIER)
+	{
+		params["TODO"] = "thread barrier packet parameters are not retained after replaying the packet";
+	}
+	else
+	{
+		params["TODO"] = "packet parameter serialization not implemented";
+	}
+	v["parameters"] = params;
 	cli_params_publish(cb, v);
 }
 

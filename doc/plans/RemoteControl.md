@@ -21,7 +21,7 @@ Already implemented instructions:
 * `lava-cli status` - show our basic status
 * `lava-cli continue` - continues the replay until the end
 * `lava-cli stop` - stops the replay
-* `lava-cli step [calls X]` - step the given number of calls ahead
+* `lava-cli step [packets X|calls X]` - step the given number of packets or API calls ahead
 
 More instructions to implement - in prioritized order:
 * `lava-cli status`
