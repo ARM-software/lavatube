@@ -72,6 +72,11 @@ static uint32_t cli_completed_call(lava_file_reader& reader)
 	return replayer.thread_call_numbers->at(reader.thread_index()).load(std::memory_order_relaxed);
 }
 
+static bool cli_has_paused_command(lava_file_reader& reader)
+{
+	return reader.cli_paused_call.load(std::memory_order_acquire) != 0;
+}
+
 static std::string cli_paused_command_response(lava_file_reader& reader)
 {
 	const char* api_name = "-";
@@ -269,6 +274,30 @@ static void service_listener()
 				}
 			}
 			// TODO we should not return until _all_ threads are back in pause state
+		}
+		else if (command.size() == 1 && (command[0] == "params" || command[0] == "parameters")) // show parameters
+		{
+			if (replay_done.load(std::memory_order_acquire) || replayer.cli_running.load(std::memory_order_acquire) || !cli_thread_ready())
+			{
+				response = "ERROR\n";
+			}
+			else
+			{
+				const int thread_id = replayer.cli_thread.load(std::memory_order_acquire);
+				lava_file_reader& reader = replayer.file_reader(thread_id);
+				if (!cli_has_paused_command(reader))
+				{
+					response = "ERROR\n";
+				}
+				else
+				{
+					replayer.cli_response.clear();
+					replayer.cli_params_ready.store(false, std::memory_order_release);
+					replayer.cli_params_requested.store(true, std::memory_order_release);
+					replayer.cli_params_ready.wait(false);
+					response = replayer.cli_response.empty() ? "ERROR\n" : replayer.cli_response;
+				}
+			}
 		}
 		else if (command.size() == 1 && command[0] == "info") // general info
 		{

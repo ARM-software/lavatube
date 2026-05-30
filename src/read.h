@@ -186,6 +186,9 @@ public:
 	// CLI stuff
 	std::atomic_int cli_thread{ -1 };
 	std::atomic_bool cli_running{ false };
+	std::string cli_response; // response data from cli thread to control thread
+	std::atomic_bool cli_params_requested{ false };
+	std::atomic_bool cli_params_ready{ false };
 
 private:
 	/// Start time of frame range
@@ -424,3 +427,7 @@ static inline bool check_cli(const callback_context& cb)
 	usleep(50);
 	return true; // loop in caller until lava-cli resumes replay
 }
+
+Json::Value cli_params_base_json(const callback_context& cb);
+void cli_params_publish(callback_context& cb, Json::Value v);
+void cli_params_unavailable(callback_context& cb);

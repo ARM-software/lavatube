@@ -653,6 +653,13 @@ public:
 		return reverse.at(handle);
 	}
 
+	inline uint32_t index_or_invalid(T handle) const
+	{
+		if (handle == 0) return CONTAINER_NULL_VALUE;
+		if (reverse.count(handle) == 0) return CONTAINER_INVALID_INDEX;
+		return reverse.at(handle);
+	}
+
 	inline bool contains(uint32_t index) const
 	{
 		if (index == CONTAINER_NULL_VALUE) return false;

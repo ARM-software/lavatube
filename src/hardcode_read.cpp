@@ -2366,7 +2366,7 @@ void retrace_vkSyncBufferTRACETOOLTEST(lava_file_reader& reader)
 	reader.physicalDevice = VkDevice_index.at(device_index).physicalDevice;
 	callback_context cb_context{ reader };
 	for (auto* c : vkSyncBufferTRACETOOLTEST_callbacks) c(cb_context, device, buffer);
-	while (check_cli(cb_context)) /* here we can run any number of callbacks for lava-cli */;
+	while (check_cli(cb_context)) cli_params_unavailable(cb_context);
 }
 
 static uint32_t checksum_buffer_range(const trackeddevice& device_data, uint32_t buffer_index, VkDeviceSize offset, VkDeviceSize size)
@@ -2419,7 +2419,7 @@ void retrace_vkAssertBufferARM(lava_file_reader& reader)
 	callback_context cb_context{ reader };
 	cb_context.result.vkresult = VK_SUCCESS;
 	for (auto* c : vkAssertBufferARM_callbacks) c(cb_context, device, &info, &checksum, comment);
-	while (check_cli(cb_context)) /* here we can run any number of callbacks for lava-cli */;
+	while (check_cli(cb_context)) cli_params_unavailable(cb_context);
 }
 
 void retrace_vkAssertMemoryARM(lava_file_reader& reader)
@@ -2465,7 +2465,7 @@ void retrace_vkAssertMemoryARM(lava_file_reader& reader)
 	callback_context cb_context{ reader };
 	cb_context.result.vkresult = VK_SUCCESS;
 	for (auto* c : vkAssertMemoryARM_callbacks) c(cb_context, device, &info, &checksum, comment);
-	while (check_cli(cb_context)) /* here we can run any number of callbacks for lava-cli */;
+	while (check_cli(cb_context)) cli_params_unavailable(cb_context);
 }
 
 void read_VkDataGraphPipelineConstantARM(lava_file_reader& reader, VkDataGraphPipelineConstantARM* sptr)
@@ -2942,7 +2942,7 @@ void retrace_vkCmdUpdateBuffer2ARM(lava_file_reader& reader)
 	tbuf.last_modified = reader.current;
 	callback_context cb_context{ reader };
 	for (auto* c : vkCmdUpdateBuffer2ARM_callbacks) c(cb_context, commandBuffer, &info);
-	while (check_cli(cb_context)) /* here we can run any number of callbacks for lava-cli */;
+	while (check_cli(cb_context)) cli_params_unavailable(cb_context);
 }
 
 void retrace_vkCmdUpdateMemory2ARM(lava_file_reader& reader)
@@ -2972,7 +2972,7 @@ void retrace_vkCmdUpdateMemory2ARM(lava_file_reader& reader)
 	if (buffer_data) buffer_data->last_modified = reader.current;
 	callback_context cb_context{ reader };
 	for (auto* c : vkCmdUpdateMemory2ARM_callbacks) c(cb_context, commandBuffer, &info);
-	while (check_cli(cb_context)) /* here we can run any number of callbacks for lava-cli */;
+	while (check_cli(cb_context)) cli_params_unavailable(cb_context);
 }
 
 void read_VkAccelerationStructureBuildGeometryInfoKHR(lava_file_reader& reader, VkAccelerationStructureBuildGeometryInfoKHR* sptr)
@@ -3164,7 +3164,7 @@ void retrace_vkGetSwapchainImagesKHR(lava_file_reader& reader)
 	callback_context cb_context{ reader };
 	cb_context.result.vkresult = result;
 	for (auto* c : vkGetSwapchainImagesKHR_callbacks) c(cb_context, device, swapchain, &pSwapchainImageCount, pSwapchainImages);
-	while (check_cli(cb_context)) /* here we can run any number of callbacks for lava-cli */;
+	while (check_cli(cb_context)) cli_params_unavailable(cb_context);
 }
 
 static surface_create_packet decode_vkCreateSurfaceKHR_packet(lava_file_reader& reader, uint32_t expected_sType)
@@ -3225,7 +3225,7 @@ static void replay_vkCreateSurfaceKHR_packet(lava_file_reader& reader, const sur
 	if (pSurface) index_to_VkSurfaceKHR.set(packet.surface_index, pSurface);
 	// TBD we should create some window-common callback a user can attach to and trigger here
 	callback_context cb_context{ reader };
-	while (check_cli(cb_context)) /* FIXME we need something special here */;
+	while (check_cli(cb_context)) cli_params_unavailable(cb_context);
 }
 
 static surface_create_packet output_vkCreateSurfaceKHR_packet(const surface_create_packet& packet)
@@ -3370,7 +3370,7 @@ void retrace_vkGetDeviceQueue2(lava_file_reader& reader)
 	}
 	callback_context cb_context{ reader };
 	for (auto* c : vkGetDeviceQueue2_callbacks) c(cb_context, device, &info_real, &queue);
-	while (check_cli(cb_context)) /* here we can run any number of callbacks for lava-cli */;
+	while (check_cli(cb_context)) cli_params_unavailable(cb_context);
 }
 
 void retrace_vkGetDeviceQueue(lava_file_reader& reader)
@@ -3443,7 +3443,7 @@ void retrace_vkGetDeviceQueue(lava_file_reader& reader)
 	}
 	callback_context cb_context{ reader };
 	for (auto* c : vkGetDeviceQueue_callbacks) c(cb_context, device, queueFamilyIndex, queueIndex, &queue);
-	while (check_cli(cb_context)) /* here we can run any number of callbacks for lava-cli */;
+	while (check_cli(cb_context)) cli_params_unavailable(cb_context);
 }
 
 void read_hw_buffer(lava_file_reader& reader)
@@ -3542,7 +3542,7 @@ void retrace_vkEnumerateInstanceLayerProperties(lava_file_reader& reader)
 		pProperties_ptr = reader.run ? pProperties.data() : &tool_property;
 	}
 	for (auto* c : vkEnumerateInstanceLayerProperties_callbacks) c(cb_context, pPropertyCount_ptr, pProperties_ptr);
-	while (check_cli(cb_context)) /* here we can run any number of callbacks for lava-cli */;
+	while (check_cli(cb_context)) cli_params_unavailable(cb_context);
 }
 
 void retrace_vkEnumerateInstanceExtensionProperties(lava_file_reader& reader)
@@ -3578,7 +3578,7 @@ void retrace_vkEnumerateInstanceExtensionProperties(lava_file_reader& reader)
 		pProperties_ptr = reader.run ? pProperties.data() : &tool_property;
 	}
 	for (auto* c : vkEnumerateInstanceExtensionProperties_callbacks) c(cb_context, pLayerName, pPropertyCount_ptr, pProperties_ptr);
-	while (check_cli(cb_context)) /* here we can run any number of callbacks for lava-cli */;
+	while (check_cli(cb_context)) cli_params_unavailable(cb_context);
 }
 
 void retrace_vkEnumerateDeviceLayerProperties(lava_file_reader& reader)
@@ -3623,7 +3623,7 @@ void retrace_vkEnumerateDeviceLayerProperties(lava_file_reader& reader)
 		pProperties_ptr = reader.run ? pProperties.data() : &tool_property;
 	}
 	for (auto* c : vkEnumerateDeviceLayerProperties_callbacks) c(cb_context, physicalDevice, pPropertyCount_ptr, pProperties_ptr);
-	while (check_cli(cb_context)) /* here we can run any number of callbacks for lava-cli */;
+	while (check_cli(cb_context)) cli_params_unavailable(cb_context);
 }
 
 void retrace_vkEnumerateDeviceExtensionProperties(lava_file_reader& reader)
@@ -3669,7 +3669,7 @@ void retrace_vkEnumerateDeviceExtensionProperties(lava_file_reader& reader)
 		pProperties_ptr = reader.run ? pProperties.data() : &tool_property;
 	}
 	for (auto* c : vkEnumerateDeviceExtensionProperties_callbacks) c(cb_context, physicalDevice, pLayerName, pPropertyCount_ptr, pProperties_ptr);
-	while (check_cli(cb_context)) /* here we can run any number of callbacks for lava-cli */;
+	while (check_cli(cb_context)) cli_params_unavailable(cb_context);
 }
 
 #ifdef VK_USE_PLATFORM_XLIB_KHR
@@ -3693,7 +3693,7 @@ void retrace_vkGetPhysicalDeviceXlibPresentationSupportKHR(lava_file_reader& rea
 	callback_context cb_context{ reader };
 	cb_context.result.vkbool = retval;
 	for (auto* c : vkGetPhysicalDeviceXlibPresentationSupportKHR_callbacks) c(cb_context, physicalDevice, queueFamilyIndex, nullptr, 0);
-	while (check_cli(cb_context)) /* here we can run any number of callbacks for lava-cli */;
+	while (check_cli(cb_context)) cli_params_unavailable(cb_context);
 }
 
 #else
@@ -3727,7 +3727,7 @@ void retrace_vkGetPhysicalDeviceXcbPresentationSupportKHR(lava_file_reader& read
 	callback_context cb_context{ reader };
 	cb_context.result.vkbool = retval;
 	for (auto* c : vkGetPhysicalDeviceXcbPresentationSupportKHR_callbacks) c(cb_context, physicalDevice, queueFamilyIndex, nullptr, visual_id);
-	while (check_cli(cb_context)) /* here we can run any number of callbacks for lava-cli */;
+	while (check_cli(cb_context)) cli_params_unavailable(cb_context);
 }
 
 #else

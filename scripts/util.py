@@ -192,6 +192,24 @@ def iscount(f):
 def isptr(n):
 	return ('.' in n or '->' in n)
 
+def json_length_expr(length, owner):
+	if not length:
+		return None
+	length = length.split(',')[0]
+	if length == 'null-terminated':
+		return None
+	length_value = length[1:] if length.startswith('*') else length
+	if not (length_value.isdigit() or length_value.isupper() or re.match(r'^[A-Za-z_][A-Za-z0-9_]*(->[A-Za-z_][A-Za-z0-9_]*)*$', length_value)):
+		return None
+	if owner and not length.isupper() and not length.isdigit():
+		if length.startswith('*'):
+			return '*' + owner + length[1:]
+		return owner + length
+	return length
+
+def json_todo(target, message):
+	z.do('%s["TODO"] = "%s";' % (target, message))
+
 class parameter(spec.base_parameter):
 	def __init__(self, node, read, funcname, transitiveConst = False):
 		super().__init__(node, read, funcname, transitiveConst)
@@ -288,6 +306,132 @@ class parameter(spec.base_parameter):
 			z.loop_end()
 			if self.funcname[0] == 'V' and mytype in vk.deconst_struct and not self.read:
 				z.do('%s = %s_impl; // replacing pointer' % (varname, self.name))
+
+	def json_scalar(self, target, varname):
+		if self.type in ['bool', 'VkBool32']:
+			z.do('%s = (bool)%s;' % (target, varname))
+		elif self.type in ['float', 'double']:
+			z.do('%s = (double)%s;' % (target, varname))
+		elif self.type in ['int8_t', 'int16_t', 'int32_t', 'int64_t', 'int', 'int32_t']:
+			z.do('%s = (Json::Int64)%s;' % (target, varname))
+		elif self.type in ['uint8_t', 'uint16_t', 'uint32_t', 'uint64_t', 'size_t', 'VkDeviceSize', 'VkDeviceAddress']:
+			z.do('%s = (Json::UInt64)%s;' % (target, varname))
+		elif self.type == 'char':
+			z.do('%s = (Json::Int64)%s;' % (target, varname))
+		elif self.type == 'void' or self.type.startswith('PFN_'):
+			json_todo(target, 'raw pointer serialization not implemented')
+		else:
+			z.do('%s = (Json::Int64)%s;' % (target, varname))
+
+	def json_handle(self, target, varname):
+		if self.type == 'VkDeviceMemory':
+			json_todo(target, 'VkDeviceMemory index serialization not implemented')
+			return
+		z.brace_begin()
+		z.do('Json::Value handle_json;')
+		z.do('handle_json["type"] = "%s";' % self.type)
+		z.do('const uint32_t handle_index = index_to_%s.index_or_invalid(%s);' % (self.type, varname))
+		z.do('if (handle_index == CONTAINER_INVALID_INDEX) handle_json["TODO"] = "handle index not available";')
+		z.do('else if (handle_index == CONTAINER_NULL_VALUE) handle_json["index"] = Json::Value();')
+		z.do('else handle_json["index"] = handle_index;')
+		z.do('%s = handle_json;' % target)
+		z.brace_end()
+
+	def json_single(self, target, varname, pointer=False):
+		if self.name == 'pNext' or self.type == 'VkBaseOutStructure':
+			json_todo(target, 'pNext serialization not implemented')
+		elif self.type in ['AHardwareBuffer', 'ANativeWindow', 'wl_display', 'wl_surface', 'Display', 'xcb_connection_t']:
+			json_todo(target, 'platform handle serialization not implemented')
+		elif self.type in spec.unions or self.type in ['VkClearColorValue', 'VkClearValue', 'VkPipelineExecutableStatisticValueKHR']:
+			json_todo(target, 'union serialization not implemented')
+		elif self.structure:
+			if pointer:
+				z.do('%s = json_%s(cb, %s);' % (target, self.type, varname))
+			else:
+				z.do('%s = json_%s(cb, &%s);' % (target, self.type, varname))
+		elif self.disphandle or self.nondisphandle:
+			self.json_handle(target, varname)
+		else:
+			self.json_scalar(target, varname)
+
+	def json_array(self, target, varname, length):
+		if not length:
+			json_todo(target, 'array length serialization not implemented')
+			return
+		if self.type == 'char':
+			json_todo(target, 'char array serialization not implemented')
+			return
+		z.brace_begin()
+		z.do('Json::Value json_array(Json::arrayValue);')
+		z.do('for (uint32_t json_i = 0; json_i < (uint32_t)(%s); json_i++)' % length)
+		z.brace_begin()
+		z.do('Json::Value json_item;')
+		self.json_single('json_item', '%s[json_i]' % varname)
+		z.do('json_array.append(json_item);')
+		z.brace_end()
+		z.do('%s = json_array;' % target)
+		z.brace_end()
+
+	def print_json(self, json_owner, owner): # called for each parameter
+		global z
+
+		varname = owner + self.name
+		target = '%s["%s"]' % (json_owner, self.name)
+		length = json_length_expr(self.length, owner)
+
+		if self.name in ['pAllocator', 'pUserData']:
+			z.do('%s = Json::Value();' % target)
+		elif self.funcname == 'VkTransformMatrixKHR' and self.name == 'matrix':
+			json_todo(target, 'multidimensional array serialization not implemented')
+		elif self.name == 'pNext' or self.type == 'VkBaseOutStructure':
+			if self.ptr:
+				z.do('if (%s == nullptr) %s = Json::Value();' % (varname, target))
+				z.do('else')
+				z.brace_begin()
+				json_todo(target, 'pNext serialization not implemented')
+				z.brace_end()
+			else:
+				json_todo(target, 'pNext serialization not implemented')
+		elif self.string_array:
+			if not length:
+				json_todo(target, 'string array length serialization not implemented')
+			else:
+				z.do('if (%s == nullptr) %s = Json::Value();' % (varname, target))
+				z.do('else')
+				z.brace_begin()
+				z.do('Json::Value json_array(Json::arrayValue);')
+				z.do('for (uint32_t json_i = 0; json_i < (uint32_t)(%s); json_i++)' % length)
+				z.brace_begin()
+				z.do('json_array.append(%s[json_i] ? Json::Value(%s[json_i]) : Json::Value());' % (varname, varname))
+				z.brace_end()
+				z.do('%s = json_array;' % target)
+				z.brace_end()
+		elif self.string:
+			z.do('%s = %s ? Json::Value(%s) : Json::Value();' % (target, varname, varname))
+		elif self.param_ptrstr.count('*') > 1:
+			json_todo(target, 'pointer-to-pointer serialization not implemented')
+		elif self.length:
+			if self.ptr:
+				z.do('if (%s == nullptr) %s = Json::Value();' % (varname, target))
+				z.do('else')
+				z.brace_begin()
+				self.json_array(target, varname, length)
+				z.brace_end()
+			else:
+				self.json_array(target, varname, length)
+		elif self.ptr:
+			z.do('if (%s == nullptr) %s = Json::Value();' % (varname, target))
+			z.do('else')
+			z.brace_begin()
+			if self.structure:
+				self.json_single(target, varname, pointer=True)
+			elif self.disphandle or self.nondisphandle:
+				self.json_single(target, '*%s' % varname)
+			else:
+				self.json_single(target, '*%s' % varname)
+			z.brace_end()
+		else:
+			self.json_single(target, varname)
 
 	def print_load(self, name, owner): # called for each parameter
 		global z
@@ -1656,6 +1800,28 @@ def loadfunc(name, node, target, header):
 	if name in vk.hardcoded or name in vk.hardcoded_read:
 		func_common_end(name, target=target, header=header, add_dummy=True)
 		return
+	helper_signature = 'callback_context& cb'
+	if paramlist:
+		helper_signature += ', ' + ', '.join(paramlist)
+	print('static Json::Value json_params_%s(%s)' % (name, helper_signature), file=target)
+	print('{', file=target)
+	z.do('Json::Value v = cli_params_base_json(cb);')
+	z.do('Json::Value json_parameters;')
+	for param in params:
+		if param.inparam:
+			param.print_json('json_parameters', '')
+	z.do('v["parameters"] = json_parameters;')
+	z.do('return v;')
+	z.dump()
+	print('}', file=target)
+	print(file=target)
+	print('static void cli_params_%s(%s)' % (name, helper_signature), file=target)
+	print('{', file=target)
+	z.do('if (!cb.reader.parent->cli_params_requested.exchange(false, std::memory_order_acq_rel)) return;')
+	z.do('cli_params_publish(cb, json_params_%s(%s));' % (name, 'cb, ' + ', '.join([p.name for p in params]) if params else 'cb'))
+	z.dump()
+	print('}', file=target)
+	print(file=target)
 	print('void retrace_%s(lava_file_reader& reader)' % name, file=target)
 	print('{', file=target)
 	z.do('// -- Load --')
@@ -1938,7 +2104,7 @@ def loadfunc(name, node, target, header):
 		z.do('if (!reader.run) postprocess_compute_command(cb_context, commandbuffer_index, commandbuffer_data);')
 	if name in spec.raytracing_commands:
 		z.do('if (!reader.run) postprocess_raytracing_command(cb_context, commandbuffer_index, commandbuffer_data);')
-	z.do('while (check_cli(cb_context)) /* here we can run any number of callbacks for lava-cli */;')
+	z.do('while (check_cli(cb_context)) cli_params_%s(%s);' % (name, 'cb_context, ' + ', '.join(call_list) if call_list else 'cb_context'))
 	z.dump()
 	print('}', file=target)
 	func_common_end(name, target=target, header=header, add_dummy=True)

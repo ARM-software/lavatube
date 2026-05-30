@@ -138,6 +138,7 @@ uint8_t lava_file_reader::step()
 	release_checkpoint();
 	const uint8_t r = read_uint8_t();
 	assert(r != 0); // invalid value for instrtype
+	current.packet_type = r;
 	return r;
 }
 
@@ -159,12 +160,37 @@ uint16_t lava_file_reader::read_apicall()
 	DLOG2("[t%02u f%u %06d] %s", current.thread, current.frame, (int)parent->thread_call_numbers->at(current.thread).load(std::memory_order_relaxed) + 1, get_function_name(apicall));
 	lava_replay_func func = retrace_getcall(apicall);
 	current.call_id = apicall;
+	current.packet_type = PACKET_VULKAN_API_CALL;
 	// replay_stop_requested may unwind out of this call before the normal per-call epilogue runs.
 	func(*this);
 	current.call++;
 	parent->thread_call_numbers->at(current.thread).fetch_add(1, std::memory_order_relaxed);
 	pool.reset();
 	return apicall;
+}
+
+Json::Value cli_params_base_json(const callback_context& cb)
+{
+	Json::Value v = from_change_source(cb.reader.current);
+	return v;
+}
+
+void cli_params_publish(callback_context& cb, Json::Value v)
+{
+	lava_reader* parent = cb.reader.parent;
+	parent->cli_response = v.toStyledString();
+	if (parent->cli_response.empty() || parent->cli_response.back() != '\n') parent->cli_response += "\n";
+	parent->cli_params_ready.store(true, std::memory_order_release);
+	parent->cli_params_ready.notify_all();
+}
+
+void cli_params_unavailable(callback_context& cb)
+{
+	lava_reader* parent = cb.reader.parent;
+	if (!parent->cli_params_requested.exchange(false, std::memory_order_acq_rel)) return;
+	Json::Value v = cli_params_base_json(cb);
+	v["parameters"]["TODO"] = "parameter serialization is not implemented for this hardcoded replay path";
+	cli_params_publish(cb, v);
 }
 
 // --- trace reader
