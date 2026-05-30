@@ -22,6 +22,8 @@ Already implemented instructions:
 * `lava-cli continue` - continues the replay until the end
 * `lava-cli stop` - stops the replay
 * `lava-cli step [packets X|calls X]` - step the given number of packets or API calls ahead
+* `lava-cli info threads`
+* `lava-cli params|parameters` - print command or packet input parameters as JSON
 
 More instructions to implement - in prioritized order:
 * `lava-cli status`
@@ -33,15 +35,12 @@ More instructions to implement - in prioritized order:
 * `lava-cli step frames X` - step the given number of frames ahead in the current thread, then pause again
 - `lava-cli goto [call X|frame X|command X]` - replay until we get to the given call or frame or command by name
 * `lava-cli info <topic>` - show input parameters and important state
-	- 'threads' - show all threads, with gdb thread id
 	- 'objects' - show all non-zero object types, with pending, created, bound (if applicable) and destroyed columns
 	- 'queues'
-	- 'swapchains' - show image index numbers of real and fake swapchains
-* `lava-cli params|parameters` - print command or packet input parameters as JSON
-* `lava-cli show <object type> [index|id] <number>` - print given globally tracked object and its metadata
+	- 'swapchains' - show image index numbers of real and fake swapchains and their status
+* `lava-cli show <object type> [index|id] <number>` - print given globally tracked object and its metadata; we can reuse `json_helpers.h`
 * `lava-cli list <object type>` - list all objects of given type tracked globally and their status
-* `lava-cli save image <image index> <filename>` - write contents of image given by index to the given filename
-* `lava-cli save buffer <buffer index> <filename>` - write contents of buffer given by index to the given filename
+* `lava-cli save buffer|image|tensor <index> <filename>` - write contents of object given by index to the given filename
 * `lava-cli debug <level>` - change global debug level
 * `lava-cli save jumpfile <name>` - write out state recreation to current position + frame boundary + jump packet to file <name>
 

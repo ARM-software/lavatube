@@ -339,7 +339,10 @@ class parameter(spec.base_parameter):
 
 	def json_single(self, target, varname, pointer=False):
 		if self.name == 'pNext' or self.type == 'VkBaseOutStructure':
-			json_todo(target, 'pNext serialization not implemented')
+			if pointer:
+				z.do('%s = json_extension(cb, reinterpret_cast<const VkBaseOutStructure*>(%s));' % (target, varname))
+			else:
+				z.do('%s = json_extension(cb, reinterpret_cast<const VkBaseOutStructure*>(&%s));' % (target, varname))
 		elif self.type in ['AHardwareBuffer', 'ANativeWindow', 'wl_display', 'wl_surface', 'Display', 'xcb_connection_t']:
 			json_todo(target, 'platform handle serialization not implemented')
 		elif self.type in spec.unions or self.type in ['VkClearColorValue', 'VkClearValue', 'VkPipelineExecutableStatisticValueKHR']:
@@ -385,13 +388,9 @@ class parameter(spec.base_parameter):
 			json_todo(target, 'multidimensional array serialization not implemented')
 		elif self.name == 'pNext' or self.type == 'VkBaseOutStructure':
 			if self.ptr:
-				z.do('if (%s == nullptr) %s = Json::Value();' % (varname, target))
-				z.do('else')
-				z.brace_begin()
-				json_todo(target, 'pNext serialization not implemented')
-				z.brace_end()
+				z.do('%s = json_extension(cb, reinterpret_cast<const VkBaseOutStructure*>(%s));' % (target, varname))
 			else:
-				json_todo(target, 'pNext serialization not implemented')
+				z.do('%s = json_extension(cb, reinterpret_cast<const VkBaseOutStructure*>(&%s));' % (target, varname))
 		elif self.string_array:
 			if not length:
 				json_todo(target, 'string array length serialization not implemented')

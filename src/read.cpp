@@ -207,8 +207,7 @@ void cli_params_packet(callback_context& cb)
 		params["device_index"] = update.device_index;
 		params["object_index"] = update.object_index;
 		params["size"] = (Json::UInt64)update.size;
-		if (update.sptr != nullptr) params["pNext"]["TODO"] = "update packet pNext serialization not implemented";
-		else params["pNext"] = Json::Value();
+		params["pNext"] = json_extension(cb, update.sptr);
 	}
 	else if (cb.reader.current.packet_type == PACKET_THREAD_BARRIER)
 	{
