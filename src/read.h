@@ -458,6 +458,7 @@ static inline bool check_cli(const callback_context& cb)
 }
 
 Json::Value cli_params_base_json(const callback_context& cb);
+Json::Value cli_params_attachment(const callback_context& cb);
 void cli_params_publish(callback_context& cb, Json::Value v);
 void cli_params_unavailable(callback_context& cb);
 void cli_params_packet(callback_context& cb);

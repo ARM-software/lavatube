@@ -109,6 +109,7 @@ struct callback_context
 		VkDeviceSize size;
 		VkBool32 vkbool;
 	} result;
+	mutable uint32_t params_attachment_index = 0;
 };
 
 struct trackable

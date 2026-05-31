@@ -210,6 +210,9 @@ def json_length_expr(length, owner):
 def json_todo(target, message):
 	z.do('%s["TODO"] = "%s";' % (target, message))
 
+def json_attachment(target):
+	z.do('%s = cli_params_attachment(cb);' % target)
+
 class parameter(spec.base_parameter):
 	def __init__(self, node, read, funcname, transitiveConst = False):
 		super().__init__(node, read, funcname, transitiveConst)
@@ -364,6 +367,9 @@ class parameter(spec.base_parameter):
 		if not length:
 			json_todo(target, 'array length serialization not implemented')
 			return
+		if self.type == 'void' or self.type.startswith('PFN_'):
+			json_attachment(target)
+			return
 		if self.type == 'char':
 			json_todo(target, 'char array serialization not implemented')
 			return
@@ -425,7 +431,9 @@ class parameter(spec.base_parameter):
 			z.do('if (%s == nullptr) %s = Json::Value();' % (varname, target))
 			z.do('else')
 			z.brace_begin()
-			if self.structure:
+			if self.type == 'void' or self.type.startswith('PFN_'):
+				json_attachment(target)
+			elif self.structure:
 				self.json_single(target, varname, pointer=True)
 			elif self.disphandle or self.nondisphandle:
 				self.json_single(target, '*%s' % varname)

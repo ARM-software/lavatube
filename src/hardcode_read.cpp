@@ -104,13 +104,10 @@ static Json::Value json_hardcoded_handle(const char* type, const replay_remap<T>
 	return v;
 }
 
-static Json::Value json_hardcoded_raw_data(const void* ptr, VkDeviceSize size)
+static Json::Value json_hardcoded_raw_data(const callback_context& cb, const void* ptr)
 {
 	if (ptr == nullptr) return Json::Value();
-	Json::Value v;
-	v["size"] = (Json::UInt64)size;
-	v["TODO"] = "raw pointer serialization not implemented";
-	return v;
+	return cli_params_attachment(cb);
 }
 
 static Json::Value json_hardcoded_VkUpdateBufferInfoARM(callback_context& cb, const VkUpdateBufferInfoARM* sptr)
@@ -122,7 +119,7 @@ static Json::Value json_hardcoded_VkUpdateBufferInfoARM(callback_context& cb, co
 	v["dstBuffer"] = json_hardcoded_handle("VkBuffer", index_to_VkBuffer, sptr->dstBuffer);
 	v["dstOffset"] = (Json::UInt64)sptr->dstOffset;
 	v["dataSize"] = (Json::UInt64)sptr->dataSize;
-	v["pData"] = json_hardcoded_raw_data(sptr->pData, sptr->dataSize);
+	v["pData"] = json_hardcoded_raw_data(cb, sptr->pData);
 	return v;
 }
 
@@ -136,7 +133,7 @@ static Json::Value json_hardcoded_VkUpdateMemoryInfoARM(callback_context& cb, co
 	else v["pDstRange"] = json_VkDeviceAddressRangeKHR(cb, sptr->pDstRange);
 	v["dstFlags"] = (Json::Int64)sptr->dstFlags;
 	v["dataSize"] = (Json::UInt64)sptr->dataSize;
-	v["pData"] = json_hardcoded_raw_data(sptr->pData, sptr->dataSize);
+	v["pData"] = json_hardcoded_raw_data(cb, sptr->pData);
 	return v;
 }
 

@@ -180,8 +180,14 @@ uint16_t lava_file_reader::read_apicall()
 
 Json::Value cli_params_base_json(const callback_context& cb)
 {
+	cb.params_attachment_index = 0;
 	Json::Value v = from_change_source(cb.reader.current);
 	return v;
+}
+
+Json::Value cli_params_attachment(const callback_context& cb)
+{
+	return Json::Value("[attachment " + std::to_string(cb.params_attachment_index++) + "]");
 }
 
 static Json::Value params_unavailable_json(const callback_context& cb)
