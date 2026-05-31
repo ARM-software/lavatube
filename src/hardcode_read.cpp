@@ -92,6 +92,300 @@ static void mem_unmap(lava_file_reader& reader, VkDevice device, const suballoc_
 static void replay_fixup_commandbuffer_raytracing_sbt(lava_file_reader& reader, trackedcmdbuffer& commandbuffer_data);
 static void replay_fixup_commandbuffer_raytracing_instances(lava_file_reader& reader, trackedcmdbuffer& commandbuffer_data);
 
+template<typename T>
+static Json::Value json_hardcoded_handle(const char* type, const replay_remap<T>& remap, T handle)
+{
+	Json::Value v;
+	v["type"] = type;
+	const uint32_t handle_index = remap.index_or_invalid(handle);
+	if (handle_index == CONTAINER_INVALID_INDEX) v["TODO"] = "handle index not available";
+	else if (handle_index == CONTAINER_NULL_VALUE) v["index"] = Json::Value();
+	else v["index"] = handle_index;
+	return v;
+}
+
+static Json::Value json_hardcoded_raw_data(const void* ptr, VkDeviceSize size)
+{
+	if (ptr == nullptr) return Json::Value();
+	Json::Value v;
+	v["size"] = (Json::UInt64)size;
+	v["TODO"] = "raw pointer serialization not implemented";
+	return v;
+}
+
+static Json::Value json_hardcoded_VkUpdateBufferInfoARM(callback_context& cb, const VkUpdateBufferInfoARM* sptr)
+{
+	if (sptr == nullptr) return Json::Value();
+	Json::Value v;
+	v["sType"] = (Json::Int64)sptr->sType;
+	v["pNext"] = json_extension(cb, reinterpret_cast<const VkBaseOutStructure*>(sptr->pNext));
+	v["dstBuffer"] = json_hardcoded_handle("VkBuffer", index_to_VkBuffer, sptr->dstBuffer);
+	v["dstOffset"] = (Json::UInt64)sptr->dstOffset;
+	v["dataSize"] = (Json::UInt64)sptr->dataSize;
+	v["pData"] = json_hardcoded_raw_data(sptr->pData, sptr->dataSize);
+	return v;
+}
+
+static Json::Value json_hardcoded_VkUpdateMemoryInfoARM(callback_context& cb, const VkUpdateMemoryInfoARM* sptr)
+{
+	if (sptr == nullptr) return Json::Value();
+	Json::Value v;
+	v["sType"] = (Json::Int64)sptr->sType;
+	v["pNext"] = json_extension(cb, reinterpret_cast<const VkBaseOutStructure*>(sptr->pNext));
+	if (sptr->pDstRange == nullptr) v["pDstRange"] = Json::Value();
+	else v["pDstRange"] = json_VkDeviceAddressRangeKHR(cb, sptr->pDstRange);
+	v["dstFlags"] = (Json::Int64)sptr->dstFlags;
+	v["dataSize"] = (Json::UInt64)sptr->dataSize;
+	v["pData"] = json_hardcoded_raw_data(sptr->pData, sptr->dataSize);
+	return v;
+}
+
+static void cli_params_publish_hardcoded(callback_context& cb, Json::Value v)
+{
+	if (!cb.reader.parent->cli_params_requested.exchange(false, std::memory_order_acq_rel)) return;
+	cli_params_publish(cb, v);
+}
+
+static Json::Value json_params_vkSyncBufferTRACETOOLTEST(callback_context& cb, VkDevice device, VkBuffer buffer)
+{
+	Json::Value v = cli_params_base_json(cb);
+	Json::Value json_parameters;
+	json_parameters["device"] = json_hardcoded_handle("VkDevice", index_to_VkDevice, device);
+	json_parameters["buffer"] = json_hardcoded_handle("VkBuffer", index_to_VkBuffer, buffer);
+	v["parameters"] = json_parameters;
+	return v;
+}
+
+static void cli_params_vkSyncBufferTRACETOOLTEST(callback_context& cb, VkDevice device, VkBuffer buffer)
+{
+	cli_params_publish_hardcoded(cb, json_params_vkSyncBufferTRACETOOLTEST(cb, device, buffer));
+}
+
+static Json::Value json_params_vkAssertBufferARM(callback_context& cb, VkDevice device, const VkUpdateBufferInfoARM* pInfo, const uint32_t* checksum, const char* comment)
+{
+	Json::Value v = cli_params_base_json(cb);
+	Json::Value json_parameters;
+	json_parameters["device"] = json_hardcoded_handle("VkDevice", index_to_VkDevice, device);
+	json_parameters["pInfo"] = json_hardcoded_VkUpdateBufferInfoARM(cb, pInfo);
+	json_parameters["checksum"] = checksum ? Json::Value((Json::UInt64)*checksum) : Json::Value();
+	json_parameters["comment"] = comment ? Json::Value(comment) : Json::Value();
+	v["parameters"] = json_parameters;
+	return v;
+}
+
+static void cli_params_vkAssertBufferARM(callback_context& cb, VkDevice device, const VkUpdateBufferInfoARM* pInfo, const uint32_t* checksum, const char* comment)
+{
+	cli_params_publish_hardcoded(cb, json_params_vkAssertBufferARM(cb, device, pInfo, checksum, comment));
+}
+
+static Json::Value json_params_vkAssertMemoryARM(callback_context& cb, VkDevice device, const VkUpdateMemoryInfoARM* pInfo, const uint32_t* checksum, const char* comment)
+{
+	Json::Value v = cli_params_base_json(cb);
+	Json::Value json_parameters;
+	json_parameters["device"] = json_hardcoded_handle("VkDevice", index_to_VkDevice, device);
+	json_parameters["pInfo"] = json_hardcoded_VkUpdateMemoryInfoARM(cb, pInfo);
+	json_parameters["checksum"] = checksum ? Json::Value((Json::UInt64)*checksum) : Json::Value();
+	json_parameters["comment"] = comment ? Json::Value(comment) : Json::Value();
+	v["parameters"] = json_parameters;
+	return v;
+}
+
+static void cli_params_vkAssertMemoryARM(callback_context& cb, VkDevice device, const VkUpdateMemoryInfoARM* pInfo, const uint32_t* checksum, const char* comment)
+{
+	cli_params_publish_hardcoded(cb, json_params_vkAssertMemoryARM(cb, device, pInfo, checksum, comment));
+}
+
+static Json::Value json_params_vkCmdUpdateBuffer2ARM(callback_context& cb, VkCommandBuffer commandBuffer, const VkUpdateBufferInfoARM* pInfo)
+{
+	Json::Value v = cli_params_base_json(cb);
+	Json::Value json_parameters;
+	json_parameters["commandBuffer"] = json_hardcoded_handle("VkCommandBuffer", index_to_VkCommandBuffer, commandBuffer);
+	json_parameters["pInfo"] = json_hardcoded_VkUpdateBufferInfoARM(cb, pInfo);
+	v["parameters"] = json_parameters;
+	return v;
+}
+
+static void cli_params_vkCmdUpdateBuffer2ARM(callback_context& cb, VkCommandBuffer commandBuffer, const VkUpdateBufferInfoARM* pInfo)
+{
+	cli_params_publish_hardcoded(cb, json_params_vkCmdUpdateBuffer2ARM(cb, commandBuffer, pInfo));
+}
+
+static Json::Value json_params_vkCmdUpdateMemory2ARM(callback_context& cb, VkCommandBuffer commandBuffer, const VkUpdateMemoryInfoARM* pInfo)
+{
+	Json::Value v = cli_params_base_json(cb);
+	Json::Value json_parameters;
+	json_parameters["commandBuffer"] = json_hardcoded_handle("VkCommandBuffer", index_to_VkCommandBuffer, commandBuffer);
+	json_parameters["pInfo"] = json_hardcoded_VkUpdateMemoryInfoARM(cb, pInfo);
+	v["parameters"] = json_parameters;
+	return v;
+}
+
+static void cli_params_vkCmdUpdateMemory2ARM(callback_context& cb, VkCommandBuffer commandBuffer, const VkUpdateMemoryInfoARM* pInfo)
+{
+	cli_params_publish_hardcoded(cb, json_params_vkCmdUpdateMemory2ARM(cb, commandBuffer, pInfo));
+}
+
+static Json::Value json_params_vkGetSwapchainImagesKHR(callback_context& cb, VkDevice device, VkSwapchainKHR swapchain)
+{
+	Json::Value v = cli_params_base_json(cb);
+	Json::Value json_parameters;
+	json_parameters["device"] = json_hardcoded_handle("VkDevice", index_to_VkDevice, device);
+	json_parameters["swapchain"] = json_hardcoded_handle("VkSwapchainKHR", index_to_VkSwapchainKHR, swapchain);
+	v["parameters"] = json_parameters;
+	return v;
+}
+
+static void cli_params_vkGetSwapchainImagesKHR(callback_context& cb, VkDevice device, VkSwapchainKHR swapchain)
+{
+	cli_params_publish_hardcoded(cb, json_params_vkGetSwapchainImagesKHR(cb, device, swapchain));
+}
+
+static Json::Value json_params_vkCreateSurfaceKHR(callback_context& cb, const surface_create_packet& packet)
+{
+	Json::Value v = cli_params_base_json(cb);
+	Json::Value json_parameters;
+	Json::Value pCreateInfo;
+	pCreateInfo["sType"] = (Json::UInt64)packet.stored_sType;
+	pCreateInfo["pNext"] = json_extension(cb, packet.pNext);
+	pCreateInfo["flags"] = (Json::UInt64)packet.flags;
+	pCreateInfo["x"] = (Json::Int64)packet.x;
+	pCreateInfo["y"] = (Json::Int64)packet.y;
+	pCreateInfo["width"] = (Json::Int64)packet.width;
+	pCreateInfo["height"] = (Json::Int64)packet.height;
+	pCreateInfo["border"] = (Json::Int64)packet.border;
+	pCreateInfo["depth"] = (Json::Int64)packet.depth;
+	json_parameters["instance"] = json_hardcoded_handle("VkInstance", index_to_VkInstance, packet.instance);
+	json_parameters["pCreateInfo"] = pCreateInfo;
+	json_parameters["pAllocator"] = Json::Value();
+	v["parameters"] = json_parameters;
+	return v;
+}
+
+static void cli_params_vkCreateSurfaceKHR(callback_context& cb, const surface_create_packet& packet)
+{
+	cli_params_publish_hardcoded(cb, json_params_vkCreateSurfaceKHR(cb, packet));
+}
+
+static Json::Value json_params_vkGetDeviceQueue2(callback_context& cb, VkDevice device, const VkDeviceQueueInfo2* pQueueInfo)
+{
+	Json::Value v = cli_params_base_json(cb);
+	Json::Value json_parameters;
+	json_parameters["device"] = json_hardcoded_handle("VkDevice", index_to_VkDevice, device);
+	json_parameters["pQueueInfo"] = json_VkDeviceQueueInfo2(cb, pQueueInfo);
+	v["parameters"] = json_parameters;
+	return v;
+}
+
+static void cli_params_vkGetDeviceQueue2(callback_context& cb, VkDevice device, const VkDeviceQueueInfo2* pQueueInfo)
+{
+	cli_params_publish_hardcoded(cb, json_params_vkGetDeviceQueue2(cb, device, pQueueInfo));
+}
+
+static Json::Value json_params_vkGetDeviceQueue(callback_context& cb, VkDevice device, uint32_t queueFamilyIndex, uint32_t queueIndex)
+{
+	Json::Value v = cli_params_base_json(cb);
+	Json::Value json_parameters;
+	json_parameters["device"] = json_hardcoded_handle("VkDevice", index_to_VkDevice, device);
+	json_parameters["queueFamilyIndex"] = (Json::UInt64)queueFamilyIndex;
+	json_parameters["queueIndex"] = (Json::UInt64)queueIndex;
+	v["parameters"] = json_parameters;
+	return v;
+}
+
+static void cli_params_vkGetDeviceQueue(callback_context& cb, VkDevice device, uint32_t queueFamilyIndex, uint32_t queueIndex)
+{
+	cli_params_publish_hardcoded(cb, json_params_vkGetDeviceQueue(cb, device, queueFamilyIndex, queueIndex));
+}
+
+static Json::Value json_params_vkEnumerateInstanceLayerProperties(callback_context& cb)
+{
+	Json::Value v = cli_params_base_json(cb);
+	v["parameters"] = Json::Value(Json::objectValue);
+	return v;
+}
+
+static void cli_params_vkEnumerateInstanceLayerProperties(callback_context& cb)
+{
+	cli_params_publish_hardcoded(cb, json_params_vkEnumerateInstanceLayerProperties(cb));
+}
+
+static Json::Value json_params_vkEnumerateInstanceExtensionProperties(callback_context& cb, const char* pLayerName)
+{
+	Json::Value v = cli_params_base_json(cb);
+	Json::Value json_parameters;
+	json_parameters["pLayerName"] = pLayerName ? Json::Value(pLayerName) : Json::Value();
+	v["parameters"] = json_parameters;
+	return v;
+}
+
+static void cli_params_vkEnumerateInstanceExtensionProperties(callback_context& cb, const char* pLayerName)
+{
+	cli_params_publish_hardcoded(cb, json_params_vkEnumerateInstanceExtensionProperties(cb, pLayerName));
+}
+
+static Json::Value json_params_vkEnumerateDeviceLayerProperties(callback_context& cb, VkPhysicalDevice physicalDevice)
+{
+	Json::Value v = cli_params_base_json(cb);
+	Json::Value json_parameters;
+	json_parameters["physicalDevice"] = json_hardcoded_handle("VkPhysicalDevice", index_to_VkPhysicalDevice, physicalDevice);
+	v["parameters"] = json_parameters;
+	return v;
+}
+
+static void cli_params_vkEnumerateDeviceLayerProperties(callback_context& cb, VkPhysicalDevice physicalDevice)
+{
+	cli_params_publish_hardcoded(cb, json_params_vkEnumerateDeviceLayerProperties(cb, physicalDevice));
+}
+
+static Json::Value json_params_vkEnumerateDeviceExtensionProperties(callback_context& cb, VkPhysicalDevice physicalDevice, const char* pLayerName)
+{
+	Json::Value v = cli_params_base_json(cb);
+	Json::Value json_parameters;
+	json_parameters["physicalDevice"] = json_hardcoded_handle("VkPhysicalDevice", index_to_VkPhysicalDevice, physicalDevice);
+	json_parameters["pLayerName"] = pLayerName ? Json::Value(pLayerName) : Json::Value();
+	v["parameters"] = json_parameters;
+	return v;
+}
+
+static void cli_params_vkEnumerateDeviceExtensionProperties(callback_context& cb, VkPhysicalDevice physicalDevice, const char* pLayerName)
+{
+	cli_params_publish_hardcoded(cb, json_params_vkEnumerateDeviceExtensionProperties(cb, physicalDevice, pLayerName));
+}
+
+static Json::Value json_params_vkGetPhysicalDeviceXlibPresentationSupportKHR(callback_context& cb, VkPhysicalDevice physicalDevice, uint32_t queueFamilyIndex)
+{
+	Json::Value v = cli_params_base_json(cb);
+	Json::Value json_parameters;
+	json_parameters["physicalDevice"] = json_hardcoded_handle("VkPhysicalDevice", index_to_VkPhysicalDevice, physicalDevice);
+	json_parameters["queueFamilyIndex"] = (Json::UInt64)queueFamilyIndex;
+	json_parameters["dpy"]["TODO"] = "Display pointer is not retained in this hardcoded replay path";
+	json_parameters["visualID"] = (Json::UInt64)0;
+	v["parameters"] = json_parameters;
+	return v;
+}
+
+static void cli_params_vkGetPhysicalDeviceXlibPresentationSupportKHR(callback_context& cb, VkPhysicalDevice physicalDevice, uint32_t queueFamilyIndex)
+{
+	cli_params_publish_hardcoded(cb, json_params_vkGetPhysicalDeviceXlibPresentationSupportKHR(cb, physicalDevice, queueFamilyIndex));
+}
+
+static Json::Value json_params_vkGetPhysicalDeviceXcbPresentationSupportKHR(callback_context& cb, VkPhysicalDevice physicalDevice, uint32_t queueFamilyIndex, uint32_t visual_id)
+{
+	Json::Value v = cli_params_base_json(cb);
+	Json::Value json_parameters;
+	json_parameters["physicalDevice"] = json_hardcoded_handle("VkPhysicalDevice", index_to_VkPhysicalDevice, physicalDevice);
+	json_parameters["queueFamilyIndex"] = (Json::UInt64)queueFamilyIndex;
+	json_parameters["connection"]["TODO"] = "xcb_connection_t pointer is not retained in this hardcoded replay path";
+	json_parameters["visual_id"] = (Json::UInt64)visual_id;
+	v["parameters"] = json_parameters;
+	return v;
+}
+
+static void cli_params_vkGetPhysicalDeviceXcbPresentationSupportKHR(callback_context& cb, VkPhysicalDevice physicalDevice, uint32_t queueFamilyIndex, uint32_t visual_id)
+{
+	cli_params_publish_hardcoded(cb, json_params_vkGetPhysicalDeviceXcbPresentationSupportKHR(cb, physicalDevice, queueFamilyIndex, visual_id));
+}
+
 static trackedbuffer* find_buffer_by_replay_address(VkDeviceAddress address, VkDeviceSize size, VkDeviceSize& out_offset)
 {
 	trackedbuffer* best = nullptr;
@@ -2366,7 +2660,7 @@ void retrace_vkSyncBufferTRACETOOLTEST(lava_file_reader& reader)
 	reader.physicalDevice = VkDevice_index.at(device_index).physicalDevice;
 	callback_context cb_context{ reader };
 	for (auto* c : vkSyncBufferTRACETOOLTEST_callbacks) c(cb_context, device, buffer);
-	while (check_cli(cb_context)) cli_params_unavailable(cb_context);
+	while (check_cli(cb_context)) cli_params_vkSyncBufferTRACETOOLTEST(cb_context, device, buffer);
 }
 
 static uint32_t checksum_buffer_range(const trackeddevice& device_data, uint32_t buffer_index, VkDeviceSize offset, VkDeviceSize size)
@@ -2419,7 +2713,7 @@ void retrace_vkAssertBufferARM(lava_file_reader& reader)
 	callback_context cb_context{ reader };
 	cb_context.result.vkresult = VK_SUCCESS;
 	for (auto* c : vkAssertBufferARM_callbacks) c(cb_context, device, &info, &checksum, comment);
-	while (check_cli(cb_context)) cli_params_unavailable(cb_context);
+	while (check_cli(cb_context)) cli_params_vkAssertBufferARM(cb_context, device, &info, &checksum, comment);
 }
 
 void retrace_vkAssertMemoryARM(lava_file_reader& reader)
@@ -2465,7 +2759,7 @@ void retrace_vkAssertMemoryARM(lava_file_reader& reader)
 	callback_context cb_context{ reader };
 	cb_context.result.vkresult = VK_SUCCESS;
 	for (auto* c : vkAssertMemoryARM_callbacks) c(cb_context, device, &info, &checksum, comment);
-	while (check_cli(cb_context)) cli_params_unavailable(cb_context);
+	while (check_cli(cb_context)) cli_params_vkAssertMemoryARM(cb_context, device, &info, &checksum, comment);
 }
 
 void read_VkDataGraphPipelineConstantARM(lava_file_reader& reader, VkDataGraphPipelineConstantARM* sptr)
@@ -2942,7 +3236,7 @@ void retrace_vkCmdUpdateBuffer2ARM(lava_file_reader& reader)
 	tbuf.last_modified = reader.current;
 	callback_context cb_context{ reader };
 	for (auto* c : vkCmdUpdateBuffer2ARM_callbacks) c(cb_context, commandBuffer, &info);
-	while (check_cli(cb_context)) cli_params_unavailable(cb_context);
+	while (check_cli(cb_context)) cli_params_vkCmdUpdateBuffer2ARM(cb_context, commandBuffer, &info);
 }
 
 void retrace_vkCmdUpdateMemory2ARM(lava_file_reader& reader)
@@ -2972,7 +3266,7 @@ void retrace_vkCmdUpdateMemory2ARM(lava_file_reader& reader)
 	if (buffer_data) buffer_data->last_modified = reader.current;
 	callback_context cb_context{ reader };
 	for (auto* c : vkCmdUpdateMemory2ARM_callbacks) c(cb_context, commandBuffer, &info);
-	while (check_cli(cb_context)) cli_params_unavailable(cb_context);
+	while (check_cli(cb_context)) cli_params_vkCmdUpdateMemory2ARM(cb_context, commandBuffer, &info);
 }
 
 void read_VkAccelerationStructureBuildGeometryInfoKHR(lava_file_reader& reader, VkAccelerationStructureBuildGeometryInfoKHR* sptr)
@@ -3164,7 +3458,7 @@ void retrace_vkGetSwapchainImagesKHR(lava_file_reader& reader)
 	callback_context cb_context{ reader };
 	cb_context.result.vkresult = result;
 	for (auto* c : vkGetSwapchainImagesKHR_callbacks) c(cb_context, device, swapchain, &pSwapchainImageCount, pSwapchainImages);
-	while (check_cli(cb_context)) cli_params_unavailable(cb_context);
+	while (check_cli(cb_context)) cli_params_vkGetSwapchainImagesKHR(cb_context, device, swapchain);
 }
 
 static surface_create_packet decode_vkCreateSurfaceKHR_packet(lava_file_reader& reader, uint32_t expected_sType)
@@ -3225,7 +3519,7 @@ static void replay_vkCreateSurfaceKHR_packet(lava_file_reader& reader, const sur
 	if (pSurface) index_to_VkSurfaceKHR.set(packet.surface_index, pSurface);
 	// TBD we should create some window-common callback a user can attach to and trigger here
 	callback_context cb_context{ reader };
-	while (check_cli(cb_context)) cli_params_unavailable(cb_context);
+	while (check_cli(cb_context)) cli_params_vkCreateSurfaceKHR(cb_context, packet);
 }
 
 static surface_create_packet output_vkCreateSurfaceKHR_packet(const surface_create_packet& packet)
@@ -3370,7 +3664,7 @@ void retrace_vkGetDeviceQueue2(lava_file_reader& reader)
 	}
 	callback_context cb_context{ reader };
 	for (auto* c : vkGetDeviceQueue2_callbacks) c(cb_context, device, &info_real, &queue);
-	while (check_cli(cb_context)) cli_params_unavailable(cb_context);
+	while (check_cli(cb_context)) cli_params_vkGetDeviceQueue2(cb_context, device, &info_real);
 }
 
 void retrace_vkGetDeviceQueue(lava_file_reader& reader)
@@ -3443,7 +3737,7 @@ void retrace_vkGetDeviceQueue(lava_file_reader& reader)
 	}
 	callback_context cb_context{ reader };
 	for (auto* c : vkGetDeviceQueue_callbacks) c(cb_context, device, queueFamilyIndex, queueIndex, &queue);
-	while (check_cli(cb_context)) cli_params_unavailable(cb_context);
+	while (check_cli(cb_context)) cli_params_vkGetDeviceQueue(cb_context, device, queueFamilyIndex, queueIndex);
 }
 
 void read_hw_buffer(lava_file_reader& reader)
@@ -3542,7 +3836,7 @@ void retrace_vkEnumerateInstanceLayerProperties(lava_file_reader& reader)
 		pProperties_ptr = reader.run ? pProperties.data() : &tool_property;
 	}
 	for (auto* c : vkEnumerateInstanceLayerProperties_callbacks) c(cb_context, pPropertyCount_ptr, pProperties_ptr);
-	while (check_cli(cb_context)) cli_params_unavailable(cb_context);
+	while (check_cli(cb_context)) cli_params_vkEnumerateInstanceLayerProperties(cb_context);
 }
 
 void retrace_vkEnumerateInstanceExtensionProperties(lava_file_reader& reader)
@@ -3578,7 +3872,7 @@ void retrace_vkEnumerateInstanceExtensionProperties(lava_file_reader& reader)
 		pProperties_ptr = reader.run ? pProperties.data() : &tool_property;
 	}
 	for (auto* c : vkEnumerateInstanceExtensionProperties_callbacks) c(cb_context, pLayerName, pPropertyCount_ptr, pProperties_ptr);
-	while (check_cli(cb_context)) cli_params_unavailable(cb_context);
+	while (check_cli(cb_context)) cli_params_vkEnumerateInstanceExtensionProperties(cb_context, pLayerName);
 }
 
 void retrace_vkEnumerateDeviceLayerProperties(lava_file_reader& reader)
@@ -3623,7 +3917,7 @@ void retrace_vkEnumerateDeviceLayerProperties(lava_file_reader& reader)
 		pProperties_ptr = reader.run ? pProperties.data() : &tool_property;
 	}
 	for (auto* c : vkEnumerateDeviceLayerProperties_callbacks) c(cb_context, physicalDevice, pPropertyCount_ptr, pProperties_ptr);
-	while (check_cli(cb_context)) cli_params_unavailable(cb_context);
+	while (check_cli(cb_context)) cli_params_vkEnumerateDeviceLayerProperties(cb_context, physicalDevice);
 }
 
 void retrace_vkEnumerateDeviceExtensionProperties(lava_file_reader& reader)
@@ -3669,7 +3963,7 @@ void retrace_vkEnumerateDeviceExtensionProperties(lava_file_reader& reader)
 		pProperties_ptr = reader.run ? pProperties.data() : &tool_property;
 	}
 	for (auto* c : vkEnumerateDeviceExtensionProperties_callbacks) c(cb_context, physicalDevice, pLayerName, pPropertyCount_ptr, pProperties_ptr);
-	while (check_cli(cb_context)) cli_params_unavailable(cb_context);
+	while (check_cli(cb_context)) cli_params_vkEnumerateDeviceExtensionProperties(cb_context, physicalDevice, pLayerName);
 }
 
 #ifdef VK_USE_PLATFORM_XLIB_KHR
@@ -3693,7 +3987,7 @@ void retrace_vkGetPhysicalDeviceXlibPresentationSupportKHR(lava_file_reader& rea
 	callback_context cb_context{ reader };
 	cb_context.result.vkbool = retval;
 	for (auto* c : vkGetPhysicalDeviceXlibPresentationSupportKHR_callbacks) c(cb_context, physicalDevice, queueFamilyIndex, nullptr, 0);
-	while (check_cli(cb_context)) cli_params_unavailable(cb_context);
+	while (check_cli(cb_context)) cli_params_vkGetPhysicalDeviceXlibPresentationSupportKHR(cb_context, physicalDevice, queueFamilyIndex);
 }
 
 #else
@@ -3727,7 +4021,7 @@ void retrace_vkGetPhysicalDeviceXcbPresentationSupportKHR(lava_file_reader& read
 	callback_context cb_context{ reader };
 	cb_context.result.vkbool = retval;
 	for (auto* c : vkGetPhysicalDeviceXcbPresentationSupportKHR_callbacks) c(cb_context, physicalDevice, queueFamilyIndex, nullptr, visual_id);
-	while (check_cli(cb_context)) cli_params_unavailable(cb_context);
+	while (check_cli(cb_context)) cli_params_vkGetPhysicalDeviceXcbPresentationSupportKHR(cb_context, physicalDevice, queueFamilyIndex, visual_id);
 }
 
 #else

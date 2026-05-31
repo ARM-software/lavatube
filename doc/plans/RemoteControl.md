@@ -41,8 +41,9 @@ More instructions to implement - in prioritized order:
 * `lava-cli show <object type> [index|id] <number>` - print given globally tracked object and its metadata; we can reuse `json_helpers.h`
 * `lava-cli list <object type>` - list all objects of given type tracked globally and their status
 * `lava-cli save buffer|image|tensor <index> <filename>` - write contents of object given by index to the given filename
-* `lava-cli debug <level>` - change global debug level
 * `lava-cli save jumpfile <name>` - write out state recreation to current position + frame boundary + jump packet to file <name>
+* `lava-cli set debug <level>` - change global debug level
+* `lava-cli set blackhole <true|false>` - change blackhole setting
 
 ## Notes
 
