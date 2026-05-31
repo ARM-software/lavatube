@@ -330,7 +330,10 @@ class parameter(spec.base_parameter):
 		z.brace_begin()
 		z.do('Json::Value handle_json;')
 		z.do('handle_json["type"] = "%s";' % self.type)
-		z.do('const uint32_t handle_index = index_to_%s.index_or_invalid(%s);' % (self.type, varname))
+		if self.type == 'VkPhysicalDevice':
+			z.do('const uint32_t handle_index = index_to_VkPhysicalDevice.index(selected_physical_device);')
+		else:
+			z.do('const uint32_t handle_index = index_to_%s.index_or_invalid(%s);' % (self.type, varname))
 		z.do('if (handle_index == CONTAINER_INVALID_INDEX) handle_json["TODO"] = "handle index not available";')
 		z.do('else if (handle_index == CONTAINER_NULL_VALUE) handle_json["index"] = Json::Value();')
 		z.do('else handle_json["index"] = handle_index;')
