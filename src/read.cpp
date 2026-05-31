@@ -6,6 +6,7 @@
 #include "read.h"
 #include "packfile.h"
 #include "jsoncpp/json/reader.h"
+#include "jsoncpp/json/writer.h"
 #include "json_helpers.h"
 #include "read_auto.h"
 #include "util_auto.h"
@@ -140,6 +141,8 @@ uint8_t lava_file_reader::step()
 	assert(r != 0); // invalid value for instrtype
 	current.packet_type = r;
 	if (r != PACKET_VULKAN_API_CALL) current.call_id = UINT16_MAX;
+	printed_current_packet = false;
+	print_packet_frame = current.frame;
 	return r;
 }
 
@@ -164,6 +167,11 @@ uint16_t lava_file_reader::read_apicall()
 	current.packet_type = PACKET_VULKAN_API_CALL;
 	// replay_stop_requested may unwind out of this call before the normal per-call epilogue runs.
 	func(*this);
+	if (parent->print_packets && !printed_current_packet)
+	{
+		callback_context cb_context{ *this };
+		print_params_unavailable(cb_context);
+	}
 	current.call++;
 	parent->thread_call_numbers->at(current.thread).fetch_add(1, std::memory_order_relaxed);
 	pool.reset();
@@ -176,28 +184,15 @@ Json::Value cli_params_base_json(const callback_context& cb)
 	return v;
 }
 
-void cli_params_publish(callback_context& cb, Json::Value v)
+static Json::Value params_unavailable_json(const callback_context& cb)
 {
-	lava_reader* parent = cb.reader.parent;
-	parent->cli_response = v.toStyledString();
-	if (parent->cli_response.empty() || parent->cli_response.back() != '\n') parent->cli_response += "\n";
-	parent->cli_params_ready.store(true, std::memory_order_release);
-	parent->cli_params_ready.notify_all();
-}
-
-void cli_params_unavailable(callback_context& cb)
-{
-	lava_reader* parent = cb.reader.parent;
-	if (!parent->cli_params_requested.exchange(false, std::memory_order_acq_rel)) return;
 	Json::Value v = cli_params_base_json(cb);
 	v["parameters"]["TODO"] = "parameter serialization is not implemented for this hardcoded replay path";
-	cli_params_publish(cb, v);
+	return v;
 }
 
-void cli_params_packet(callback_context& cb)
+static Json::Value params_packet_json(const callback_context& cb)
 {
-	lava_reader* parent = cb.reader.parent;
-	if (!parent->cli_params_requested.exchange(false, std::memory_order_acq_rel)) return;
 	Json::Value v = cli_params_base_json(cb);
 	Json::Value params;
 	const output_update_packet& update = cb.reader.current_update_packet;
@@ -218,7 +213,55 @@ void cli_params_packet(callback_context& cb)
 		params["TODO"] = "packet parameter serialization not implemented";
 	}
 	v["parameters"] = params;
-	cli_params_publish(cb, v);
+	return v;
+}
+
+void cli_params_publish(callback_context& cb, Json::Value v)
+{
+	lava_reader* parent = cb.reader.parent;
+	parent->cli_response = v.toStyledString();
+	if (parent->cli_response.empty() || parent->cli_response.back() != '\n') parent->cli_response += "\n";
+	parent->cli_params_ready.store(true, std::memory_order_release);
+	parent->cli_params_ready.notify_all();
+}
+
+void cli_params_unavailable(callback_context& cb)
+{
+	lava_reader* parent = cb.reader.parent;
+	if (!parent->cli_params_requested.exchange(false, std::memory_order_acq_rel)) return;
+	cli_params_publish(cb, params_unavailable_json(cb));
+}
+
+void cli_params_packet(callback_context& cb)
+{
+	lava_reader* parent = cb.reader.parent;
+	if (!parent->cli_params_requested.exchange(false, std::memory_order_acq_rel)) return;
+	cli_params_publish(cb, params_packet_json(cb));
+}
+
+void print_params_publish(callback_context& cb, Json::Value v)
+{
+	if (!cb.reader.parent->is_frame_selected(cb.reader.print_packet_frame))
+	{
+		cb.reader.printed_current_packet = true;
+		return;
+	}
+	v["frame"] = cb.reader.print_packet_frame;
+	Json::FastWriter writer;
+	const std::string out = writer.write(v);
+	lava::lock_guard lock(cb.reader.parent->print_mutex);
+	printf("%s", out.c_str());
+	cb.reader.printed_current_packet = true;
+}
+
+void print_params_unavailable(callback_context& cb)
+{
+	print_params_publish(cb, params_unavailable_json(cb));
+}
+
+void print_params_packet(callback_context& cb)
+{
+	print_params_publish(cb, params_packet_json(cb));
 }
 
 // --- trace reader

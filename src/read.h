@@ -87,6 +87,11 @@ public:
 		if (mEnd != -1) global_frame_count = end - start;
 	}
 
+	bool is_frame_selected(int frame) const
+	{
+		return mEnd == -1 || (frame >= mStart && frame <= mEnd);
+	}
+
 	/// Dump trace information to stdout
 	void dump_info();
 
@@ -162,6 +167,10 @@ public:
 	/// Whether this replay pass should emit a rewritten output trace.
 	/// Duplicated into the file reader.
 	bool write_output = false;
+
+	/// Whether this replay pass should print every packet as JSON.
+	bool print_packets = false;
+	lava::mutex print_mutex;
 
 	/// Whether we should abort on less serious errors or just warn
 	bool validate = false;
@@ -328,6 +337,8 @@ public:
 	/// Whether we should actually call into Vulkan or if we are just processing the data
 	bool run = true;
 	bool write_output = false;
+	bool printed_current_packet = false;
+	uint32_t print_packet_frame = 0;
 
 	// CLI stuff
 	std::atomic_uint_fast32_t cli_call{ UINT32_MAX };
@@ -450,3 +461,6 @@ Json::Value cli_params_base_json(const callback_context& cb);
 void cli_params_publish(callback_context& cb, Json::Value v);
 void cli_params_unavailable(callback_context& cb);
 void cli_params_packet(callback_context& cb);
+void print_params_publish(callback_context& cb, Json::Value v);
+void print_params_unavailable(callback_context& cb);
+void print_params_packet(callback_context& cb);

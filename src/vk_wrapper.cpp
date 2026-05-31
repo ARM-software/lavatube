@@ -23,7 +23,7 @@ VkuVulkanLibrary vkuCreateWrapper()
 	}
 	else
 	{
-		ILOG("Successfully loaded Vulkan library: %s", filepath.c_str());
+		DLOG("Successfully loaded Vulkan library: %s", filepath.c_str());
 		wrap_vkGetInstanceProcAddr = reinterpret_cast<PFN_vkGetInstanceProcAddr>(dlsym(library, "vkGetInstanceProcAddr"));
 		if (!wrap_vkGetInstanceProcAddr)
 		{

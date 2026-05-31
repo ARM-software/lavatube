@@ -604,6 +604,35 @@ add_lavatube_test(trace_test_tracing1_tool_rewrite
 		-P ${PROJECT_SOURCE_DIR}/tests/lava_tool_rewrite.cmake)
 install(TARGETS lava-tool RUNTIME)
 
+# --- lava-print ---
+
+add_executable(lava-print src/print.cpp)
+target_include_directories(lava-print ${COMMON_INCLUDE})
+target_link_libraries(lava-print ${COMMON_LIBRARIES} lavatube)
+target_compile_options(lava-print PRIVATE ${COMMON_FLAGS})
+add_dependencies(lava-print sync_generated)
+add_lavatube_test(lava_print_tracing2_ndjson
+	COMMAND ${CMAKE_COMMAND}
+		-DLAVA_PRINT=$<TARGET_FILE:lava-print>
+		-DPYTHON_EXECUTABLE=${PYTHON_EXECUTABLE}
+		-DINPUT_TRACE=${CMAKE_CURRENT_BINARY_DIR}/tracing_2.vk
+		-DOUTPUT_FILE=${CMAKE_CURRENT_BINARY_DIR}/lava_print_tracing2.ndjson
+		-P ${PROJECT_SOURCE_DIR}/tests/lava_print_ndjson.cmake)
+set_tests_properties(lava_print_tracing2_ndjson PROPERTIES FIXTURES_REQUIRED tracing_2)
+add_lavatube_test(lava_print_vkcube_frame2_ndjson
+	COMMAND ${CMAKE_COMMAND}
+		-DLAVA_PRINT=$<TARGET_FILE:lava-print>
+		-DPYTHON_EXECUTABLE=${PYTHON_EXECUTABLE}
+		-DINPUT_TRACE=${PROJECT_SOURCE_DIR}/traces/lunarg_vkcube.vk
+		-DOUTPUT_FILE=${CMAKE_CURRENT_BINARY_DIR}/lava_print_vkcube_frame2.ndjson
+		-DFRAME_START=2
+		-DFRAME_END=2
+		-DEXPECT_FRAME=2
+		-P ${PROJECT_SOURCE_DIR}/tests/lava_print_ndjson.cmake)
+add_lavatube_test(lava_print_skip_missing COMMAND lava-print --skip-missing-input does_not_exist.vk)
+set_tests_properties(lava_print_skip_missing PROPERTIES SKIP_RETURN_CODE 77)
+install(TARGETS lava-print RUNTIME)
+
 # --- lava-cli ---
 
 add_executable(lava-cli src/cli.cpp)

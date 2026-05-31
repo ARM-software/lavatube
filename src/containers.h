@@ -40,7 +40,7 @@ struct change_source
 	{
 		assert(call != UINT32_MAX);
 		assert(thread < 4096);
-		assert(call_id != UINT16_MAX);
+		if (packet_type == 2) assert(call_id != UINT16_MAX); // PACKET_VULKAN_API_CALL
 		assert(frame != UINT32_MAX);
 	}
 };

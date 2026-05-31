@@ -331,7 +331,7 @@ class parameter(spec.base_parameter):
 		z.do('Json::Value handle_json;')
 		z.do('handle_json["type"] = "%s";' % self.type)
 		if self.type == 'VkPhysicalDevice':
-			z.do('const uint32_t handle_index = index_to_VkPhysicalDevice.index(selected_physical_device);')
+			z.do('const uint32_t handle_index = index_to_VkPhysicalDevice.index_or_invalid(selected_physical_device);')
 		else:
 			z.do('const uint32_t handle_index = index_to_%s.index_or_invalid(%s);' % (self.type, varname))
 		z.do('if (handle_index == CONTAINER_INVALID_INDEX) handle_json["TODO"] = "handle index not available";')
@@ -2093,6 +2093,7 @@ def loadfunc(name, node, target, header):
 	elif retval == 'PFN_vkVoidFunction': z.do('cb_context.result.address = retval;')
 	else: assert False, 'Unhandled callback result type %s from %s' % (retval, name)
 	z.do('for (auto* c : %s_callbacks) c(%s);' % (name, 'cb_context, ' + ', '.join(call_list)))
+	z.do('if (reader.parent->print_packets) print_params_publish(cb_context, json_params_%s(%s));' % (name, 'cb_context, ' + ', '.join(call_list) if call_list else 'cb_context'))
 	if name == 'vkQueuePresentKHR':
 		z.do('if (stop_after_present) // if it returns true, then we have hit the end of our global frame range, so terminate everything')
 		z.brace_begin()
