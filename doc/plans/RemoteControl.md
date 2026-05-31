@@ -22,6 +22,7 @@ Already implemented instructions:
 * `lava-cli continue` - continues the replay until the end
 * `lava-cli stop` - stops the replay
 * `lava-cli step [packets X|calls X]` - step the given number of packets or API calls ahead
+* `lava-cli goto X` - continue replay until API call number X
 * `lava-cli info threads`
 * `lava-cli params|parameters` - print command or packet input parameters as JSON
 
@@ -33,7 +34,7 @@ More instructions to implement - in prioritized order:
 * `lava-cli thread N` - updates the stored current thread index
 * `lava-cli continue` - also receive debug info from all threads, and if replay fails then print the last debug information received
 * `lava-cli step frames X` - step the given number of frames ahead in the current thread, then pause again
-- `lava-cli goto [call X|frame X|command X]` - replay until we get to the given call or frame or command by name
+- `lava-cli goto [frame X|command X]` - replay until we get to the given frame or command by name
 * `lava-cli info <topic>` - show input parameters and important state
 	- 'objects' - show all non-zero object types, with pending, created, bound (if applicable) and destroyed columns
 	- 'queues'

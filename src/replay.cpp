@@ -46,17 +46,22 @@ static std::vector<std::string> split_command(const std::string& keyword)
 	return tokens;
 }
 
-static bool parse_positive_u32(const std::string& text, uint32_t& out)
+static bool parse_u32(const std::string& text, uint32_t& out)
 {
 	char* end = nullptr;
 	errno = 0;
 	const unsigned long value = strtoul(text.c_str(), &end, 10);
-	if (errno != 0 || end == text.c_str() || *end != '\0' || value == 0 || value > std::numeric_limits<uint32_t>::max())
+	if (errno != 0 || end == text.c_str() || *end != '\0' || value > std::numeric_limits<uint32_t>::max())
 	{
 		return false;
 	}
 	out = (uint32_t)value;
 	return true;
+}
+
+static bool parse_positive_u32(const std::string& text, uint32_t& out)
+{
+	return parse_u32(text, out) && out > 0;
 }
 
 static bool cli_thread_ready()
@@ -282,6 +287,42 @@ static void service_listener()
 						replayer.cli_running.wait(true);
 						response = cli_paused_command_response(reader);
 					}
+				}
+			}
+			// TODO we should not return until _all_ threads are back in pause state
+		}
+		else if (command[0] == "goto")
+		{
+			uint32_t target_call = 0;
+			if (command.size() != 2 || !parse_u32(command[1], target_call))
+			{
+				response = "ERROR\n";
+			}
+			else if (replay_done.load(std::memory_order_acquire) || replayer.cli_running.load(std::memory_order_acquire) || !cli_thread_ready())
+			{
+				response = "ERROR\n";
+			}
+			else
+			{
+				const int thread_id = replayer.cli_thread.load(std::memory_order_acquire);
+				lava_file_reader& reader = replayer.file_reader(thread_id);
+				const uint32_t current_call = cli_current_call(reader);
+				if (target_call < current_call)
+				{
+					response = "ERROR\n";
+				}
+				else if (target_call == current_call)
+				{
+					response = cli_paused_command_response(reader);
+				}
+				else
+				{
+					reader.cli_step.store(cli_step_mode::calls, std::memory_order_release);
+					reader.cli_call.store(target_call, std::memory_order_release);
+					replayer.cli_running.store(true, std::memory_order_release);
+					replayer.cli_running.notify_all();
+					replayer.cli_running.wait(true);
+					response = replay_done.load(std::memory_order_acquire) ? "DONE\n" : cli_paused_command_response(reader);
 				}
 			}
 			// TODO we should not return until _all_ threads are back in pause state
