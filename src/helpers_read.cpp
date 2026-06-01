@@ -571,6 +571,7 @@ const char* const* instance_extensions(lava_file_reader& reader, uint32_t& len)
 	const bool use_stored_metadata = reader.run && !p__skip_remove_unused && reader.parent->has_stored_instance_requested_extensions;
 	if (!reader.run) return stored;
 
+	bool host_has_surface = false;
 	backing.clear();
 	dst.clear();
 	if (use_stored_metadata && stored_len != metadata_len)
@@ -587,6 +588,7 @@ const char* const* instance_extensions(lava_file_reader& reader, uint32_t& len)
 	DLOG("Supported instance extensions on replay host:");
 	for (const VkExtensionProperties& s : supported_extensions)
 	{
+		if (strcmp(s.extensionName, VK_KHR_SURFACE_EXTENSION_NAME) == 0) host_has_surface = true;
 		if (strcmp(s.extensionName, VK_EXT_DEBUG_REPORT_EXTENSION_NAME) == 0) has_debug_report = true;
 		if (strcmp(s.extensionName, VK_EXT_DEBUG_UTILS_EXTENSION_NAME) == 0) has_debug_utils = true;
 		DLOG("\t%s", s.extensionName);
@@ -626,7 +628,10 @@ const char* const* instance_extensions(lava_file_reader& reader, uint32_t& len)
 	}
 
 	// Add instance extensions
-	if (!is_noscreen()) backing.push_back(VK_KHR_SURFACE_EXTENSION_NAME);
+	if (!is_noscreen() || host_has_surface)
+	{
+		backing.push_back(VK_KHR_SURFACE_EXTENSION_NAME);
+	}
 	if (is_debug() || is_validation())
 	{
 		if (has_debug_report) backing.push_back(VK_EXT_DEBUG_REPORT_EXTENSION_NAME);

@@ -960,6 +960,8 @@ layer_test(demo_descriptor_heap_minimal demo_descriptor_heap_minimal)
 layer_test(compute_descriptor_heap compute_descriptor_heap)
 layer_test(compute_bda_sc_shader_object compute_bda_sc_shader_object)
 layer_test(compute_bda_sc_shader_object_multi compute_bda_sc_shader_object --multi-create-info)
+layer_test(aztec_simulator_slow_compute aztec_simulator_slow_compute)
+layer_test(as_populate_instance_buffer as_populate_instance_buffer)
 
 # The two below will fail as we lack support for interleaved data for VK_EXT_multi_draw for now
 #layer_test(graphics_multi_draw_stride16 graphics_multi_draw --multi-draw-mode indexed --stride-mode aligned16)

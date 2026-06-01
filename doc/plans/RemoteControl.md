@@ -27,10 +27,6 @@ Already implemented instructions:
 * `lava-cli params|parameters` - print command or packet input parameters as JSON
 
 More instructions to implement - in prioritized order:
-* `lava-cli status`
-  on subsequent lines:
-	- for each thread, current call number, current API/packet call name
-	- bonus: is it possible to show what we are waiting on?
 * `lava-cli thread N` - updates the stored current thread index
 * `lava-cli continue` - also receive debug info from all threads, and if replay fails then print the last debug information received
 * `lava-cli step frames X` - step the given number of frames ahead in the current thread, then pause again
@@ -41,10 +37,12 @@ More instructions to implement - in prioritized order:
 	- 'swapchains' - show image index numbers of real and fake swapchains and their status
 * `lava-cli show <object type> [index|id] <number>` - print given globally tracked object and its metadata; we can reuse `json_helpers.h`
 * `lava-cli list <object type>` - list all objects of given type tracked globally and their status
-* `lava-cli save buffer|image|tensor <index> <filename>` - write contents of object given by index to the given filename
+* `lava-cli save buffer|image|tensor <index> <filename>` - write exact contents of object given by index to the given filename (if bound)
+* `lava-cli convert buffer|image|tensor <index> <filename.png>` - transform to linear format and write contents of image data given by index to the given filename (if bound)
 * `lava-cli save jumpfile <name>` - write out state recreation to current position + frame boundary + jump packet to file <name>
 * `lava-cli set debug <level>` - change global debug level
 * `lava-cli set blackhole <true|false>` - change blackhole setting
+* `lava-cli probe <object type> <index>` - stop on next use of this object; can only set one probe per object type
 
 ## Notes
 
@@ -52,6 +50,56 @@ We deliberately pause _after_ command execution so that we can inspect the resul
 the command. This hides some state from us, however. Any stored inputs that get overwritten
 by the executed command with new data will not be visible. We could make sure both data sets
 are kept and have a switch to choose whcih one to show, though.
+
+## 'probe'
+
+For this, we would need to
+* Always resolve all handles into meta-objects during replay, like we currently do during capture. There will be some overhead.
+* Add one conditional check against a stored probe-id, if valid, then if current, then set step variable to stop on this packet.
+
+However, the capability we would get would be very interesting. Finding where the object is used for more complex commands
+might be a bit of needing in a haystack, but no easy way to improve this. If we think probes on multiple objects at once is
+likely, we could store which one(s) triggered. We could also store name of structure or if found in object root. Best would be
+to store a nested chain (list) of 'where are we now' that we could push onto into a probe storage to display (eg 'probe triggered
+in pStructureInfo(VkSomeStructureType)->pNext(VkSomeExtType)->pWhatever(pSomeOtherType)')
+
+## 'goto'
+
+Check for typos
+
+## 'show'
+
+Use existing `src/json_helpers.cpp` functions, add extra fields, for now just the `state`
+field from `trackable`.
+
+## Binaries
+
+We can get binary data from a number of sources:
+* `lava-cli params` may reference a binary blob of data; we should give it an attachment
+  index number and push it onto an attachment list with pointer to the data in our memory
+  pool, allowing `lava-cli save attachment <inded> <filename>` to save it to file.
+* Global metadata may reference it, eg `laval-cli show VkImage index 1`, here we may store
+  the referenced data with `lava-cli save <type> <index> <filename>`.
+* It may be ephemeral data only used during the running of a commandbuffer. Here we need
+  to recreate and instrument the commandbuffer to store the data. We should only do this
+  when waiting on a queue submit, and on return from the queue submit we should wait for
+  queue to finish then write out the result. But we wait _after_ the queue submit, which
+  makes this hard. Either we special case queue submits, or we awkwardly ask users to
+  instrument on a command before. Less awkward if we could have a goto that put as at the
+  command _before_ the target. Another option is to require the user to go to the command
+  creation where we could add output target coyp command into the commandbuffer without
+  any re-creation.
+
+## Manipulation
+
+It could sometimes be useful to manipulate (ie change) existing data structures for
+testing purposes. However, since we don't pause before calling commands, we can't
+modify what goes into command execution, only what is stored as a result.
+
+Ideas:
+* Modify SPIRV in shader module (basically recreating it)
+* Instrumenting a commandbuffer (adding write-out after a command while commandbuffer
+  recording is started)
 
 ## Multi-threading
 
@@ -103,6 +151,8 @@ of it.
 
 ## Output format
 
+## Tabular data
+
 Allow choice of display of tabular data in either markdown or CSV (or TSV, tab separated).
 We have a new class in `src/datatable.h` for abstracting away the choice.
 
@@ -114,6 +164,16 @@ data.
 
 Output type may therefore depend on `--human-readable` vs `--machine-readable` or similar
 option. May also want `--always-ndjson`.
+
+## Nested / structured data
+
+We currently use NDJSON / json lines for nested data. We should consider a more human-readable
+format as well.
+
+### Image data
+
+Plan is to support both binary blobs and conversion to PNG. [This](doc/plans/CompressedAssetsFile.md)
+might be related.
 
 ## Inspiration
 
@@ -139,20 +199,6 @@ If there is a disconnect during replay, we have more options, but keep going is 
 invasive, so we should go with this to begin with at least.
 
 ## Additional questions to resolve (from Gemini review)
-
-### Port Discovery and Android Constraints
-
-* **The Config File:** The plan mentions writing the bound TCP port to `~/.lavatube/config.json`.
- On Android, writing to a home directory like `~/` won't work due to app sandboxing. You would
- have to write to the app's internal storage directory, which `lava-cli` on the host machine
- cannot easily read without additional `adb shell run-as` tricks.
-
-* **Recommendation:** For Android, it's usually best to rely on a **fixed default port** (e.g.,
- `19100`) that can be overridden via a command-line flag or environment variable. This allows
- the user to blindly set up `adb forward tcp:19100 tcp:19100` before running the app, without
- needing to extract a dynamically assigned port from a config file. For Linux, printing the
- port to `stdout` before backgrounding might be cleaner than a global config file, especially
- if multiple traces are being replayed simultaneously.
 
 ### Thread Pausing Behavior
 

@@ -1084,16 +1084,11 @@ inline void trackedmemory::unbind(trackedobject* obj)
 	}
 }
 
-inline std::string describe_change_source(const change_source& src)
-{
-	return "Memory last written to by " + std::string(get_function_name(src.call_id)) + " at frame " + std::to_string(src.frame) + " call number " + std::to_string(src.call) + " thread " + std::to_string(src.thread);
-}
-
 inline const char* get_packet_name(packet_type type, uint16_t call_id)
 {
 	switch (type)
 	{
-	case PACKET_VULKAN_API_CALL: return get_function_name(call_id);
+	case PACKET_VULKAN_API_CALL: assert(call_id != UINT16_MAX); return get_function_name(call_id);
 	case PACKET_THREAD_BARRIER: return "thread_barrier";
 	case PACKET_IMAGE_UPDATE: return "legacy_image_update";
 	case PACKET_BUFFER_UPDATE: return "legacy_buffer_update";
@@ -1105,4 +1100,11 @@ inline const char* get_packet_name(packet_type type, uint16_t call_id)
 	}
 	assert(false);
 	return "error";
+}
+
+inline std::string describe_change_source(const change_source& src)
+{
+	assert(src.packet_type != UINT8_MAX);
+	const char* name = get_packet_name((packet_type)src.packet_type, src.call_id);
+	return "Memory last written to by " + std::string(name) + " at frame " + std::to_string(src.frame) + " call number " + std::to_string(src.call) + " thread " + std::to_string(src.thread);
 }
