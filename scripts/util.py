@@ -1821,6 +1821,15 @@ def loadfunc(name, node, target, header):
 		if param.inparam:
 			param.print_json('json_parameters', '')
 	z.do('v["parameters"] = json_parameters;')
+	if retval == 'void': pass
+	elif retval == 'VkResult': z.do('v["return"] = VkResult_to_string(cb.result.vkresult);')
+	elif retval == 'VkBool32': z.do('v["return"] = cb.result.vkbool;')
+	elif retval == 'uint64_t': z.do('v["return"] = cb.result.u64;')
+	elif retval == 'uint32_t': z.do('v["return"] = cb.result.u32;')
+	elif retval == 'VkDeviceAddress': z.do('v["return"] = (Json::UInt64)cb.result.address;')
+	elif retval == 'VkDeviceSize': z.do('v["return"] = (Json::UInt64)cb.result.size;')
+	elif retval == 'PFN_vkVoidFunction': z.do('v["return"] = cb_context.result.address = retval;')
+	else: assert False, 'Unhandled callback result type %s from %s' % (retval, name)
 	z.do('return v;')
 	z.dump()
 	print('}', file=target)
