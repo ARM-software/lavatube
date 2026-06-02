@@ -64,6 +64,11 @@ static bool parse_positive_u32(const std::string& text, uint32_t& out)
 	return parse_u32(text, out) && out > 0;
 }
 
+static void cli_clear_function_target(lava_file_reader& reader)
+{
+	reader.cli_function.store(UINT16_MAX, std::memory_order_release);
+}
+
 static bool cli_thread_ready()
 {
 	const int thread_id = replayer.cli_thread.load(std::memory_order_acquire);
@@ -231,6 +236,7 @@ static void service_listener()
 			if (cli_thread_ready())
 			{
 				lava_file_reader& reader = replayer.file_reader(replayer.cli_thread.load(std::memory_order_acquire));
+				cli_clear_function_target(reader);
 				reader.cli_call.store(UINT32_MAX, std::memory_order_release);
 			}
 			replayer.cli_running.store(true, std::memory_order_release);
@@ -280,6 +286,7 @@ static void service_listener()
 					}
 					else
 					{
+						cli_clear_function_target(reader);
 						reader.cli_step.store(step_mode, std::memory_order_release);
 						reader.cli_call.store(base_count + count, std::memory_order_release);
 						replayer.cli_running.store(true, std::memory_order_release);
@@ -294,7 +301,7 @@ static void service_listener()
 		else if (command[0] == "goto")
 		{
 			uint32_t target_call = 0;
-			if (command.size() != 2 || !parse_u32(command[1], target_call))
+			if (command.size() != 2)
 			{
 				response = "ERROR\n";
 			}
@@ -306,23 +313,45 @@ static void service_listener()
 			{
 				const int thread_id = replayer.cli_thread.load(std::memory_order_acquire);
 				lava_file_reader& reader = replayer.file_reader(thread_id);
-				const uint32_t current_call = cli_current_call(reader);
-				if (target_call < current_call)
+				if (parse_u32(command[1], target_call))
 				{
-					response = "ERROR\n";
-				}
-				else if (target_call == current_call)
-				{
-					response = cli_paused_command_response(reader);
+					const uint32_t current_call = cli_current_call(reader);
+					if (target_call < current_call)
+					{
+						response = "ERROR\n";
+					}
+					else if (target_call == current_call)
+					{
+						response = cli_paused_command_response(reader);
+					}
+					else
+					{
+						cli_clear_function_target(reader);
+						reader.cli_step.store(cli_step_mode::calls, std::memory_order_release);
+						reader.cli_call.store(target_call, std::memory_order_release);
+						replayer.cli_running.store(true, std::memory_order_release);
+						replayer.cli_running.notify_all();
+						replayer.cli_running.wait(true);
+						response = replay_done.load(std::memory_order_acquire) ? "DONE\n" : cli_paused_command_response(reader);
+					}
 				}
 				else
 				{
-					reader.cli_step.store(cli_step_mode::calls, std::memory_order_release);
-					reader.cli_call.store(target_call, std::memory_order_release);
-					replayer.cli_running.store(true, std::memory_order_release);
-					replayer.cli_running.notify_all();
-					replayer.cli_running.wait(true);
-					response = replay_done.load(std::memory_order_acquire) ? "DONE\n" : cli_paused_command_response(reader);
+					const uint16_t function_id = retrace_getid(command[1].c_str());
+					if (function_id == UINT16_MAX)
+					{
+						response = "ERROR\n";
+					}
+					else
+					{
+						reader.cli_function.store(function_id, std::memory_order_release);
+						reader.cli_call.store(cli_current_call(reader) + 1, std::memory_order_release);
+						reader.cli_step.store(cli_step_mode::function, std::memory_order_release);
+						replayer.cli_running.store(true, std::memory_order_release);
+						replayer.cli_running.notify_all();
+						replayer.cli_running.wait(true);
+						response = replay_done.load(std::memory_order_acquire) ? "DONE\n" : cli_paused_command_response(reader);
+					}
 				}
 			}
 			// TODO we should not return until _all_ threads are back in pause state

@@ -22,7 +22,7 @@ Already implemented instructions:
 * `lava-cli continue` - continues the replay until the end
 * `lava-cli stop` - stops the replay
 * `lava-cli step [packets X|calls X]` - step the given number of packets or API calls ahead
-* `lava-cli goto X` - continue replay until API call number X
+* `lava-cli goto X|NAME` - continue replay until API call number X or the next API call named NAME
 * `lava-cli info threads`
 * `lava-cli params|parameters` - print command or packet input parameters as JSON
 
@@ -30,12 +30,13 @@ More instructions to implement - in prioritized order:
 * `lava-cli thread N` - updates the stored current thread index
 * `lava-cli continue` - also receive debug info from all threads, and if replay fails then print the last debug information received
 * `lava-cli step frames X` - step the given number of frames ahead in the current thread, then pause again
-- `lava-cli goto [frame X|command X]` - replay until we get to the given frame or command by name
+- `lava-cli goto frame X` - replay until we get to the given frame
 * `lava-cli info <topic>` - show input parameters and important state
 	- 'objects' - show all non-zero object types, with pending, created, bound (if applicable) and destroyed columns
 	- 'queues'
 	- 'swapchains' - show image index numbers of real and fake swapchains and their status
-* `lava-cli show <object type> [index|id] <number>` - print given globally tracked object and its metadata; we can reuse `json_helpers.h`
+* `lava-cli show <object type> <index>` - print given globally tracked object and its metadata; we can use `json_helpers.h` and add extra info to what we get from it
+	- commandbuffers : would be good to be able to print their command contents, but no way to introspect this at the moment, we can only show what we store for execute_commands()
 * `lava-cli list <object type>` - list all objects of given type tracked globally and their status
 * `lava-cli save buffer|image|tensor <index> <filename>` - write exact contents of object given by index to the given filename (if bound)
 * `lava-cli convert buffer|image|tensor <index> <filename.png>` - transform to linear format and write contents of image data given by index to the given filename (if bound)

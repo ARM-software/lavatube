@@ -28,6 +28,7 @@ enum class cli_step_mode : uint8_t
 {
 	packets = 0,
 	calls = 1,
+	function = 2,
 };
 using lava_markings_observer = void (*)(const change_source&, const VkMarkedOffsetsARM*, void*);
 
@@ -344,6 +345,7 @@ public:
 	std::atomic_uint_fast32_t cli_call{ UINT32_MAX };
 	std::atomic_uint_fast32_t cli_paused_call{ 0 };
 	std::atomic_uint_fast32_t cli_packet{ 0 };
+	std::atomic_uint_fast16_t cli_function{ UINT16_MAX };
 	std::atomic<cli_step_mode> cli_step{ cli_step_mode::packets };
 
 	// Replay-only: per-thread queue for AS build sizes and internal AS buffers.
@@ -433,9 +435,10 @@ static inline bool check_cli(const callback_context& cb)
 	if (parent->stop_requested()) cb.reader.throw_stop_requested();
 	uint32_t completed_call = 0;
 	const cli_step_mode step_mode = cb.reader.cli_step.load(std::memory_order_acquire);
-	if (step_mode == cli_step_mode::calls)
+	if (step_mode == cli_step_mode::calls || step_mode == cli_step_mode::function)
 	{
 		if (cb.reader.current.packet_type != PACKET_VULKAN_API_CALL) return false;
+		if (step_mode == cli_step_mode::function && cb.reader.current.call_id != cb.reader.cli_function.load(std::memory_order_acquire)) return false;
 		completed_call = cb.reader.current.call + 1;
 	}
 	else
