@@ -5,11 +5,48 @@
 
 #include "json_helpers.h"
 
+static bool valid_change_source(const change_source& c)
+{
+	return c.call != UINT32_MAX && c.frame != UINT32_MAX && c.thread != UINT8_MAX && (c.packet_type != UINT8_MAX || c.call_id != UINT16_MAX);
+}
+
+static const char* trackable_state_string(const trackable* t)
+{
+	switch (t->state)
+	{
+	case (uint8_t)trackable::states::uninitialized: return "uninitialized";
+	case (uint8_t)trackable::states::initialized: return "initialized";
+	case (uint8_t)trackable::states::created: return "created";
+	case (uint8_t)trackable::states::destroyed: return "destroyed";
+	case (uint8_t)trackedobject::states::bound: return "bound";
+	default: return "unknown";
+	}
+}
+
+static void strip_show_meta_lifecycle(Json::Value& meta)
+{
+	static const char* keys[] =
+	{
+		"frame_created",
+		"call_created",
+		"thread_created",
+		"api_created",
+		"frame_destroyed",
+		"call_destroyed",
+		"thread_destroyed",
+		"api_destroyed",
+		"name",
+	};
+	for (const char* key : keys)
+	{
+		meta.removeMember(key);
+	}
+}
+
 Json::Value trackable_json(const trackable* t)
 {
 	Json::Value v;
 	assert(t->creation.frame != UINT32_MAX);
-	assert(t->last_modified.frame != UINT32_MAX);
 	v["frame_created"] = t->creation.frame;
 	v["call_created"] = t->creation.call; // local call number
 	v["thread_created"] = t->creation.thread;
@@ -22,6 +59,24 @@ Json::Value trackable_json(const trackable* t)
 		v["api_destroyed"] = t->destroyed.call_id;
 	}
 	if (!t->name.empty()) v["name"] = t->name;
+	return v;
+}
+
+Json::Value cli_show_object_json(const char* object_type, const trackable* t, Json::Value meta)
+{
+	strip_show_meta_lifecycle(meta);
+
+	Json::Value v;
+	v["type"] = object_type;
+	v["index"] = t->index;
+	v["state"] = trackable_state_string(t);
+	if (!t->name.empty()) v["name"] = t->name;
+	if (valid_change_source(t->creation)) v["creation"] = from_change_source(t->creation);
+
+	const change_source& last_modified = valid_change_source(t->last_modified) ? t->last_modified : t->creation;
+	if (valid_change_source(last_modified)) v["last_modified"] = from_change_source(last_modified);
+	if (valid_change_source(t->destroyed)) v["destroyed"] = from_change_source(t->destroyed);
+	v["meta"] = meta;
 	return v;
 }
 
@@ -129,6 +184,18 @@ Json::Value trackedswapchain_json(const trackedswapchain* t)
 	return v;
 }
 
+Json::Value trackedcmdbuffer_json(const trackedcmdbuffer* t)
+{
+	Json::Value v = trackable_json(t);
+	if (t->device_index != CONTAINER_INVALID_INDEX) v["parent_device_index"] = t->device_index;
+	if (t->pool_index != CONTAINER_INVALID_INDEX) v["pool"] = t->pool_index;
+	if (t->replay_submit_fence_index != CONTAINER_INVALID_INDEX) v["replay_submit_fence_index"] = t->replay_submit_fence_index;
+	if (t->bound_raytracing_pipeline_index != CONTAINER_INVALID_INDEX) v["bound_raytracing_pipeline_index"] = t->bound_raytracing_pipeline_index;
+	v["commands"] = (unsigned)t->commands.size();
+	v["replay_pending"] = t->replay_pending;
+	return v;
+}
+
 Json::Value trackedcmdbuffer_trace_json(const trackedcmdbuffer_trace* t)
 {
 	Json::Value v = trackable_json(t);
@@ -147,6 +214,17 @@ Json::Value trackedbufferview_json(const trackedbufferview* t)
 {
 	Json::Value v = trackable_json(t);
 	v["buffer"] = (unsigned)t->buffer_index;
+	return v;
+}
+
+Json::Value trackeddescriptorset_json(const trackeddescriptorset* t)
+{
+	Json::Value v = trackable_json(t);
+	if (t->pool_index != CONTAINER_INVALID_INDEX) v["pool"] = t->pool_index;
+	v["bound_buffers"] = (unsigned)t->bound_buffers.size();
+	v["bound_images"] = (unsigned)t->bound_images.size();
+	v["bound_opaque_descriptors"] = (unsigned)t->bound_opaque_descriptors.size();
+	v["dynamic_buffers"] = (unsigned)t->dynamic_buffers.size();
 	return v;
 }
 
@@ -707,6 +785,8 @@ Json::Value from_change_source(const change_source& c)
 	v["index"] = c.call;
 	v["frame"] = c.frame;
 	v["thread"] = c.thread;
-	v["name"] = get_packet_name((packet_type)c.packet_type, c.call_id);
+	const uint8_t packet = c.packet_type != UINT8_MAX ? c.packet_type : (c.call_id != UINT16_MAX ? PACKET_VULKAN_API_CALL : UINT8_MAX);
+	if (packet != UINT8_MAX) v["name"] = get_packet_name((packet_type)packet, c.call_id);
+	else v["name"] = "unknown";
 	return v;
 }

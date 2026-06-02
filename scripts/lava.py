@@ -628,6 +628,64 @@ for e in extra_tracked_structs:
 	out(targets_read, '\tif (v.isMember("%s")) { has_%s = true; read%s(v["%s"], stored_%s); }' % (e, e, e, e, e))
 out(targets_read, '}')
 
+replay_json_helper_overrides = {
+	'trackedcmdbuffer': 'trackedcmdbuffer_json',
+	'trackeddescriptorset': 'trackeddescriptorset_json',
+	'trackedswapchain_replay': 'trackedswapchain_json',
+}
+
+def replay_json_helper(t):
+	return replay_json_helper_overrides.get(t, t + '_json')
+
+cli_object_types = []
+for v in spec.root.findall('types/type'):
+	if v.attrib.get('category') == 'handle':
+		if v.find('name') == None or v.find('name').text == 'VkDeviceMemory': # ignore aliases
+			continue
+		name = v.find('name').text
+		if spec.str_contains_vendor(name): continue
+		cli_object_types.append(name)
+
+out(targets_read)
+out(targets_read, 'static std::unordered_map<std::string, uint16_t> cli_object_type_table =')
+out(targets_read, '{')
+for idx, name in enumerate(cli_object_types):
+	out(targets_read, '\t{ "%s", %d },' % (name, idx))
+out(targets_read, '};')
+out(targets_read)
+out(targets_read_headers, 'uint16_t cli_get_object_type(const char* object_type);')
+out(targets_read, 'uint16_t cli_get_object_type(const char* object_type)')
+out(targets_read, '{')
+out(targets_read, '\tif (cli_object_type_table.count(object_type) == 0) return UINT16_MAX;')
+out(targets_read, '\treturn cli_object_type_table.at(object_type);')
+out(targets_read, '}')
+out(targets_read)
+out(targets_read_headers, 'bool cli_show_object_json(const char* object_type, uint32_t index, Json::Value& out);')
+out(targets_read, 'bool cli_show_object_json(const char* object_type, uint32_t index, Json::Value& out)')
+out(targets_read, '{')
+out(targets_read, '\tconst uint16_t type = cli_get_object_type(object_type);')
+out(targets_read, '\treturn cli_show_object_json(type, index, out);')
+out(targets_read, '}')
+out(targets_read)
+out(targets_read_headers, 'bool cli_show_object_json(uint16_t object_type, uint32_t index, Json::Value& out);')
+out(targets_read, 'bool cli_show_object_json(uint16_t object_type, uint32_t index, Json::Value& out)')
+out(targets_read, '{')
+out(targets_read, '\tswitch (object_type)')
+out(targets_read, '\t{')
+for idx, name in enumerate(cli_object_types):
+	trackable_type = vk.trackable_type_map_replay.get(name, 'trackable')
+	out(targets_read, '\tcase %d:' % idx)
+	out(targets_read, '\t{')
+	out(targets_read, '\t\tif (index >= %s_index.size()) return false;' % name)
+	out(targets_read, '\t\t%s& data = %s_index.at(index);' % (trackable_type, name))
+	out(targets_read, '\t\tout = cli_show_object_json("%s", &data, %s(&data));' % (name, replay_json_helper(trackable_type)))
+	out(targets_read, '\t\treturn true;')
+	out(targets_read, '\t}')
+out(targets_read, '\tdefault:')
+out(targets_read, '\t\treturn false;')
+out(targets_read, '\t}')
+out(targets_read, '}')
+
 # Make callbacks
 out(targets_read)
 for f in spec.functions:

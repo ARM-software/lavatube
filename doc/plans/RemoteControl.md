@@ -25,6 +25,8 @@ Already implemented instructions:
 * `lava-cli goto X|NAME` - continue replay until API call number X or the next API call named NAME
 * `lava-cli info threads`
 * `lava-cli params|parameters` - print command or packet input parameters as JSON
+* `lava-cli show <object type> <index>` - print given globally tracked object and its metadata as JSON
+	- commandbuffers : would be good to be able to print their command contents, but no way to introspect this at the moment, we can only show what we store for execute_commands()
 
 More instructions to implement - in prioritized order:
 * `lava-cli thread N` - updates the stored current thread index
@@ -35,8 +37,6 @@ More instructions to implement - in prioritized order:
 	- 'objects' - show all non-zero object types, with pending, created, bound (if applicable) and destroyed columns
 	- 'queues'
 	- 'swapchains' - show image index numbers of real and fake swapchains and their status
-* `lava-cli show <object type> <index>` - print given globally tracked object and its metadata; we can use `json_helpers.h` and add extra info to what we get from it
-	- commandbuffers : would be good to be able to print their command contents, but no way to introspect this at the moment, we can only show what we store for execute_commands()
 * `lava-cli list <object type>` - list all objects of given type tracked globally and their status
 * `lava-cli save buffer|image|tensor <index> <filename>` - write exact contents of object given by index to the given filename (if bound)
 * `lava-cli convert buffer|image|tensor <index> <filename.png>` - transform to linear format and write contents of image data given by index to the given filename (if bound)

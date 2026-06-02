@@ -6,15 +6,18 @@
 // --- JSON write helpers ---
 
 Json::Value trackable_json(const trackable* t);
+Json::Value cli_show_object_json(const char* object_type, const trackable* t, Json::Value meta);
 Json::Value trackedaccelerationstructure_json(const trackedaccelerationstructure* t);
 Json::Value trackedbuffer_json(const trackedbuffer* t);
 Json::Value trackedimage_json(const trackedimage* t);
 Json::Value trackedtensor_json(const trackedtensor* t);
 Json::Value trackeddatagraphpipelinesession_json(const trackeddatagraphpipelinesession* t);
 Json::Value trackedswapchain_json(const trackedswapchain* t);
+Json::Value trackedcmdbuffer_json(const trackedcmdbuffer* t);
 Json::Value trackedcmdbuffer_trace_json(const trackedcmdbuffer_trace* t);
 Json::Value trackedimageview_json(const trackedimageview* t);
 Json::Value trackedbufferview_json(const trackedbufferview* t);
+Json::Value trackeddescriptorset_json(const trackeddescriptorset* t);
 Json::Value trackeddescriptorset_trace_json(const trackeddescriptorset_trace* t);
 Json::Value trackedqueue_json(const trackedqueue* t);
 Json::Value trackedevent_trace_json(const trackedevent_trace* t);

@@ -380,6 +380,20 @@ static void service_listener()
 				}
 			}
 		}
+		else if (command.size() == 3 && command[0] == "show")
+		{
+			uint32_t index = 0;
+			Json::Value v;
+			if (replayer.cli_running.load(std::memory_order_acquire) || !parse_u32(command[2], index) || !cli_show_object_json(command[1].c_str(), index, v))
+			{
+				response = "ERROR\n";
+			}
+			else
+			{
+				response = v.toStyledString();
+				if (response.empty() || response.back() != '\n') response += "\n";
+			}
+		}
 		else if (command.size() == 1 && command[0] == "info") // general info
 		{
 			response = "INFO\n"; // TODO just a placeholder for now

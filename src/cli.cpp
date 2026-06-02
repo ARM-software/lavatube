@@ -14,7 +14,7 @@ static bool verbose = false;
 void usage()
 {
 	printf("lava-cli %d.%d.%d-" RELTYPE " command line options\n", LAVATUBE_VERSION_MAJOR, LAVATUBE_VERSION_MINOR, LAVATUBE_VERSION_PATCH);
-	printf("lava-cli [options] <status|continue|stop|step [packets N|calls N]|goto N|goto NAME|params>\n");
+	printf("lava-cli [options] <status|continue|stop|step [packets N|calls N]|goto N|goto NAME|params|show TYPE INDEX>\n");
 	printf("-h/--help              This help\n");
 	printf("-v/--verbose           Verbose output\n");
 	printf("-P/--port PORT         Port number (default %d)\n", (int)p__port);
