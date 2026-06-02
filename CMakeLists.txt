@@ -962,6 +962,11 @@ layer_test(compute_bda_sc_shader_object compute_bda_sc_shader_object)
 layer_test(compute_bda_sc_shader_object_multi compute_bda_sc_shader_object --multi-create-info)
 layer_test(aztec_simulator_slow_compute aztec_simulator_slow_compute)
 layer_test(as_populate_instance_buffer as_populate_instance_buffer)
+layer_test(compute_wait_completion_event compute_wait --wait-type completion-event)
+layer_test(compute_wait_fence_status compute_wait --wait-type fence-status)
+layer_test(compute_wait_wait_fences compute_wait --wait-type wait-fences)
+layer_test(compute_wait_wait_semaphores compute_wait --wait-type wait-semaphores)
+layer_test(compute_wait_query_pool compute_wait --wait-type query-pool)
 
 # The two below will fail as we lack support for interleaved data for VK_EXT_multi_draw for now
 #layer_test(graphics_multi_draw_stride16 graphics_multi_draw --multi-draw-mode indexed --stride-mode aligned16)

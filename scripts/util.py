@@ -1957,7 +1957,7 @@ def loadfunc(name, node, target, header):
 	elif name == "vkGetEventStatus": # loop until same result achieved
 		z.do('VkResult stored_retval = static_cast<VkResult>(reader.read_uint32_t());')
 		z.do('VkResult retval = stored_retval;')
-		z.do('if (reader.run && (stored_retval == VK_EVENT_SET || stored_retval == VK_EVENT_RESET)) do { retval = wrap_vkGetEventStatus(device, event); } while (retval != stored_retval && retval != VK_ERROR_DEVICE_LOST);')
+		z.do('if (reader.run && !is_blackhole_mode() && (stored_retval == VK_EVENT_SET || stored_retval == VK_EVENT_RESET)) do { retval = wrap_vkGetEventStatus(device, event); } while (retval != stored_retval && retval != VK_ERROR_DEVICE_LOST);')
 	elif name == 'vkAcquireNextImageKHR':
 		z.do('VkResult stored_retval = static_cast<VkResult>(reader.read_uint32_t());')
 		z.do('VkResult retval = stored_retval;')

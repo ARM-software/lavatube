@@ -30,6 +30,8 @@ How do we stack up?
   have later been copied into other projects.
 * As an experiment in autogeneration, it has found quite a few bugs in the Khronos specs that have
   been reported and fixed.
+* We are experimenting with making agentic usage and control easier through a CLI interface meant
+  for agent interaction and output optimized for token parsing.
 
 ## Performance
 
