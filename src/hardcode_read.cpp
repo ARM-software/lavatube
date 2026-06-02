@@ -3273,56 +3273,6 @@ void retrace_vkCmdUpdateMemory2ARM(lava_file_reader& reader)
 	while (check_cli(cb_context)) cli_params_vkCmdUpdateMemory2ARM(cb_context, commandBuffer, &info);
 }
 
-void read_VkAccelerationStructureBuildGeometryInfoKHR(lava_file_reader& reader, VkAccelerationStructureBuildGeometryInfoKHR* sptr)
-{
-	// -- Declarations --
-	uint32_t accelerationstructurekhr_index = 0;
-	uint32_t geometryCount = 0;
-	uint8_t tmp_uuint8t = 0;
-	VkAccelerationStructureGeometryKHR* pGeometries_backing = nullptr;
-	VkAccelerationStructureGeometryKHR** ppGeometries_backing = nullptr;
-	// -- Instructions --
-	sptr->sType = static_cast<VkStructureType>(reader.read_uint32_t());
-	assert(sptr->sType == VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR);
-	read_extension(reader, (VkBaseOutStructure**)&sptr->pNext);
-	sptr->type = static_cast<VkAccelerationStructureTypeKHR>(reader.read_uint32_t());
-	sptr->flags = static_cast<VkBuildAccelerationStructureFlagsKHR>(reader.read_uint32_t());
-	sptr->mode = static_cast<VkBuildAccelerationStructureModeKHR>(reader.read_uint32_t());
-	accelerationstructurekhr_index = reader.read_handle(DEBUGPARAM("VkAccelerationStructureKHR"));
-	sptr->srcAccelerationStructure = index_to_VkAccelerationStructureKHR.at(accelerationstructurekhr_index);
-	accelerationstructurekhr_index = reader.read_handle(DEBUGPARAM("VkAccelerationStructureKHR"));
-	sptr->dstAccelerationStructure = index_to_VkAccelerationStructureKHR.at(accelerationstructurekhr_index);
-	geometryCount = reader.read_uint32_t(); // indirect read because it is a count
-	sptr->geometryCount = geometryCount;
-	tmp_uuint8t = reader.read_uint8_t(); // whether we should load pGeometries
-	if (tmp_uuint8t)
-	{
-		pGeometries_backing = reader.pool.allocate<VkAccelerationStructureGeometryKHR>(geometryCount);
-		memset(pGeometries_backing, 0, geometryCount * sizeof(VkAccelerationStructureGeometryKHR));
-		sptr->pGeometries = pGeometries_backing;
-		for (unsigned sidx = 0; sidx < sptr->geometryCount; sidx++) // varname=pGeometries_backing
-		{
-			read_VkAccelerationStructureGeometryKHR(reader, &pGeometries_backing[sidx]);
-		}
-	}
-	tmp_uuint8t = reader.read_uint8_t(); // whether we should load ppGeometries
-	if (tmp_uuint8t)
-	{
-		ppGeometries_backing = reader.pool.allocate<VkAccelerationStructureGeometryKHR*>(geometryCount);
-		memset(ppGeometries_backing, 0, geometryCount * sizeof(VkAccelerationStructureGeometryKHR*));
-		sptr->ppGeometries = ppGeometries_backing;
-		for (unsigned sidx = 0; sidx < sptr->geometryCount; sidx++) // varname=ppGeometries_backing
-		{
-			ppGeometries_backing[sidx] = reader.pool.allocate<VkAccelerationStructureGeometryKHR>(1);
-			read_VkAccelerationStructureGeometryKHR(reader, ppGeometries_backing[sidx]);
-		}
-	}
-
-	const uint64_t stored_address = reader.read_uint64_t();
-	sptr->scratchData.deviceAddress = reader.write_output ? stored_address : reader.parent->device_address_remapping.translate_address(stored_address);
-	DLOG("VkAccelerationStructureBuildGeometryInfoKHR changing device address from %lu to %lu", (unsigned long)stored_address, (unsigned long)sptr->scratchData.deviceAddress);
-}
-
 void retrace_vkGetSwapchainImagesKHR(lava_file_reader& reader)
 {
 	VkResult result = VK_SUCCESS;
