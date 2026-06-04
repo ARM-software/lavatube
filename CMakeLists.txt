@@ -996,6 +996,22 @@ layer_test(compute_bda_sc_shader_object_multi compute_bda_sc_shader_object --mul
 layer_test(aztec_simulator_slow_compute aztec_simulator_slow_compute)
 layer_test(as_populate_instance_buffer as_populate_instance_buffer)
 layer_test(compute_wait_completion_event compute_wait -fb --wait-type completion-event)
+add_lavatube_test(layer_test_compute_wait_completion_event_raw_screenshots
+	COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/cmake/run_if_exists.sh ${CMAKE_CURRENT_BINARY_DIR}/vulkan_compute_wait_completion_event_raw.vk
+		$<TARGET_FILE:lava-replay> --screenshots 0,1 --screenshot-prefix compute_wait_raw_ vulkan_compute_wait_completion_event_raw.vk)
+set_tests_properties(layer_test_compute_wait_completion_event_raw_screenshots PROPERTIES
+	FIXTURES_REQUIRED compute_wait_completion_event
+	FIXTURES_SETUP ComputeWaitCompletionEventRawScreenshots
+	SKIP_RETURN_CODE 77
+	WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+add_lavatube_test(layer_test_compute_wait_completion_event_raw_frame0_red COMMAND check_png compute_wait_raw_0.png --expect-solid 255,0,0,255)
+set_tests_properties(layer_test_compute_wait_completion_event_raw_frame0_red PROPERTIES
+	FIXTURES_REQUIRED ComputeWaitCompletionEventRawScreenshots
+	WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+add_lavatube_test(layer_test_compute_wait_completion_event_raw_frame1_green COMMAND check_png compute_wait_raw_1.png --expect-solid 0,255,0,255)
+set_tests_properties(layer_test_compute_wait_completion_event_raw_frame1_green PROPERTIES
+	FIXTURES_REQUIRED ComputeWaitCompletionEventRawScreenshots
+	WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
 layer_test(compute_wait_fence_status compute_wait -fb --wait-type fence-status)
 layer_test(compute_wait_wait_fences compute_wait -fb --wait-type wait-fences)
 layer_test(compute_wait_wait_semaphores compute_wait -fb --wait-type wait-semaphores)
