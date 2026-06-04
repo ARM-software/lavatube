@@ -25,7 +25,7 @@ public:
 	void destroy();
 	void destroy_device(VkDevice device);
 	bool capture(uint32_t frame, VkPhysicalDevice physical_device, VkDevice device, VkQueue queue, uint32_t queue_family,
-		VkImage image, VkFormat format, uint32_t width, uint32_t height);
+		VkImage image, VkImageLayout image_layout, VkFormat format, uint32_t width, uint32_t height);
 
 private:
 	struct device_resources

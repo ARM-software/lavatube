@@ -883,6 +883,33 @@ layer_test(compute_2 compute_2)
 layer_test(compute_2_2 compute_2 -j 1 -s 2)
 layer_test(compute_2_m5 compute_2 -m5)
 layer_test(compute_3 compute_3)
+add_lavatube_test(layer_test_compute_3_frame_boundary_trace COMMAND vulkan_compute_3 --gpu --frame-boundary)
+set_tests_properties(layer_test_compute_3_frame_boundary_trace PROPERTIES
+	FIXTURES_SETUP Compute3FrameBoundaryTrace
+	ENVIRONMENT "LAVATUBE_VIRTUAL_QUEUES=1;LAVATUBE_DELETE_EMPTY_TRACE=1;LAVATUBE_DESTINATION=vulkan_compute_3;VK_LAYER_PATH=${CMAKE_CURRENT_BINARY_DIR}/implicit_layer.d;VK_INSTANCE_LAYERS=VK_LAYER_ARM_lavatube;LD_LIBRARY_PATH=${CMAKE_CURRENT_BINARY_DIR}/implicit_layer.d"
+	SKIP_RETURN_CODE 77)
+add_lavatube_test(layer_test_compute_3_frame_boundary_screenshot
+	COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/cmake/run_if_exists.sh ${CMAKE_CURRENT_BINARY_DIR}/vulkan_compute_3.vk
+		$<TARGET_FILE:lava-replay> -C -w none --screenshots 0 --screenshot-prefix frame_boundary_ vulkan_compute_3.vk)
+set_tests_properties(layer_test_compute_3_frame_boundary_screenshot PROPERTIES
+	FIXTURES_REQUIRED Compute3FrameBoundaryTrace
+	FIXTURES_SETUP Compute3FrameBoundaryScreenshot
+	SKIP_RETURN_CODE 77
+	WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+add_lavatube_test(layer_test_compute_3_frame_boundary_screenshot_validate COMMAND check_png frame_boundary_0.png)
+set_tests_properties(layer_test_compute_3_frame_boundary_screenshot_validate PROPERTIES
+	FIXTURES_REQUIRED Compute3FrameBoundaryScreenshot
+	WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+add_lavatube_test(layer_test_compute_3_frame_boundary_no_frame1
+	COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/cmake/run_if_exists.sh ${CMAKE_CURRENT_BINARY_DIR}/vulkan_compute_3.vk
+		${CMAKE_COMMAND}
+			-DREPLAY=$<TARGET_FILE:lava-replay>
+			-DINPUT_TRACE=${CMAKE_CURRENT_BINARY_DIR}/vulkan_compute_3.vk
+			-DOUTPUT_PREFIX=${CMAKE_CURRENT_BINARY_DIR}/frame_boundary_unselected_
+			-P ${PROJECT_SOURCE_DIR}/tests/replay_frame_boundary_no_frame1.cmake)
+set_tests_properties(layer_test_compute_3_frame_boundary_no_frame1 PROPERTIES
+	FIXTURES_REQUIRED Compute3FrameBoundaryTrace
+	SKIP_RETURN_CODE 77)
 layer_test(feature_1 feature_1)
 layer_test(feature_2 feature_2)
 layer_test(tool_1 tool_1)
@@ -968,11 +995,11 @@ layer_test(compute_bda_sc_shader_object compute_bda_sc_shader_object)
 layer_test(compute_bda_sc_shader_object_multi compute_bda_sc_shader_object --multi-create-info)
 layer_test(aztec_simulator_slow_compute aztec_simulator_slow_compute)
 layer_test(as_populate_instance_buffer as_populate_instance_buffer)
-layer_test(compute_wait_completion_event compute_wait --wait-type completion-event)
-layer_test(compute_wait_fence_status compute_wait --wait-type fence-status)
-layer_test(compute_wait_wait_fences compute_wait --wait-type wait-fences)
-layer_test(compute_wait_wait_semaphores compute_wait --wait-type wait-semaphores)
-layer_test(compute_wait_query_pool compute_wait --wait-type query-pool)
+layer_test(compute_wait_completion_event compute_wait -fb --wait-type completion-event)
+layer_test(compute_wait_fence_status compute_wait -fb --wait-type fence-status)
+layer_test(compute_wait_wait_fences compute_wait -fb --wait-type wait-fences)
+layer_test(compute_wait_wait_semaphores compute_wait -fb --wait-type wait-semaphores)
+layer_test(compute_wait_query_pool compute_wait -fb --wait-type query-pool)
 
 # The two below will fail as we lack support for interleaved data for VK_EXT_multi_draw for now
 #layer_test(graphics_multi_draw_stride16 graphics_multi_draw --multi-draw-mode indexed --stride-mode aligned16)

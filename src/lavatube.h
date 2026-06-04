@@ -934,6 +934,12 @@ struct trackeddescriptorset_trace : trackeddescriptorset
 struct trackedqueue : trackable
 {
 	using trackable::trackable; // inherit constructor
+	struct replay_frame_boundary
+	{
+		uint32_t image_index = CONTAINER_NULL_VALUE;
+		bool advance_frame = false;
+	};
+
 	VkDevice device = VK_NULL_HANDLE;
 	uint32_t device_index = UINT32_MAX;
 	VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
@@ -947,6 +953,7 @@ struct trackedqueue : trackable
 	/// capture only: Trust host to notify us about memory updates? (Propagated from VkDevice)
 	bool explicit_host_updates = false;
 	bool internally_synchronized_queues = false;
+	std::vector<replay_frame_boundary> replay_frame_boundaries;
 
 	void self_test() const
 	{

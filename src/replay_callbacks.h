@@ -5,6 +5,7 @@
 void replay_callback_vkCreateInstance(callback_context& cb, const VkInstanceCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkInstance* pInstance);
 void replay_callback_vkDestroyInstance(callback_context& cb, VkInstance instance, const VkAllocationCallbacks* pAllocator);
 void replay_callback_vkQueuePresentKHR(callback_context& cb, VkQueue queue, const VkPresentInfoKHR* pPresentInfo);
+void replay_callback_vkQueueBindSparse(callback_context& cb, VkQueue queue, uint32_t bindInfoCount, const VkBindSparseInfo* pBindInfo, VkFence fence);
 void replay_callback_vkQueueSubmit(callback_context& cb, VkQueue queue, uint32_t submitCount, const VkSubmitInfo* pSubmits, VkFence fence);
 void replay_callback_vkQueueSubmit2(callback_context& cb, VkQueue queue, uint32_t submitCount, const VkSubmitInfo2* pSubmits, VkFence fence);
 void replay_callback_vkQueueSubmit2KHR(callback_context& cb, VkQueue queue, uint32_t submitCount, const VkSubmitInfo2* pSubmits, VkFence fence);

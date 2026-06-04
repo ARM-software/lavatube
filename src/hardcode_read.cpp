@@ -87,6 +87,77 @@ static VkDeviceAddress get_buffer_device_address(VkDevice device, VkBuffer buffe
 	return 0;
 }
 
+static uint32_t replay_frame_boundary_image_index(const VkFrameBoundaryEXT* boundary)
+{
+	if (!boundary || boundary->imageCount == 0 || !boundary->pImages || boundary->pImages[0] == VK_NULL_HANDLE) return CONTAINER_NULL_VALUE;
+	return index_to_VkImage.index_or_invalid(boundary->pImages[0]);
+}
+
+static void replay_queue_frame_boundary(trackedqueue& queue_data, const void* sptr, bool advance_frame)
+{
+	const VkFrameBoundaryEXT* boundary = (const VkFrameBoundaryEXT*)find_extension(sptr, VK_STRUCTURE_TYPE_FRAME_BOUNDARY_EXT);
+	if (!boundary || (boundary->flags & VK_FRAME_BOUNDARY_FRAME_END_BIT_EXT) == 0) return;
+	queue_data.replay_frame_boundaries.push_back({ replay_frame_boundary_image_index(boundary), advance_frame });
+}
+
+static bool replay_capture_frame_boundary_image(lava_file_reader& reader, const trackedqueue& queue_data, VkQueue queue, uint32_t frame, uint32_t image_index)
+{
+	if (!reader.parent->screenshots_enabled() || !reader.parent->screenshots().is_frame_selected(frame)) return false;
+	if (image_index == CONTAINER_NULL_VALUE) return false;
+	if (image_index == CONTAINER_INVALID_INDEX)
+	{
+		DIE("Failed to resolve VK_EXT_frame_boundary image for screenshot capture on frame %u", frame);
+	}
+	if (!index_to_VkImage.contains(image_index))
+	{
+		DIE("VK_EXT_frame_boundary image index %u is not live for screenshot capture on frame %u", image_index, frame);
+	}
+
+	const trackedimage& image_data = VkImage_index.at(image_index);
+	if (image_data.extent.depth != 1)
+	{
+		DIE("VK_EXT_frame_boundary screenshot capture only supports 2D images, got depth %u on frame %u", image_data.extent.depth, frame);
+	}
+	if (image_data.mipLevels == 0 || image_data.arrayLayers == 0)
+	{
+		DIE("VK_EXT_frame_boundary screenshot capture got invalid image metadata on frame %u", frame);
+	}
+	const VkImage image = index_to_VkImage.at(image_index);
+	if (!reader.parent->screenshots().capture(frame, queue_data.physicalDevice, queue_data.device, queue, queue_data.queueFamily, image,
+			image_data.currentLayout, image_data.format, image_data.extent.width, image_data.extent.height))
+	{
+		DIE("Failed to capture VK_EXT_frame_boundary screenshot for frame %u", frame);
+	}
+	return true;
+}
+
+static bool replay_process_queued_frame_boundaries(lava_file_reader& reader, trackedqueue& queue_data, VkQueue queue)
+{
+	bool captured = false;
+	for (const trackedqueue::replay_frame_boundary& boundary : queue_data.replay_frame_boundaries)
+	{
+		bool stop_after_frame = false;
+		if (boundary.advance_frame)
+		{
+			stop_after_frame = reader.new_frame();
+		}
+		const int completed_global_frame_raw = reader.parent->global_frame.load(std::memory_order_acquire);
+		if (completed_global_frame_raw <= 0)
+		{
+			DIE("VK_EXT_frame_boundary replay encountered invalid global frame state %d", completed_global_frame_raw);
+		}
+		const uint32_t completed_global_frame = static_cast<uint32_t>(completed_global_frame_raw - 1);
+		captured = replay_capture_frame_boundary_image(reader, queue_data, queue, completed_global_frame, boundary.image_index) || captured;
+		if (stop_after_frame)
+		{
+			if (reader.run) reader.parent->request_stop(queue_data.device);
+			else reader.parent->request_stop();
+		}
+	}
+	queue_data.replay_frame_boundaries.clear();
+	return captured;
+}
+
 static char* mem_map(lava_file_reader& reader, VkDevice device, const suballoc_location& loc);
 static void mem_unmap(lava_file_reader& reader, VkDevice device, const suballoc_location& loc, char* ptr);
 static void replay_fixup_commandbuffer_raytracing_sbt(lava_file_reader& reader, trackedcmdbuffer& commandbuffer_data);
@@ -631,8 +702,11 @@ static bool create_internal_buffer(VkDevice device, VkPhysicalDevice physical_de
 
 void replay_pre_vkQueueSubmit2(lava_file_reader& reader, VkQueue queue, uint32_t submitCount, const VkSubmitInfo2* pSubmits, VkFence fence)
 {
+	const uint32_t queue_index = index_to_VkQueue.index(queue);
+	trackedqueue& queue_data = VkQueue_index.at(queue_index);
 	for (uint32_t i = 0; i < submitCount; i++)
 	{
+		replay_queue_frame_boundary(queue_data, &pSubmits[i], true);
 		if (!host_has_frame_boundary) purge_extension_parent(const_cast<VkSubmitInfo2*>(&pSubmits[i]), VK_STRUCTURE_TYPE_FRAME_BOUNDARY_EXT);
 		for (uint32_t j = 0; j < pSubmits[i].commandBufferInfoCount; j++)
 		{
@@ -654,8 +728,11 @@ void replay_pre_vkQueueSubmit2KHR(lava_file_reader& reader, VkQueue queue, uint3
 
 void replay_pre_vkQueueSubmit(lava_file_reader& reader, VkQueue queue, uint32_t submitCount, const VkSubmitInfo* pSubmits, VkFence fence)
 {
+	const uint32_t queue_index = index_to_VkQueue.index(queue);
+	trackedqueue& queue_data = VkQueue_index.at(queue_index);
 	for (uint32_t i = 0; i < submitCount; i++)
 	{
+		replay_queue_frame_boundary(queue_data, &pSubmits[i], true);
 		if (!host_has_frame_boundary) purge_extension_parent(const_cast<VkSubmitInfo*>(&pSubmits[i]), VK_STRUCTURE_TYPE_FRAME_BOUNDARY_EXT);
 		for (uint32_t j = 0; j < pSubmits[i].commandBufferCount; j++)
 		{
@@ -735,6 +812,17 @@ void replay_pre_vkFreeCommandBuffers(lava_file_reader& reader, VkDevice device, 
 
 void replay_callback_vkQueueSubmit(callback_context& cb, VkQueue queue, uint32_t submitCount, const VkSubmitInfo* pSubmits, VkFence fence)
 {
+	const uint32_t queue_index = index_to_VkQueue.index(queue);
+	trackedqueue& queue_data = VkQueue_index.at(queue_index);
+	if (queue_data.replay_frame_boundaries.empty())
+	{
+		for (uint32_t i = 0; i < submitCount; i++)
+		{
+			replay_queue_frame_boundary(queue_data, &pSubmits[i], true);
+		}
+	}
+	if (!cb.reader.run || cb.result.vkresult == VK_SUCCESS) replay_process_queued_frame_boundaries(cb.reader, queue_data, queue);
+	else queue_data.replay_frame_boundaries.clear();
 	if (!cb.reader.run || cb.result.vkresult != VK_SUCCESS) return;
 	for (uint32_t i = 0; i < submitCount; i++)
 	{
@@ -747,6 +835,17 @@ void replay_callback_vkQueueSubmit(callback_context& cb, VkQueue queue, uint32_t
 
 void replay_callback_vkQueueSubmit2(callback_context& cb, VkQueue queue, uint32_t submitCount, const VkSubmitInfo2* pSubmits, VkFence fence)
 {
+	const uint32_t queue_index = index_to_VkQueue.index(queue);
+	trackedqueue& queue_data = VkQueue_index.at(queue_index);
+	if (queue_data.replay_frame_boundaries.empty())
+	{
+		for (uint32_t i = 0; i < submitCount; i++)
+		{
+			replay_queue_frame_boundary(queue_data, &pSubmits[i], true);
+		}
+	}
+	if (!cb.reader.run || cb.result.vkresult == VK_SUCCESS) replay_process_queued_frame_boundaries(cb.reader, queue_data, queue);
+	else queue_data.replay_frame_boundaries.clear();
 	if (!cb.reader.run || cb.result.vkresult != VK_SUCCESS) return;
 	for (uint32_t i = 0; i < submitCount; i++)
 	{
@@ -760,6 +859,18 @@ void replay_callback_vkQueueSubmit2(callback_context& cb, VkQueue queue, uint32_
 void replay_callback_vkQueueSubmit2KHR(callback_context& cb, VkQueue queue, uint32_t submitCount, const VkSubmitInfo2* pSubmits, VkFence fence)
 {
 	replay_callback_vkQueueSubmit2(cb, queue, submitCount, pSubmits, fence);
+}
+
+void replay_callback_vkQueueBindSparse(callback_context& cb, VkQueue queue, uint32_t bindInfoCount, const VkBindSparseInfo* pBindInfo, VkFence fence)
+{
+	const uint32_t queue_index = index_to_VkQueue.index(queue);
+	trackedqueue& queue_data = VkQueue_index.at(queue_index);
+	for (uint32_t i = 0; i < bindInfoCount; i++)
+	{
+		replay_queue_frame_boundary(queue_data, &pBindInfo[i], true);
+	}
+	if (!cb.reader.run || cb.result.vkresult == VK_SUCCESS) replay_process_queued_frame_boundaries(cb.reader, queue_data, queue);
+	else queue_data.replay_frame_boundaries.clear();
 }
 
 void replay_callback_vkQueueWaitIdle(callback_context& cb, VkQueue queue)
@@ -2143,6 +2254,10 @@ static VkSwapchainKHR remake_swapchain(lava_file_reader& reader, VkQueue queue, 
 
 void replay_pre_vkQueuePresentKHR(lava_file_reader& reader, VkQueue queue, VkPresentInfoKHR* pPresentInfo)
 {
+	const uint32_t queue_index = index_to_VkQueue.index(queue);
+	trackedqueue& queue_data = VkQueue_index.at(queue_index);
+	replay_queue_frame_boundary(queue_data, pPresentInfo, false);
+	if (!host_has_frame_boundary) purge_extension_parent(pPresentInfo, VK_STRUCTURE_TYPE_FRAME_BOUNDARY_EXT);
 	if (pPresentInfo->pResults == nullptr) // we always want this info back
 	{
 		pPresentInfo->pResults = reader.pool.allocate<VkResult>(pPresentInfo->swapchainCount);
@@ -2263,8 +2378,12 @@ void replay_callback_vkQueuePresentKHR(callback_context& cb, VkQueue queue, cons
 	VkPresentInfoKHR* pPresentInfo = const_cast<VkPresentInfoKHR*>(pPresentInfo_const);
 	lava::lock_guard lock(sync_mutex);
 	if (!pPresentInfo) return;
+	const uint32_t queue_index = index_to_VkQueue.index(queue);
+	trackedqueue& queue_data = VkQueue_index.at(queue_index);
+	if (queue_data.replay_frame_boundaries.empty()) replay_queue_frame_boundary(queue_data, pPresentInfo, false);
+	const bool captured_frame_boundary_image = replay_process_queued_frame_boundaries(reader, queue_data, queue);
 	const int completed_global_frame_raw = reader.parent->global_frame.load(std::memory_order_acquire);
-	if (reader.parent->screenshots_enabled())
+	if (reader.parent->screenshots_enabled() && !captured_frame_boundary_image)
 	{
 		if (completed_global_frame_raw <= 0)
 		{
@@ -2287,12 +2406,10 @@ void replay_callback_vkQueuePresentKHR(callback_context& cb, VkQueue queue, cons
 				DIE("Failed to resolve presented swapchain for screenshot capture");
 			}
 			const trackedswapchain_replay& data = VkSwapchainKHR_index.at(swapchainkhr_index);
-			const uint32_t queue_index = index_to_VkQueue.index(queue);
 			if (queue_index == CONTAINER_INVALID_INDEX)
 			{
 				DIE("Failed to resolve replay queue for screenshot capture");
 			}
-			const trackedqueue& queue_data = VkQueue_index.at(queue_index);
 			if (data.virtual_images.empty() || data.next_stored_image >= data.virtual_images.size())
 			{
 				DIE("No virtual swapchain image available for screenshot capture on frame %u", completed_global_frame);
@@ -2310,7 +2427,8 @@ void replay_callback_vkQueuePresentKHR(callback_context& cb, VkQueue queue, cons
 				}
 				screenshot_image = data.pSwapchainImages[pPresentInfo->pImageIndices[0]];
 			}
-			if (!reader.parent->screenshots().capture(completed_global_frame, queue_data.physicalDevice, data.device, queue, queue_data.queueFamily, screenshot_image, data.info.imageFormat, data.info.imageExtent.width, data.info.imageExtent.height))
+			if (!reader.parent->screenshots().capture(completed_global_frame, queue_data.physicalDevice, data.device, queue, queue_data.queueFamily, screenshot_image,
+					VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, data.info.imageFormat, data.info.imageExtent.width, data.info.imageExtent.height))
 			{
 				DIE("Failed to capture screenshot for frame %u", completed_global_frame);
 			}

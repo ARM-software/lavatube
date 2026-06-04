@@ -115,6 +115,7 @@ static void register_replay_callbacks()
 	CALLBACK(vkCreateInstance);
 	CALLBACK(vkDestroyInstance);
 	CALLBACK(vkQueuePresentKHR);
+	CALLBACK(vkQueueBindSparse);
 	CALLBACK(vkQueueSubmit);
 	CALLBACK(vkQueueSubmit2);
 	CALLBACK(vkQueueSubmit2KHR);

@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cerrno>
 #include <cctype>
+#include <cmath>
 #include <cstdlib>
 #include <limits>
 #include <string>
@@ -267,17 +268,30 @@ bool replay_screenshot_handler::ensure_resources(VkPhysicalDevice physical_devic
 	return true;
 }
 
-static bool is_supported_screenshot_format(VkFormat format, bool& swizzle_bgra)
+enum class screenshot_pixel_conversion
 {
-	swizzle_bgra = false;
+	rgba8,
+	bgra8,
+	rgba32_sfloat,
+};
+
+static bool screenshot_format_info(VkFormat format, screenshot_pixel_conversion& conversion, VkDeviceSize& bytes_per_pixel)
+{
 	switch (format)
 	{
 	case VK_FORMAT_R8G8B8A8_UNORM:
 	case VK_FORMAT_R8G8B8A8_SRGB:
+		conversion = screenshot_pixel_conversion::rgba8;
+		bytes_per_pixel = 4;
 		return true;
 	case VK_FORMAT_B8G8R8A8_UNORM:
 	case VK_FORMAT_B8G8R8A8_SRGB:
-		swizzle_bgra = true;
+		conversion = screenshot_pixel_conversion::bgra8;
+		bytes_per_pixel = 4;
+		return true;
+	case VK_FORMAT_R32G32B32A32_SFLOAT:
+		conversion = screenshot_pixel_conversion::rgba32_sfloat;
+		bytes_per_pixel = 16;
 		return true;
 	default:
 		return false;
@@ -285,21 +299,28 @@ static bool is_supported_screenshot_format(VkFormat format, bool& swizzle_bgra)
 }
 
 bool replay_screenshot_handler::capture(uint32_t frame, VkPhysicalDevice physical_device, VkDevice device, VkQueue queue, uint32_t queue_family,
-	VkImage image, VkFormat format, uint32_t width, uint32_t height)
+	VkImage image, VkImageLayout image_layout, VkFormat format, uint32_t width, uint32_t height)
 {
-	bool swizzle_bgra = false;
-	if (!is_supported_screenshot_format(format, swizzle_bgra))
+	screenshot_pixel_conversion conversion = screenshot_pixel_conversion::rgba8;
+	VkDeviceSize bytes_per_pixel = 0;
+	if (!screenshot_format_info(format, conversion, bytes_per_pixel))
 	{
 		DIE("Unsupported swapchain format %u for screenshot frame %u", (unsigned)format, frame);
+	}
+	if (image_layout == VK_IMAGE_LAYOUT_UNDEFINED || image_layout == VK_IMAGE_LAYOUT_PREINITIALIZED || image_layout == VK_IMAGE_LAYOUT_MAX_ENUM)
+	{
+		DIE("Cannot capture screenshot for frame %u from image layout %u", frame, (unsigned)image_layout);
 	}
 	if (width == 0 || height == 0)
 	{
 		DIE("Cannot create screenshot for zero-sized image at frame %u", frame);
 	}
 
-	const VkDeviceSize pixel_bytes = static_cast<VkDeviceSize>(width) * static_cast<VkDeviceSize>(height) * 4;
+	const VkDeviceSize pixel_count = static_cast<VkDeviceSize>(width) * static_cast<VkDeviceSize>(height);
+	const VkDeviceSize readback_bytes = pixel_count * bytes_per_pixel;
+	const VkDeviceSize output_bytes = pixel_count * 4;
 	device_resources& resources = mResources[device];
-	if (!ensure_resources(physical_device, device, queue_family, pixel_bytes, resources))
+	if (!ensure_resources(physical_device, device, queue_family, readback_bytes, resources))
 	{
 		return false;
 	}
@@ -317,7 +338,7 @@ bool replay_screenshot_handler::capture(uint32_t frame, VkPhysicalDevice physica
 	VkImageMemoryBarrier image_barrier = { VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER, nullptr };
 	image_barrier.srcAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT;
 	image_barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
-	image_barrier.oldLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+	image_barrier.oldLayout = image_layout;
 	image_barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
 	image_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
 	image_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
@@ -342,13 +363,13 @@ bool replay_screenshot_handler::capture(uint32_t frame, VkPhysicalDevice physica
 	buffer_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
 	buffer_barrier.buffer = resources.staging.buffer;
 	buffer_barrier.offset = 0;
-	buffer_barrier.size = pixel_bytes;
+	buffer_barrier.size = readback_bytes;
 	wrap_vkCmdPipelineBarrier(resources.command_buffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_HOST_BIT,
 		0, 0, nullptr, 1, &buffer_barrier, 0, nullptr);
 	image_barrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
 	image_barrier.dstAccessMask = 0;
 	image_barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-	image_barrier.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+	image_barrier.newLayout = image_layout;
 	wrap_vkCmdPipelineBarrier(resources.command_buffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
 		0, 0, nullptr, 0, nullptr, 1, &image_barrier);
 
@@ -364,23 +385,23 @@ bool replay_screenshot_handler::capture(uint32_t frame, VkPhysicalDevice physica
 	if (result != VK_SUCCESS) DIE("Failed to wait for screenshot fence: %s", errorString(result));
 
 	void* mapped = nullptr;
-	result = wrap_vkMapMemory(device, resources.staging.memory, 0, pixel_bytes, 0, &mapped);
+	result = wrap_vkMapMemory(device, resources.staging.memory, 0, readback_bytes, 0, &mapped);
 	if (result != VK_SUCCESS || !mapped) DIE("Failed to map screenshot readback memory: %s", errorString(result));
 	if ((resources.staging.memory_flags & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT) == 0)
 	{
 		VkMappedMemoryRange invalidate = { VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE, nullptr };
 		invalidate.memory = resources.staging.memory;
 		invalidate.offset = 0;
-		invalidate.size = pixel_bytes;
+		invalidate.size = readback_bytes;
 		result = wrap_vkInvalidateMappedMemoryRanges(device, 1, &invalidate);
 		if (result != VK_SUCCESS) DIE("Failed to invalidate screenshot readback memory: %s", errorString(result));
 	}
 
-	std::vector<unsigned char> pixels(pixel_bytes);
+	std::vector<unsigned char> pixels(output_bytes);
 	const uint8_t* src = static_cast<const uint8_t*>(mapped);
-	if (swizzle_bgra)
+	if (conversion == screenshot_pixel_conversion::bgra8)
 	{
-		for (VkDeviceSize i = 0; i < pixel_bytes; i += 4)
+		for (VkDeviceSize i = 0; i < output_bytes; i += 4)
 		{
 			pixels[i + 0] = src[i + 2];
 			pixels[i + 1] = src[i + 1];
@@ -388,10 +409,25 @@ bool replay_screenshot_handler::capture(uint32_t frame, VkPhysicalDevice physica
 			pixels[i + 3] = 255;
 		}
 	}
+	else if (conversion == screenshot_pixel_conversion::rgba8)
+	{
+		std::copy(src, src + output_bytes, pixels.begin());
+		for (VkDeviceSize i = 3; i < output_bytes; i += 4) pixels[i] = 255;
+	}
 	else
 	{
-		std::copy(src, src + pixel_bytes, pixels.begin());
-		for (VkDeviceSize i = 3; i < pixel_bytes; i += 4) pixels[i] = 255;
+		const float* fpixels = reinterpret_cast<const float*>(mapped);
+		for (VkDeviceSize i = 0; i < pixel_count; i++)
+		{
+			for (VkDeviceSize c = 0; c < 3; c++)
+			{
+				float value = fpixels[i * 4 + c];
+				if (!std::isfinite(value)) value = 0.0f;
+				value = std::clamp(value, 0.0f, 1.0f);
+				pixels[i * 4 + c] = static_cast<unsigned char>(value * 255.0f + 0.5f);
+			}
+			pixels[i * 4 + 3] = 255;
+		}
 	}
 	wrap_vkUnmapMemory(device, resources.staging.memory);
 
