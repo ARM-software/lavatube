@@ -58,6 +58,10 @@
 - The contained file `tracking.json` contains immutable or accumulated meta-information for each Vulkan object.
 - The contained file `metadata.json` contains information on presented device capabilities (given by capture device) and requested
   capabilities (as requested by the captured application or by our capture layer).
+- You can use `build/lava-print` to print out the packets/calls in a trace in NDJSON format.
+- You can use `build/lava-cli` with `build/lava-replay --service` to run the replay in interactive mode. The trace starts paused
+  and can now be stepped through or jumped forward into, then you can print calls or meta-information at the current position. See
+  `build/lava-cli --help` for more information.
 
 ## Modifying capture functionality
 - Capture is often also called `write` or `trace` in the code.

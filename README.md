@@ -50,15 +50,17 @@ Tracing
 =======
 
 Make sure the "VkLayer_lavatube.json" is available in the loader search path. If it is not in a
-default location you can set the VK_LAYER_PATH environment variable to point to its parent directory.
+default location you can set the `VK_LAYER_PATH` environment variable to point to its parent directory.
 
-In addition, make sure the libVkLayer_lavatube.so file is the same folder as the VkLayer_lavatube.json manifest.
+In addition, make sure the `libVkLayer_lavatube.so` file is the same folder as the `VkLayer_lavatube.json` manifest.
 
 Then set the following environment variables at runtime:
 
+```
 export VK_LAYER_PATH=<path_to_json_and_.so>
 export VK_INSTANCE_LAYERS=VK_LAYER_ARM_lavatube
 export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$VK_LAYER_PATH
+```
 
 You can also use the `lava-capture.py` script to set all these for you.
 
@@ -67,8 +69,10 @@ Building
 
 For Ubuntu x86, install these packages:
 
-	sudo apt-get install git cmake pkg-config python3 libxcb1-dev libxrandr-dev libxcb-randr0-dev libtbb-dev \
-	     libvulkan-dev spirv-headers ocl-icd-opencl-dev libgles-dev libegl-dev libglm-dev liblz4-dev libwayland-dev
+```
+sudo apt-get install git cmake pkg-config python3 libxcb1-dev libxrandr-dev libxcb-randr0-dev libtbb-dev \
+ libvulkan-dev spirv-headers ocl-icd-opencl-dev libgles-dev libegl-dev libglm-dev liblz4-dev libwayland-dev
+```
 
 Most of these are actually for compiling the tests, though.
 
@@ -95,16 +99,15 @@ To build for android:
 Fist install required dependencies for local Android building. These are the
 recommended packages:
 
-```
-sudo apt-get install google-android-ndk-r28-installer
-sudo apt-get install google-android-cmdline-tools-19.0-installer
-sudo apt-get install android-sdk-platform-tools
-sudo sdkmanager "emulator" "system-images;android-33;google_apis;x86_64"
-```
+Ubuntu 24.04: `sudo apt-get install google-android-cmdline-tools-13.0-installer`
+Ubuntu 25.10: `sudo apt-get install google-android-cmdline-tools-19.0-installer`
 
 Then build by running
 
 ```
+sudo apt-get install android-sdk-platform-tools
+sudo sdkmanager "emulator" "ndk;28.2.13676358" "system-images;android-35;google_apis;x86_64"
+export ANDROID_NDK_HOME="/usr/lib/android-sdk/ndk/28.2.13676358/"
 scripts/build-android.sh
 ```
 

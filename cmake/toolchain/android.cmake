@@ -7,7 +7,7 @@ endif()
 
 # Project-specific defaults for Android
 set(NO_XCB TRUE CACHE BOOL "Disable XCB for Android" FORCE)
-set(NO_TRACETOOLTESTS TRUE CACHE BOOL "Skip tracetooltests for Android cross-compile" FORCE)
+set(WINDOWSYSTEM "android")
 
 # Default Android ABI and Platform (can be overridden on command line)
 if(NOT DEFINED ANDROID_ABI)
@@ -15,7 +15,7 @@ if(NOT DEFINED ANDROID_ABI)
 endif()
 
 if(NOT DEFINED ANDROID_PLATFORM)
-    set(ANDROID_PLATFORM "android-26" CACHE STRING "Android Platform")
+    set(ANDROID_PLATFORM "android-35" CACHE STRING "Android Platform")
 endif()
 
 if(NOT DEFINED ANDROID_STL)
