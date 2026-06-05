@@ -8,6 +8,15 @@ BINARY_NAME=$(basename $BINARY_PATH)
 
 echo "--- Executing $BINARY_NAME on Android device ---"
 
+show_emulator_errors()
+{
+    if [ -f /tmp/emulator.log ]; then
+        echo "--- Recent emulator errors ---"
+        tail -n +"$EMULATOR_LOG_START" /tmp/emulator.log | grep -iE "FATAL|ERROR|Unhandled Vulkan structure type|abort|crash" | tail -n 20 || true
+        echo "--- End emulator errors ---"
+    fi
+}
+
 # Determine architecture of the binary to decide if we should boot emulator
 ARCH_HINT=""
 if file "$BINARY_PATH" | grep -q "ARM aarch64"; then
@@ -53,8 +62,26 @@ fi
 # Execute binary on the device and capture its exit status
 echo "Running /data/local/tmp/$BINARY_NAME..."
 # We set LD_LIBRARY_PATH to /data/local/tmp so it finds libc++_shared.so
+EMULATOR_LOG_START=1
+if [ -f /tmp/emulator.log ]; then
+    EMULATOR_LOG_START=$(($(wc -l < /tmp/emulator.log) + 1))
+fi
 adb shell "chmod +x /data/local/tmp/$BINARY_NAME && cd /data/local/tmp && LD_LIBRARY_PATH=. ./$BINARY_NAME ${@:2}"
 EXIT_CODE=$?
+
+if [ "$ARCH_HINT" == "x86_64" ]; then
+    DEVICE_STATE=$(adb -e get-state 2>/dev/null || true)
+    if [ "$DEVICE_STATE" != "device" ]; then
+        if [ -z "$DEVICE_STATE" ]; then
+            DEVICE_STATE="missing"
+        fi
+        echo "Error: Android emulator is no longer available after running $BINARY_NAME (adb state: $DEVICE_STATE)."
+        show_emulator_errors
+        if [ "$EXIT_CODE" -eq 0 ]; then
+            EXIT_CODE=1
+        fi
+    fi
+fi
 
 echo "--- $BINARY_NAME exited with code $EXIT_CODE ---"
 exit $EXIT_CODE
