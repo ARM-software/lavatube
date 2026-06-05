@@ -53,7 +53,7 @@ if ! emulator -list-avds | grep -q "$AVD_NAME"; then
         exit 1
     fi
     # Fallback image if not provided as argument
-    IMAGE="system-images;android-33;google_apis;x86_64"
+    IMAGE="system-images;android-35;google_apis;x86_64"
     if ! echo "no" | avdmanager create avd -n "$AVD_NAME" -k "$IMAGE" --force; then
         echo "Failed to create AVD"
         exit 1
