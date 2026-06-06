@@ -2,19 +2,24 @@
 
 #include "tests/tests.h"
 
+static void assert_invalid(range r)
+{
+	assert(!r.valid());
+}
+
 static void test_exposure()
 {
 	exposure r;
 	exposure r2;
 	assert(r.list().size() == 0);
 	assert(r.bytes() == 0);
-	assert(r.overlap(r2).last == 0);
-	assert(r.overlap(r2).first == 0);
+	assert_invalid(r.overlap(r2));
+	assert_invalid(r.span());
 	assert(r2.list().size() == 0);
 	r.self_test();
 
-	assert((r2.fetch(3, 7, false) == range{0, 0}));
-	assert((r2.fetch(3, 7, true) == range{0, 0}));
+	assert_invalid(r2.fetch(3, 7, false));
+	assert_invalid(r2.fetch(3, 7, true));
 
 	r.add_os(0, 512);
 	r.add_os(512, 512);
@@ -58,7 +63,7 @@ static void test_exposure()
 
 	r.add(0, 10);
 	r2.add(11, 15);
-	assert((r.overlap(r2) == range{0,0}));
+	assert_invalid(r.overlap(r2));
 	r.self_test();
 	assert(r.list().size() == 1);
 	assert(r.bytes() == 11);
@@ -95,12 +100,12 @@ static void test_exposure()
 	r.self_test();
 	assert(r.bytes() == 2);
 	assert(r.list().size() == 1);
-	assert((r.fetch(2, 3, false) == range{0, 0}));
-	assert((r.fetch(2, 3, true) == range{0, 0}));
+	assert_invalid(r.fetch(2, 3, false));
+	assert_invalid(r.fetch(2, 3, true));
 	r.self_test();
 	r.add(9, 10);
 	assert(r.list().size() == 2);
-	assert((r.fetch(2, 3, false) == range{0, 0}));
+	assert_invalid(r.fetch(2, 3, false));
 	r.add(9, 10);
 	assert(r.list().size() == 2);
 	r.self_test();
@@ -140,8 +145,85 @@ static void test_exposure()
 	r.clear();
 }
 
+static void test_single_byte_ranges()
+{
+	exposure r;
+
+	r.add_os(0, 1);
+	assert(r.size() == 1);
+	assert(r.bytes() == 1);
+	assert((r.span() == range{0, 0}));
+	assert((r.fetch_os(0, 1, true) == range{0, 0}));
+	assert(r.size() == 1);
+	assert((r.fetch_os(0, 1, false) == range{0, 0}));
+	assert(r.size() == 0);
+	assert_invalid(r.fetch_os(0, 1, false));
+
+	r.add(5, 5);
+	assert(r.size() == 1);
+	assert(r.bytes() == 1);
+	assert((r.fetch(5, 5, true) == range{5, 5}));
+	assert(r.size() == 1);
+	assert((r.fetch(5, 5, false) == range{5, 5}));
+	assert(r.size() == 0);
+	assert_invalid(r.fetch(5, 5, false));
+}
+
+static void test_partial_trim()
+{
+	exposure r;
+
+	r.add(5, 10);
+	assert((r.fetch(0, 7, false) == range{5, 7}));
+	assert(r.size() == 1);
+	assert((r.span() == range{8, 10}));
+	assert(r.bytes() == 3);
+
+	r.clear();
+	r.add(5, 10);
+	assert((r.fetch(7, 20, false) == range{7, 10}));
+	assert(r.size() == 1);
+	assert((r.span() == range{5, 6}));
+	assert(r.bytes() == 2);
+}
+
+static void test_merge_does_not_shrink()
+{
+	exposure r;
+
+	r.add(0, 5);
+	r.add(10, 20);
+	r.add(30, 40);
+	r.add(3, 35);
+
+	assert(r.size() == 1);
+	assert((r.span() == range{0, 40}));
+	assert(r.bytes() == 41);
+	r.self_test();
+}
+
+static void test_fragmented_overlap()
+{
+	exposure r;
+	exposure r2;
+
+	r.add(0, 10);
+	r.add(20, 30);
+	r2.add(15, 15);
+	assert_invalid(r.overlap(r2));
+
+	r2.clear();
+	r2.add(5, 15);
+	r2.add(25, 27);
+	assert((r.overlap(r2) == range{5, 27}));
+}
+
 int main()
 {
 	test_exposure();
+	test_single_byte_ranges();
+	test_partial_trim();
+	test_merge_does_not_shrink();
+	test_fragmented_overlap();
 	return 0;
 }

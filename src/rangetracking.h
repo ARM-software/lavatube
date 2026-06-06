@@ -15,6 +15,8 @@ struct range
 	uint64_t first;
 	uint64_t last;
 	inline bool operator==(const range& rhs) const { return first == rhs.first && last == rhs.last; }
+	inline bool valid() const { return first <= last; }
+	static inline range invalid() { return { 1, 0 }; }
 };
 
 struct exposure
@@ -25,23 +27,83 @@ struct exposure
 	/// Return span of overlapping elements
 	range overlap(const exposure& e, uint64_t offset = 0) const
 	{
-		if (e.size() == 0 || r.size() == 0) return { 0, 0 };
-		const uint64_t first = (e.r.front().first + offset > r.front().first) ? e.r.front().first + offset : r.front().first;
-		const uint64_t last = (e.r.back().last + offset < r.back().last) ? e.r.back().last + offset : r.back().last;
-		if (first > last) return { 0, 0 }; // no overlap
-		return { first, last };
+		range retval = range::invalid();
+		if (e.r.empty() || r.empty()) return retval;
+		if (e.r.front().first > UINT64_MAX - offset) return retval;
+
+		const uint64_t first_other = e.r.front().first + offset;
+		const uint64_t last_other = (e.r.back().last > UINT64_MAX - offset) ? UINT64_MAX : e.r.back().last + offset;
+		if (last_other < r.front().first || first_other > r.back().last) return retval;
+		if (e.r.size() == 1 && r.size() == 1)
+		{
+			return {
+				std::max(r.front().first, first_other),
+				std::min(r.front().last, last_other)
+			};
+		}
+
+		auto iter = r.begin();
+		auto other = e.r.begin();
+		while (iter != r.end() && other != e.r.end())
+		{
+			if (other->first > UINT64_MAX - offset) break;
+			const uint64_t other_first = other->first + offset;
+			const uint64_t other_last = (other->last > UINT64_MAX - offset) ? UINT64_MAX : other->last + offset;
+
+			if (iter->last < other_first)
+			{
+				iter++;
+				continue;
+			}
+			if (other_last < iter->first)
+			{
+				other++;
+				continue;
+			}
+
+			const uint64_t first = std::max(iter->first, other_first);
+			const uint64_t last = std::min(iter->last, other_last);
+			if (!retval.valid())
+			{
+				retval = { first, last };
+			}
+			else
+			{
+				retval.first = std::min(retval.first, first);
+				retval.last = std::max(retval.last, last);
+			}
+
+			if (iter->last < other_last) iter++;
+			else other++;
+		}
+		return retval;
 	}
 
 	/// Return span of all contained elements
-	range span() const { if (r.size() == 0) return { 0, 0 }; return { r.front().first, r.back().last }; }
+	range span() const { if (r.empty()) return range::invalid(); return { r.front().first, r.back().last }; }
 
 	void add(uint64_t start, uint64_t end)
 	{
 		assert(start <= end);
-		if (end == 0) return;
 		if (r.empty())
 		{
 			r.push_back({start, end});
+			return;
+		}
+		if (end != UINT64_MAX && end + 1 < r.front().first)
+		{
+			r.push_front({ start, end });
+			return;
+		}
+		auto last = std::prev(r.end());
+		if (last->last != UINT64_MAX && start > last->last + 1)
+		{
+			r.push_back({ start, end });
+			return;
+		}
+		if (start >= last->first && (last->last == UINT64_MAX || start <= last->last + 1))
+		{
+			last->last = std::max(last->last, end);
 			return;
 		}
 		auto curr = r.end();
@@ -52,7 +114,7 @@ struct exposure
 				// can we now also merge into the next?
 				if (curr->last + 1 >= iter->first)
 				{
-					curr->last = iter->last;
+					curr->last = std::max(curr->last, iter->last);
 					iter = r.erase(iter); // was overlapping or touching, now check next one
 					continue;
 				}
@@ -77,25 +139,69 @@ struct exposure
 		}
 	}
 
-	inline range fetch_os(uint64_t offset, uint64_t size, bool is_mapped) { return fetch(offset, offset + size - 1, is_mapped); }
+	inline range fetch_os(uint64_t offset, uint64_t size, bool is_mapped) { if (size == 0) return range::invalid(); return fetch(offset, offset + size - 1, is_mapped); }
 	inline range fetch(range v, bool is_mapped) { return fetch(v.first, v.last, is_mapped); }
 
-	/// Return the smallest exposed area inside the given region, or last=0 if none.
+	/// Return the smallest exposed area inside the given region, or an invalid range if none.
 	/// is_mapped means is true if area is currently memory mapped, false if not. If not,
 	/// we remove the returned range.
 	range fetch(uint64_t start, uint64_t end, bool is_mapped)
 	{
-		uint64_t a = end;
-		uint64_t b = start;
+		assert(start <= end);
+		range retval = range::invalid();
+		if (r.empty() || end < r.front().first || start > r.back().last) return retval;
+		if (r.size() == 1)
+		{
+			auto iter = r.begin();
+			auto& s = *iter;
+			if (s.last < start || s.first > end) return retval;
+
+			retval = { std::max(s.first, start), std::min(s.last, end) };
+			if (!is_mapped)
+			{
+				if (s.first >= start && s.last <= end) // consumed entirely
+				{
+					r.erase(iter);
+				}
+				else if (s.first < start && s.last > end) // split in two
+				{
+					r.insert(std::next(iter), { end + 1, s.last });
+					s.last = start - 1;
+				}
+				else if (s.first < start) // remove from end
+				{
+					s.last = start - 1;
+				}
+				else if (s.last > end) // remove from start
+				{
+					s.first = end + 1;
+				}
+			}
+#ifdef FULLDEBUG
+			assert(r.empty() || r.front().first <= r.back().last);
+			assert(r.empty() || span().valid());
+			self_test();
+#endif
+			return retval;
+		}
+
 		for (auto iter = r.begin(); iter != r.end(); )
 		{
 			auto& s = *iter;
 			if (s.first > end) break;
-			else if ((s.last >= start && s.last <= end) || (s.first <= end && s.first >= start) || (s.first < start && s.last > end))
+			else if (s.last >= start && s.first <= end)
 			{
-				a = std::clamp(s.first, start, a);
-				b = std::clamp(s.last, b, end);
-				assert(s.last > 0);
+				const uint64_t first = std::max(s.first, start);
+				const uint64_t last = std::min(s.last, end);
+				if (!retval.valid())
+				{
+					retval = { first, last };
+				}
+				else
+				{
+					retval.first = std::min(retval.first, first);
+					retval.last = std::max(retval.last, last);
+				}
 				if (is_mapped)
 				{
 					// change nothing
@@ -111,36 +217,38 @@ struct exposure
 					s.last = start - 1;
 					continue;
 				}
-				else if (start == s.first) // remove from start
-				{
-					s.first = end + 1;
-				}
-				else if (end == s.last) // remove from end
+				else if (s.first < start) // remove from end
 				{
 					s.last = start - 1;
+				}
+				else if (s.last > end) // remove from start
+				{
+					s.first = end + 1;
 				}
 			}
 			iter++;
 		}
-		if (a == end) return { 0, 0 };
+		if (!retval.valid()) return retval;
 #ifdef FULLDEBUG
-		assert(b >= a);
 		assert(r.empty() || r.front().first <= r.back().last);
-		assert(span().first <= span().last);
+		assert(r.empty() || span().valid());
 		self_test();
 #endif
-		return range{ a, b };
+		return retval;
 	}
 
 	void self_test() const
 	{
-		long prev = -1;
+		uint64_t prev = 0;
+		bool first = true;
 		for (auto& s : r)
 		{
 			assert(s.first <= s.last);
-			assert((long)s.first > prev);
+			assert(first || s.first > prev);
+			first = false;
 			prev = s.last;
 			(void)prev; // silence compiler warning for release builds
+			(void)first; // ditto
 		}
 	}
 

@@ -349,6 +349,12 @@ target_compile_options(rangetrack PRIVATE ${COMMON_FLAGS})
 add_lavatube_test(rangetrack_test COMMAND rangetrack)
 add_dependencies(rangetrack sync_generated)
 
+add_executable(rangetrack_perf tests/rangetrack_perf.cpp)
+target_include_directories(rangetrack_perf ${COMMON_INCLUDE})
+target_link_libraries(rangetrack_perf ${MOST_COMMON_LIBRARIES})
+target_compile_options(rangetrack_perf PRIVATE ${COMMON_FLAGS})
+add_dependencies(rangetrack_perf sync_generated)
+
 add_executable(replay_screenshot_test tests/replay_screenshot.cpp)
 target_include_directories(replay_screenshot_test ${COMMON_INCLUDE})
 target_link_libraries(replay_screenshot_test ${COMMON_LIBRARIES} lavatube)

@@ -1473,7 +1473,7 @@ static void queue_update(lava_file_writer& writer, trackedqueue* t, VkCommandBuf
 		if (memory == VK_NULL_HANDLE) continue;
 		auto* memory_data = writer.parent->records.VkDeviceMemory_index.at(memory);
 		range minrange = memory_data->exposed.overlap(pair.second, pair.first->offset);
-		if (minrange.last == 0) continue; // has not been exposed, don't need to diff
+		if (!minrange.valid()) continue; // has not been exposed, don't need to diff
 		assert(minrange.first <= minrange.last);
 		cmdbufs.insert(cmdbuf_data);
 		if (ranges_by_memory.count(memory) == 0) // if we don't have it yet
@@ -1571,6 +1571,7 @@ static void memory_update(lava_file_writer& writer, trackedqueue* queue_data, co
 					range r2 = { r.first + object_data->offset, r.last + object_data->offset };
 					assert(r2.last < object_data->offset + object_data->size);
 					range v = memory_data->exposed.fetch(r2, memory_data->ptr != nullptr);
+					if (!v.valid()) continue;
 					written += write_out_object(writer, device_data, object_data, cloneptr, changedptr, v.first - object_data->offset, v.last - v.first + 1, nullptr);
 					scanned += v.last - v.first + 1;
 					NEVER("flushing obj %u (%lu, %lu) -> (%lu, %lu) -> (%lu, %lu), exposed after (%lu, %lu), total written %lu, memory %u; binding_offset=%lu binding_size=%lu ptr=%p",

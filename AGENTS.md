@@ -17,7 +17,7 @@
 ## Build, Test, and Development Commands
 - Bootstrap deps: `git submodule update --init --recursive`.
 - Configure: `mkdir -p build && cd build && cmake ..` (add `-DCMAKE_BUILD_TYPE=Debug` while iterating).
-- Build: `make -C build -j$(nproc)`.
+- Build: `make -C build -j6`.
 - Tests: `cd build && make test` or `ctest -V` for verbose runs.
 
 ## Coding Style & Naming Conventions
