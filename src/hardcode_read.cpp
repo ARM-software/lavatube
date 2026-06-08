@@ -3124,6 +3124,23 @@ void replay_pre_vkCreateRayTracingPipelinesKHR(lava_file_reader& reader, VkDevic
 	}
 }
 
+void replay_pre_vkCreateShadersEXT(lava_file_reader& reader, VkDevice device, uint32_t createInfoCount, const VkShaderCreateInfoEXT* pCreateInfos, const VkAllocationCallbacks* pAllocator, VkShaderEXT* pShaders)
+{
+	for (uint32_t i = 0; i < createInfoCount; i++)
+	{
+		const VkMarkedOffsetsARM* remap = (const VkMarkedOffsetsARM*)find_extension(&pCreateInfos[i], VK_STRUCTURE_TYPE_MARKED_OFFSETS_ARM);
+		if (!remap) continue; // nothing to do here
+
+		assert(pCreateInfos[i].pSpecializationInfo != nullptr);
+		assert(pCreateInfos[i].pSpecializationInfo->pData != nullptr);
+
+		translate_marked_offsets(reader, remap, const_cast<void*>(pCreateInfos[i].pSpecializationInfo->pData), pCreateInfos[i].pSpecializationInfo->dataSize);
+
+		// make sure we don't leak this to the driver, as this would break validation
+		purge_extension_parent(const_cast<VkShaderCreateInfoEXT*>(&pCreateInfos[i]), VK_STRUCTURE_TYPE_MARKED_OFFSETS_ARM);
+	}
+}
+
 static char* mem_map(lava_file_reader& reader, VkDevice device, const suballoc_location& loc)
 {
 	char* ptr = nullptr;
