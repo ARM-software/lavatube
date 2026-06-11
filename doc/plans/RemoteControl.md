@@ -3,6 +3,8 @@
 Motivation: Make debugging easier with a new command-line tool to break and inspect
 running trace replays.
 
+Inspired by [Renderdoc's CLI tool](https://github.com/BANANASJIM/rdc-cli).
+
 ## Functionality
 
 The basic functionality is a new option to `lava-replay` that makes it start providing
@@ -40,10 +42,10 @@ More instructions to implement - in prioritized order:
 * `lava-cli list <object type>` - list all objects of given type tracked globally and their status
 * `lava-cli save buffer|image|tensor <index> <filename>` - write exact contents of object given by index to the given filename (if bound)
 * `lava-cli convert buffer|image|tensor <index> <filename.png>` - transform to linear format and write contents of image data given by index to the given filename (if bound)
-* `lava-cli save jumpfile <name>` - write out state recreation to current position + frame boundary + jump packet to file <name>
 * `lava-cli set debug <level>` - change global debug level
 * `lava-cli set blackhole <true|false>` - change blackhole setting
-* `lava-cli probe <object type> <index>` - stop on next use of this object; can only set one probe per object type
+* `lava-cli instrument [detailed]` - on `vkBeginCommandBuffer` to instrument the commandbuffer, returns the index of the cmdbuffer
+* `lava-cli show instrumentation <cmdbuf index>` - attempt to fetch all `VK_ARM_shader_instrumentation` data from the given cmdbuffer by index
 
 ## Notes
 
@@ -52,26 +54,21 @@ the command. This hides some state from us, however. Any stored inputs that get 
 by the executed command with new data will not be visible. We could make sure both data sets
 are kept and have a switch to choose whcih one to show, though.
 
-## 'probe'
+## shader instrumentation
 
-For this, we would need to
-* Always resolve all handles into meta-objects during replay, like we currently do during capture. There will be some overhead.
-* Add one conditional check against a stored probe-id, if valid, then if current, then set step variable to stop on this packet.
+Make use of [VK_ARM_shader_instrumentation](https://docs.vulkan.org/features/latest/features/proposals/VK_ARM_shader_instrumentation.html),
+there is some documentation [here](https://docs.vulkan.org/refpages/latest/refpages/source/VK_ARM_shader_instrumentation.html).
+Can test with GPU model.
 
-However, the capability we would get would be very interesting. Finding where the object is used for more complex commands
-might be a bit of needing in a haystack, but no easy way to improve this. If we think probes on multiple objects at once is
-likely, we could store which one(s) triggered. We could also store name of structure or if found in object root. Best would be
-to store a nested chain (list) of 'where are we now' that we could push onto into a probe storage to display (eg 'probe triggered
-in pStructureInfo(VkSomeStructureType)->pNext(VkSomeExtType)->pWhatever(pSomeOtherType)')
+Inject instrumentation probe into the commandbuffer under construction, requires currently constructing a commandbuffer.
+Once the commandbuffer has been submitted, we will also inject a wait for execution to finish then print the results.
 
-## 'goto'
+We don't need to create one in advance, just create one just as we need it, unless we can reuse one from a pool. Biggest
+problem is that when we are the command we want to instrument, it is too late, we need to do it on the command _before_,
+hence we just instrument every draw or dispatch in the entire commandbuffer.
 
-Check for typos
-
-## 'show'
-
-Use existing `src/json_helpers.cpp` functions, add extra fields, for now just the `state`
-field from `trackable`.
+By default entire commandbuffer is instrumented in one measurement, but if 'detailed' is added then each dispatch or draw
+is instrumented separately; references to instrumentations are stored in the commandbuffer meta object.
 
 ## Binaries
 
@@ -88,7 +85,7 @@ We can get binary data from a number of sources:
   makes this hard. Either we special case queue submits, or we awkwardly ask users to
   instrument on a command before. Less awkward if we could have a goto that put as at the
   command _before_ the target. Another option is to require the user to go to the command
-  creation where we could add output target coyp command into the commandbuffer without
+  creation where we could add output target copy command into the commandbuffer without
   any re-creation.
 
 ## Manipulation
@@ -175,10 +172,6 @@ format as well.
 
 Plan is to support both binary blobs and conversion to PNG. [This](doc/plans/CompressedAssetsFile.md)
 might be related.
-
-## Inspiration
-
-* [Renderdoc's CLI tool](https://github.com/BANANASJIM/rdc-cli)
 
 ## Implementation
 
