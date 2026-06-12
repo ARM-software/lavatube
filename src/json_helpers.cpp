@@ -193,6 +193,8 @@ Json::Value trackedcmdbuffer_json(const trackedcmdbuffer* t)
 	if (t->bound_raytracing_pipeline_index != CONTAINER_INVALID_INDEX) v["bound_raytracing_pipeline_index"] = t->bound_raytracing_pipeline_index;
 	v["commands"] = (unsigned)t->commands.size();
 	v["replay_pending"] = t->replay_pending;
+	v["renderpass_count"] = t->renderpass_count;
+	v["shader_command_count"] = t->shader_command_count;
 	return v;
 }
 
@@ -200,6 +202,8 @@ Json::Value trackedcmdbuffer_trace_json(const trackedcmdbuffer_trace* t)
 {
 	Json::Value v = trackable_json(t);
 	v["pool"] = (unsigned)t->pool_index;
+	v["renderpass_count"] = t->renderpass_count;
+	v["shader_command_count"] = t->shader_command_count;
 	return v;
 }
 
@@ -602,6 +606,8 @@ trackedcmdbuffer trackedcmdbuffer_json(const Json::Value& v)
 	trackable_helper(t, v);
 	t.pool_index = v["pool"].asUInt();
 	t.enter_initialized();
+	t.renderpass_count = v["renderpass_count"].asInt();
+	t.shader_command_count = v["shader_command_count"].asInt();
 	return t;
 }
 

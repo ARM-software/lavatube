@@ -792,6 +792,9 @@ struct trackedcmdbuffer : trackable
 	uint32_t replay_submit_fence_index = CONTAINER_INVALID_INDEX;
 	bool replay_pending = false;
 	uint32_t bound_raytracing_pipeline_index = CONTAINER_INVALID_INDEX;
+	int shader_command_count = 0;
+	int renderpass_count = 0;
+	int nesting = 0; // current nesting of scoped commands (replay only)
 	struct raytracing_sbt_use
 	{
 		uint32_t pipeline_index = CONTAINER_INVALID_INDEX;
@@ -875,6 +878,7 @@ struct trackedcmdbuffer_trace : trackedcmdbuffer
 		assert(physicalDevice != VK_NULL_HANDLE);
 		assert(pool_index != CONTAINER_INVALID_INDEX);
 		assert(level != VK_COMMAND_BUFFER_LEVEL_MAX_ENUM);
+		assert(nesting == 0);
 		trackedcmdbuffer::self_test();
 	}
 };

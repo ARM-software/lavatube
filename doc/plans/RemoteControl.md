@@ -36,7 +36,7 @@ More instructions to implement - in prioritized order:
 * `lava-cli step frames X` - step the given number of frames ahead in the current thread, then pause again
 - `lava-cli goto frame X` - replay until we get to the given frame
 * `lava-cli info <topic>` - show input parameters and important state
-	- 'objects' - show all non-zero object types, with pending, created, bound (if applicable) and destroyed columns
+	- 'objects' - show table of all non-zero-sized object types, with pending, created, bound (if applicable) and destroyed columns
 	- 'queues'
 	- 'swapchains' - show image index numbers of real and fake swapchains and their status
 * `lava-cli list <object type>` - list all objects of given type tracked globally and their status
@@ -46,13 +46,20 @@ More instructions to implement - in prioritized order:
 * `lava-cli set blackhole <true|false>` - change blackhole setting
 * `lava-cli instrument [detailed]` - on `vkBeginCommandBuffer` to instrument the commandbuffer, returns the index of the cmdbuffer
 * `lava-cli show instrumentation <cmdbuf index>` - attempt to fetch all `VK_ARM_shader_instrumentation` data from the given cmdbuffer by index
+* `lava-cli split-cmdbuf-by-renderpass` - on `vkBeginCommandBuffer` to split commandbuffers by renderpasses
+* `lava-cli split-cmdbuf-by-shader` - on `vkBeginCommandBuffer` to split commandbuffers by shader calls
 
 ## Notes
 
 We deliberately pause _after_ command execution so that we can inspect the results from
 the command. This hides some state from us, however. Any stored inputs that get overwritten
 by the executed command with new data will not be visible. We could make sure both data sets
-are kept and have a switch to choose whcih one to show, though.
+are kept and have a switch to choose which one to show, though.
+
+Guarantees that we should give:
+* Upon resumption of a command, all threads are back in pause mode.
+* All issued GPU work has completed.
+* Either we return DEVICE_LOST or device is intact (we check before returning).
 
 ## shader instrumentation
 
