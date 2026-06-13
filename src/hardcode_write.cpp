@@ -23,6 +23,11 @@ static std::vector<VkExtensionProperties> instance_extension_properties GUARDED_
 static VkPhysicalDeviceMemoryProperties virtual_memory_properties GUARDED_BY(frame_mutex) = {};
 static uint32_t remap_memory_types_to_real[VK_MAX_MEMORY_TYPES] GUARDED_BY(frame_mutex);
 
+#ifndef VK_ANDROID_FRAME_BOUNDARY_EXTENSION_NAME
+#define VK_ANDROID_FRAME_BOUNDARY_EXTENSION_NAME "VK_ANDROID_frame_boundary"
+#endif
+typedef void (VKAPI_PTR *PFN_vkFrameBoundaryANDROID)(VkDevice device, VkSemaphore semaphore, VkImage image);
+
 // Protos
 static void write_VkMarkedOffsetsARM(lava_file_writer& writer, const VkMarkedOffsetsARM* sptr);
 
@@ -1860,6 +1865,7 @@ static void modify_device_extensions(VkPhysicalDevice physicalDevice) REQUIRES(f
 	std::vector<VkExtensionProperties> presented_extensions;
 	presented_extensions.push_back({VK_TRACETOOLTEST_OBJECT_PROPERTY_EXTENSION_NAME, 1});
 	presented_extensions.push_back({VK_EXT_TOOLING_INFO_EXTENSION_NAME, 1});
+	presented_extensions.push_back({VK_ANDROID_FRAME_BOUNDARY_EXTENSION_NAME, 1});
 	presented_extensions.push_back({VK_EXT_FRAME_BOUNDARY_EXTENSION_NAME, 1});
 	presented_extensions.push_back({VK_ARM_TRACE_HELPERS_EXTENSION_NAME, 1});
 	presented_extensions.push_back({VK_ARM_EXPLICIT_HOST_UPDATES_EXTENSION_NAME, 1});
@@ -1875,12 +1881,19 @@ static void modify_device_extensions(VkPhysicalDevice physicalDevice) REQUIRES(f
 		r["devicePresented"]["extensions"].append(name);
 		if (name.find("_NV") == std::string::npos && name.find("_AMD") == std::string::npos && name.find("_INTEL") == std::string::npos
 		    // deduplicate in case host also provides this
-		    && name != VK_EXT_TOOLING_INFO_EXTENSION_NAME && name != VK_EXT_FRAME_BOUNDARY_EXTENSION_NAME)
+		    && name != VK_EXT_TOOLING_INFO_EXTENSION_NAME && name != VK_ANDROID_FRAME_BOUNDARY_EXTENSION_NAME && name != VK_EXT_FRAME_BOUNDARY_EXTENSION_NAME)
 		{
 			presented_extensions.push_back(ext); // add to list of extensions presented to app
 		}
 	}
-	for (const auto& ext : presented_extensions) physicaldevice_data->presented_device_extensions.insert(ext.extensionName);
+	for (const auto& ext : presented_extensions)
+	{
+		physicaldevice_data->presented_device_extensions.insert(ext.extensionName);
+		if (instance.meta.device.device_extensions.insert(ext.extensionName).second)
+		{
+			r["devicePresented"]["extensions"].append(ext.extensionName);
+		}
+	}
 	physicaldevice_data->device_extension_properties = presented_extensions;
 }
 
@@ -2022,6 +2035,7 @@ static void trace_pre_vkCreateDevice(VkPhysicalDevice physicalDevice, VkDeviceCr
 			purge_extension_parent(pCreateInfo, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXPLICIT_HOST_UPDATES_FEATURES_ARM); // we need to consume it, driver will not understand
 			continue;
 		}
+		if (!physicaldevice_data->supported_device_extensions.count(VK_ANDROID_FRAME_BOUNDARY_EXTENSION_NAME) && strcmp(name, VK_ANDROID_FRAME_BOUNDARY_EXTENSION_NAME) == 0) continue; // do not pass to host
 		if (!physicaldevice_data->supported_device_extensions.count(VK_EXT_FRAME_BOUNDARY_EXTENSION_NAME) && strcmp(name, VK_EXT_FRAME_BOUNDARY_EXTENSION_NAME) == 0) // do not pass to host
 		{
 			purge_extension_parent(pCreateInfo, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FRAME_BOUNDARY_FEATURES_EXT);
@@ -2541,6 +2555,34 @@ VKAPI_ATTR void VKAPI_CALL trace_vkSyncBufferTRACETOOLTEST_output(VkDevice devic
 	lava_file_writer& writer = write_header("vkSyncBufferTRACETOOLTEST", VKSYNCBUFFERTRACETOOLTEST);
 	writer.write_handle(writer.parent->records.VkDevice_index.at(device));
 	writer.write_handle(writer.parent->records.VkBuffer_index.at(buffer));
+}
+
+VKAPI_ATTR void VKAPI_CALL trace_vkFrameBoundaryANDROID(VkDevice device, VkSemaphore semaphore, VkImage image)
+{
+	lava_file_writer& writer = write_header("vkFrameBoundaryANDROID", VKFRAMEBOUNDARYANDROID, true);
+	auto* device_data = writer.parent->records.VkDevice_index.at(device);
+	auto* semaphore_data = writer.parent->records.VkSemaphore_index.at(semaphore);
+	auto* image_data = writer.parent->records.VkImage_index.at(image);
+
+	writer.write_handle(device_data);
+	writer.device = device;
+	writer.physicalDevice = device_data->physicalDevice;
+	writer.write_handle(semaphore_data);
+	writer.write_handle(image_data);
+
+	if (writer.run)
+	{
+		auto* physicaldevice_data = writer.parent->records.VkPhysicalDevice_index.at(device_data->physicalDevice);
+		if (physicaldevice_data->supported_device_extensions.count(VK_ANDROID_FRAME_BOUNDARY_EXTENSION_NAME))
+		{
+			auto func = reinterpret_cast<PFN_vkFrameBoundaryANDROID>(wrap_vkGetDeviceProcAddr(device, "vkFrameBoundaryANDROID"));
+			if (func) func(device, semaphore, image);
+			else WLOG("Driver advertised %s but did not provide vkFrameBoundaryANDROID", VK_ANDROID_FRAME_BOUNDARY_EXTENSION_NAME);
+		}
+	}
+
+	writer.push_thread_barriers();
+	writer.thaw();
 }
 
 void write_VkDataGraphPipelineConstantARM(lava_file_writer& writer, const VkDataGraphPipelineConstantARM* sptr)

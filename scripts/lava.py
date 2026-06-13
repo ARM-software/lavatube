@@ -11,7 +11,7 @@ import vkconfig as vk
 
 # New functions that we implement
 fake_functions = [ 'vkAssertBufferARM', 'vkSyncBufferTRACETOOLTEST', 'vkGetDeviceTracingObjectPropertyTRACETOOLTEST',
-	'vkCmdUpdateBuffer2ARM', 'vkCmdUpdateMemory2ARM', 'vkAssertMemoryARM' ]
+	'vkCmdUpdateBuffer2ARM', 'vkCmdUpdateMemory2ARM', 'vkAssertMemoryARM', 'vkFrameBoundaryANDROID' ]
 
 def output_fake_callback(name):
 	if name == 'vkAssertBufferARM':
@@ -24,6 +24,8 @@ def output_fake_callback(name):
 		return 'replay_trace_callback<trace_vkCmdUpdateMemory2ARM>::call'
 	if name == 'vkAssertMemoryARM':
 		return 'replay_trace_callback<trace_vkAssertMemoryARM>::call'
+	if name == 'vkFrameBoundaryANDROID':
+		return 'replay_trace_callback<trace_vkFrameBoundaryANDROID>::call'
 	return None
 fake_extension_structs = {
 	'VkMarkedOffsetsARM': 'VK_STRUCTURE_TYPE_MARKED_OFFSETS_ARM',
@@ -434,6 +436,8 @@ for f in fake_functions:
 		out([rh], 'typedef void(*replay_vkCmdUpdateMemory2ARM_callback)(callback_context& cb, VkCommandBuffer commandBuffer, const VkUpdateMemoryInfoARM* pInfo);')
 	elif f == 'vkAssertMemoryARM':
 		out([rh], 'typedef void(*replay_vkAssertMemoryARM_callback)(callback_context& cb, VkDevice device, const VkUpdateMemoryInfoARM* pInfo, uint32_t* checksum, const char* comment);')
+	elif f == 'vkFrameBoundaryANDROID':
+		out([rh], 'typedef void(*replay_vkFrameBoundaryANDROID_callback)(callback_context& cb, VkDevice device, VkSemaphore semaphore, VkImage image);')
 	else:
 		assert False, 'Missing fake callback typedef implementation: %s' % f
 	out(targets_read_headers, 'void retrace_%s(lava_file_reader& reader);' % f)
@@ -450,6 +454,8 @@ for f in fake_functions:
 		out([wh], 'VKAPI_ATTR void trace_vkCmdUpdateMemory2ARM(VkCommandBuffer commandBuffer, const VkUpdateMemoryInfoARM* pInfo);')
 	elif f == 'vkAssertMemoryARM':
 		out([wh], 'VKAPI_ATTR VkResult VKAPI_CALL trace_vkAssertMemoryARM(VkDevice device, const VkUpdateMemoryInfoARM* pInfo, uint32_t* checksum, const char* comment);')
+	elif f == 'vkFrameBoundaryANDROID':
+		out([wh], 'VKAPI_ATTR void VKAPI_CALL trace_vkFrameBoundaryANDROID(VkDevice device, VkSemaphore semaphore, VkImage image);')
 	else:
 		assert False, 'Missing fake function header implementation: %s' % f
 out([gh])

@@ -13,9 +13,76 @@ if [ -z "$LAYER_PATH" ] || [ -z "$REPLAY_PATH" ] || [ -z "$MANIFEST_PATH" ]; the
     exit 1
 fi
 
+fail()
+{
+    echo "ERROR: $*" >&2
+    exit 1
+}
+
+show_trace_errors()
+{
+    echo "Relevant logcat lines:"
+    adb -e logcat -d | grep -iE "lavatube|VkLayer_lavatube|vulkan|dlopen|debug layer|gpu_debug" || true
+}
+
+require_file()
+{
+    local path=$1
+    local description=$2
+    if [ ! -f "$path" ]; then
+        fail "$description not found: $path"
+    fi
+}
+
+validate_layer_for_device()
+{
+    require_file "$LAYER_PATH" "Layer library"
+    require_file "$MANIFEST_PATH" "Layer manifest"
+
+    local abi
+    abi=$(adb -e shell getprop ro.product.cpu.abi 2>/dev/null | tr -d '\r')
+    if [ -z "$abi" ]; then
+        fail "Could not determine emulator ABI with adb. Is the emulator fully booted?"
+    fi
+
+    local layer_info
+    layer_info=$(file -Lb "$LAYER_PATH")
+    echo "Emulator ABI: $abi"
+    echo "Layer file: $layer_info"
+
+    if echo "$layer_info" | grep -q "GNU/Linux"; then
+        fail "Layer appears to be a desktop Linux build. Use build_android_${abi}/libVkLayer_lavatube.so, not build/libVkLayer_lavatube.so."
+    fi
+
+    if ! echo "$layer_info" | grep -q "shared object"; then
+        fail "Layer is not an ELF shared object: $LAYER_PATH"
+    fi
+
+    case "$abi" in
+        x86_64)
+            echo "$layer_info" | grep -q "x86-64" || fail "Emulator ABI is x86_64, but layer is not x86-64. Use build_android_x86_64/libVkLayer_lavatube.so."
+            ;;
+        x86)
+            echo "$layer_info" | grep -q "Intel 80386" || fail "Emulator ABI is x86, but layer is not 32-bit x86."
+            ;;
+        arm64-v8a)
+            echo "$layer_info" | grep -q "aarch64" || fail "Emulator ABI is arm64-v8a, but layer is not aarch64. Use build_android_arm64-v8a/libVkLayer_lavatube.so."
+            ;;
+        armeabi-v7a|armeabi)
+            echo "$layer_info" | grep -q "ARM" || fail "Emulator ABI is $abi, but layer is not ARM."
+            ;;
+        *)
+            echo "Warning: unrecognized emulator ABI '$abi'; only checking that layer is an Android-looking shared object."
+            ;;
+    esac
+}
+
 wait_for_emulator_device()
 {
-    adb -e wait-for-device
+    if ! adb devices | awk '$1 ~ /^emulator-/ { found = 1 } END { exit found ? 0 : 1 }'; then
+        fail "No emulator detected. Run tests/emulator_setup.sh first, or run this test via ctest so EmulatorFixture starts it."
+    fi
+
     for i in {1..30}; do
         if [ "$(adb -e get-state 2>/dev/null | tr -d '\r')" = "device" ]; then
             return 0
@@ -29,6 +96,7 @@ wait_for_emulator_device()
 # Ensure device is ready
 echo "Waiting for device to be ready..."
 wait_for_emulator_device
+validate_layer_for_device
 
 APP_NAME="com.google.android.calendar"
 LAYER_DIR="/data/local/debug/vulkan"
@@ -95,19 +163,27 @@ adb -e shell input keyevent BACK || true
 adb -e shell setprop debug.vulkan.lavatube.finish 1
 
 echo "Waiting for trace to be packed..."
+TRACE_READY=0
 for i in {1..30}; do
     if adb -e shell "[ -f '$TRACE_PATH' ]"; then
+        TRACE_READY=1
         break
     fi
     sleep 1
 done
 
+if [ "$TRACE_READY" -ne 1 ]; then
+    echo "Trace was not created at $TRACE_PATH"
+    show_trace_errors
+    exit 1
+fi
+
 # Pull trace
 echo "Pulling trace from $TRACE_PATH..."
 rm -rf calendar.vk
 if ! adb -e pull "$TRACE_PATH" .; then
-    echo "Failed to pull trace. Checking logcat for errors..."
-    adb -e logcat -d | grep -i "lavatube" || true
+    echo "Failed to pull trace."
+    show_trace_errors
     exit 1
 fi
 

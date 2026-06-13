@@ -3,6 +3,10 @@
 
 #include "markings.h"
 
+#ifndef VK_ANDROID_FRAME_BOUNDARY_EXTENSION_NAME
+#define VK_ANDROID_FRAME_BOUNDARY_EXTENSION_NAME "VK_ANDROID_frame_boundary"
+#endif
+
 // TBD: move a lot of these into tracked objects instead
 static VkDebugReportCallbackEXT stored_callback = VK_NULL_HANDLE;
 static bool callback_initialized = false;
@@ -294,6 +298,22 @@ static Json::Value json_params_vkSyncBufferTRACETOOLTEST(callback_context& cb, V
 static void cli_params_vkSyncBufferTRACETOOLTEST(callback_context& cb, VkDevice device, VkBuffer buffer)
 {
 	cli_params_publish_hardcoded(cb, json_params_vkSyncBufferTRACETOOLTEST(cb, device, buffer));
+}
+
+static Json::Value json_params_vkFrameBoundaryANDROID(callback_context& cb, VkDevice device, VkSemaphore semaphore, VkImage image)
+{
+	Json::Value v = cli_params_base_json(cb);
+	Json::Value json_parameters;
+	json_parameters["device"] = json_hardcoded_handle("VkDevice", index_to_VkDevice, device);
+	json_parameters["semaphore"] = json_hardcoded_handle("VkSemaphore", index_to_VkSemaphore, semaphore);
+	json_parameters["image"] = json_hardcoded_handle("VkImage", index_to_VkImage, image);
+	v["parameters"] = json_parameters;
+	return v;
+}
+
+static void cli_params_vkFrameBoundaryANDROID(callback_context& cb, VkDevice device, VkSemaphore semaphore, VkImage image)
+{
+	cli_params_publish_hardcoded(cb, json_params_vkFrameBoundaryANDROID(cb, device, semaphore, image));
 }
 
 static Json::Value json_params_vkAssertBufferARM(callback_context& cb, VkDevice device, const VkUpdateBufferInfoARM* pInfo, const uint32_t* checksum, const char* comment)
@@ -2892,6 +2912,22 @@ void retrace_vkSyncBufferTRACETOOLTEST(lava_file_reader& reader)
 	for (auto* c : vkSyncBufferTRACETOOLTEST_callbacks) c(cb_context, device, buffer);
 	if (reader.parent->print_packets) print_params_publish(cb_context, json_params_vkSyncBufferTRACETOOLTEST(cb_context, device, buffer));
 	while (check_cli(cb_context)) cli_params_vkSyncBufferTRACETOOLTEST(cb_context, device, buffer);
+}
+
+void retrace_vkFrameBoundaryANDROID(lava_file_reader& reader)
+{
+	const uint32_t device_index = reader.read_handle(DEBUGPARAM("VkDevice"));
+	const uint32_t semaphore_index = reader.read_handle(DEBUGPARAM("VkSemaphore"));
+	const uint32_t image_index = reader.read_handle(DEBUGPARAM("VkImage"));
+	VkDevice device = index_to_VkDevice.at(device_index);
+	VkSemaphore semaphore = index_to_VkSemaphore.at(semaphore_index);
+	VkImage image = index_to_VkImage.at(image_index);
+	reader.device = device;
+	reader.physicalDevice = VkDevice_index.at(device_index).physicalDevice;
+	callback_context cb_context{ reader };
+	for (auto* c : vkFrameBoundaryANDROID_callbacks) c(cb_context, device, semaphore, image);
+	if (reader.parent->print_packets) print_params_publish(cb_context, json_params_vkFrameBoundaryANDROID(cb_context, device, semaphore, image));
+	while (check_cli(cb_context)) cli_params_vkFrameBoundaryANDROID(cb_context, device, semaphore, image);
 }
 
 static uint32_t checksum_buffer_range(const trackeddevice& device_data, uint32_t buffer_index, VkDeviceSize offset, VkDeviceSize size)
