@@ -81,6 +81,28 @@ void print_extension_mismatch(VkPhysicalDevice physicalDevice, const VkDeviceCre
 	}
 }
 
+void print_instance_extension_mismatch(const VkInstanceCreateInfo* pCreateInfo)
+{
+	uint32_t propertyCount = 0;
+	VkResult result = wrap_vkEnumerateInstanceExtensionProperties(nullptr, &propertyCount, nullptr); // call first to get correct count on host
+	(void)result;
+	assert(result == VK_SUCCESS);
+	std::vector<VkExtensionProperties> tmp_instance_extension_properties(propertyCount);
+	result = wrap_vkEnumerateInstanceExtensionProperties(nullptr, &propertyCount, tmp_instance_extension_properties.data());
+	assert(result == VK_SUCCESS);
+	ILOG("Mismatch between supported and requested instance extension sets! Not supported instance extension requested:");
+	for (unsigned i = 0; i < pCreateInfo->enabledExtensionCount; i++)
+	{
+		bool found = false;
+		for (const auto &ext : tmp_instance_extension_properties)
+		{
+			std::string name = ext.extensionName;
+			if (name == pCreateInfo->ppEnabledExtensionNames[i]) found = true;
+		}
+		if (!found) ILOG("\t%s", pCreateInfo->ppEnabledExtensionNames[i]);
+	}
+}
+
 void print_feature_mismatch(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo* pCreateInfo)
 {
 	VkPhysicalDeviceFeatures device_features = {};

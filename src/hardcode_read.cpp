@@ -18,6 +18,73 @@ static bool has_VkPhysicalDeviceVulkan12Features = false;
 static bool has_VkPhysicalDeviceVulkan13Features = false;
 static bool has_VkPhysicalDeviceVulkan14Features = false;
 
+static bool remove_ahb_external_image_format_info(VkPhysicalDeviceImageFormatInfo2* pImageFormatInfo)
+{
+	if (!pImageFormatInfo) return false;
+	bool removed = false;
+	VkBaseOutStructure* prev = reinterpret_cast<VkBaseOutStructure*>(pImageFormatInfo);
+	while (prev && prev->pNext)
+	{
+		if (prev->pNext->sType == VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_IMAGE_FORMAT_INFO)
+		{
+			VkPhysicalDeviceExternalImageFormatInfo* info = reinterpret_cast<VkPhysicalDeviceExternalImageFormatInfo*>(prev->pNext);
+			if (info->handleType == VK_EXTERNAL_MEMORY_HANDLE_TYPE_ANDROID_HARDWARE_BUFFER_BIT_ANDROID)
+			{
+				prev->pNext = reinterpret_cast<VkBaseOutStructure*>(const_cast<void*>(info->pNext));
+				removed = true;
+				continue;
+			}
+		}
+		prev = prev->pNext;
+	}
+	return removed;
+}
+
+static bool remove_ahb_external_memory_image_create_info(VkImageCreateInfo* pCreateInfo)
+{
+	if (!pCreateInfo) return false;
+	bool removed = false;
+	VkBaseOutStructure* prev = reinterpret_cast<VkBaseOutStructure*>(pCreateInfo);
+	while (prev && prev->pNext)
+	{
+		if (prev->pNext->sType == VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMAGE_CREATE_INFO)
+		{
+			VkExternalMemoryImageCreateInfo* info = reinterpret_cast<VkExternalMemoryImageCreateInfo*>(prev->pNext);
+			if (info->handleTypes & VK_EXTERNAL_MEMORY_HANDLE_TYPE_ANDROID_HARDWARE_BUFFER_BIT_ANDROID)
+			{
+				if (info->handleTypes == VK_EXTERNAL_MEMORY_HANDLE_TYPE_ANDROID_HARDWARE_BUFFER_BIT_ANDROID)
+				{
+					prev->pNext = reinterpret_cast<VkBaseOutStructure*>(const_cast<void*>(info->pNext));
+					removed = true;
+					continue;
+				}
+				info->handleTypes &= ~VK_EXTERNAL_MEMORY_HANDLE_TYPE_ANDROID_HARDWARE_BUFFER_BIT_ANDROID;
+				removed = true;
+			}
+		}
+		prev = prev->pNext;
+	}
+	return removed;
+}
+
+static bool remove_ahb_import_memory_info(VkMemoryAllocateInfo* pAllocateInfo)
+{
+	if (!pAllocateInfo) return false;
+	bool removed = false;
+	VkBaseOutStructure* prev = reinterpret_cast<VkBaseOutStructure*>(pAllocateInfo);
+	while (prev && prev->pNext)
+	{
+		if (prev->pNext->sType == VK_STRUCTURE_TYPE_IMPORT_ANDROID_HARDWARE_BUFFER_INFO_ANDROID)
+		{
+			prev->pNext = prev->pNext->pNext;
+			removed = true;
+			continue;
+		}
+		prev = prev->pNext;
+	}
+	return removed;
+}
+
 // this is a big hack until we have something better
 void reset_for_tools()
 {
@@ -2493,6 +2560,37 @@ void replay_pre_vkCreateSwapchainKHR(lava_file_reader& reader, VkDevice device, 
 	}
 }
 
+void replay_pre_vkGetPhysicalDeviceImageFormatProperties2(lava_file_reader& reader, VkPhysicalDevice physicalDevice, VkPhysicalDeviceImageFormatInfo2* pImageFormatInfo, VkImageFormatProperties2* pImageFormatProperties)
+{
+	if (remove_ahb_external_image_format_info(pImageFormatInfo))
+	{
+		DLOG("Omitting Android hardware buffer external image format query during replay");
+	}
+}
+
+void replay_pre_vkGetPhysicalDeviceImageFormatProperties2KHR(lava_file_reader& reader, VkPhysicalDevice physicalDevice, VkPhysicalDeviceImageFormatInfo2KHR* pImageFormatInfo, VkImageFormatProperties2KHR* pImageFormatProperties)
+{
+	replay_pre_vkGetPhysicalDeviceImageFormatProperties2(reader, physicalDevice,
+		reinterpret_cast<VkPhysicalDeviceImageFormatInfo2*>(pImageFormatInfo),
+		reinterpret_cast<VkImageFormatProperties2*>(pImageFormatProperties));
+}
+
+void replay_pre_vkCreateImage(lava_file_reader& reader, VkDevice device, VkImageCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkImage* pImage)
+{
+	if (remove_ahb_external_memory_image_create_info(pCreateInfo))
+	{
+		DLOG("Omitting Android hardware buffer external image memory during replay");
+	}
+}
+
+void replay_pre_vkAllocateMemory(lava_file_reader& reader, VkDevice device, VkMemoryAllocateInfo* pAllocateInfo, const VkAllocationCallbacks* pAllocator, VkDeviceMemory* pMemory)
+{
+	if (remove_ahb_import_memory_info(pAllocateInfo))
+	{
+		DLOG("Omitting Android hardware buffer memory import during replay");
+	}
+}
+
 /// Special function to initialize the physical devices absolutely first.
 void replay_initialize_vkCreateDevice(lava_file_reader& reader, uint32_t physicaldevice_index)
 {
@@ -2650,6 +2748,23 @@ void replay_pre_vkCreateInstance(lava_file_reader& reader, VkInstanceCreateInfo*
 	if (!has_debug_utils)
 	{
 		purge_extension_parent(pCreateInfo, VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT);
+	}
+
+	const char** names = reader.pool.allocate<const char*>(pCreateInfo->enabledExtensionCount);
+	uint32_t newcount = 0;
+	for (uint32_t i = 0; i < pCreateInfo->enabledExtensionCount; i++)
+	{
+		if (strcmp(pCreateInfo->ppEnabledExtensionNames[i], VK_GOOGLE_SURFACELESS_QUERY_EXTENSION_NAME) == 0)
+		{
+			DLOG("    %s (faked by lavatube)", pCreateInfo->ppEnabledExtensionNames[i]);
+			continue;
+		}
+		names[newcount++] = pCreateInfo->ppEnabledExtensionNames[i];
+	}
+	if (newcount != pCreateInfo->enabledExtensionCount)
+	{
+		pCreateInfo->ppEnabledExtensionNames = names;
+		pCreateInfo->enabledExtensionCount = newcount;
 	}
 }
 

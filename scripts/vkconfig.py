@@ -141,7 +141,8 @@ replay_pre_calls = [ 'vkDestroyInstance', 'vkDestroyDevice', 'vkCreateDevice', '
 	'vkBeginCommandBuffer', 'vkResetCommandBuffer', 'vkResetCommandPool', 'vkDestroyCommandPool', 'vkFreeCommandBuffers', 'vkDestroySurfaceKHR',
 	'vkDestroyAccelerationStructureKHR', 'vkCreateInstance', 'vkCreateAccelerationStructureKHR', 'vkCmdBuildAccelerationStructuresKHR',
 	'vkCmdBuildAccelerationStructuresIndirectKHR',
-	'vkUpdateDescriptorSetWithTemplate', 'vkUpdateDescriptorSetWithTemplateKHR', 'vkCmdPushDescriptorSetWithTemplate', 'vkCmdPushDescriptorSetWithTemplateKHR' ]
+	'vkUpdateDescriptorSetWithTemplate', 'vkUpdateDescriptorSetWithTemplateKHR', 'vkCmdPushDescriptorSetWithTemplate', 'vkCmdPushDescriptorSetWithTemplateKHR',
+	'vkGetPhysicalDeviceImageFormatProperties2', 'vkGetPhysicalDeviceImageFormatProperties2KHR', 'vkCreateImage', 'vkAllocateMemory' ]
 validate_funcs(replay_pre_calls)
 trace_pre_calls = [ 'vkQueueSubmit', 'vkCreateInstance', 'vkCreateDevice', 'vkFreeMemory', 'vkQueueSubmit2', 'vkQueueSubmit2KHR' ]
 validate_funcs(trace_pre_calls)
