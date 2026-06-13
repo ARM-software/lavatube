@@ -4,6 +4,10 @@
 #include <errno.h>
 #include <unistd.h>
 
+#ifdef VK_USE_PLATFORM_ANDROID_KHR
+#include <sys/system_properties.h>
+#endif
+
 #include "write.h"
 #include "write_auto.h"
 #include "packfile.h"
@@ -124,7 +128,7 @@ lava_file_writer::lava_file_writer(uint16_t _tid, lava_writer* _parent) : file_w
 void lava_file_writer::set(const std::string& path)
 {
 	assert(mPath.empty());
-	std::string fname = path + "/thread_" + _to_string(current.thread) + ".bin";
+	std::string fname = path + "/thread_" + _to_string((unsigned)current.thread) + ".bin";
 	mPath = path;
 	file_writer::set(fname);
 }
@@ -183,7 +187,7 @@ lava_file_writer::~lava_file_writer()
 	for (const auto i : compressed_sizes) v["compressed_sizes"].append((Json::Value::UInt64)i);
 	DLOG("Wrapping up thread %u with %d frames", current.thread, highest);
 	v["highest_global_frame"] = highest;
-	const std::string path = mPath + "/frames_" + _to_string(current.thread) + ".json";
+	const std::string path = mPath + "/frames_" + _to_string((unsigned)current.thread) + ".json";
 	write_json(path, v);
 }
 
@@ -207,6 +211,53 @@ lava_writer& lava_writer::instance()
 {
 	return _instance;
 }
+
+#ifdef VK_USE_PLATFORM_ANDROID_KHR
+void lava_writer::start_android_finish_monitor()
+{
+	if (android_finish_monitor_running.load(std::memory_order_acquire))
+	{
+		return;
+	}
+	if (android_finish_monitor_thread.joinable())
+	{
+		if (android_finish_monitor_thread.get_id() == std::this_thread::get_id())
+		{
+			android_finish_monitor_thread.detach();
+		}
+		else
+		{
+			android_finish_monitor_thread.join();
+		}
+	}
+	android_finish_monitor_running.store(true, std::memory_order_release);
+
+	android_finish_monitor_thread = std::thread([this]()
+	{
+		while (android_finish_monitor_running.load(std::memory_order_acquire))
+		{
+			char value[PROP_VALUE_MAX] = {};
+			if (__system_property_get("debug.vulkan.lavatube.finish", value) > 0 && strcmp(value, "1") == 0)
+			{
+				bool do_finish = false;
+				{
+					lava::lock_guard lock(frame_mutex);
+					do_finish = should_serialize;
+				}
+				if (do_finish)
+				{
+					ILOG("Android finish property set, serializing trace");
+					serialize();
+					finish();
+				}
+				android_finish_monitor_running.store(false, std::memory_order_release);
+				return;
+			}
+			usleep(200000);
+		}
+	});
+}
+#endif
 
 void lava_writer::set(const std::string& path)
 {
@@ -232,6 +283,9 @@ void lava_writer::set(const std::string& path)
 	frame_mutex.unlock();
 
 	should_serialize = true;
+#ifdef VK_USE_PLATFORM_ANDROID_KHR
+	start_android_finish_monitor();
+#endif
 }
 
 void lava_writer::set_output(const std::string& packed_path)
@@ -261,6 +315,9 @@ void lava_writer::set_output(const std::string& packed_path)
 	frame_mutex.unlock();
 
 	should_serialize = true;
+#ifdef VK_USE_PLATFORM_ANDROID_KHR
+	start_android_finish_monitor();
+#endif
 }
 
 lava_writer::lava_writer() : global_frame(0)
@@ -288,6 +345,20 @@ lava_writer::lava_writer() : global_frame(0)
 
 lava_writer::~lava_writer()
 {
+#ifdef VK_USE_PLATFORM_ANDROID_KHR
+	android_finish_monitor_running.store(false, std::memory_order_release);
+	if (android_finish_monitor_thread.joinable())
+	{
+		if (android_finish_monitor_thread.get_id() == std::this_thread::get_id())
+		{
+			android_finish_monitor_thread.detach();
+		}
+		else
+		{
+			android_finish_monitor_thread.join();
+		}
+	}
+#endif
 	if (should_serialize)
 	{
 		ELOG("Destructor called, but not yet finished! Trying to wrap things up...");
@@ -390,6 +461,9 @@ void lava_writer::serialize()
 void lava_writer::finish()
 {
 	lava::lock_guard lock(frame_mutex);
+#ifdef VK_USE_PLATFORM_ANDROID_KHR
+	android_finish_monitor_running.store(false, std::memory_order_release);
+#endif
 
 	if ((p__external_memory || p__debug_level >= 1) && mem_allocated > 0)
 	{

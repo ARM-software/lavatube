@@ -193,6 +193,9 @@ public:
 	lava_file_writer& file_writer(unsigned index); // not thread safe!
 	void serialize();
 	void finish();
+#ifdef VK_USE_PLATFORM_ANDROID_KHR
+	void start_android_finish_monitor();
+#endif
 
 	int version_major() const { return LAVATUBE_VERSION_MAJOR; }
 	int version_minor() const { return LAVATUBE_VERSION_MINOR; }
@@ -231,6 +234,10 @@ private:
 	Json::Value mJson GUARDED_BY(frame_mutex);
 	Json::Value mInputTracking GUARDED_BY(frame_mutex);
 	bool should_serialize = false;
+#ifdef VK_USE_PLATFORM_ANDROID_KHR
+	std::atomic<bool> android_finish_monitor_running = false;
+	std::thread android_finish_monitor_thread;
+#endif
 };
 
 void tool_write_vkCreateSurfaceKHR_packet(const surface_create_packet& packet, const char* name, lava_function_id id);

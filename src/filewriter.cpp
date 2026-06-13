@@ -82,7 +82,7 @@ void file_writer::set(const std::string& filename)
 	fp = fopen(filename.c_str(), "wb");
 	if (!fp)
 	{
-		ELOG("Failed to create \"%s\": %s", filename.c_str(), strerror(errno));
+		ABORT("Failed to create \"%s\": %s", filename.c_str(), strerror(errno));
 	}
 
 	// Write file header
