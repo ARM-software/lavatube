@@ -21,6 +21,8 @@ struct command_execution_data
 	{
 		int commands = 0;
 		int execution_commands = 0;
+		uint64_t total_init_time = 0;
+		uint64_t total_spirv_run_time = 0;
 		struct
 		{
 			int shader_module_index = -1;

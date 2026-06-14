@@ -494,10 +494,13 @@ static bool run_spirv(command_execution_data& data, const shader_stage& stage, c
 
 	inputs.shader_id = stage.unique_index;
 	SPIRVSimulator::MemoryFlagTracker memory_flag_tracker;
+	const uint64_t simulator_init_start = gettime();
 	SPIRVSimulator::SPIRVSimulator sim(stage.code, &memory_flag_tracker, &inputs, &results, &simulator_persistent_data, false, ERROR_RAISE_ON_BUFFERS_INCOMPLETE);
-	const uint64_t simulator_start = gettime();
+	const uint64_t simulator_run_start = gettime();
 	sim.Run();
-	const uint64_t simulator_run_time_ns = gettime() - simulator_start;
+	const uint64_t simulator_run_time_ns = gettime() - simulator_run_start;
+	data.stats.total_spirv_run_time += simulator_run_time_ns;
+	data.stats.total_init_time += simulator_run_start - simulator_init_start;
 	if (simulator_run_time_ns > data.stats.slowest.run_time_ns)
 	{
 		data.stats.slowest.run_time_ns = simulator_run_time_ns;
