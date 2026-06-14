@@ -23,6 +23,7 @@ Json::Value trackedqueue_json(const trackedqueue* t);
 Json::Value trackedevent_trace_json(const trackedevent_trace* t);
 Json::Value trackedmemory_json(const trackedmemory* t);
 Json::Value trackedfence_json(const trackedfence* t);
+Json::Value trackedsemaphore_json(const trackedsemaphore* t);
 Json::Value trackedpipeline_json(const trackedpipeline* t);
 Json::Value trackedcommandpool_trace_json(const trackedcommandpool_trace* t);
 Json::Value trackeddescriptorpool_trace_json(const trackeddescriptorpool_trace* t);
@@ -46,6 +47,7 @@ void write_json(FILE* fp, const Json::Value& v);
 
 trackable trackable_json(const Json::Value& v);
 trackedfence trackedfence_json(const Json::Value& v);
+trackedsemaphore trackedsemaphore_json(const Json::Value& v);
 trackedpipeline trackedpipeline_json(const Json::Value& v);
 trackedaccelerationstructure trackedaccelerationstructure_json(const Json::Value& v);
 trackedbuffer trackedbuffer_json(const Json::Value& v);

@@ -606,6 +606,18 @@ struct trackedfence : trackable
 	int frame_delay = -1; // delay fuse uninitialized
 };
 
+struct trackedsemaphore : trackable
+{
+	using trackable::trackable; // inherit constructor
+	std::map<int, int> replay_fd_map;
+
+	void self_test() const
+	{
+		static_assert(offsetof(trackedsemaphore, magic) == 0, "ICD loader magic must be at offset zero!");
+		trackable::self_test();
+	}
+};
+
 struct raytracing_group // post-processor only
 {
 	VkRayTracingShaderGroupTypeKHR type = VK_RAY_TRACING_SHADER_GROUP_TYPE_MAX_ENUM_KHR;

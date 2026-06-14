@@ -18,7 +18,7 @@
 - Bootstrap deps: `git submodule update --init --recursive`.
 - Configure: `mkdir -p build && cd build && cmake ..` (add `-DCMAKE_BUILD_TYPE=Debug` while iterating).
 - Build: `make -C build -j6`.
-- Tests: `cd build && make test` or `ctest -V` for verbose runs.
+- Tests: `cd build && make test`
 
 ## Coding Style & Naming Conventions
 - C++ with tab indentation and Allman braces (opening brace on a new line). Mirror existing spacing and logging patterns.

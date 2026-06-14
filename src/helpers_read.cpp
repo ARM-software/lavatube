@@ -11,6 +11,10 @@ bool has_debug_report = false;
 bool has_debug_utils = false;
 bool host_has_frame_boundary = false;
 
+#ifndef VK_ANDROID_FRAME_BOUNDARY_EXTENSION_NAME
+#define VK_ANDROID_FRAME_BOUNDARY_EXTENSION_NAME "VK_ANDROID_frame_boundary"
+#endif
+
 #pragma GCC diagnostic ignored "-Wunused-variable"
 #pragma GCC diagnostic ignored "-Wunused-function"
 #if (__clang_major__ > 12) || (!defined(__llvm__) && defined(__GNUC__))
@@ -448,7 +452,8 @@ const char* const* device_extensions(VkDeviceCreateInfo* sptr, lava_file_reader&
 		VK_EXT_PIPELINE_CREATION_CACHE_CONTROL_EXTENSION_NAME,
 		VK_TRACETOOLTEST_OBJECT_PROPERTY_EXTENSION_NAME, VK_EXT_TOOLING_INFO_EXTENSION_NAME,
 		VK_ARM_TRACE_HELPERS_EXTENSION_NAME, VK_ARM_EXPLICIT_HOST_UPDATES_EXTENSION_NAME,
-		VK_GOOGLE_DISPLAY_TIMING_EXTENSION_NAME, "VK_ANDROID_external_memory_android_hardware_buffer"
+		VK_GOOGLE_DISPLAY_TIMING_EXTENSION_NAME, "VK_ANDROID_external_memory_android_hardware_buffer",
+		VK_ANDROID_FRAME_BOUNDARY_EXTENSION_NAME
 	};
 
 	dst.clear();
@@ -478,7 +483,7 @@ const char* const* device_extensions(VkDeviceCreateInfo* sptr, lava_file_reader&
 			nocopy = true; // add it later
 		}
 
-		if (strcmp(ext_name, "VK_EXT_frame_boundary") == 0)
+		if (strcmp(ext_name, VK_EXT_FRAME_BOUNDARY_EXTENSION_NAME) == 0 || strcmp(ext_name, VK_ANDROID_FRAME_BOUNDARY_EXTENSION_NAME) == 0)
 		{
 			trace_has_frame_boundary = true;
 			nocopy = true; // add it later

@@ -229,6 +229,346 @@ static bool replay_process_queued_frame_boundaries(lava_file_reader& reader, tra
 	return captured;
 }
 
+static trackedqueue* replay_find_frame_boundary_queue(VkDevice device, VkQueue& queue)
+{
+	trackedqueue* fallback = nullptr;
+	VkQueue fallback_queue = VK_NULL_HANDLE;
+	for (uint32_t i = 0; i < VkQueue_index.size(); i++)
+	{
+		if (!index_to_VkQueue.contains(i)) continue;
+		trackedqueue& queue_data = VkQueue_index.at(i);
+		if (queue_data.device != device) continue;
+		VkQueue candidate = index_to_VkQueue.at(i);
+		if (queue_data.queueFlags & VK_QUEUE_GRAPHICS_BIT)
+		{
+			queue = candidate;
+			return &queue_data;
+		}
+		if (!fallback)
+		{
+			fallback = &queue_data;
+			fallback_queue = candidate;
+		}
+	}
+	queue = fallback_queue;
+	return fallback;
+}
+
+static void replay_submit_android_frame_boundary(VkQueue queue, VkImage image)
+{
+	if (queue == VK_NULL_HANDLE) return;
+
+	const bool has_image = image != VK_NULL_HANDLE;
+	VkFrameBoundaryEXT boundary = {
+		VK_STRUCTURE_TYPE_FRAME_BOUNDARY_EXT, nullptr, VK_FRAME_BOUNDARY_FRAME_END_BIT_EXT, 0,
+		has_image ? 1u : 0u, has_image ? &image : nullptr, 0, nullptr, 0, 0, nullptr
+	};
+	VkSubmitInfo submit = {
+		VK_STRUCTURE_TYPE_SUBMIT_INFO,
+		&boundary,
+		0,
+		nullptr,
+		nullptr,
+		0,
+		nullptr,
+		0,
+		nullptr
+	};
+	VkResult result = wrap_vkQueueSubmit(queue, 1, &submit, VK_NULL_HANDLE);
+	if (result != VK_SUCCESS)
+	{
+		DIE("Failed to submit replay frame boundary for VK_ANDROID_frame_boundary: %s", errorString(result));
+	}
+}
+
+static bool replay_process_android_frame_boundary(lava_file_reader& reader, VkDevice device, VkImage image)
+{
+	VkQueue queue = VK_NULL_HANDLE;
+	trackedqueue* queue_data = replay_find_frame_boundary_queue(device, queue);
+	if (reader.run && host_has_frame_boundary) replay_submit_android_frame_boundary(queue, image);
+
+	const bool stop_after_frame = reader.new_frame();
+	const uint32_t image_index = index_to_VkImage.index_or_invalid(image);
+	if (queue_data)
+	{
+		const int completed_global_frame_raw = reader.parent->global_frame.load(std::memory_order_acquire);
+		if (completed_global_frame_raw <= 0)
+		{
+			DIE("VK_ANDROID_frame_boundary replay encountered invalid global frame state %d", completed_global_frame_raw);
+		}
+		const uint32_t completed_global_frame = static_cast<uint32_t>(completed_global_frame_raw - 1);
+		replay_capture_frame_boundary_image(reader, *queue_data, queue, completed_global_frame, image_index);
+	}
+
+	return stop_after_frame;
+}
+
+static bool replay_semaphore_handle_type_uses_fd(VkExternalSemaphoreHandleTypeFlagBits handleType)
+{
+	return handleType == VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_FD_BIT || handleType == VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_SYNC_FD_BIT;
+}
+
+static bool replay_device_extension_enabled(const VkDeviceCreateInfo* pCreateInfo, const char* extension)
+{
+	for (uint32_t i = 0; i < pCreateInfo->enabledExtensionCount; i++)
+	{
+		if (strcmp(pCreateInfo->ppEnabledExtensionNames[i], extension) == 0) return true;
+	}
+	return false;
+}
+
+static void replay_enable_frame_boundary_feature(lava_file_reader& reader, VkDeviceCreateInfo* pCreateInfo)
+{
+	if (!host_has_frame_boundary || !replay_device_extension_enabled(pCreateInfo, VK_EXT_FRAME_BOUNDARY_EXTENSION_NAME)) return;
+
+	VkPhysicalDeviceFrameBoundaryFeaturesEXT* features = (VkPhysicalDeviceFrameBoundaryFeaturesEXT*)find_extension(
+		pCreateInfo, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FRAME_BOUNDARY_FEATURES_EXT);
+	if (features)
+	{
+		features->frameBoundary = VK_TRUE;
+		return;
+	}
+
+	features = reader.pool.allocate<VkPhysicalDeviceFrameBoundaryFeaturesEXT>(1);
+	*features = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FRAME_BOUNDARY_FEATURES_EXT, const_cast<void*>(pCreateInfo->pNext), VK_TRUE };
+	pCreateInfo->pNext = features;
+}
+
+static trackedsemaphore& replay_get_tracked_semaphore(VkSemaphore semaphore, const char* call_name)
+{
+	const uint32_t semaphore_index = index_to_VkSemaphore.index_or_invalid(semaphore);
+	if (semaphore_index == CONTAINER_INVALID_INDEX || semaphore_index == CONTAINER_NULL_VALUE)
+	{
+		DIE("%s could not resolve VkSemaphore handle for FD remapping", call_name);
+	}
+	return VkSemaphore_index.at(semaphore_index);
+}
+
+static void replay_record_semaphore_fd(VkSemaphore semaphore, int recorded_fd, int replay_fd)
+{
+	if (recorded_fd < 0 || replay_fd < 0) return;
+	lava::lock_guard sync_lock(sync_mutex);
+	trackedsemaphore& semaphore_data = replay_get_tracked_semaphore(semaphore, "vkGetSemaphoreFdKHR");
+	semaphore_data.replay_fd_map[recorded_fd] = replay_fd;
+}
+
+static bool replay_consume_semaphore_fd(int recorded_fd, int& replay_fd)
+{
+	lava::lock_guard sync_lock(sync_mutex);
+	for (trackedsemaphore& semaphore_data : VkSemaphore_index)
+	{
+		auto it = semaphore_data.replay_fd_map.find(recorded_fd);
+		if (it == semaphore_data.replay_fd_map.end()) continue;
+		replay_fd = it->second;
+		semaphore_data.replay_fd_map.erase(it);
+		return true;
+	}
+	return false;
+}
+
+static void replay_signal_external_semaphore(VkDevice device, VkSemaphore semaphore, int recorded_fd)
+{
+	VkQueue queue = VK_NULL_HANDLE;
+	if (!replay_find_frame_boundary_queue(device, queue))
+	{
+		DIE("vkImportSemaphoreFdKHR could not remap recorded FD %d and no queue is available to synthesize the external semaphore signal", recorded_fd);
+	}
+	VkSubmitInfo submit = {
+		VK_STRUCTURE_TYPE_SUBMIT_INFO,
+		nullptr,
+		0,
+		nullptr,
+		nullptr,
+		0,
+		nullptr,
+		1,
+		&semaphore
+	};
+	VkResult result = wrap_vkQueueSubmit(queue, 1, &submit, VK_NULL_HANDLE);
+	if (result != VK_SUCCESS)
+	{
+		DIE("vkImportSemaphoreFdKHR could not remap recorded FD %d or synthesize the external semaphore signal: %s", recorded_fd, errorString(result));
+	}
+}
+
+static Json::Value json_params_vkGetSemaphoreFdKHR(callback_context& cb, VkDevice device, const VkSemaphoreGetFdInfoKHR* pGetFdInfo, int* pFd)
+{
+	Json::Value v = cli_params_base_json(cb);
+	Json::Value json_parameters;
+	{
+		Json::Value handle_json;
+		handle_json["type"] = "VkDevice";
+		const uint32_t handle_index = index_to_VkDevice.index_or_invalid(device);
+		if (handle_index == CONTAINER_INVALID_INDEX) handle_json["TODO"] = "handle index not available";
+		else if (handle_index == CONTAINER_NULL_VALUE) handle_json["index"] = Json::Value();
+		else handle_json["index"] = handle_index;
+		json_parameters["device"] = handle_json;
+	}
+	if (pGetFdInfo == nullptr) json_parameters["pGetFdInfo"] = Json::Value();
+	else
+	{
+		json_parameters["pGetFdInfo"] = json_VkSemaphoreGetFdInfoKHR(cb, pGetFdInfo);
+	}
+	if (pFd == nullptr) json_parameters["pFd"] = Json::Value();
+	else json_parameters["pFd"] = *pFd;
+	v["parameters"] = json_parameters;
+	v["return"] = VkResult_to_string(cb.result.vkresult);
+	return v;
+}
+
+static void cli_params_vkGetSemaphoreFdKHR(callback_context& cb, VkDevice device, const VkSemaphoreGetFdInfoKHR* pGetFdInfo, int* pFd)
+{
+	if (!cb.reader.parent->cli_params_requested.exchange(false, std::memory_order_acq_rel)) return;
+	cli_params_publish(cb, json_params_vkGetSemaphoreFdKHR(cb, device, pGetFdInfo, pFd));
+}
+
+void retrace_vkGetSemaphoreFdKHR(lava_file_reader& reader)
+{
+	VkDevice device = VK_NULL_HANDLE;
+	uint32_t device_index = 0;
+	uint8_t tmp_uuint8t = 0;
+	VkSemaphoreGetFdInfoKHR* pGetFdInfo = nullptr;
+	VkSemaphoreGetFdInfoKHR* pGetFdInfo_backing = nullptr;
+	int* pFd_backing = nullptr;
+	int* pFd = nullptr;
+
+	device_index = reader.read_handle(DEBUGPARAM("VkDevice"));
+	device = index_to_VkDevice.at(device_index);
+	reader.device = device;
+	reader.physicalDevice = VkDevice_index.at(device_index).physicalDevice;
+	tmp_uuint8t = reader.read_uint8_t();
+	if (tmp_uuint8t)
+	{
+		pGetFdInfo_backing = reader.pool.allocate<VkSemaphoreGetFdInfoKHR>(1);
+		memset(pGetFdInfo_backing, 0, sizeof(VkSemaphoreGetFdInfoKHR));
+		pGetFdInfo_backing->sType = VK_STRUCTURE_TYPE_SEMAPHORE_GET_FD_INFO_KHR;
+		pGetFdInfo = pGetFdInfo_backing;
+		read_VkSemaphoreGetFdInfoKHR(reader, pGetFdInfo_backing);
+	}
+
+	pFd_backing = reader.pool.allocate<int>(1);
+	memset(pFd_backing, 0, sizeof(int));
+	pFd = pFd_backing;
+	VkResult stored_retval = static_cast<VkResult>(reader.read_uint32_t());
+	VkResult retval = stored_retval;
+	int replay_fd = -1;
+	if (reader.run)
+	{
+		retval = wrap_vkGetSemaphoreFdKHR(device, pGetFdInfo, pFd);
+		if (retval == VK_SUCCESS) replay_fd = *pFd;
+		check_retval(stored_retval, retval);
+	}
+
+	tmp_uuint8t = reader.read_uint8_t();
+	int recorded_fd = -1;
+	if (tmp_uuint8t)
+	{
+		recorded_fd = static_cast<int>(reader.read_int32_t());
+		*pFd = recorded_fd;
+	}
+	if (reader.run && retval == VK_SUCCESS && tmp_uuint8t && pGetFdInfo && replay_semaphore_handle_type_uses_fd(pGetFdInfo->handleType))
+	{
+		replay_record_semaphore_fd(pGetFdInfo->semaphore, recorded_fd, replay_fd);
+	}
+
+	callback_context cb_context{ reader };
+	cb_context.result.vkresult = retval;
+	for (auto* c : vkGetSemaphoreFdKHR_callbacks) c(cb_context, device, pGetFdInfo, pFd);
+	if (reader.parent->print_packets) print_params_publish(cb_context, json_params_vkGetSemaphoreFdKHR(cb_context, device, pGetFdInfo, pFd));
+	while (check_cli(cb_context)) cli_params_vkGetSemaphoreFdKHR(cb_context, device, pGetFdInfo, pFd);
+}
+
+static Json::Value json_params_vkImportSemaphoreFdKHR(callback_context& cb, VkDevice device, const VkImportSemaphoreFdInfoKHR* pImportSemaphoreFdInfo)
+{
+	Json::Value v = cli_params_base_json(cb);
+	Json::Value json_parameters;
+	{
+		Json::Value handle_json;
+		handle_json["type"] = "VkDevice";
+		const uint32_t handle_index = index_to_VkDevice.index_or_invalid(device);
+		if (handle_index == CONTAINER_INVALID_INDEX) handle_json["TODO"] = "handle index not available";
+		else if (handle_index == CONTAINER_NULL_VALUE) handle_json["index"] = Json::Value();
+		else handle_json["index"] = handle_index;
+		json_parameters["device"] = handle_json;
+	}
+	if (pImportSemaphoreFdInfo == nullptr) json_parameters["pImportSemaphoreFdInfo"] = Json::Value();
+	else
+	{
+		json_parameters["pImportSemaphoreFdInfo"] = json_VkImportSemaphoreFdInfoKHR(cb, pImportSemaphoreFdInfo);
+	}
+	v["parameters"] = json_parameters;
+	v["return"] = VkResult_to_string(cb.result.vkresult);
+	return v;
+}
+
+static void cli_params_vkImportSemaphoreFdKHR(callback_context& cb, VkDevice device, const VkImportSemaphoreFdInfoKHR* pImportSemaphoreFdInfo)
+{
+	if (!cb.reader.parent->cli_params_requested.exchange(false, std::memory_order_acq_rel)) return;
+	cli_params_publish(cb, json_params_vkImportSemaphoreFdKHR(cb, device, pImportSemaphoreFdInfo));
+}
+
+void retrace_vkImportSemaphoreFdKHR(lava_file_reader& reader)
+{
+	VkDevice device = VK_NULL_HANDLE;
+	uint32_t device_index = 0;
+	uint8_t tmp_uuint8t = 0;
+	VkImportSemaphoreFdInfoKHR* pImportSemaphoreFdInfo = nullptr;
+	VkImportSemaphoreFdInfoKHR* pImportSemaphoreFdInfo_backing = nullptr;
+
+	device_index = reader.read_handle(DEBUGPARAM("VkDevice"));
+	device = index_to_VkDevice.at(device_index);
+	reader.device = device;
+	reader.physicalDevice = VkDevice_index.at(device_index).physicalDevice;
+	tmp_uuint8t = reader.read_uint8_t();
+	if (tmp_uuint8t)
+	{
+		pImportSemaphoreFdInfo_backing = reader.pool.allocate<VkImportSemaphoreFdInfoKHR>(1);
+		memset(pImportSemaphoreFdInfo_backing, 0, sizeof(VkImportSemaphoreFdInfoKHR));
+		pImportSemaphoreFdInfo_backing->sType = VK_STRUCTURE_TYPE_IMPORT_SEMAPHORE_FD_INFO_KHR;
+		pImportSemaphoreFdInfo = pImportSemaphoreFdInfo_backing;
+		read_VkImportSemaphoreFdInfoKHR(reader, pImportSemaphoreFdInfo_backing);
+	}
+
+	VkResult stored_retval = static_cast<VkResult>(reader.read_uint32_t());
+	VkResult retval = stored_retval;
+	int recorded_fd = -1;
+	bool do_call = true;
+	if (reader.run && pImportSemaphoreFdInfo && replay_semaphore_handle_type_uses_fd(pImportSemaphoreFdInfo->handleType) && pImportSemaphoreFdInfo->fd >= 0)
+	{
+		int replay_fd = -1;
+		recorded_fd = pImportSemaphoreFdInfo->fd;
+		if (!replay_consume_semaphore_fd(recorded_fd, replay_fd))
+		{
+			if (stored_retval != VK_SUCCESS)
+			{
+				DLOG("Skipping failed vkImportSemaphoreFdKHR replay for unmapped recorded FD %d", recorded_fd);
+				do_call = false;
+			}
+			else
+			{
+				replay_signal_external_semaphore(device, pImportSemaphoreFdInfo->semaphore, recorded_fd);
+				do_call = false;
+			}
+		}
+		else
+		{
+			pImportSemaphoreFdInfo->fd = replay_fd;
+		}
+	}
+	if (reader.run && do_call)
+	{
+		retval = wrap_vkImportSemaphoreFdKHR(device, pImportSemaphoreFdInfo);
+		check_retval(stored_retval, retval);
+	}
+	if (recorded_fd >= 0) pImportSemaphoreFdInfo->fd = recorded_fd;
+
+	callback_context cb_context{ reader };
+	cb_context.result.vkresult = retval;
+	for (auto* c : vkImportSemaphoreFdKHR_callbacks) c(cb_context, device, pImportSemaphoreFdInfo);
+	if (reader.parent->print_packets) print_params_publish(cb_context, json_params_vkImportSemaphoreFdKHR(cb_context, device, pImportSemaphoreFdInfo));
+	while (check_cli(cb_context)) cli_params_vkImportSemaphoreFdKHR(cb_context, device, pImportSemaphoreFdInfo);
+}
+
 static char* mem_map(lava_file_reader& reader, VkDevice device, const suballoc_location& loc);
 static void mem_unmap(lava_file_reader& reader, VkDevice device, const suballoc_location& loc, char* ptr);
 static void replay_fixup_commandbuffer_raytracing_sbt(lava_file_reader& reader, trackedcmdbuffer& commandbuffer_data);
@@ -2747,6 +3087,7 @@ void replay_pre_vkCreateDevice(lava_file_reader& reader, VkPhysicalDevice physic
 		}
 		(void)vulkan_feature_detection_get()->adjust_VkDeviceCreateInfo(pCreateInfo, enabled_exts);
 	}
+	replay_enable_frame_boundary_feature(reader, pCreateInfo);
 
 	if (no_anisotropy())
 	{
@@ -2924,9 +3265,18 @@ void retrace_vkFrameBoundaryANDROID(lava_file_reader& reader)
 	VkImage image = index_to_VkImage.at(image_index);
 	reader.device = device;
 	reader.physicalDevice = VkDevice_index.at(device_index).physicalDevice;
+	lava::lock_guard sync_lock(sync_mutex);
+	const bool stop_after_frame = replay_process_android_frame_boundary(reader, device, image);
+	sync_lock.unlock();
 	callback_context cb_context{ reader };
 	for (auto* c : vkFrameBoundaryANDROID_callbacks) c(cb_context, device, semaphore, image);
 	if (reader.parent->print_packets) print_params_publish(cb_context, json_params_vkFrameBoundaryANDROID(cb_context, device, semaphore, image));
+	if (stop_after_frame)
+	{
+		if (reader.run) reader.parent->request_stop(device);
+		else reader.parent->request_stop();
+		return;
+	}
 	while (check_cli(cb_context)) cli_params_vkFrameBoundaryANDROID(cb_context, device, semaphore, image);
 }
 

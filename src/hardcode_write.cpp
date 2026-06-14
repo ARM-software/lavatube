@@ -2581,6 +2581,7 @@ VKAPI_ATTR void VKAPI_CALL trace_vkFrameBoundaryANDROID(VkDevice device, VkSemap
 		}
 	}
 
+	lava_writer::instance().new_frame();
 	writer.push_thread_barriers();
 	writer.thaw();
 }

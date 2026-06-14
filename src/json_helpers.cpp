@@ -264,6 +264,11 @@ Json::Value trackedfence_json(const trackedfence* t)
 	return v;
 }
 
+Json::Value trackedsemaphore_json(const trackedsemaphore* t)
+{
+	return trackable_json(t);
+}
+
 Json::Value trackedpipeline_json(const trackedpipeline* t)
 {
 	Json::Value v = trackable_json(t);
@@ -419,6 +424,14 @@ trackedfence trackedfence_json(const Json::Value& v)
 	trackedfence t;
 	trackable_helper(t, v);
 	t.flags = v["flags"].asInt();
+	t.enter_initialized();
+	return t;
+}
+
+trackedsemaphore trackedsemaphore_json(const Json::Value& v)
+{
+	trackedsemaphore t;
+	trackable_helper(t, v);
 	t.enter_initialized();
 	return t;
 }

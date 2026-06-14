@@ -109,7 +109,7 @@ validate_funcs(hardcoded)
 hardcoded_write = [ 'vkGetPhysicalDeviceToolPropertiesEXT', 'vkGetPhysicalDeviceToolProperties', 'vkGetPhysicalDeviceQueueFamilyProperties',
 	'vkGetPhysicalDeviceQueueFamilyProperties2KHR', 'vkGetPhysicalDeviceQueueFamilyProperties2' ]
 validate_funcs(hardcoded_write)
-hardcoded_read = [ ]
+hardcoded_read = [ 'vkGetSemaphoreFdKHR', 'vkImportSemaphoreFdKHR' ]
 validate_funcs(hardcoded_read)
 # For these functions it is ok if the function pointer is missing, since we implement them ourselves
 layer_implemented = [ 'vkCreateDebugReportCallbackEXT', 'vkDestroyDebugReportCallbackEXT', 'vkDebugReportMessageEXT', 'vkDebugMarkerSetObjectTagEXT',
@@ -197,7 +197,7 @@ deconst_struct = [
 ]
 # Subclassing of trackable
 trackable_type_map_general = { 'VkBuffer': 'trackedbuffer', 'VkImage': 'trackedimage', 'VkCommandBuffer': 'trackedcmdbuffer', 'VkDescriptorSet': 'trackeddescriptorset',
-	'VkDeviceMemory': 'trackedmemory', 'VkFence': 'trackedfence', 'VkPipeline': 'trackedpipeline', 'VkImageView': 'trackedimageview', 'VkBufferView': 'trackedbufferview',
+	'VkDeviceMemory': 'trackedmemory', 'VkFence': 'trackedfence', 'VkSemaphore': 'trackedsemaphore', 'VkPipeline': 'trackedpipeline', 'VkImageView': 'trackedimageview', 'VkBufferView': 'trackedbufferview',
 	'VkDevice': 'trackeddevice', 'VkFramebuffer': 'trackedframebuffer', 'VkRenderPass': 'trackedrenderpass', 'VkQueue': 'trackedqueue', 'VkPhysicalDevice': 'trackedphysicaldevice',
 	'VkShaderModule': 'trackedshadermodule', 'VkAccelerationStructureKHR': 'trackedaccelerationstructure', 'VkPipelineLayout': 'trackedpipelinelayout',
 	'VkDescriptorSetLayout': 'trackeddescriptorsetlayout', 'VkTensorARM': 'trackedtensor', 'VkDescriptorUpdateTemplate': 'trackeddescriptorupdatetemplate', 'VkShaderEXT': 'trackedshaderobject',
