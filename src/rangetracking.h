@@ -7,8 +7,8 @@
 #include <stdint.h>
 #include <stdlib.h>
 
-#include <list>
 #include <utility>
+#include <vector>
 
 struct range
 {
@@ -27,6 +27,8 @@ struct exposure
 	/// Return span of overlapping elements
 	range overlap(const exposure& e, uint64_t offset = 0) const
 	{
+		normalize();
+		e.normalize();
 		range retval = range::invalid();
 		if (e.r.empty() || r.empty()) return retval;
 		if (e.r.front().first > UINT64_MAX - offset) return retval;
@@ -80,7 +82,12 @@ struct exposure
 	}
 
 	/// Return span of all contained elements
-	range span() const { if (r.empty()) return range::invalid(); return { r.front().first, r.back().last }; }
+	range span() const
+	{
+		if (r.empty()) return range::invalid();
+		if (reversed) return { r.back().first, r.front().last };
+		return { r.front().first, r.back().last };
+	}
 
 	void add(uint64_t start, uint64_t end)
 	{
@@ -90,53 +97,66 @@ struct exposure
 			r.push_back({start, end});
 			return;
 		}
+		if (reversed)
+		{
+			if (end != UINT64_MAX && end + 1 < r.back().first)
+			{
+				r.push_back({ start, end });
+				return;
+			}
+			normalize();
+		}
 		if (end != UINT64_MAX && end + 1 < r.front().first)
 		{
-			r.push_front({ start, end });
+			if (r.size() == 1)
+			{
+				r.push_back({ start, end });
+				reversed = true;
+			}
+			else
+			{
+				r.insert(r.begin(), { start, end });
+			}
 			return;
 		}
-		auto last = std::prev(r.end());
-		if (last->last != UINT64_MAX && start > last->last + 1)
+		range& last = r.back();
+		if (last.last != UINT64_MAX && start > last.last + 1)
 		{
 			r.push_back({ start, end });
 			return;
 		}
-		if (start >= last->first && (last->last == UINT64_MAX || start <= last->last + 1))
+		if (start >= last.first && (last.last == UINT64_MAX || start <= last.last + 1))
 		{
-			last->last = std::max(last->last, end);
+			last.last = std::max(last.last, end);
 			return;
 		}
-		auto curr = r.end();
-		for (auto iter = r.begin(); iter != r.end(); )
+
+		auto iter = std::lower_bound(r.begin(), r.end(), start, [](const range& s, uint64_t value)
 		{
-			if (curr != r.end()) // already inserted, remove overlapping later ranges
-			{
-				// can we now also merge into the next?
-				if (curr->last + 1 >= iter->first)
-				{
-					curr->last = std::max(curr->last, iter->last);
-					iter = r.erase(iter); // was overlapping or touching, now check next one
-					continue;
-				}
-				else break; // not overlapping or touching, so we're done
-			}
-			else if (iter->first <= end + 1 && start <= iter->last + 1) // we can merge
-			{
-				iter->first = std::min(iter->first, start);
-				iter->last = std::max(iter->last, end);
-				curr = iter;
-			}
-			else if (iter->first > end) // whole fragment after us, insert before and trigger first check
-			{
-				curr = r.insert(iter, { start, end });
-			}
-			else if (std::next(iter) == r.end()) // at end of list, insert after
-			{
-				curr = r.insert(std::next(iter), { start, end });
-				break; // nothing more to do
-			}
-			iter++;
+			return s.last != UINT64_MAX && s.last + 1 < value;
+		});
+		if (iter == r.end())
+		{
+			r.push_back({ start, end });
+			return;
 		}
+		if (end != UINT64_MAX && end + 1 < iter->first)
+		{
+			r.insert(iter, { start, end });
+			return;
+		}
+
+		size_t first = (size_t)(iter - r.begin());
+		r[first].first = std::min(r[first].first, start);
+		r[first].last = std::max(r[first].last, end);
+
+		size_t current = first + 1;
+		while (current < r.size() && (r[first].last == UINT64_MAX || r[first].last + 1 >= r[current].first))
+		{
+			r[first].last = std::max(r[first].last, r[current].last);
+			current++;
+		}
+		r.erase(r.begin() + first + 1, r.begin() + current);
 	}
 
 	inline range fetch_os(uint64_t offset, uint64_t size, bool is_mapped) { if (size == 0) return range::invalid(); return fetch(offset, offset + size - 1, is_mapped); }
@@ -148,12 +168,12 @@ struct exposure
 	range fetch(uint64_t start, uint64_t end, bool is_mapped)
 	{
 		assert(start <= end);
+		normalize();
 		range retval = range::invalid();
 		if (r.empty() || end < r.front().first || start > r.back().last) return retval;
 		if (r.size() == 1)
 		{
-			auto iter = r.begin();
-			auto& s = *iter;
+			range& s = r.front();
 			if (s.last < start || s.first > end) return retval;
 
 			retval = { std::max(s.first, start), std::min(s.last, end) };
@@ -161,12 +181,13 @@ struct exposure
 			{
 				if (s.first >= start && s.last <= end) // consumed entirely
 				{
-					r.erase(iter);
+					r.clear();
 				}
 				else if (s.first < start && s.last > end) // split in two
 				{
-					r.insert(std::next(iter), { end + 1, s.last });
+					const uint64_t old_last = s.last;
 					s.last = start - 1;
+					r.push_back({ end + 1, old_last });
 				}
 				else if (s.first < start) // remove from end
 				{
@@ -185,9 +206,9 @@ struct exposure
 			return retval;
 		}
 
-		for (auto iter = r.begin(); iter != r.end(); )
+		for (size_t i = 0; i < r.size(); )
 		{
-			auto& s = *iter;
+			auto& s = r[i];
 			if (s.first > end) break;
 			else if (s.last >= start && s.first <= end)
 			{
@@ -208,14 +229,15 @@ struct exposure
 				}
 				else if (s.first >= start && s.last <= end) // consumed entirely
 				{
-					iter = r.erase(iter);
+					r.erase(r.begin() + i);
 					continue;
 				}
 				else if (s.first < start && s.last > end) // split in two
 				{
-					iter = r.insert(std::next(iter), { end + 1, s.last });
+					const uint64_t old_last = s.last;
 					s.last = start - 1;
-					continue;
+					r.insert(r.begin() + i + 1, { end + 1, old_last });
+					break;
 				}
 				else if (s.first < start) // remove from end
 				{
@@ -224,9 +246,10 @@ struct exposure
 				else if (s.last > end) // remove from start
 				{
 					s.first = end + 1;
+					break;
 				}
 			}
-			iter++;
+			i++;
 		}
 		if (!retval.valid()) return retval;
 #ifdef FULLDEBUG
@@ -239,6 +262,7 @@ struct exposure
 
 	void self_test() const
 	{
+		normalize();
 		uint64_t prev = 0;
 		bool first = true;
 		for (auto& s : r)
@@ -252,11 +276,19 @@ struct exposure
 		}
 	}
 
-	inline const std::list<range>& list() const { return r; }
+	inline const std::vector<range>& list() const { normalize(); return r; }
 	inline size_t bytes() const { size_t v = 0; for (auto& s : r) { v += 1 + s.last - s.first; } return v; }
-	inline void clear() { r.clear(); }
+	inline void clear() { r.clear(); reversed = false; }
 	inline size_t size() const { return r.size(); }
 
 private:
-	std::list<range> r;
+	void normalize() const
+	{
+		if (!reversed) return;
+		std::reverse(r.begin(), r.end());
+		reversed = false;
+	}
+
+	mutable std::vector<range> r;
+	mutable bool reversed = false;
 };

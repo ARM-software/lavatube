@@ -32,6 +32,7 @@
   in `src/lavatube.h` or create a new one. Each Vulkan object has a tracked meta-object that can be used to store data.
   If there is no specialized trackable, then create a new one that inherits from `trackable` and then add it in
   `trackable_type_map_general` in `scripts/vkconfig.py` for autogeneration.
+- Do not use lambdas, anonymous namespaces or throw new exceptions.
 
 ## Testing Guidelines
 - Add new tests under `tests/` (see `container_test.cpp`, `tracing*.cpp` for patterns) and reuse helpers in `tests/common.*`.

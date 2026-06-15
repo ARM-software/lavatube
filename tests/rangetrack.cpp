@@ -202,6 +202,21 @@ static void test_merge_does_not_shrink()
 	r.self_test();
 }
 
+static void test_repeated_prepend()
+{
+	exposure r;
+
+	r.add(12, 13);
+	r.add(8, 9);
+	r.add(4, 5);
+	r.add(0, 1);
+	assert(r.size() == 4);
+	assert((r.span() == range{0, 13}));
+	r.self_test();
+	assert((r.list().front() == range{0, 1}));
+	assert((r.list().back() == range{12, 13}));
+}
+
 static void test_fragmented_overlap()
 {
 	exposure r;
@@ -224,6 +239,7 @@ int main()
 	test_single_byte_ranges();
 	test_partial_trim();
 	test_merge_does_not_shrink();
+	test_repeated_prepend();
 	test_fragmented_overlap();
 	return 0;
 }
