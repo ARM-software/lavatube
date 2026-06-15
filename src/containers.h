@@ -45,6 +45,14 @@ struct change_source
 	}
 };
 
+struct host_write_reference
+{
+	change_source source;
+	VkObjectType object_type = VK_OBJECT_TYPE_UNKNOWN;
+	uint32_t object_index = CONTAINER_NULL_VALUE;
+	uint32_t stage_index = CONTAINER_NULL_VALUE;
+};
+
 /// Defining the minimum interface to a concurrent map that we need.
 template<typename T, typename U>
 struct concurrent_unordered_map
@@ -146,26 +154,34 @@ public:
 
 	change_source get_source(uint64_t address, uint32_t size) const
 	{
-		change_source source;
-		if (!try_get_source(address, size, source))
+		host_write_reference reference;
+		if (!try_get_reference(address, size, reference))
 		{
 			assert(false && "host_write_regions missing coverage");
 			return {};
 		}
-		return source;
+		return reference.source;
 	}
 
 	bool try_get_source(uint64_t address, uint32_t size, change_source& source) const
+	{
+		host_write_reference reference;
+		if (!try_get_reference(address, size, reference)) return false;
+		source = reference.source;
+		return true;
+	}
+
+	bool try_get_reference(uint64_t address, uint32_t size, host_write_reference& reference) const
 	{
 		std::shared_lock lock(mutex);
 		assert(size > 0);
 		std::vector<source_span> spans;
 		if (!collect_spans_unlocked(tracker, fragment_sources, address, size, spans)) return false;
 		assert(!spans.empty());
-		source = spans.front().source;
+		reference = spans.front().reference;
 		for (const source_span& span : spans)
 		{
-			if (!same_source(span.source, source)) return false;
+			if (!same_reference(span.reference, reference)) return false;
 		}
 		return true;
 	}
@@ -180,16 +196,16 @@ public:
 		uint64_t previous_end = 0;
 		for (const auto& span : spans)
 		{
-			change_source source;
-			if (!lookup_source_unlocked(fragment_sources, span.fragment_id, source))
+			host_write_reference reference;
+			if (!lookup_source_unlocked(fragment_sources, span.fragment_id, reference))
 			{
 				assert(false && "host_write_regions missing source mapping");
 				continue;
 			}
-			if (!have_previous || previous_end != span.start || !same_source(previous, source))
+			if (!have_previous || previous_end != span.start || !same_source(previous, reference.source))
 			{
 				out.segments++;
-				previous = source;
+				previous = reference.source;
 				have_previous = true;
 			}
 			previous_end = span.end;
@@ -198,16 +214,23 @@ public:
 		return out;
 	}
 
-	void register_source(uint64_t address, uint64_t size, change_source source, uint32_t elements = 1, uint32_t stride = 0)
+	void register_source(uint64_t address, uint64_t size, change_source source, uint32_t elements = 1, uint32_t stride = 0,
+		VkObjectType object_type = VK_OBJECT_TYPE_UNKNOWN, uint32_t object_index = CONTAINER_NULL_VALUE, uint32_t stage_index = CONTAINER_NULL_VALUE)
 	{
 		if (size == 0) return;
 		std::unique_lock lock(mutex);
 		assert(elements > 0);
 		source.self_test();
+		const host_write_reference reference {
+			.source = source,
+			.object_type = object_type,
+			.object_index = object_index,
+			.stage_index = stage_index,
+		};
 
 		if (elements == 1)
 		{
-			register_source_unlocked(address, size, source);
+			register_source_unlocked(address, size, reference);
 			return;
 		}
 
@@ -215,14 +238,14 @@ public:
 		{
 			const uint64_t total = size * (uint64_t)elements;
 			assert(total / elements == size);
-			register_source_unlocked(address, total, source);
+			register_source_unlocked(address, total, reference);
 			return;
 		}
 
 		for (uint32_t i = 0; i < elements; ++i)
 		{
 			const uint64_t start = address + (uint64_t)i * (uint64_t)stride;
-			register_source_unlocked(start, size, source);
+			register_source_unlocked(start, size, reference);
 		}
 	}
 
@@ -239,7 +262,7 @@ public:
 			for (const source_span& entry : pending)
 			{
 				const uint64_t dst_start = dst_address + (entry.start - src_address);
-				register_source_unlocked(dst_start, entry.end - entry.start, entry.source);
+				register_source_unlocked(dst_start, entry.end - entry.start, entry.reference);
 			}
 			return;
 		}
@@ -255,7 +278,7 @@ public:
 		for (const source_span& entry : pending)
 		{
 			const uint64_t dst_start = dst_address + (entry.start - src_address);
-			register_source_unlocked(dst_start, entry.end - entry.start, entry.source);
+			register_source_unlocked(dst_start, entry.end - entry.start, entry.reference);
 		}
 	}
 
@@ -264,12 +287,20 @@ private:
 	{
 		uint64_t start = 0;
 		uint64_t end = 0;
-		change_source source;
+		host_write_reference reference;
 	};
 
 	static bool same_source(const change_source& a, const change_source& b)
 	{
 		return a.call == b.call && a.frame == b.frame && a.thread == b.thread && a.call_id == b.call_id;
+	}
+
+	static bool same_reference(const host_write_reference& a, const host_write_reference& b)
+	{
+		return same_source(a.source, b.source)
+			&& a.object_type == b.object_type
+			&& a.object_index == b.object_index
+			&& a.stage_index == b.stage_index;
 	}
 
 	static uint64_t checked_end(uint64_t address, uint64_t size)
@@ -279,7 +310,7 @@ private:
 		return end;
 	}
 
-	static bool lookup_source_unlocked(const std::map<fragment_id_type, change_source>& sources, fragment_id_type fragment_id, change_source& out)
+	static bool lookup_source_unlocked(const std::map<fragment_id_type, host_write_reference>& sources, fragment_id_type fragment_id, host_write_reference& out)
 	{
 		auto it = sources.find(fragment_id);
 		if (it == sources.end()) return false;
@@ -287,7 +318,7 @@ private:
 		return true;
 	}
 
-	static bool collect_spans_unlocked(const tracker_type& tracker, const std::map<fragment_id_type, change_source>& sources, uint64_t address, uint64_t size, std::vector<source_span>& out, bool require_full_coverage = true)
+	static bool collect_spans_unlocked(const tracker_type& tracker, const std::map<fragment_id_type, host_write_reference>& sources, uint64_t address, uint64_t size, std::vector<source_span>& out, bool require_full_coverage = true)
 	{
 		out.clear();
 		if (size == 0) return true;
@@ -305,20 +336,20 @@ private:
 			const uint64_t span_end = std::min<uint64_t>(span.end, end);
 			if (start >= span_end) continue;
 
-			change_source source;
-			if (!lookup_source_unlocked(sources, span.fragment_id, source))
+			host_write_reference reference;
+			if (!lookup_source_unlocked(sources, span.fragment_id, reference))
 			{
 				if (require_full_coverage) return false;
 				continue;
 			}
 
-			if (!out.empty() && out.back().end == start && same_source(out.back().source, source))
+			if (!out.empty() && out.back().end == start && same_reference(out.back().reference, reference))
 			{
 				out.back().end = span_end;
 			}
 			else
 			{
-				out.push_back({ start, span_end, source });
+				out.push_back({ start, span_end, reference });
 			}
 			if (require_full_coverage)
 			{
@@ -329,18 +360,18 @@ private:
 		return require_full_coverage ? pos == end : true;
 	}
 
-	void register_source_unlocked(uint64_t address, uint64_t size, const change_source& source)
+	void register_source_unlocked(uint64_t address, uint64_t size, const host_write_reference& reference)
 	{
 		if (size == 0) return;
 		tracker.write(address, size, 0);
 		const auto result = tracker.queryDetailed(address);
 		assert(result.has_value());
 		assert(result->address == address);
-		fragment_sources[result->fragment_id] = source;
+		fragment_sources[result->fragment_id] = reference;
 	}
 
 	tracker_type tracker;
-	std::map<fragment_id_type, change_source> fragment_sources;
+	std::map<fragment_id_type, host_write_reference> fragment_sources;
 	mutable std::shared_mutex mutex;
 };
 

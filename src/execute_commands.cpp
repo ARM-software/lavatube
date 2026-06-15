@@ -147,15 +147,15 @@ static const simulator_buffer_range* find_simulator_source_range(const std::vect
 	return nullptr;
 }
 
-static bool get_range_source(const simulator_buffer_range& range, VkDeviceSize local_offset, VkDeviceSize size, change_source& out)
+static bool get_range_source_reference(const simulator_buffer_range& range, VkDeviceSize local_offset, VkDeviceSize size, host_write_reference& out)
 {
 	if (range.source_regions)
 	{
-		return range.source_regions->try_get_source(range.buffer_offset + local_offset, size, out);
+		return range.source_regions->try_get_reference(range.buffer_offset + local_offset, size, out);
 	}
 	if (range.buffer_data)
 	{
-		return range.buffer_data->source.try_get_source(range.buffer_offset + local_offset, size, out);
+		return range.buffer_data->source.try_get_reference(range.buffer_offset + local_offset, size, out);
 	}
 	return false;
 }
@@ -219,61 +219,29 @@ static bool collect_contiguous_device_address_marking(const std::vector<simulato
 	}
 	if (covered_bits != sizeof(VkDeviceAddress) * 8) return false;
 
-	change_source source_call;
-	if (!get_range_source(*range, base_offset, sizeof(VkDeviceAddress), source_call))
+	host_write_reference source_ref;
+	if (!get_range_source_reference(*range, base_offset, sizeof(VkDeviceAddress), source_ref))
 	{
 		abort_missing_range_source(*range, base_offset, sizeof(VkDeviceAddress), "SPIR-V physical-address source marking");
 	}
+	const VkObjectType output_object_type = (source_ref.object_type != VK_OBJECT_TYPE_UNKNOWN) ? source_ref.object_type : range->source_object_type;
+	const uint32_t output_object_index = (source_ref.object_type != VK_OBJECT_TYPE_UNKNOWN) ? source_ref.object_index : range->source_object_index;
+	const uint32_t output_stage_index = (source_ref.object_type != VK_OBJECT_TYPE_UNKNOWN) ? source_ref.stage_index : range->source_stage_index;
 	VkMarkingSubTypeARM subtype{};
 	subtype.deviceAddressType = VK_DEVICE_ADDRESS_TYPE_BUFFER_ARM;
 	discovered.push_back({
 		.buffer_data = range->buffer_data,
-		.output_object_type = range->source_object_type,
-		.output_object_index = range->source_object_index,
-		.output_stage_index = range->source_stage_index,
+		.output_object_type = output_object_type,
+		.output_object_index = output_object_index,
+		.output_stage_index = output_stage_index,
 		.offset = range->buffer_offset + base_offset,
 		.size = sizeof(VkDeviceAddress),
 		.type = VK_MARKING_TYPE_DEVICE_ADDRESS_ARM,
 		.subtype = subtype,
 		.has_explicit_source = true,
-		.source = source_call,
+		.source = source_ref.source,
 	});
 	return true;
-}
-
-static void collect_matching_device_address_markings(uint64_t address, const std::vector<simulator_buffer_range>& ranges,
-	std::vector<discovered_buffer_marking>& discovered)
-{
-	VkMarkingSubTypeARM subtype{};
-	subtype.deviceAddressType = VK_DEVICE_ADDRESS_TYPE_BUFFER_ARM;
-	for (const simulator_buffer_range& range : ranges)
-	{
-		if (range.size < sizeof(VkDeviceAddress)) continue;
-		const std::byte* base = static_cast<const std::byte*>(range.base_ptr);
-		for (VkDeviceSize offset = 0; offset + sizeof(VkDeviceAddress) <= range.size; offset++)
-		{
-			uint64_t candidate = 0;
-			memcpy(&candidate, base + offset, sizeof(candidate));
-			if (candidate != address) continue;
-			change_source source_call;
-			if (!get_range_source(range, offset, sizeof(VkDeviceAddress), source_call))
-			{
-				abort_missing_range_source(range, offset, sizeof(VkDeviceAddress), "Matched device-address marking");
-			}
-			discovered.push_back({
-				.buffer_data = range.buffer_data,
-				.output_object_type = range.source_object_type,
-				.output_object_index = range.source_object_index,
-				.output_stage_index = range.source_stage_index,
-				.offset = range.buffer_offset + offset,
-				.size = sizeof(VkDeviceAddress),
-				.type = VK_MARKING_TYPE_DEVICE_ADDRESS_ARM,
-				.subtype = subtype,
-				.has_explicit_source = true,
-				.source = source_call,
-			});
-		}
-	}
 }
 
 static void merge_simulator_output_candidates(const shader_stage& stage, const change_source& source,
@@ -308,13 +276,56 @@ static void merge_simulator_output_candidates(const shader_stage& stage, const c
 				}
 				if (candidate.verified)
 				{
-					range.buffer_data->source.register_source(range.buffer_offset + candidate.offset, sizeof(uint64_t), source);
+					range.buffer_data->source.register_source(range.buffer_offset + candidate.offset, sizeof(uint64_t), source,
+						1, 0, range.buffer_data->object_type, range.buffer_data->index);
 				}
 			}
 			else
 			{
 				ILOG("SPIRV candidate %s in %s base=%p offset=%lu address=0x%llx", candidate.verified ? "verified" : "UNVERIFIED", stage.name.c_str(), candidates.first,
 					(unsigned long)candidate.offset, (unsigned long long)candidate.address);
+			}
+		}
+	}
+}
+
+static void copy_simulator_source_span(const simulator_buffer_range& dst_range, const simulator_buffer_range& src_range,
+	VkDeviceSize dst_offset, VkDeviceSize src_offset, VkDeviceSize size)
+{
+	if (!dst_range.buffer_data || size == 0) return;
+	const host_write_regions* src_sources = src_range.source_regions;
+	if (!src_sources && src_range.buffer_data) src_sources = &src_range.buffer_data->source;
+	if (!src_sources) return;
+	dst_range.buffer_data->source.copy_sources(*src_sources, dst_range.buffer_offset + dst_offset, src_range.buffer_offset + src_offset, size);
+}
+
+static void merge_simulator_source_copies(const std::vector<simulator_buffer_range>& ranges,
+	const SPIRVSimulator::MemoryFlagTracker& memory_flag_tracker)
+{
+	for (const simulator_buffer_range& dst_range : ranges)
+	{
+		if (!dst_range.buffer_data) continue;
+		const uint64_t dst_base = simulator_pointer_bits(dst_range.base_ptr);
+		const auto spans = memory_flag_tracker.queryRangeDetailed(dst_base, dst_range.size);
+		for (const auto& span : spans)
+		{
+			if (span.origin != SPIRVSimulator::MemoryFlagTracker::MappingOrigin::Copy) continue;
+			const uint64_t dst_start = std::max<uint64_t>(span.start, dst_base);
+			const uint64_t dst_end = std::min<uint64_t>(span.end, dst_base + dst_range.size);
+			if (dst_start >= dst_end) continue;
+
+			uint64_t copied = 0;
+			while (copied < dst_end - dst_start)
+			{
+				const uint64_t src_address = span.root_address + (dst_start - span.start) + copied;
+				const VkDeviceSize remaining = (VkDeviceSize)(dst_end - dst_start - copied);
+				VkDeviceSize src_offset = 0;
+				const simulator_buffer_range* src_range = find_simulator_range(ranges,
+					reinterpret_cast<const void*>(static_cast<uintptr_t>(src_address)), 0, 1, src_offset);
+				if (!src_range) break;
+				const VkDeviceSize copy_size = std::min<VkDeviceSize>(remaining, src_range->size - src_offset);
+				copy_simulator_source_span(dst_range, *src_range, (VkDeviceSize)(dst_start - dst_base + copied), src_offset, copy_size);
+				copied += copy_size;
 			}
 		}
 	}
@@ -334,12 +345,13 @@ static void merge_simulator_memory_metadata(const change_source& source, const s
 			const uint64_t start = std::max<uint64_t>(span.start, base);
 			const uint64_t end = std::min<uint64_t>(span.end, base + range.size);
 			if (start >= end) continue;
-			range.buffer_data->source.register_source(range.buffer_offset + (start - base), end - start, source);
+			range.buffer_data->source.register_source(range.buffer_offset + (start - base), end - start, source,
+				1, 0, range.buffer_data->object_type, range.buffer_data->index);
 		}
 	}
 }
 
-static void collect_simulator_physical_address_markings(const command_execution_data& data, const std::vector<simulator_buffer_range>& ranges,
+static void collect_simulator_physical_address_markings(const std::vector<simulator_buffer_range>& ranges,
 	const SPIRVSimulator::SimulationResults& results, std::vector<discovered_buffer_marking>& discovered)
 {
 	VkMarkingSubTypeARM subtype{};
@@ -354,30 +366,29 @@ static void collect_simulator_physical_address_markings(const command_execution_
 			VkDeviceSize local_offset = 0;
 			const simulator_buffer_range* range = find_simulator_source_range(ranges, source, sizeof(VkDeviceAddress), local_offset);
 			if (!range) continue;
-			change_source source_call;
-			if (!get_range_source(*range, local_offset, sizeof(VkDeviceAddress), source_call))
+			host_write_reference source_ref;
+			if (!get_range_source_reference(*range, local_offset, sizeof(VkDeviceAddress), source_ref))
 			{
 				abort_missing_range_source(*range, local_offset, sizeof(VkDeviceAddress), "SPIR-V physical-address source marking");
 			}
+			const VkObjectType output_object_type = (source_ref.object_type != VK_OBJECT_TYPE_UNKNOWN) ? source_ref.object_type : range->source_object_type;
+			const uint32_t output_object_index = (source_ref.object_type != VK_OBJECT_TYPE_UNKNOWN) ? source_ref.object_index : range->source_object_index;
+			const uint32_t output_stage_index = (source_ref.object_type != VK_OBJECT_TYPE_UNKNOWN) ? source_ref.stage_index : range->source_stage_index;
 			discovered.push_back({
 				.buffer_data = range->buffer_data,
-				.output_object_type = range->source_object_type,
-				.output_object_index = range->source_object_index,
-				.output_stage_index = range->source_stage_index,
+				.output_object_type = output_object_type,
+				.output_object_index = output_object_index,
+				.output_stage_index = output_stage_index,
 				.offset = range->buffer_offset + local_offset,
 				.size = sizeof(VkDeviceAddress),
 				.type = VK_MARKING_TYPE_DEVICE_ADDRESS_ARM,
 				.subtype = subtype,
 				.has_explicit_source = true,
-				.source = source_call,
+				.source = source_ref.source,
 			});
 			found_source = true;
 		}
 		if (!found_source) found_source = collect_contiguous_device_address_marking(ranges, pointer_data, discovered);
-		if (found_source || pointer_data.raw_pointer_value == 0) continue;
-		trackedobject* obj = data.device_address_remapping.get_by_address(pointer_data.raw_pointer_value);
-		if (!obj || obj->object_type != VK_OBJECT_TYPE_BUFFER) continue;
-		collect_matching_device_address_markings(pointer_data.raw_pointer_value, ranges, discovered);
 	}
 }
 
@@ -469,18 +480,16 @@ static bool run_spirv(command_execution_data& data, const shader_stage& stage, c
 	for (trackedbuffer& buffer_data : VkBuffer_index)
 	{
 		if (buffer_data.parent_device_index != data.device_data.index) continue;
-		if (!buffer_data.is_state(trackedobject::states::bound)) continue;
 		if (buffer_data.size == 0) continue;
+		const uint64_t visible_address = buffer_data.capture_device_address ? buffer_data.capture_device_address : buffer_data.device_address;
+		if (visible_address == 0) continue;
+		if (!buffer_data.is_state(trackedobject::states::bound) && data.device_address_remapping.get_by_address(visible_address) != &buffer_data) continue;
 		suballoc_location loc = data.device_data.allocator->find_buffer_memory(buffer_data.index);
 		if (!loc.mapped) continue;
 		std::byte* base = (std::byte*)loc.mapped;
-		const uint64_t visible_address = buffer_data.capture_device_address ? buffer_data.capture_device_address : buffer_data.device_address;
-		if (visible_address != 0)
-		{
-			inputs.physical_address_buffers[visible_address] = std::make_pair(static_cast<size_t>(buffer_data.size), base);
-			inputs.rt_array_lengths[simulator_pointer_bits(base)][0] = static_cast<size_t>(buffer_data.size);
-			register_simulator_buffer_range(simulator_ranges, base, buffer_data.size, &buffer_data, 0, UINT32_MAX, UINT32_MAX, true);
-		}
+		inputs.physical_address_buffers[visible_address] = std::make_pair(static_cast<size_t>(buffer_data.size), base);
+		inputs.rt_array_lengths[simulator_pointer_bits(base)][0] = static_cast<size_t>(buffer_data.size);
+		register_simulator_buffer_range(simulator_ranges, base, buffer_data.size, &buffer_data, 0, UINT32_MAX, UINT32_MAX, true);
 		if ((buffer_data.usage2 & VK_BUFFER_USAGE_2_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT) != 0)
 		{
 			inputs.descriptor_candidates[base];
@@ -522,7 +531,8 @@ static bool run_spirv(command_execution_data& data, const shader_stage& stage, c
 	}
 
 	std::vector<discovered_buffer_marking> discovered_markings;
-	collect_simulator_physical_address_markings(data, simulator_ranges, results, discovered_markings);
+	merge_simulator_source_copies(simulator_ranges, memory_flag_tracker);
+	collect_simulator_physical_address_markings(simulator_ranges, results, discovered_markings);
 	merge_discovered_markings(data, discovered_markings);
 	merge_simulator_output_candidates(stage, source, range_lookup, results);
 	merge_simulator_memory_metadata(source, simulator_ranges, memory_flag_tracker);
@@ -975,7 +985,8 @@ bool execute_commands(command_execution_data& data)
 				suballoc_location sub = data.device_data.allocator->find_buffer_memory(c.data.update_buffer.buffer_index);
 				trackedbuffer& dst_buffer = VkBuffer_index.at(c.data.update_buffer.buffer_index);
 				memcpy((char*)sub.memory + c.data.update_buffer.offset, c.data.update_buffer.values, c.data.update_buffer.size);
-				dst_buffer.source.register_source(c.data.update_buffer.offset, c.data.update_buffer.size, c.source);
+				dst_buffer.source.register_source(c.data.update_buffer.offset, c.data.update_buffer.size, c.source,
+					1, 0, dst_buffer.object_type, dst_buffer.index);
 			}
 			free(c.data.update_buffer.values);
 			break;

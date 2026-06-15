@@ -1128,6 +1128,7 @@ class parameter(spec.base_parameter):
 					z.loop_begin()
 					z.do('const auto* other_cmdbuf_data = writer.parent->records.VkCommandBuffer_index.at(pCommandBuffers[ii]);')
 					z.do('commandbuffer_data->touch_merge(other_cmdbuf_data->touched);')
+					z.do('commandbuffer_data->uses_device_address_shader |= other_cmdbuf_data->uses_device_address_shader;')
 					z.loop_end()
 				elif self.funcname == 'vkCmdPipelineBarrier' and not postprocess:
 					z.do('for (unsigned ii = 0; ii < bufferMemoryBarrierCount; ii++)')
@@ -1354,10 +1355,11 @@ def save_add_tracking(name):
 		z.do('commandbuffer_data->touch_index_buffer(firstIndex, indexCount);')
 	elif name == 'vkResetCommandPool':
 		z.do('if (flags & VK_COMMAND_POOL_RESET_RELEASE_RESOURCES_BIT) commandpool_data->commandbuffers.clear();')
-		z.do('else for (auto* i : commandpool_data->commandbuffers) i->touched.clear();')
+		z.do('else for (auto* i : commandpool_data->commandbuffers) { i->touched.clear(); i->uses_device_address_shader = false; }')
 	elif name == 'vkResetCommandBuffer' or name == 'vkBeginCommandBuffer':
 		z.do('commandbuffer_data->last_modified = writer.current;')
 		z.do('commandbuffer_data->touched.clear();')
+		z.do('commandbuffer_data->uses_device_address_shader = false;')
 	elif name == 'vkResetFences':
 		z.do('for (unsigned i = 0; i < fenceCount; i++)')
 		z.brace_begin()

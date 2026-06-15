@@ -634,6 +634,7 @@ struct trackedpipeline : trackable
 	VkPipelineBindPoint type = VK_PIPELINE_BIND_POINT_MAX_ENUM;
 	VkPipelineCreateFlags flags = 0;
 	VkPipelineCache cache = VK_NULL_HANDLE;
+	bool enables_device_address = false; // capture only
 	std::vector<shader_stage> shader_stages; // only set for postprocessing
 	std::vector<raytracing_group> raytracing_groups; // only set for ray tracing pipelines
 	uint32_t raytracing_group_count = 0;
@@ -835,6 +836,7 @@ struct trackedcmdbuffer_trace : trackedcmdbuffer
 		VkIndexType indexType = VK_INDEX_TYPE_MAX_ENUM; // VK_INDEX_TYPE_UINT16, VK_INDEX_TYPE_UINT32 or VK_INDEX_TYPE_UINT8_EXT
 	} indexBuffer;
 	std::unordered_map<trackedobject*, exposure> touched; // track memory updates
+	bool uses_device_address_shader = false;
 
 	void touch_index_buffer(VkDeviceSize firstIndex, VkDeviceSize indexCount)
 	{

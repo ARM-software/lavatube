@@ -269,7 +269,8 @@ public:
 	}
 
 	/// Read patch update and track host side changes
-	uint32_t read_patch_tracking(char* buf, uint64_t maxsize, host_write_regions& regions)
+	uint32_t read_patch_tracking(char* buf, uint64_t maxsize, host_write_regions& regions,
+		VkObjectType object_type = VK_OBJECT_TYPE_UNKNOWN, uint32_t object_index = CONTAINER_NULL_VALUE)
 	{
 		char* ptr = buf;
 		uint32_t offset;
@@ -287,7 +288,7 @@ public:
 			{
 				memcpy(ptr, uptr, size);
 				const VkDeviceSize base_offset = (VkDeviceSize)(ptr - buf);
-				regions.register_source(base_offset, size, current);
+				regions.register_source(base_offset, size, current, 1, 0, object_type, object_index);
 			}
 			read_position += size;
 			ptr += size;

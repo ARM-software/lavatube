@@ -4652,9 +4652,9 @@ void image_update(lava_file_reader& reader, uint32_t device_index, uint32_t imag
 	char* ptr = mem_map(reader, device, loc);
 	int32_t changed = 0;
 
-	if (!reader.run && loc.needs_init) image_data.source.register_source(0, loc.size, reader.current);
+	if (!reader.run && loc.needs_init) image_data.source.register_source(0, loc.size, reader.current, 1, 0, image_data.object_type, image_data.index);
 
-	if (!reader.run) reader.read_patch_tracking(ptr, loc.size, image_data.source);
+	if (!reader.run) reader.read_patch_tracking(ptr, loc.size, image_data.source, image_data.object_type, image_data.index);
 	else reader.read_patch(ptr, loc.size);
 
 	mem_unmap(reader, device, loc, ptr);
@@ -4677,9 +4677,9 @@ void buffer_update(lava_file_reader& reader, uint32_t device_index, uint32_t buf
 	char* ptr = mem_map(reader, device, loc);
 	int32_t changed = 0;
 
-	if (!reader.run && loc.needs_init) buffer_data.source.register_source(0, loc.size, reader.current);
+	if (!reader.run && loc.needs_init) buffer_data.source.register_source(0, loc.size, reader.current, 1, 0, buffer_data.object_type, buffer_data.index);
 
-	if (!reader.run) reader.read_patch_tracking(ptr, loc.size, buffer_data.source);
+	if (!reader.run) reader.read_patch_tracking(ptr, loc.size, buffer_data.source, buffer_data.object_type, buffer_data.index);
 	else reader.read_patch(ptr, loc.size);
 
 	if (sptr) translate_marked_offsets(reader, (VkMarkedOffsetsARM*)sptr, ptr, loc.size);
@@ -4704,9 +4704,9 @@ void tensor_update(lava_file_reader& reader, uint32_t device_index, uint32_t ten
 	char* ptr = mem_map(reader, device, loc);
 	int32_t changed = 0;
 
-	if (!reader.run && loc.needs_init) tensor_data.source.register_source(0, loc.size, reader.current);
+	if (!reader.run && loc.needs_init) tensor_data.source.register_source(0, loc.size, reader.current, 1, 0, tensor_data.object_type, tensor_data.index);
 
-	if (!reader.run) reader.read_patch_tracking(ptr, loc.size, tensor_data.source);
+	if (!reader.run) reader.read_patch_tracking(ptr, loc.size, tensor_data.source, tensor_data.object_type, tensor_data.index);
 	else reader.read_patch(ptr, loc.size);
 
 	mem_unmap(reader, device, loc, ptr);

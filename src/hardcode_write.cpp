@@ -102,7 +102,76 @@ static void trace_post_vkCreateShaderModule(lava_file_writer& writer, VkResult r
 	{
 		auto* shader = writer.parent->records.VkShaderModule_index.at(*pShaderModule);
 		shader->enables_device_address = true;
-		ILOG("Shader %u enables buffer references!", shader->index); // remove this later
+		DLOG("Shader %u enables buffer references", shader->index);
+	}
+}
+
+static bool shader_stage_enables_device_address(lava_file_writer& writer, const VkPipelineShaderStageCreateInfo& stage)
+{
+	if (stage.module != VK_NULL_HANDLE)
+	{
+		auto* shader = writer.parent->records.VkShaderModule_index.at(stage.module);
+		if (shader && shader->enables_device_address) return true;
+	}
+
+	const VkShaderModuleCreateInfo* shader_create_info = (const VkShaderModuleCreateInfo*)find_extension(&stage, VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO);
+	return shader_create_info && shader_create_info->pCode && shader_has_device_addresses(shader_create_info->pCode, shader_create_info->codeSize);
+}
+
+static void trace_post_vkCreateGraphicsPipelines(lava_file_writer& writer, VkResult result, VkDevice device, VkPipelineCache pipelineCache,
+	uint32_t createInfoCount, const VkGraphicsPipelineCreateInfo* pCreateInfos, const VkAllocationCallbacks* pAllocator, VkPipeline* pPipelines)
+{
+	if (result != VK_SUCCESS || !pCreateInfos || !pPipelines) return;
+	for (uint32_t i = 0; i < createInfoCount; i++)
+	{
+		auto* pipeline = writer.parent->records.VkPipeline_index.at(pPipelines[i]);
+		if (!pipeline || !pCreateInfos[i].pStages) continue;
+		for (uint32_t stage = 0; stage < pCreateInfos[i].stageCount; stage++)
+		{
+			if (!shader_stage_enables_device_address(writer, pCreateInfos[i].pStages[stage])) continue;
+			pipeline->enables_device_address = true;
+			break;
+		}
+	}
+}
+
+static void trace_post_vkCreateComputePipelines(lava_file_writer& writer, VkResult result, VkDevice device, VkPipelineCache pipelineCache,
+	uint32_t createInfoCount, const VkComputePipelineCreateInfo* pCreateInfos, const VkAllocationCallbacks* pAllocator, VkPipeline* pPipelines)
+{
+	if (result != VK_SUCCESS || !pCreateInfos || !pPipelines) return;
+	for (uint32_t i = 0; i < createInfoCount; i++)
+	{
+		auto* pipeline = writer.parent->records.VkPipeline_index.at(pPipelines[i]);
+		if (!pipeline) continue;
+		pipeline->enables_device_address = shader_stage_enables_device_address(writer, pCreateInfos[i].stage);
+	}
+}
+
+static void trace_post_vkCreateRayTracingPipelinesKHR(lava_file_writer& writer, VkResult result, VkDevice device, VkDeferredOperationKHR deferredOperation,
+	VkPipelineCache pipelineCache, uint32_t createInfoCount, const VkRayTracingPipelineCreateInfoKHR* pCreateInfos, const VkAllocationCallbacks* pAllocator,
+	VkPipeline* pPipelines)
+{
+	if (result != VK_SUCCESS || !pCreateInfos || !pPipelines) return;
+	for (uint32_t i = 0; i < createInfoCount; i++)
+	{
+		auto* pipeline = writer.parent->records.VkPipeline_index.at(pPipelines[i]);
+		if (!pipeline || !pCreateInfos[i].pStages) continue;
+		for (uint32_t stage = 0; stage < pCreateInfos[i].stageCount; stage++)
+		{
+			if (!shader_stage_enables_device_address(writer, pCreateInfos[i].pStages[stage])) continue;
+			pipeline->enables_device_address = true;
+			break;
+		}
+	}
+}
+
+static void trace_post_vkCmdBindPipeline(lava_file_writer& writer, VkCommandBuffer commandBuffer, VkPipelineBindPoint pipelineBindPoint, VkPipeline pipeline)
+{
+	auto* cmdbuf_data = writer.parent->records.VkCommandBuffer_index.at(commandBuffer);
+	auto* pipeline_data = writer.parent->records.VkPipeline_index.at(pipeline);
+	if (cmdbuf_data && pipeline_data && pipeline_data->enables_device_address)
+	{
+		cmdbuf_data->uses_device_address_shader = true;
 	}
 }
 
@@ -1466,10 +1535,26 @@ static uint64_t marked_entry_size(const VkMarkedOffsetsARM* markings, uint32_t i
 	}
 }
 
+static void touch_all_address_taken_buffers(lava_file_writer& writer, trackedcmdbuffer_trace* cmdbuf_data)
+{
+	for (trackedbuffer* buffer_data : writer.parent->records.VkBuffer_index.iterate())
+	{
+		if (!buffer_data) continue;
+		if (buffer_data->parent_device_index != cmdbuf_data->device_index) continue;
+		if (buffer_data->device_address == 0) continue;
+		if (buffer_data->is_state(trackedobject::states::destroyed) || buffer_data->is_state(trackedobject::states::uninitialized)) continue;
+		cmdbuf_data->touch(buffer_data, 0, buffer_data->size, __LINE__);
+	}
+}
+
 // combine all updates for each memory into one update list for each device memory object, so we keep the number of map operations to a minimum
 static void queue_update(lava_file_writer& writer, trackedqueue* t, VkCommandBuffer cmdbuf, std::unordered_map<VkDeviceMemory, range>& ranges_by_memory, std::unordered_set<trackedcmdbuffer_trace*>& cmdbufs)
 {
 	auto* cmdbuf_data = writer.parent->records.VkCommandBuffer_index.at(cmdbuf);
+	if (cmdbuf_data->uses_device_address_shader)
+	{
+		touch_all_address_taken_buffers(writer, cmdbuf_data);
+	}
 
 	// find span of all device memory objects used
 	for (const auto& pair : cmdbuf_data->touched)
