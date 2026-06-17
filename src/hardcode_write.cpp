@@ -548,6 +548,12 @@ static void trace_post_vkGetTensorMemoryRequirementsARM(lava_file_writer& writer
 	auto* tensor_data = writer.parent->records.VkTensorARM_index.at(pInfo->tensor);
 	tensor_data->req = pMemoryRequirements->memoryRequirements;
 	tensor_data->size = pMemoryRequirements->memoryRequirements.size;
+	extend_bits(&pMemoryRequirements->memoryRequirements);
+}
+
+static void trace_post_vkGetDeviceTensorMemoryRequirementsARM(lava_file_writer& writer, VkDevice device, const VkDeviceTensorMemoryRequirementsARM* pInfo, VkMemoryRequirements2* pMemoryRequirements)
+{
+	extend_bits(&pMemoryRequirements->memoryRequirements);
 }
 
 static void trace_post_vkGetDataGraphPipelineSessionMemoryRequirementsARM(lava_file_writer& writer, VkDevice device,
@@ -667,6 +673,15 @@ static void trace_post_vkCmdBindDescriptorSets2(lava_file_writer& writer, VkComm
 	trace_post_vkCmdBindDescriptorSets2KHR(writer, commandBuffer, pBindDescriptorSetsInfo);
 }
 
+static void touch_tensor_descriptor(lava_file_writer& writer, trackedcmdbuffer_trace* commandbuffer_data, trackeddescriptorset_trace* descriptorset_data, VkTensorViewARM view, bool push)
+{
+	if (view == VK_NULL_HANDLE) return;
+	auto* tensorview_data = writer.parent->records.VkTensorViewARM_index.at(view);
+	auto* tensor_data = writer.parent->records.VkTensorARM_index.at(tensorview_data->tensor);
+	if (push) commandbuffer_data->touch(tensor_data, 0, tensor_data->size, __LINE__);
+	else descriptorset_data->touch(tensor_data, 0, tensor_data->size, __LINE__);
+}
+
 static void handle_VkWriteDescriptorSets(lava_file_writer& writer, uint32_t descriptorWriteCount, const VkWriteDescriptorSet* pDescriptorWrites, bool clear, bool push)
 {
 	trackedcmdbuffer_trace* commandbuffer_data = push ? writer.parent->records.VkCommandBuffer_index.at(writer.commandBuffer) : nullptr;
@@ -756,7 +771,16 @@ static void handle_VkWriteDescriptorSets(lava_file_writer& writer, uint32_t desc
 			}
 			break;
 		case VK_DESCRIPTOR_TYPE_TENSOR_ARM:
-			assert(false); // TODO
+			{
+				auto* ptr = (VkWriteDescriptorSetTensorARM*)find_extension(pDescriptorWrites[i].pNext, VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_TENSOR_ARM);
+				assert(ptr);
+				assert(ptr->sType == VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_TENSOR_ARM);
+				assert(ptr->tensorViewCount == pDescriptorWrites[i].descriptorCount);
+				for (unsigned j = 0; j < ptr->tensorViewCount; j++)
+				{
+					touch_tensor_descriptor(writer, commandbuffer_data, tds, ptr->pTensorViews[j], push);
+				}
+			}
 			break;
 		case VK_DESCRIPTOR_TYPE_PARTITIONED_ACCELERATION_STRUCTURE_NV:
 			ABORT("VK_NV_partitioned_acceleration_structure not supported");
@@ -911,7 +935,19 @@ static const void* rewrite_descriptor_update_template_data(lava_file_writer& wri
 		case VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK:
 			break;
 		case VK_DESCRIPTOR_TYPE_TENSOR_ARM:
-			assert(false); // TODO
+			{
+				const size_t element_size = sizeof(VkTensorViewARM);
+				const size_t stride = entry.stride ? entry.stride : element_size;
+				uint8_t* base = backing + entry.offset;
+				for (uint32_t i = 0; i < entry.descriptorCount; i++)
+				{
+					VkTensorViewARM view = VK_NULL_HANDLE;
+					memcpy(&view, base + (size_t)i * stride, element_size);
+					const uint32_t view_index = writer.parent->records.VkTensorViewARM_index.index_or_null(view);
+					view = (VkTensorViewARM)(uintptr_t)view_index;
+					memcpy(base + (size_t)i * stride, &view, element_size);
+				}
+			}
 			break;
 		case VK_DESCRIPTOR_TYPE_PARTITIONED_ACCELERATION_STRUCTURE_NV:
 			ABORT("VK_NV_partitioned_acceleration_structure not supported");
@@ -1006,7 +1042,15 @@ static void handle_descriptor_update_template(lava_file_writer& writer, VkDescri
 			}
 			break;
 		case VK_DESCRIPTOR_TYPE_TENSOR_ARM:
-			assert(false); // TODO
+			{
+				std::vector<VkTensorViewARM> scratch;
+				VkWriteDescriptorSetTensorARM tensor{};
+				tensor.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_TENSOR_ARM;
+				tensor.tensorViewCount = entry.descriptorCount;
+				tensor.pTensorViews = template_entry_data(entry, pData, scratch);
+				write.pNext = &tensor;
+				handle_VkWriteDescriptorSets(writer, 1, &write, clear_next, push);
+			}
 			break;
 		case VK_DESCRIPTOR_TYPE_PARTITIONED_ACCELERATION_STRUCTURE_NV:
 			ABORT("VK_NV_partitioned_acceleration_structure not supported");

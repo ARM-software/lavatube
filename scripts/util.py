@@ -1506,6 +1506,11 @@ def save_add_tracking(name):
 			z.do('if (pCreateInfo->pDescription->pStrides) add->strides.resize(pCreateInfo->pDescription->dimensionCount);')
 			z.do('memcpy(add->dimensions.data(), pCreateInfo->pDescription->pDimensions, sizeof(int64_t) * pCreateInfo->pDescription->dimensionCount);')
 			z.do('if (pCreateInfo->pDescription->pStrides) memcpy(add->strides.data(), pCreateInfo->pDescription->pStrides, sizeof(int64_t) * pCreateInfo->pDescription->dimensionCount);')
+		elif type == 'VkTensorViewARM':
+			z.do('add->tensor = pCreateInfo->tensor;')
+			z.do('add->tensor_index = writer.parent->records.VkTensorARM_index.at(pCreateInfo->tensor)->index;')
+			z.do('add->format = pCreateInfo->format;')
+			z.do('add->flags = pCreateInfo->flags;')
 		elif type == 'VkAccelerationStructureKHR':
 			z.do('add->parent_device_index = device_data->index;')
 			z.do('add->flags = pCreateInfo->createFlags;')
@@ -1944,6 +1949,12 @@ def loadfunc(name, node, target, header):
 		z.do('if (reader.run)')
 		z.brace_begin()
 		z.do('retval = vkuSetupInstance(%s);' % (', '.join(call_list)))
+		z.do('if (retval == VK_ERROR_FEATURE_NOT_PRESENT || retval == VK_ERROR_EXTENSION_NOT_PRESENT)')
+		z.brace_begin()
+		z.do('reader.parent->exit_status = 77;')
+		z.do('reader.parent->request_stop();')
+		z.do('reader.throw_stop_requested();')
+		z.brace_end()
 		z.do('check_retval(stored_retval, retval);')
 		z.brace_end()
 	elif name == "vkCreateDevice":

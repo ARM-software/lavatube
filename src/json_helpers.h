@@ -11,6 +11,7 @@ Json::Value trackedaccelerationstructure_json(const trackedaccelerationstructure
 Json::Value trackedbuffer_json(const trackedbuffer* t);
 Json::Value trackedimage_json(const trackedimage* t);
 Json::Value trackedtensor_json(const trackedtensor* t);
+Json::Value trackedtensorview_json(const trackedtensorview* t);
 Json::Value trackeddatagraphpipelinesession_json(const trackeddatagraphpipelinesession* t);
 Json::Value trackedswapchain_json(const trackedswapchain* t);
 Json::Value trackedcmdbuffer_json(const trackedcmdbuffer* t);
@@ -53,6 +54,7 @@ trackedaccelerationstructure trackedaccelerationstructure_json(const Json::Value
 trackedbuffer trackedbuffer_json(const Json::Value& v);
 trackedimage trackedimage_json(const Json::Value& v);
 trackedtensor trackedtensor_json(const Json::Value& v);
+trackedtensorview trackedtensorview_json(const Json::Value& v);
 trackeddatagraphpipelinesession trackeddatagraphpipelinesession_json(const Json::Value& v);
 trackedswapchain_replay trackedswapchain_replay_json(const Json::Value& v);
 trackedcmdbuffer trackedcmdbuffer_json(const Json::Value& v);

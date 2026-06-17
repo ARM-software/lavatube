@@ -351,6 +351,24 @@ struct trackedtensor : trackedobject
 	}
 };
 
+struct trackedtensorview : trackable
+{
+	using trackable::trackable; // inherit constructor
+	VkTensorARM tensor = VK_NULL_HANDLE;
+	uint32_t tensor_index = CONTAINER_INVALID_INDEX;
+	VkFormat format = VK_FORMAT_UNDEFINED;
+	VkTensorViewCreateFlagsARM flags = (VkTensorViewCreateFlagsARM)0;
+
+	void self_test() const
+	{
+		static_assert(offsetof(trackedtensorview, magic) == 0, "ICD loader magic must be at offset zero!");
+		assert(tensor != VK_NULL_HANDLE);
+		assert(tensor_index != CONTAINER_INVALID_INDEX);
+		assert(format != VK_FORMAT_UNDEFINED);
+		trackable::self_test();
+	}
+};
+
 struct datagraph_pipeline_session_binding
 {
 	VkDataGraphPipelineSessionBindPointARM bind_point = VK_DATA_GRAPH_PIPELINE_SESSION_BIND_POINT_MAX_ENUM_ARM;

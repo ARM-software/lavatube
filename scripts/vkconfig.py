@@ -173,6 +173,7 @@ trace_post_calls = [ 'vkCreateInstance', 'vkCreateDevice', 'vkDestroyInstance', 
 		'vkCreateShaderModule', 'vkCreateGraphicsPipelines', 'vkCreateComputePipelines', 'vkCreateRayTracingPipelinesKHR',
 		'vkCmdBindPipeline', 'vkGetBufferDeviceAddress', 'vkGetBufferDeviceAddressKHR', 'vkGetBufferDeviceAddressEXT',
 		'vkGetAccelerationStructureDeviceAddressKHR', 'vkCmdBindDescriptorSets2KHR', 'vkCmdBindDescriptorSets2', 'vkGetTensorMemoryRequirementsARM',
+		'vkGetDeviceTensorMemoryRequirementsARM',
 		'vkBindTensorMemoryARM', 'vkGetDataGraphPipelineSessionMemoryRequirementsARM', 'vkBindDataGraphPipelineSessionMemoryARM',
 		'vkSubmitDebugUtilsMessageEXT', 'vkGetPhysicalDeviceProperties2', 'vkGetPhysicalDeviceProperties2KHR',
 		'vkGetPhysicalDeviceMemoryProperties2KHR' ]
@@ -212,7 +213,7 @@ trackable_type_map_general = { 'VkBuffer': 'trackedbuffer', 'VkImage': 'trackedi
 	'VkDeviceMemory': 'trackedmemory', 'VkFence': 'trackedfence', 'VkSemaphore': 'trackedsemaphore', 'VkPipeline': 'trackedpipeline', 'VkImageView': 'trackedimageview', 'VkBufferView': 'trackedbufferview',
 	'VkDevice': 'trackeddevice', 'VkFramebuffer': 'trackedframebuffer', 'VkRenderPass': 'trackedrenderpass', 'VkQueue': 'trackedqueue', 'VkPhysicalDevice': 'trackedphysicaldevice',
 	'VkShaderModule': 'trackedshadermodule', 'VkAccelerationStructureKHR': 'trackedaccelerationstructure', 'VkPipelineLayout': 'trackedpipelinelayout',
-	'VkDescriptorSetLayout': 'trackeddescriptorsetlayout', 'VkTensorARM': 'trackedtensor', 'VkDescriptorUpdateTemplate': 'trackeddescriptorupdatetemplate', 'VkShaderEXT': 'trackedshaderobject',
+	'VkDescriptorSetLayout': 'trackeddescriptorsetlayout', 'VkTensorARM': 'trackedtensor', 'VkTensorViewARM': 'trackedtensorview', 'VkDescriptorUpdateTemplate': 'trackeddescriptorupdatetemplate', 'VkShaderEXT': 'trackedshaderobject',
 	'VkIndirectExecutionSetEXT': 'trackedindirectexecutionset', 'VkIndirectCommandsLayoutEXT': 'trackedindirectcommandslayout', 'VkSurfaceKHR': 'trackedsurface',
 	'VkDataGraphPipelineSessionARM': 'trackeddatagraphpipelinesession' }
 trackable_type_map_trace = trackable_type_map_general.copy()

@@ -142,6 +142,15 @@ Json::Value trackedtensor_json(const trackedtensor* t)
 	return v;
 }
 
+Json::Value trackedtensorview_json(const trackedtensorview* t)
+{
+	Json::Value v = trackable_json(t);
+	v["tensor"] = (unsigned)t->tensor_index;
+	v["format"] = (unsigned)t->format;
+	v["flags"] = (Json::Value::UInt64)t->flags;
+	return v;
+}
+
 Json::Value trackeddatagraphpipelinesession_json(const trackeddatagraphpipelinesession* t)
 {
 	Json::Value v = trackedobject_json(t);
@@ -565,6 +574,17 @@ trackedtensor trackedtensor_json(const Json::Value& v)
 	if (v.isMember("parent_device_index")) t.parent_device_index = v["parent_device_index"].asUInt();
 	else t.parent_device_index = 0; // use a default for old trace files, and pray we only have one VkDevice
 
+	t.enter_initialized();
+	return t;
+}
+
+trackedtensorview trackedtensorview_json(const Json::Value& v)
+{
+	trackedtensorview t;
+	trackable_helper(t, v);
+	t.tensor_index = v["tensor"].asUInt();
+	t.format = (VkFormat)v.get("format", VK_FORMAT_UNDEFINED).asUInt();
+	t.flags = (VkTensorViewCreateFlagsARM)v.get("flags", 0).asUInt64();
 	t.enter_initialized();
 	return t;
 }

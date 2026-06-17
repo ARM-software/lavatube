@@ -508,7 +508,18 @@ std::string get_vulkan_lib_path()
 
 	if (path.empty()) // try to get system vulkan library
 	{
-		std::vector<std::string> ld_paths = {
+		std::vector<std::string> ld_paths;
+
+#ifndef VK_USE_PLATFORM_ANDROID_KHR
+		// Match dynamic linker behavior: LD_LIBRARY_PATH should override system paths.
+		const std::vector<std::string> ld_lib_paths = split(std::string(getenv("LD_LIBRARY_PATH") ? getenv("LD_LIBRARY_PATH") : ""), ':');
+		for (const auto& mypath : ld_lib_paths)
+		{
+			ld_paths.push_back(mypath);
+		}
+#endif
+
+		const std::vector<std::string> system_paths = {
 #if VK_USE_PLATFORM_ANDROID_KHR
 #if __LP64__
 			"/system/lib64",
@@ -526,15 +537,10 @@ std::string get_vulkan_lib_path()
 			"/usr/lib",
 #endif
 		};
-
-#ifndef VK_USE_PLATFORM_ANDROID_KHR
-		// Add all LD_LIBRARY_PATH dirs
-		const std::vector<std::string> ld_lib_paths = split(std::string(getenv("LD_LIBRARY_PATH") ? getenv("LD_LIBRARY_PATH") : ""), ':');
-		for (const auto& mypath : ld_lib_paths)
+		for (const auto& mypath : system_paths)
 		{
 			ld_paths.push_back(mypath);
 		}
-#endif
 
 		std::vector<std::string> paths;
 
@@ -574,7 +580,7 @@ std::string get_vulkan_lib_path()
 			ABORT("Giving up");
 		}
 
-		DLOG("Found system Vulkan library: %s", filepath.c_str());
+		DLOG("Found Vulkan library in search path: %s", filepath.c_str());
 	}
 	else // get specified vulkan library
 	{

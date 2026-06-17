@@ -167,7 +167,7 @@ def print_wrapper_cpp(name):
 	print(file=w)
 	print('\tVkResult retval = wrap_vkCreateInstance(pCreateInfo, pAllocator, pInstance);', file=w)
 	print('\tif (retval == VK_ERROR_EXTENSION_NOT_PRESENT) print_instance_extension_mismatch(pCreateInfo);', file=w)
-	print('\tif (retval != VK_SUCCESS) ABORT("Failed to create instance: %s", errorString(retval));', file=w)
+	print('\tif (retval != VK_SUCCESS) { return retval; }', file=w)
 	print('\tPFN_vkGetInstanceProcAddr gipa = wrap_vkGetInstanceProcAddr;', file=w)
 	print(file=w)
 	build_instance_table(w)

@@ -3614,7 +3614,19 @@ static void rewrite_descriptor_update_template_data(lava_file_reader& reader, Vk
 		case VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK:
 			break;
 		case VK_DESCRIPTOR_TYPE_TENSOR_ARM:
-			assert(false); // TODO
+			{
+				const size_t element_size = sizeof(VkTensorViewARM);
+				const size_t stride = entry.stride ? entry.stride : element_size;
+				uint8_t* base = base_data + entry.offset;
+				for (uint32_t i = 0; i < entry.descriptorCount; i++)
+				{
+					VkTensorViewARM view = VK_NULL_HANDLE;
+					memcpy(&view, base + (size_t)i * stride, element_size);
+					const uint32_t view_index = (uint32_t)(uintptr_t)view;
+					view = (view_index == CONTAINER_NULL_VALUE) ? VK_NULL_HANDLE : index_to_VkTensorViewARM.at(view_index);
+					memcpy(base + (size_t)i * stride, &view, element_size);
+				}
+			}
 			break;
 		case VK_DESCRIPTOR_TYPE_PARTITIONED_ACCELERATION_STRUCTURE_NV:
 			ABORT("VK_NV_partitioned_acceleration_structure not supported");
