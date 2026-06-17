@@ -5,6 +5,7 @@
 # This needs to go before the project() call below, since it can be set by toolchain files
 set(NO_XCB FALSE CACHE BOOL "Do not compile support for XCB and Xlib")
 set(NO_TRACETOOLTESTS FALSE CACHE BOOL "Do not compile tracetooltests")
+set(GPU_MODEL CACHE STRING "environment variables for your GPU model here") # if you have multiple, separate them with semi-colon
 
 find_program(CCACHE_PROGRAM ccache)
 if(NOT CCACHE_PROGRAM)
@@ -15,7 +16,7 @@ if(CCACHE_PROGRAM AND DEFINED ENV{CCACHE_DIR})
     message(STATUS "We will build using ccache -- very good!")
 endif()
 
-cmake_minimum_required(VERSION 3.11)
+cmake_minimum_required(VERSION 3.22)
 project(lavatube VERSION 0.0.1 DESCRIPTION "Vulkan tracer designed for multi-threaded replay with minimum overhead" HOMEPAGE_URL "https://github.com/ARM-software/lavatube" LANGUAGES C CXX)
 enable_testing()
 
@@ -762,6 +763,7 @@ function(layer_test test_name test_exe)
 	set(TRACE_FILE ${CMAKE_CURRENT_BINARY_DIR}/vulkan_${ARGV0}.vk)
 	set(SIM_TRACE_FILE ${CMAKE_CURRENT_BINARY_DIR}/vulkan_${ARGV0}_simulation.vk)
 	set(RAW_TRACE_FILE ${CMAKE_CURRENT_BINARY_DIR}/vulkan_${ARGV0}_raw.vk)
+	set(MODEL_TRACE_FILE ${CMAKE_CURRENT_BINARY_DIR}/vulkan_${ARGV0}_model.vk)
 	add_lavatube_test(layer_test_${ARGV0}_replay COMMAND ${RUN_IF_EXISTS} ${TRACE_FILE} $<TARGET_FILE:lava-replay> -V vulkan_${ARGV0}.vk)
 	set_tests_properties(layer_test_${ARGV0}_replay PROPERTIES SKIP_RETURN_CODE 77 FIXTURES_REQUIRED ${ARGV0})
 	add_lavatube_test(layer_test_${ARGV0}_replay_raw COMMAND ${RUN_IF_EXISTS} ${RAW_TRACE_FILE} $<TARGET_FILE:lava-replay> --blackhole --allow-stalls vulkan_${ARGV0}_raw.vk)
@@ -780,6 +782,30 @@ function(layer_test test_name test_exe)
 	set_tests_properties(layer_test_${ARGV0}_write_out PROPERTIES FIXTURES_REQUIRED "${ARGV0}" SKIP_RETURN_CODE 77)
 	add_test(NAME layer_test_${ARGV0}_write_out_replay COMMAND ${RUN_IF_EXISTS} tmp_${ARGV0}.vk ${CMAKE_CURRENT_BINARY_DIR}/lava-replay --skip-missing-input -V tmp_${ARGV0}.vk)
 	set_tests_properties(layer_test_${ARGV0}_write_out_replay PROPERTIES FIXTURES_REQUIRED "${ARGV0};cleanup_tmp" SKIP_RETURN_CODE 77)
+
+	if (NOT GPU_MODEL STREQUAL "")
+		set(MODEL_CAPTURE_EXTRA_ARGS)
+		if (ARGV1 STREQUAL "compute_wait")
+			set(MODEL_CAPTURE_EXTRA_ARGS -W 1 -H 1 --payload-bytes 16 --dummy-copy-rounds 0)
+		endif()
+		add_lavatube_test(layer_test_${ARGV0}_model_capture COMMAND vulkan_${ARGV1} ${ARGV2} ${ARGV3} ${ARGV4} ${ARGV5} ${ARGV6} ${ARGV7} ${MODEL_CAPTURE_EXTRA_ARGS})
+		set_tests_properties(layer_test_${ARGV0}_model_capture PROPERTIES
+			FIXTURES_SETUP ${ARGV0}
+			ENVIRONMENT "${GPU_MODEL};LAVATUBE_VIRTUAL_QUEUES=1;LAVATUBE_DELETE_EMPTY_TRACE=1;LAVATUBE_DESTINATION=vulkan_${ARGV0}_model;VK_LAYER_PATH=${CMAKE_CURRENT_BINARY_DIR}/implicit_layer.d;VK_INSTANCE_LAYERS=VK_LAYER_ARM_lavatube"
+			ENVIRONMENT_MODIFICATION "LD_LIBRARY_PATH=path_list_prepend:${CMAKE_CURRENT_BINARY_DIR}/implicit_layer.d"
+			SKIP_RETURN_CODE 77
+		)
+		add_lavatube_test(layer_test_${ARGV0}_model_replay COMMAND ${RUN_IF_EXISTS} ${MODEL_TRACE_FILE} $<TARGET_FILE:lava-replay> -V -w none vulkan_${ARGV0}_model.vk)
+		set_tests_properties(layer_test_${ARGV0}_model_replay PROPERTIES ENVIRONMENT "${GPU_MODEL}" SKIP_RETURN_CODE 77 FIXTURES_REQUIRED ${ARGV0})
+		add_lavatube_test(layer_test_${ARGV0}_model_replay_gpu COMMAND ${RUN_IF_EXISTS} ${TRACE_FILE} $<TARGET_FILE:lava-replay> -V -w none vulkan_${ARGV0}.vk)
+		set_tests_properties(layer_test_${ARGV0}_model_replay_gpu PROPERTIES ENVIRONMENT "${GPU_MODEL}" SKIP_RETURN_CODE 77 FIXTURES_REQUIRED ${ARGV0})
+		add_lavatube_test(layer_test_${ARGV0}_model_replay_cpu COMMAND ${RUN_IF_EXISTS} ${SIM_TRACE_FILE} $<TARGET_FILE:lava-replay> -V -w none vulkan_${ARGV0}_simulation.vk)
+		set_tests_properties(layer_test_${ARGV0}_model_replay_cpu PROPERTIES ENVIRONMENT "${GPU_MODEL}" SKIP_RETURN_CODE 77 FIXTURES_REQUIRED ${ARGV0})
+		add_lavatube_test(layer_test_${ARGV0}_gpu_replay_model COMMAND ${RUN_IF_EXISTS} ${MODEL_TRACE_FILE} $<TARGET_FILE:lava-replay> -V --gpu vulkan_${ARGV0}_model.vk)
+		set_tests_properties(layer_test_${ARGV0}_gpu_replay_model PROPERTIES SKIP_RETURN_CODE 77 FIXTURES_REQUIRED ${ARGV0})
+		add_lavatube_test(layer_test_${ARGV0}_cpu_replay_model COMMAND ${RUN_IF_EXISTS} ${MODEL_TRACE_FILE} $<TARGET_FILE:lava-replay> -V --cpu vulkan_${ARGV0}_model.vk)
+		set_tests_properties(layer_test_${ARGV0}_cpu_replay_model PROPERTIES SKIP_RETURN_CODE 77 FIXTURES_REQUIRED ${ARGV0})
+	endif()
 endfunction()
 
 layer_test(general general)
