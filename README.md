@@ -231,7 +231,7 @@ Replay security
 ===============
 
 You can set the environment variable `LAVATUBE_SANDBOX_LEVEL` to set your desired
-level of security paranoia. Levels are zero to four, from lowest to highest
+level of security paranoia. Levels are zero to three, from lowest to highest
 security, where zero means the security sandbox is completely turned off. High
 levels may interfere with other tools or layers. The security level may also be
 modified with a command line option, but this cannot set the level to zero.

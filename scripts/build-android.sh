@@ -4,7 +4,7 @@ set -e
 # Default values
 ABIS=("arm64-v8a" "x86_64")
 PLATFORM="android-35"
-NDK_PATH=${ANDROID_NDK_HOME:-"/usr/lib/android-sdk/ndk/28.0.13004108"}
+NDK_PATH=${ANDROID_NDK_HOME:-"/usr/lib/android-sdk/ndk/28.2.13676358"}
 
 if [ -z "$ANDROID_NDK_HOME" ]; then
     echo "Warning: ANDROID_NDK_HOME is not set. Using default: $NDK_PATH"

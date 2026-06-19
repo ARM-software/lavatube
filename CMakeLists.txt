@@ -760,6 +760,7 @@ function(layer_test test_name test_exe)
 	)
 
 	set(RUN_IF_EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/cmake/run_if_exists.sh)
+	set(REMOVE_THEN_RUN ${CMAKE_CURRENT_SOURCE_DIR}/cmake/remove_then_run.sh)
 	set(TRACE_FILE ${CMAKE_CURRENT_BINARY_DIR}/vulkan_${ARGV0}.vk)
 	set(SIM_TRACE_FILE ${CMAKE_CURRENT_BINARY_DIR}/vulkan_${ARGV0}_simulation.vk)
 	set(RAW_TRACE_FILE ${CMAKE_CURRENT_BINARY_DIR}/vulkan_${ARGV0}_raw.vk)
@@ -788,7 +789,7 @@ function(layer_test test_name test_exe)
 		if (ARGV1 STREQUAL "compute_wait")
 			set(MODEL_CAPTURE_EXTRA_ARGS -W 1 -H 1 --payload-bytes 16 --dummy-copy-rounds 0)
 		endif()
-		add_lavatube_test(layer_test_${ARGV0}_model_capture COMMAND vulkan_${ARGV1} ${ARGV2} ${ARGV3} ${ARGV4} ${ARGV5} ${ARGV6} ${ARGV7} ${MODEL_CAPTURE_EXTRA_ARGS})
+		add_lavatube_test(layer_test_${ARGV0}_model_capture COMMAND ${REMOVE_THEN_RUN} ${MODEL_TRACE_FILE} $<TARGET_FILE:vulkan_${ARGV1}> ${ARGV2} ${ARGV3} ${ARGV4} ${ARGV5} ${ARGV6} ${ARGV7} ${MODEL_CAPTURE_EXTRA_ARGS})
 		set_tests_properties(layer_test_${ARGV0}_model_capture PROPERTIES
 			FIXTURES_SETUP ${ARGV0}
 			ENVIRONMENT "${GPU_MODEL};LAVATUBE_VIRTUAL_QUEUES=1;LAVATUBE_DELETE_EMPTY_TRACE=1;LAVATUBE_DESTINATION=vulkan_${ARGV0}_model;VK_LAYER_PATH=${CMAKE_CURRENT_BINARY_DIR}/implicit_layer.d;VK_INSTANCE_LAYERS=VK_LAYER_ARM_lavatube"
