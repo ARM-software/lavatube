@@ -25,10 +25,10 @@ Already implemented instructions:
 * `lava-cli stop` - stops the replay
 * `lava-cli step [packets X|calls X]` - step the given number of packets or API calls ahead
 * `lava-cli goto X|NAME` - continue replay until API call number X or the next API call named NAME
-* `lava-cli info threads`
+* `lava-cli info threads|memory`
 * `lava-cli params|parameters` - print command or packet input parameters as JSON
 * `lava-cli show <object type> <index>` - print given globally tracked object and its metadata as JSON
-	- commandbuffers : would be good to be able to print their command contents, but no way to introspect this at the moment, we can only show what we store for execute_commands()
+	- pipelines : prints out info from `VK_KHR_pipeline_executable_properties`
 
 More instructions to implement - in prioritized order:
 * `lava-cli thread N` - updates the stored current thread index
@@ -37,11 +37,11 @@ More instructions to implement - in prioritized order:
 - `lava-cli goto frame X` - replay until we get to the given frame
 * `lava-cli info <topic>` - show input parameters and important state
 	- 'objects' - show table of all non-zero-sized object types, with pending, created, bound (if applicable) and destroyed columns
-	- 'queues'
 	- 'swapchains' - show image index numbers of real and fake swapchains and their status
+	- 'device-fault' - use `VK_KHR_device_fault` to print device-lost info (only works on nvidia for now)
 * `lava-cli list <object type>` - list all objects of given type tracked globally and their status
-* `lava-cli save buffer|image|tensor <index> <filename>` - write exact contents of object given by index to the given filename (if bound)
-* `lava-cli convert buffer|image|tensor <index> <filename.png>` - transform to linear format and write contents of image data given by index to the given filename (if bound)
+* `lava-cli save buffer|image|tensor <index> <filename>` - write exact contents of object given by index to the given filename (if bound; possibly using staging)
+* `lava-cli convert image <index> <filename.png>` - transform to linear format and write contents of image data given by index to the given filename (if bound; possibly using staging; as PNG)
 * `lava-cli set debug <level>` - change global debug level
 * `lava-cli set blackhole <true|false>` - change blackhole setting
 * `lava-cli instrument [detailed]` - on `vkBeginCommandBuffer` to instrument the commandbuffer, returns the index of the cmdbuffer

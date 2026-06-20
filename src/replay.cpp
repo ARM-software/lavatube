@@ -27,6 +27,8 @@
 #include "sandbox.h"
 #include "datatable.h"
 #include "pipeline_executable_stats.h"
+#include "helpers_read.h"
+#include "tostring.h"
 
 static lava_reader replayer;
 static std::atomic<bool> done_var { false };
@@ -82,6 +84,56 @@ static bool cli_show_json(const char* object_type, uint32_t index, Json::Value& 
 	VkPipeline pipeline = index_to_VkPipeline.at(index);
 	(void)append_pipeline_executable_statistics_json(device, pipeline, out);
 	return true;
+}
+
+static std::string format_mib(VkDeviceSize bytes)
+{
+	char text[64];
+	snprintf(text, sizeof(text), "%.2f MiB", (double)bytes / (1024.0 * 1024.0));
+	return text;
+}
+
+static std::string format_percent_left(VkDeviceSize usage, VkDeviceSize budget)
+{
+	if (budget == 0) return "n/a";
+	const VkDeviceSize left = usage < budget ? budget - usage : 0;
+	char text[64];
+	snprintf(text, sizeof(text), "%.2f%%", ((double)left * 100.0) / (double)budget);
+	return text;
+}
+
+static std::string cli_memory_info_response()
+{
+	if (!replayer.cli_memory_budget_enabled.load(std::memory_order_acquire)) return "ERROR\n";
+	if (selected_physical_device == VK_NULL_HANDLE || !wrap_vkGetPhysicalDeviceMemoryProperties2) return "ERROR\n";
+
+	VkPhysicalDeviceMemoryBudgetPropertiesEXT budget = {
+		VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MEMORY_BUDGET_PROPERTIES_EXT,
+		nullptr
+	};
+	VkPhysicalDeviceMemoryProperties2 properties = {
+		VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MEMORY_PROPERTIES_2,
+		&budget
+	};
+	wrap_vkGetPhysicalDeviceMemoryProperties2(selected_physical_device, &properties);
+
+	data_table out;
+	out.set_headers({"Heap", "Flags", "Usage", "Budget", "Left", "% Left"});
+	for (uint32_t i = 0; i < properties.memoryProperties.memoryHeapCount; i++)
+	{
+		const VkDeviceSize usage = budget.heapUsage[i];
+		const VkDeviceSize heap_budget = budget.heapBudget[i];
+		const VkDeviceSize left = usage < heap_budget ? heap_budget - usage : 0;
+		out.add_row({
+			std::to_string(i),
+			VkMemoryHeapFlags_to_string(properties.memoryProperties.memoryHeaps[i].flags),
+			format_mib(usage),
+			format_mib(heap_budget),
+			format_mib(left),
+			format_percent_left(usage, heap_budget)
+		});
+	}
+	return out.to_markdown();
 }
 
 static void cli_clear_function_target(lava_file_reader& reader)
@@ -432,6 +484,17 @@ static void service_listener()
 			}
 			response = out.to_markdown();
 		}
+		else if (command.size() == 2 && command[0] == "info" && command[1] == "memory")
+		{
+			if (replayer.cli_running.load(std::memory_order_acquire))
+			{
+				response = "ERROR\n";
+			}
+			else
+			{
+				response = cli_memory_info_response();
+			}
+		}
 		else
 		{
 			response = "ERROR\n";
@@ -764,6 +827,7 @@ int main(int argc, char **argv)
 	if (service)
 	{
 		replayer.cli_pipeline_executable_stats_requested = true;
+		replayer.cli_memory_budget_requested = true;
 	}
 
 	if (service)

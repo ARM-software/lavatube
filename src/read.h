@@ -207,6 +207,8 @@ public:
 	std::atomic_bool cli_params_ready{ false };
 	bool cli_pipeline_executable_stats_requested = false;
 	std::atomic_bool cli_pipeline_executable_stats_enabled{ false };
+	bool cli_memory_budget_requested = false;
+	std::atomic_bool cli_memory_budget_enabled{ false };
 
 private:
 	/// Start time of frame range
