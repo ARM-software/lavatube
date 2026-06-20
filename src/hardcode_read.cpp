@@ -334,6 +334,24 @@ static void replay_enable_frame_boundary_feature(lava_file_reader& reader, VkDev
 	pCreateInfo->pNext = features;
 }
 
+static void replay_enable_pipeline_executable_info_feature(lava_file_reader& reader, VkDeviceCreateInfo* pCreateInfo)
+{
+	if (!reader.parent->cli_pipeline_executable_stats_enabled.load(std::memory_order_acquire)) return;
+	if (!replay_device_extension_enabled(pCreateInfo, VK_KHR_PIPELINE_EXECUTABLE_PROPERTIES_EXTENSION_NAME)) return;
+
+	VkPhysicalDevicePipelineExecutablePropertiesFeaturesKHR* features = (VkPhysicalDevicePipelineExecutablePropertiesFeaturesKHR*)find_extension(
+		pCreateInfo, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PIPELINE_EXECUTABLE_PROPERTIES_FEATURES_KHR);
+	if (features)
+	{
+		features->pipelineExecutableInfo = VK_TRUE;
+		return;
+	}
+
+	features = reader.pool.allocate<VkPhysicalDevicePipelineExecutablePropertiesFeaturesKHR>(1);
+	*features = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PIPELINE_EXECUTABLE_PROPERTIES_FEATURES_KHR, const_cast<void*>(pCreateInfo->pNext), VK_TRUE };
+	pCreateInfo->pNext = features;
+}
+
 static trackedsemaphore& replay_get_tracked_semaphore(VkSemaphore semaphore, const char* call_name)
 {
 	const uint32_t semaphore_index = index_to_VkSemaphore.index_or_invalid(semaphore);
@@ -3088,6 +3106,7 @@ void replay_pre_vkCreateDevice(lava_file_reader& reader, VkPhysicalDevice physic
 		(void)vulkan_feature_detection_get()->adjust_VkDeviceCreateInfo(pCreateInfo, enabled_exts);
 	}
 	replay_enable_frame_boundary_feature(reader, pCreateInfo);
+	replay_enable_pipeline_executable_info_feature(reader, pCreateInfo);
 
 	if (no_anisotropy())
 	{
@@ -3689,12 +3708,27 @@ void replay_pre_vkCmdPushDescriptorSetWithTemplateKHR(lava_file_reader& reader, 
 	replay_pre_vkCmdPushDescriptorSetWithTemplate(reader, commandBuffer, descriptorUpdateTemplate, layout, set, pData);
 }
 
+static void replay_enable_pipeline_capture_statistics(lava_file_reader& reader, const void* pNext, VkPipelineCreateFlags& flags)
+{
+	if (!reader.parent->cli_pipeline_executable_stats_enabled.load(std::memory_order_acquire)) return;
+
+	flags |= VK_PIPELINE_CREATE_CAPTURE_STATISTICS_BIT_KHR;
+
+	VkPipelineCreateFlags2CreateInfo* flags2 = (VkPipelineCreateFlags2CreateInfo*)find_extension(
+		pNext, VK_STRUCTURE_TYPE_PIPELINE_CREATE_FLAGS_2_CREATE_INFO);
+	if (flags2)
+	{
+		flags2->flags |= VK_PIPELINE_CREATE_2_CAPTURE_STATISTICS_BIT_KHR;
+	}
+}
+
 void replay_pre_vkCreateComputePipelines(lava_file_reader& reader, VkDevice device, VkPipelineCache pipelineCache, uint32_t createInfoCount,
 	const VkComputePipelineCreateInfo* pCreateInfos, const VkAllocationCallbacks* pAllocator, VkPipeline* pPipelines)
 {
 	for (uint32_t i = 0; i < createInfoCount; i++)
 	{
 		const_cast<VkComputePipelineCreateInfo&>(pCreateInfos[i]).flags &= ~VK_PIPELINE_CREATE_FAIL_ON_PIPELINE_COMPILE_REQUIRED_BIT;
+		replay_enable_pipeline_capture_statistics(reader, pCreateInfos[i].pNext, const_cast<VkComputePipelineCreateInfo&>(pCreateInfos[i]).flags);
 
 		const VkMarkedOffsetsARM* remap = (const VkMarkedOffsetsARM*)find_extension(&pCreateInfos[i].stage, VK_STRUCTURE_TYPE_MARKED_OFFSETS_ARM);
 		if (!remap) continue; // nothing to do here
@@ -3715,6 +3749,7 @@ void replay_pre_vkCreateGraphicsPipelines(lava_file_reader& reader, VkDevice dev
 	for (uint32_t i = 0; i < createInfoCount; i++)
 	{
 		const_cast<VkGraphicsPipelineCreateInfo&>(pCreateInfos[i]).flags &= ~VK_PIPELINE_CREATE_FAIL_ON_PIPELINE_COMPILE_REQUIRED_BIT;
+		replay_enable_pipeline_capture_statistics(reader, pCreateInfos[i].pNext, const_cast<VkGraphicsPipelineCreateInfo&>(pCreateInfos[i]).flags);
 
 		for (uint32_t stage = 0; stage < pCreateInfos[i].stageCount; stage++)
 		{
@@ -3738,6 +3773,7 @@ void replay_pre_vkCreateRayTracingPipelinesKHR(lava_file_reader& reader, VkDevic
 	for (uint32_t i = 0; i < createInfoCount; i++)
 	{
 		const_cast<VkRayTracingPipelineCreateInfoKHR&>(pCreateInfos[i]).flags &= ~VK_PIPELINE_CREATE_FAIL_ON_PIPELINE_COMPILE_REQUIRED_BIT;
+		replay_enable_pipeline_capture_statistics(reader, pCreateInfos[i].pNext, const_cast<VkRayTracingPipelineCreateInfoKHR&>(pCreateInfos[i]).flags);
 
 		for (uint32_t stage = 0; stage < pCreateInfos[i].stageCount; stage++)
 		{

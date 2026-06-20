@@ -26,6 +26,7 @@
 #include "replay_callbacks.h"
 #include "sandbox.h"
 #include "datatable.h"
+#include "pipeline_executable_stats.h"
 
 static lava_reader replayer;
 static std::atomic<bool> done_var { false };
@@ -62,6 +63,25 @@ static bool parse_u32(const std::string& text, uint32_t& out)
 static bool parse_positive_u32(const std::string& text, uint32_t& out)
 {
 	return parse_u32(text, out) && out > 0;
+}
+
+static bool cli_show_json(const char* object_type, uint32_t index, Json::Value& out)
+{
+	if (!cli_show_object_json(object_type, index, out)) return false;
+	if (strcmp(object_type, "VkPipeline") != 0) return true;
+	if (!replayer.cli_pipeline_executable_stats_enabled.load(std::memory_order_acquire)) return true;
+	if (index >= VkPipeline_index.size()) return true;
+
+	trackedpipeline& pipeline_data = VkPipeline_index.at(index);
+	if (!pipeline_data.is_state(trackable::states::created)) return true;
+	if (pipeline_data.device_index == UINT32_MAX || pipeline_data.device_index >= VkDevice_index.size()) return true;
+	if (!index_to_VkPipeline.contains(index)) return true;
+	if (!index_to_VkDevice.contains(pipeline_data.device_index)) return true;
+
+	VkDevice device = index_to_VkDevice.at(pipeline_data.device_index);
+	VkPipeline pipeline = index_to_VkPipeline.at(index);
+	(void)append_pipeline_executable_statistics_json(device, pipeline, out);
+	return true;
 }
 
 static void cli_clear_function_target(lava_file_reader& reader)
@@ -385,7 +405,7 @@ static void service_listener()
 		{
 			uint32_t index = 0;
 			Json::Value v;
-			if (replayer.cli_running.load(std::memory_order_acquire) || !parse_u32(command[2], index) || !cli_show_object_json(command[1].c_str(), index, v))
+			if (replayer.cli_running.load(std::memory_order_acquire) || !parse_u32(command[2], index) || !cli_show_json(command[1].c_str(), index, v))
 			{
 				response = "ERROR\n";
 			}
@@ -740,6 +760,11 @@ int main(int argc, char **argv)
 
 	if (wsi.empty()) wsi_initialize(nullptr);
 	else wsi_initialize(wsi.c_str());
+
+	if (service)
+	{
+		replayer.cli_pipeline_executable_stats_requested = true;
+	}
 
 	if (service)
 	{

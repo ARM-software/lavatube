@@ -205,6 +205,8 @@ public:
 	std::string cli_response; // response data from cli thread to control thread
 	std::atomic_bool cli_params_requested{ false };
 	std::atomic_bool cli_params_ready{ false };
+	bool cli_pipeline_executable_stats_requested = false;
+	std::atomic_bool cli_pipeline_executable_stats_enabled{ false };
 
 private:
 	/// Start time of frame range

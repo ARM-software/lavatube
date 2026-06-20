@@ -244,6 +244,8 @@ set(LAVATUBE_SRC
     ${PROJECT_SOURCE_DIR}/src/suballocator.h
     ${PROJECT_SOURCE_DIR}/src/memory.cpp
     ${PROJECT_SOURCE_DIR}/src/memory.h
+    ${PROJECT_SOURCE_DIR}/src/pipeline_executable_stats.cpp
+    ${PROJECT_SOURCE_DIR}/src/pipeline_executable_stats.h
 
     ${PROJECT_SOURCE_DIR}/src/postprocess.cpp
     ${PROJECT_SOURCE_DIR}/src/postprocess.h

@@ -439,12 +439,15 @@ const char* const* device_extensions(VkDeviceCreateInfo* sptr, lava_file_reader&
 {
 	bool trace_has_frame_boundary = false;
 	bool trace_has_swapchain = false;
+	bool host_has_pipeline_executable_properties = false;
+	bool host_has_pipeline_executable_info = false;
 	static std::vector<const char *> dst;
 	static std::vector<std::string> backing;
 	const char* const* stored = reader.read_string_array(len); // all extensions used in original
 	const uint32_t stored_len = len;
 	const uint32_t metadata_len = reader.parent->stored_device_requested_extensions.size();
 	const bool use_stored_metadata = reader.run && !p__skip_remove_unused && reader.parent->has_stored_device_requested_extensions;
+	reader.parent->cli_pipeline_executable_stats_enabled.store(false, std::memory_order_release);
 	if (!reader.run) return stored;
 	const std::vector<const char*> do_not_copy = {
 		VK_KHR_SWAPCHAIN_EXTENSION_NAME, VK_KHR_GET_MEMORY_REQUIREMENTS_2_EXTENSION_NAME,
@@ -515,8 +518,24 @@ const char* const* device_extensions(VkDeviceCreateInfo* sptr, lava_file_reader&
 		if (strcmp(s.extensionName, VK_EXT_PIPELINE_CREATION_FEEDBACK_EXTENSION_NAME) == 0) has_pipeline_feedback = true;
 		if (strcmp(s.extensionName, VK_EXT_PIPELINE_CREATION_CACHE_CONTROL_EXTENSION_NAME) == 0) has_pipeline_control = true;
 		if (strcmp(s.extensionName, VK_EXT_FRAME_BOUNDARY_EXTENSION_NAME) == 0) host_has_frame_boundary = true;
+		if (strcmp(s.extensionName, VK_KHR_PIPELINE_EXECUTABLE_PROPERTIES_EXTENSION_NAME) == 0) host_has_pipeline_executable_properties = true;
 	}
 	if (trace_has_swapchain && !has_swapchain) ABORT("No swapchain extension found - cannot proceed!");
+
+	if (host_has_pipeline_executable_properties)
+	{
+		VkPhysicalDevicePipelineExecutablePropertiesFeaturesKHR pipeline_executable_features = {
+			VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PIPELINE_EXECUTABLE_PROPERTIES_FEATURES_KHR,
+			nullptr,
+			VK_FALSE
+		};
+		VkPhysicalDeviceFeatures2 features = {
+			VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
+			&pipeline_executable_features
+		};
+		wrap_vkGetPhysicalDeviceFeatures2(selected_physical_device, &features);
+		host_has_pipeline_executable_info = pipeline_executable_features.pipelineExecutableInfo == VK_TRUE;
+	}
 
 	if (!host_has_frame_boundary && trace_has_frame_boundary)
 	{
@@ -545,6 +564,37 @@ const char* const* device_extensions(VkDeviceCreateInfo* sptr, lava_file_reader&
 		backing.push_back(VK_EXT_PIPELINE_CREATION_CACHE_CONTROL_EXTENSION_NAME);
 		DLOG("Enabling pipeline creation cache control extension");
 	}
+
+	bool has_pipeline_executable_properties = false;
+	for (const std::string& extension_name : backing)
+	{
+		if (extension_name == VK_KHR_PIPELINE_EXECUTABLE_PROPERTIES_EXTENSION_NAME)
+		{
+			has_pipeline_executable_properties = true;
+			break;
+		}
+	}
+
+	if (reader.parent->cli_pipeline_executable_stats_requested)
+	{
+		if (host_has_pipeline_executable_properties && host_has_pipeline_executable_info)
+		{
+			if (!has_pipeline_executable_properties)
+			{
+				backing.push_back(VK_KHR_PIPELINE_EXECUTABLE_PROPERTIES_EXTENSION_NAME);
+				has_pipeline_executable_properties = true;
+			}
+			DLOG("Enabling pipeline executable properties extension for lava-cli");
+		}
+		else
+		{
+			DLOG("Pipeline executable properties extension is not supported for lava-cli");
+		}
+	}
+
+	reader.parent->cli_pipeline_executable_stats_enabled.store(
+		has_pipeline_executable_properties && host_has_pipeline_executable_properties && host_has_pipeline_executable_info,
+		std::memory_order_release);
 
 	dst.resize(backing.size());
 	for (uint32_t i = 0; i < backing.size(); i++)
