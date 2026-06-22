@@ -71,7 +71,8 @@ For Ubuntu x86, install these packages:
 
 ```
 sudo apt-get install git cmake pkg-config python3 libxcb1-dev libxrandr-dev libxcb-randr0-dev libtbb-dev \
- libvulkan-dev spirv-headers ocl-icd-opencl-dev libgles-dev libegl-dev libglm-dev liblz4-dev libwayland-dev
+ libvulkan-dev spirv-headers ocl-icd-opencl-dev libgles-dev libegl-dev libglm-dev liblz4-dev libwayland-dev \
+ libcurl4-gnutls-dev
 ```
 
 Most of these are actually for compiling the tests, though.

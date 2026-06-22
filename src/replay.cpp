@@ -29,6 +29,7 @@
 #include "pipeline_executable_stats.h"
 #include "helpers_read.h"
 #include "tostring.h"
+#include "trace_metadata.h"
 
 static lava_reader replayer;
 static std::atomic<bool> done_var { false };
@@ -493,6 +494,41 @@ static void service_listener()
 			else
 			{
 				response = cli_memory_info_response();
+			}
+		}
+		else if (command.size() == 2 && command[0] == "info" && command[1] == "objects")
+		{
+			response = trace_metadata_objects_tsv(replayer.packed_file());
+		}
+		else if (command.size() == 3 && command[0] == "info" && command[1] == "thread")
+		{
+			uint32_t thread = 0;
+			Json::Value v;
+			std::string error;
+			if (!parse_u32(command[2], thread) || !trace_metadata_thread_json(replayer.packed_file(), thread, v, error))
+			{
+				response = "ERROR\n";
+			}
+			else
+			{
+				response = trace_metadata_json_pretty(v);
+				if (response.empty() || response.back() != '\n') response += "\n";
+			}
+		}
+		else if (command.size() == 4 && command[0] == "info" && command[1] == "frame")
+		{
+			uint32_t thread = 0;
+			uint32_t frame = 0;
+			Json::Value v;
+			std::string error;
+			if (!parse_u32(command[2], thread) || !parse_u32(command[3], frame) || !trace_metadata_frame_json(replayer.packed_file(), thread, frame, v, error))
+			{
+				response = "ERROR\n";
+			}
+			else
+			{
+				response = trace_metadata_json_pretty(v);
+				if (response.empty() || response.back() != '\n') response += "\n";
 			}
 		}
 		else

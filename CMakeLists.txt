@@ -98,6 +98,14 @@ add_subdirectory(external/spirv-simulator ${CMAKE_BINARY_DIR}/spirv-simulator)
 message(STATUS "Configuring zipcontainer")
 add_subdirectory(external/zipcontainer ${CMAKE_BINARY_DIR}/zipcontainer)
 
+# --- ftxui ---
+
+if(NOT ANDROID)
+    message(STATUS "Configuring ftxui")
+    add_subdirectory(external/ftxui ${CMAKE_BINARY_DIR}/ftxui)
+    find_package(CURL REQUIRED)
+endif()
+
 # --- tracetooltests ---
 
 if(NOT ${NO_TRACETOOLTESTS})
@@ -550,7 +558,7 @@ add_lavatube_test(write_test_5 COMMAND write5)
 
 # --- lava-replay ---
 
-add_executable(lava-replay src/replay.cpp)
+add_executable(lava-replay src/replay.cpp src/trace_metadata.cpp src/trace_metadata.h)
 target_include_directories(lava-replay ${COMMON_INCLUDE})
 target_link_libraries(lava-replay ${COMMON_LIBRARIES} lavatube)
 target_compile_options(lava-replay PRIVATE ${COMMON_FLAGS})
@@ -650,6 +658,34 @@ target_link_libraries(lava-cli ${COMMON_LIBRARIES} lavatube)
 target_compile_options(lava-cli PRIVATE ${COMMON_FLAGS})
 add_dependencies(lava-cli sync_generated)
 install(TARGETS lava-cli RUNTIME)
+
+# --- lava-tui ---
+
+if(NOT ANDROID)
+add_executable(lava-tui
+	src/tui.cpp
+	src/tui_app.cpp
+	src/tui_app.h
+	src/tui_openai.cpp
+	src/tui_openai.h
+	src/tui_trace_tools.cpp
+	src/tui_trace_tools.h
+	src/trace_metadata.cpp
+	src/trace_metadata.h
+)
+target_include_directories(lava-tui ${COMMON_INCLUDE})
+target_link_libraries(lava-tui ${COMMON_LIBRARIES} lavatube ftxui::component CURL::libcurl)
+target_compile_options(lava-tui PRIVATE ${COMMON_FLAGS})
+add_dependencies(lava-tui sync_generated)
+install(TARGETS lava-tui RUNTIME)
+
+add_executable(tui_trace_tools_test tests/tui_trace_tools.cpp src/tui_trace_tools.cpp src/tui_trace_tools.h src/trace_metadata.cpp src/trace_metadata.h)
+target_include_directories(tui_trace_tools_test ${COMMON_INCLUDE})
+target_link_libraries(tui_trace_tools_test ${COMMON_LIBRARIES} lavatube)
+target_compile_options(tui_trace_tools_test PRIVATE ${COMMON_FLAGS})
+add_dependencies(tui_trace_tools_test sync_generated)
+add_lavatube_test(tui_trace_tools_test COMMAND tui_trace_tools_test)
+endif()
 
 # --- traces ---
 

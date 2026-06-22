@@ -95,6 +95,7 @@ public:
 
 	/// Dump trace information to stdout
 	void dump_info();
+	const std::string& packed_file() const { return mPackedFile; }
 
 	void finalize();
 	void request_stop(VkDevice cleanup_device = VK_NULL_HANDLE)
