@@ -13,16 +13,40 @@ static bool verbose = false;
 
 void usage()
 {
-	printf("lava-cli %d.%d.%d-" RELTYPE " command line options\n", LAVATUBE_VERSION_MAJOR, LAVATUBE_VERSION_MINOR, LAVATUBE_VERSION_PATCH);
-	printf("lava-cli [options] <status|continue|stop|step [packets N|calls N]|goto N|goto NAME|params|show TYPE INDEX|info objects|info memory|info threads|info thread N|info frame THREAD FRAME>\n");
-	printf("-h/--help              This help\n");
-	printf("-v/--verbose           Verbose output\n");
-	printf("-P/--port PORT         Port number (default %d)\n", (int)p__port);
-	printf("-H/--host HOST         Host name\n");
+	printf("lava-cli %d.%d.%d-" RELTYPE "\n", LAVATUBE_VERSION_MAJOR, LAVATUBE_VERSION_MINOR, LAVATUBE_VERSION_PATCH);
+	printf("lava-cli [options] <command> [args]\n");
+	printf("\n");
+	printf("Options:\n");
+	printf("    -h/--help                This help\n");
+	printf("    -v/--verbose             Verbose output\n");
+	printf("    -P/--port PORT           Port number (default %d)\n", (int)p__port);
+	printf("    -H/--host HOST           Host name\n");
 #ifndef NDEBUG
-	printf("-d/--debug level       Set debug level [0,1,2,3]\n");
-	printf("-df/--debugfile FILE   Output debug output to the given file\n");
+	printf("    -d/--debug level         Set debug level [0,1,2,3]\n");
+	printf("    -df/--debugfile FILE     Output debug output to the given file\n");
 #endif
+	printf("\n");
+	printf("Replay control:\n");
+	printf("    status                   Show replay state. Outputs RUNNING, DONE, PAUSED, or current paused packet/call.\n");
+	printf("    continue                 Resume replay until completion, stop, or next target.\n");
+	printf("    stop                     Stop the service and replay.\n");
+	printf("    step                     Advance one packet.\n");
+	printf("    step packets N           Advance N packets.\n");
+	printf("    step calls N             Advance N Vulkan API calls.\n");
+	printf("    goto CALL                Continue until absolute Vulkan API call number CALL.\n");
+	printf("    goto NAME                Continue until next Vulkan command NAME, e.g. vkQueueSubmit.\n");
+	printf("\n");
+	printf("Call inspection:\n");
+	printf("    parameters               Print JSON parameters for the currently paused Vulkan call.\n");
+	printf("\n");
+	printf("Trace metadata:\n");
+	printf("    show TYPE INDEX          Print JSON metadata for replay object TYPE with INDEX.\n");
+	printf("    info objects             Print object creation counts from limits metadata.\n");
+	printf("    info threads             List traced threads.\n");
+	printf("    info thread THREAD       Print JSON metadata for THREAD.\n");
+	printf("    info frame THREAD FRAME  Print JSON metadata for FRAME in THREAD.\n");
+	printf("    info memory              Print current Vulkan memory heap usage and budgets.\n");
+	printf("    info                     Print general service info.\n");
 	exit(-1);
 }
 
