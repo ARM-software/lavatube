@@ -157,6 +157,10 @@ To enable layer debugging, set `VK_LOADER_DEBUG=warning`.
 
 To enable lavatube debug output, set `LAVATUBE_DEBUG` to one of 1, 2 or 3.
 
+You can use `lava-cli` combined with `lava-replay --service` to step through a trace replay
+while dumping out stored meta-information and replay state. See `lava-cli --help` for more
+information.
+
 Testing
 =======
 

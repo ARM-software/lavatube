@@ -1,10 +1,10 @@
 # TUI
 
 Remaining todo list:
-* Implement `lava-tui` that connects to the current replay service, just like
-  `lava-cli` currently does, and gets its tool commands from it instead. And
-  remove the TUI's own commands.
-* Finally, add back support for `lava-tui <trace file>` again.
+* Add support for `lava-tui <trace file>` that launches the replayer
+	- Either launch with gdb
+	- Or set core file vars and use c++ callstack ops to fetch callstacks whenever (maybe try this in lava-cli first)
+* Remove the TUI's own commands.
 
 New tool `lava-tui` that communicates with `lava-replay` (or `lava-tool`) similarly
 to `lava-cli`.

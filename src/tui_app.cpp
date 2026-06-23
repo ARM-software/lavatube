@@ -87,14 +87,14 @@ class tui_component : public ComponentBase
 public:
 	tui_component(App* screen, const tui_options& options)
 		: mScreen(screen)
-		, mTools(options.trace_file)
+		, mTools(tool_options(options))
 		, mClient(options.api_key, options.model, options.base_url, options.reasoning_effort)
 		, mModel(options.model)
 		, mBaseUrl(options.base_url)
 		, mReasoningEffort(options.reasoning_effort)
-		, mTraceFile(options.trace_file)
+		, mSource(mTools.source_label())
 	{
-		mInputComponent = Input(&mInput, "Ask about the trace");
+		mInputComponent = Input(&mInput, options.replay_service ? "Ask about the replay service" : "Ask about the trace");
 		Add(mInputComponent);
 
 		std::string error;
@@ -233,6 +233,16 @@ public:
 	}
 
 private:
+	static tui_trace_tools_options tool_options(const tui_options& options)
+	{
+		tui_trace_tools_options out;
+		out.trace_file = options.trace_file;
+		out.hostname = options.hostname;
+		out.port = options.port;
+		out.replay_service = options.replay_service;
+		return out;
+	}
+
 	static void worker_main(tui_component* self, std::string prompt)
 	{
 		self->run_prompt(prompt);
@@ -354,7 +364,7 @@ private:
 
 	std::string status_bar(const std::string& status, bool busy) const
 	{
-		std::string out = "trace=" + mTraceFile + " model=" + mModel;
+		std::string out = mSource + " model=" + mModel;
 		if (!mReasoningEffort.empty()) out += " reasoning=" + mReasoningEffort;
 		if (!mBaseUrl.empty()) out += " base_url=" + mBaseUrl;
 		out += busy ? " busy " : " ";
@@ -371,7 +381,7 @@ private:
 	std::string mModel;
 	std::string mBaseUrl;
 	std::string mReasoningEffort;
-	std::string mTraceFile;
+	std::string mSource;
 	bool mReady = false;
 	bool mBusy = false;
 	bool mFollowOutput = true;

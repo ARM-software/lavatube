@@ -13,10 +13,13 @@
 struct tui_options
 {
 	std::string trace_file;
+	std::string hostname = "localhost";
 	std::string api_key;
 	std::string model;
 	std::string base_url;
 	std::string reasoning_effort;
+	int port = 11901;
+	bool replay_service = false;
 	bool verbose = false;
 };
 

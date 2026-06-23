@@ -20,10 +20,11 @@ static size_t curl_write_string(char* ptr, size_t size, size_t nmemb, void* user
 
 static std::string openai_instructions()
 {
-	return "You are a lavatube trace investigator. Answer questions about the loaded Vulkan trace. "
-	       "Use the provided tools for trace facts instead of guessing. Ask for a specific thread, frame, object type, "
-	       "or object index when a request cannot be answered without it. Keep answers concise and explain which trace "
-	       "metadata you inspected.";
+	return "You are a lavatube trace investigator. Answer questions about the loaded Vulkan trace or replay service. "
+	       "Use the provided tools for trace and replay facts instead of guessing. Some tools can control the replay service; "
+	       "only continue, step, goto, or stop replay when the user asks for that action. Ask for a specific thread, frame, "
+	       "object type, object index, command name, or call number when a request cannot be answered without it. Keep answers "
+	       "concise and explain which trace or replay metadata you inspected.";
 }
 
 static Json::Value input_message(const std::string& role, const std::string& content)
