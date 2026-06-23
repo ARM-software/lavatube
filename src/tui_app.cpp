@@ -14,18 +14,64 @@ struct transcript_entry
 	std::string text;
 };
 
+struct markdown_char
+{
+	char value = 0;
+	bool strong = false;
+	bool code = false;
+};
+
 static int clamp_int(int value, int min_value, int max_value)
 {
 	return std::max(min_value, std::min(max_value, value));
 }
 
-static std::vector<std::string> wrap_plain_line(const std::string& line, int width)
+static bool has_closing_marker(const std::string& line, size_t start, const char* marker)
 {
-	std::vector<std::string> out;
+	return line.find(marker, start) != std::string::npos;
+}
+
+static std::vector<markdown_char> parse_markdown_line(const std::string& line)
+{
+	std::vector<markdown_char> out;
+	bool strong = false;
+	bool code = false;
+	for (size_t i = 0; i < line.size(); i++)
+	{
+		if (line[i] == '`')
+		{
+			if (code || has_closing_marker(line, i + 1, "`"))
+			{
+				code = !code;
+				continue;
+			}
+		}
+		if (!code && i + 1 < line.size() && line[i] == '*' && line[i + 1] == '*')
+		{
+			if (strong || has_closing_marker(line, i + 2, "**"))
+			{
+				strong = !strong;
+				i++;
+				continue;
+			}
+		}
+
+		markdown_char ch;
+		ch.value = line[i];
+		ch.strong = strong;
+		ch.code = code;
+		out.push_back(ch);
+	}
+	return out;
+}
+
+static std::vector<std::vector<markdown_char>> wrap_markdown_line(const std::vector<markdown_char>& line, int width)
+{
+	std::vector<std::vector<markdown_char>> out;
 	if (width <= 0) width = 1;
 	if (line.empty())
 	{
-		out.push_back("");
+		out.push_back(std::vector<markdown_char>());
 		return out;
 	}
 
@@ -35,20 +81,28 @@ static std::vector<std::string> wrap_plain_line(const std::string& line, int wid
 		const size_t remaining = line.size() - pos;
 		if (remaining <= (size_t)width)
 		{
-			out.push_back(line.substr(pos));
+			out.push_back(std::vector<markdown_char>(line.begin() + pos, line.end()));
 			break;
 		}
 
 		size_t end = pos + width;
-		size_t split = line.rfind(' ', end);
-		if (split == std::string::npos || split <= pos)
+		size_t split = end;
+		for (size_t i = end; i > pos; i--)
+		{
+			if (line[i - 1].value == ' ')
+			{
+				split = i - 1;
+				break;
+			}
+		}
+		if (split <= pos)
 		{
 			split = end;
 		}
 
-		out.push_back(line.substr(pos, split - pos));
+		out.push_back(std::vector<markdown_char>(line.begin() + pos, line.begin() + split));
 		pos = split;
-		while (pos < line.size() && line[pos] == ' ')
+		while (pos < line.size() && line[pos].value == ' ')
 		{
 			pos++;
 		}
@@ -57,29 +111,78 @@ static std::vector<std::string> wrap_plain_line(const std::string& line, int wid
 	return out;
 }
 
-static std::vector<std::string> wrap_text_lines(const std::string& value, int width)
+static Element styled_markdown_text(const std::string& value, bool strong, bool code)
 {
-	std::vector<std::string> out;
+	Element out = text(value);
+	if (code)
+	{
+		out = out | color(Color::CyanLight);
+	}
+	if (strong)
+	{
+		out = out | bold | color(Color::YellowLight);
+	}
+	return out;
+}
+
+static Element markdown_line_element(const std::vector<markdown_char>& line)
+{
+	if (line.empty()) return text("");
+
+	Elements spans;
+	std::string value;
+	bool strong = line[0].strong;
+	bool code = line[0].code;
+	for (const markdown_char& ch : line)
+	{
+		if (ch.strong != strong || ch.code != code)
+		{
+			spans.push_back(styled_markdown_text(value, strong, code));
+			value.clear();
+			strong = ch.strong;
+			code = ch.code;
+		}
+		value.push_back(ch.value);
+	}
+	if (!value.empty())
+	{
+		spans.push_back(styled_markdown_text(value, strong, code));
+	}
+	return hbox(std::move(spans));
+}
+
+static void append_markdown_line(Elements& lines, const std::string& line, int width)
+{
+	const std::vector<markdown_char> parsed = parse_markdown_line(line);
+	const std::vector<std::vector<markdown_char>> wrapped = wrap_markdown_line(parsed, width);
+	for (const std::vector<markdown_char>& wrapped_line : wrapped)
+	{
+		lines.push_back(markdown_line_element(wrapped_line));
+	}
+}
+
+static void append_wrapped_text(Elements& lines, const std::string& value, int width)
+{
 	size_t pos = 0;
 	while (pos <= value.size())
 	{
 		const size_t next = value.find('\n', pos);
 		const std::string line = next == std::string::npos ? value.substr(pos) : value.substr(pos, next - pos);
-		const std::vector<std::string> wrapped = wrap_plain_line(line, width);
-		out.insert(out.end(), wrapped.begin(), wrapped.end());
+		append_markdown_line(lines, line, width);
 		if (next == std::string::npos) break;
 		pos = next + 1;
 	}
-	return out;
 }
 
-static void append_wrapped_text(Elements& lines, const std::string& value, int width)
+static Element speaker_label(const std::string& speaker)
 {
-	const std::vector<std::string> wrapped = wrap_text_lines(value, width);
-	for (const std::string& line : wrapped)
-	{
-		lines.push_back(text(line));
-	}
+	Element out = text(speaker + ":") | bold;
+	if (speaker == "user") return out | color(Color::GreenLight);
+	if (speaker == "assistant") return out | color(Color::BlueLight);
+	if (speaker == "tool") return out | color(Color::MagentaLight);
+	if (speaker == "error") return out | color(Color::RedLight);
+	if (speaker == "status") return out | color(Color::GrayLight);
+	return out;
 }
 
 class tui_component : public ComponentBase
@@ -144,7 +247,7 @@ public:
 		Elements lines;
 		for (const transcript_entry& entry : transcript)
 		{
-			lines.push_back(text(entry.speaker + ":") | bold);
+			lines.push_back(speaker_label(entry.speaker));
 			append_wrapped_text(lines, entry.text, view_width);
 			lines.push_back(text(""));
 		}
