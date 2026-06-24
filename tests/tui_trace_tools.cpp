@@ -11,6 +11,9 @@
 #include "packfile.h"
 #include "tui_trace_tools.h"
 
+#pragma GCC diagnostic ignored "-Wunused-variable"
+#pragma GCC diagnostic ignored "-Wunused-function"
+
 static void write_file(const std::string& path, const char* data)
 {
 	int fd = open(path.c_str(), O_CREAT | O_TRUNC | O_WRONLY, 0664);
