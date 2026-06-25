@@ -3316,6 +3316,345 @@ static uint32_t checksum_buffer_range(const trackeddevice& device_data, uint32_t
 	return adler32((unsigned char*)ptr + offset, size);
 }
 
+static bool reverse_translate_buffer_replay_address(uint64_t replay_address, uint64_t& capture_address)
+{
+	VkDeviceSize offset = 0;
+	trackedbuffer* buffer = find_buffer_by_replay_address(replay_address, 1, offset);
+	if (!buffer || buffer->capture_device_address == 0) return false;
+	capture_address = buffer->capture_device_address + offset;
+	return true;
+}
+
+static bool reverse_translate_acceleration_structure_replay_address(uint64_t replay_address, uint64_t& capture_address)
+{
+	for (auto& as : VkAccelerationStructureKHR_index)
+	{
+		if (as.device_address != replay_address) continue;
+		if (as.capture_device_address == 0) return false;
+		capture_address = as.capture_device_address;
+		return true;
+	}
+	return false;
+}
+
+static uint32_t adler32_update(uint32_t checksum, const unsigned char* data, size_t len)
+{
+	const uint32_t MOD_ADLER = 65521;
+	uint32_t a = checksum & 0xffff;
+	uint32_t b = checksum >> 16;
+	for (size_t index = 0; index < len; ++index)
+	{
+		a = (a + data[index]) % MOD_ADLER;
+		b = (b + a) % MOD_ADLER;
+	}
+	return (b << 16) | a;
+}
+
+struct marked_checksum_span
+{
+	VkDeviceSize offset = 0;
+	std::vector<unsigned char> bytes;
+	VkMarkingTypeARM marking_type = VK_MARKING_TYPE_DEVICE_ADDRESS_ARM;
+	uint32_t index = 0;
+};
+
+static bool marked_checksum_span_less(const marked_checksum_span& a, const marked_checksum_span& b)
+{
+	if (a.offset != b.offset) return a.offset < b.offset;
+	return a.index < b.index;
+}
+
+static bool marked_checksum_span_same_bytes(const marked_checksum_span& a, const marked_checksum_span& b)
+{
+	return a.bytes.size() == b.bytes.size() && memcmp(a.bytes.data(), b.bytes.data(), a.bytes.size()) == 0;
+}
+
+static void push_marked_checksum_u64(std::vector<marked_checksum_span>& spans, VkDeviceSize offset,
+	VkMarkingTypeARM marking_type, uint32_t index, uint64_t value)
+{
+	marked_checksum_span span;
+	span.offset = offset;
+	span.marking_type = marking_type;
+	span.index = index;
+	span.bytes.resize(sizeof(value));
+	memcpy(span.bytes.data(), &value, sizeof(value));
+	spans.push_back(span);
+}
+
+static bool reverse_translate_descriptor_replay_bytes(lava_file_reader& reader, uint32_t mark_index, VkDeviceSize offset,
+	VkDescriptorType descriptor_type, const unsigned char* replay_bytes, VkDeviceSize available, std::vector<unsigned char>& capture_bytes)
+{
+	bool found = false;
+	lava::lock_guard lock(sync_mutex);
+	for (const descriptor_rewrite& candidate : reader.parent->pending_descriptor_rewrites)
+	{
+		if (candidate.type != descriptor_type) continue;
+		if (candidate.bytes.empty() || candidate.capture_bytes.empty()) continue;
+		if (candidate.bytes.size() > available) continue;
+		if (memcmp(replay_bytes, candidate.bytes.data(), candidate.bytes.size()) != 0) continue;
+		if (found)
+		{
+			if (capture_bytes.size() == candidate.capture_bytes.size()
+			    && memcmp(capture_bytes.data(), candidate.capture_bytes.data(), capture_bytes.size()) == 0)
+			{
+				continue;
+			}
+			ABORT("Marked checksum descriptor %u at offset %llu is ambiguous",
+				(unsigned)mark_index, (unsigned long long)offset);
+		}
+		capture_bytes.assign(candidate.capture_bytes.begin(), candidate.capture_bytes.end());
+		found = true;
+	}
+	return found;
+}
+
+static bool find_marked_shader_group_replay_handle_match(const trackedpipeline& pipeline_data, const std::byte* handle_ptr,
+	uint32_t& out_group_index, bool& out_ambiguous)
+{
+	static constexpr uint32_t marked_handle_size = 32;
+	out_group_index = CONTAINER_INVALID_INDEX;
+	out_ambiguous = false;
+	if (pipeline_data.raytracing_group_handle_size_replay != marked_handle_size || pipeline_data.raytracing_group_handles_replay.empty()) return false;
+	uint32_t group_count = pipeline_data.raytracing_group_count;
+	const size_t handle_capacity = pipeline_data.raytracing_group_handles_replay.size();
+	const size_t max_groups = handle_capacity / marked_handle_size;
+	if (max_groups == 0) return false;
+	if (group_count == 0 || group_count > max_groups) group_count = (uint32_t)max_groups;
+	const std::byte* base = pipeline_data.raytracing_group_handles_replay.data();
+	bool found = false;
+	for (uint32_t i = 0; i < group_count; i++)
+	{
+		const std::byte* candidate = base + (size_t)i * marked_handle_size;
+		if (memcmp(candidate, handle_ptr, marked_handle_size) != 0) continue;
+		if (found)
+		{
+			out_ambiguous = true;
+			return true;
+		}
+		found = true;
+		out_group_index = i;
+	}
+	return found;
+}
+
+static bool reverse_translate_shader_group_handle(uint32_t mark_index, VkDeviceSize offset,
+	const unsigned char* replay_handle, std::vector<unsigned char>& capture_handle)
+{
+	static constexpr uint32_t marked_handle_size = 32;
+	std::byte current[marked_handle_size] = {};
+	memcpy(current, replay_handle, marked_handle_size);
+
+	const trackedpipeline* matched_pipeline = nullptr;
+	uint32_t matched_group_index = CONTAINER_INVALID_INDEX;
+	for (const auto& pipeline_data : VkPipeline_index)
+	{
+		uint32_t group_index = CONTAINER_INVALID_INDEX;
+		bool ambiguous_in_pipeline = false;
+		bool found = false;
+		if (pipeline_data.raytracing_group_handles_capture_replay)
+		{
+			found = find_marked_shader_group_handle_match(pipeline_data, current, group_index, ambiguous_in_pipeline);
+		}
+		else
+		{
+			found = find_marked_shader_group_replay_handle_match(pipeline_data, current, group_index, ambiguous_in_pipeline);
+		}
+		if (!found) continue;
+		if (ambiguous_in_pipeline)
+		{
+			ABORT("Marked checksum shader group handle %u at offset %llu matches multiple groups in pipeline %u",
+				(unsigned)mark_index, (unsigned long long)offset, pipeline_data.index);
+		}
+		if (matched_pipeline)
+		{
+			ABORT("Marked checksum shader group handle %u at offset %llu is ambiguous between pipeline %u group %u and pipeline %u group %u",
+				(unsigned)mark_index, (unsigned long long)offset, matched_pipeline->index, matched_group_index, pipeline_data.index, group_index);
+		}
+		if (pipeline_data.raytracing_group_handle_size != marked_handle_size)
+		{
+			ABORT("Marked checksum shader group handle %u at offset %llu needs capture handle size %u, expected %u for pipeline %u",
+				(unsigned)mark_index, (unsigned long long)offset, pipeline_data.raytracing_group_handle_size, marked_handle_size, pipeline_data.index);
+		}
+		const size_t capture_offset = (size_t)group_index * marked_handle_size;
+		if (capture_offset + marked_handle_size > pipeline_data.raytracing_group_handles.size())
+		{
+			ABORT("Marked checksum shader group handle %u at offset %llu capture lookup out of bounds for pipeline %u group %u",
+				(unsigned)mark_index, (unsigned long long)offset, pipeline_data.index, group_index);
+		}
+		matched_pipeline = &pipeline_data;
+		matched_group_index = group_index;
+		capture_handle.resize(marked_handle_size);
+		memcpy(capture_handle.data(), pipeline_data.raytracing_group_handles.data() + capture_offset, marked_handle_size);
+	}
+	return matched_pipeline != nullptr;
+}
+
+static uint32_t checksum_marked_buffer_range(lava_file_reader& reader, const unsigned char* ptr, VkDeviceSize size, const VkMarkedOffsetsARM* markings)
+{
+	assert(markings && ptr);
+	assert(markings->pOffsets);
+	assert(markings->pSubTypes);
+	assert(markings->pMarkingTypes);
+
+	std::vector<marked_checksum_span> spans;
+	spans.reserve(markings->count);
+	for (uint32_t i = 0; i < markings->count; i++)
+	{
+		const VkDeviceSize offset = markings->pOffsets[i];
+		switch (markings->pMarkingTypes[i])
+		{
+		case VK_MARKING_TYPE_DEVICE_ADDRESS_ARM:
+			{
+				if (offset > size || sizeof(uint64_t) > size - offset)
+				{
+					ABORT("Marked checksum address at offset %llu is outside checked range of size %llu",
+						(unsigned long long)offset, (unsigned long long)size);
+				}
+				const VkDeviceAddressTypeARM address_type = markings->pSubTypes[i].deviceAddressType;
+				if (address_type != VK_DEVICE_ADDRESS_TYPE_BUFFER_ARM && address_type != VK_DEVICE_ADDRESS_TYPE_ACCELERATION_STRUCTURE_ARM)
+				{
+					ABORT("Unsupported marked device address subtype %u", (unsigned)address_type);
+				}
+
+				uint64_t current = 0;
+				memcpy(&current, ptr + offset, sizeof(current));
+
+				uint64_t capture = 0;
+				bool found = false;
+				if (markings->pSubTypes[i].deviceAddressType == VK_DEVICE_ADDRESS_TYPE_BUFFER_ARM)
+				{
+					found = reverse_translate_buffer_replay_address(current, capture);
+				}
+				else if (markings->pSubTypes[i].deviceAddressType == VK_DEVICE_ADDRESS_TYPE_ACCELERATION_STRUCTURE_ARM)
+				{
+					found = reverse_translate_acceleration_structure_replay_address(current, capture);
+				}
+				if (current != 0 && !found)
+				{
+					ABORT("Failed to reverse translate marked replay address 0x%llx for checksum",
+						(unsigned long long)current);
+				}
+				const uint64_t checksum_value = (current == 0) ? current : capture;
+				DLOG("%u: Rewriting marked checksum address at offset %lu from replay 0x%llx to capture 0x%llx",
+				     (unsigned)i, (unsigned long)offset, (unsigned long long)current, (unsigned long long)checksum_value);
+				push_marked_checksum_u64(spans, offset, markings->pMarkingTypes[i], i, checksum_value);
+			}
+			break;
+		case VK_MARKING_TYPE_DESCRIPTOR_ARM:
+			{
+				if (offset >= size)
+				{
+					ABORT("Marked checksum descriptor at offset %llu is outside checked range of size %llu",
+						(unsigned long long)offset, (unsigned long long)size);
+				}
+				const VkDescriptorType descriptor_type = markings->pSubTypes[i].descriptorType;
+				marked_checksum_span span;
+				span.offset = offset;
+				span.marking_type = markings->pMarkingTypes[i];
+				span.index = i;
+				if (!reverse_translate_descriptor_replay_bytes(reader, i, offset, descriptor_type, ptr + offset, size - offset, span.bytes))
+				{
+					DLOG("%u: Leaving marked checksum descriptor at offset %lu unchanged; no pending rewrite matched",
+					     (unsigned)i, (unsigned long)offset);
+					break;
+				}
+				DLOG("%u: Rewriting marked checksum descriptor at offset %lu to capture bytes",
+				     (unsigned)i, (unsigned long)offset);
+				spans.push_back(span);
+			}
+			break;
+		case VK_MARKING_TYPE_DESCRIPTOR_SIZE_ARM:
+		case VK_MARKING_TYPE_DESCRIPTOR_OFFSET_ARM:
+			DLOG("%u: Leaving descriptor metadata checksum marking at offset %lu unchanged", (unsigned)i, (unsigned long)offset);
+			break;
+		case VK_MARKING_TYPE_SHADER_GROUP_HANDLE_ARM:
+			{
+				static constexpr uint32_t marked_handle_size = 32;
+				if (offset > size || marked_handle_size > size - offset)
+				{
+					ABORT("Marked checksum shader group handle at offset %llu is outside checked range of size %llu",
+						(unsigned long long)offset, (unsigned long long)size);
+				}
+				marked_checksum_span span;
+				span.offset = offset;
+				span.marking_type = markings->pMarkingTypes[i];
+				span.index = i;
+				if (!reverse_translate_shader_group_handle(i, offset, ptr + offset, span.bytes))
+				{
+					ABORT("Failed to reverse translate marked shader group handle %u at offset %llu for checksum",
+						(unsigned)i, (unsigned long long)offset);
+				}
+				DLOG("%u: Rewriting marked checksum shader group handle at offset %lu to capture bytes",
+				     (unsigned)i, (unsigned long)offset);
+				spans.push_back(span);
+			}
+			break;
+		default:
+			ABORT("Unsupported checksum marking type %u", (unsigned)markings->pMarkingTypes[i]);
+			break;
+		}
+	}
+
+	std::sort(spans.begin(), spans.end(), marked_checksum_span_less);
+
+	uint32_t checksum = adler32(nullptr, 0);
+	VkDeviceSize processed = 0;
+	bool have_previous_span = false;
+	marked_checksum_span previous_span;
+	for (const marked_checksum_span& span : spans)
+	{
+		if (have_previous_span && span.offset == previous_span.offset)
+		{
+			if (span.marking_type == previous_span.marking_type && marked_checksum_span_same_bytes(span, previous_span))
+			{
+				DLOG("%u: Ignoring duplicate marked checksum entry at offset %lu",
+				     (unsigned)span.index, (unsigned long)span.offset);
+				continue;
+			}
+			ABORT("Conflicting duplicate marked checksum entry at offset %llu",
+				(unsigned long long)span.offset);
+		}
+		if (span.offset < processed)
+		{
+			ABORT("Overlapping marked checksum entry at offset %llu",
+				(unsigned long long)span.offset);
+		}
+		if (span.offset > processed)
+		{
+			checksum = adler32_update(checksum, ptr + processed, span.offset - processed);
+		}
+		checksum = adler32_update(checksum, span.bytes.data(), span.bytes.size());
+		processed = span.offset + span.bytes.size();
+		have_previous_span = true;
+		previous_span = span;
+	}
+	if (processed < size)
+	{
+		checksum = adler32_update(checksum, ptr + processed, size - processed);
+	}
+	return checksum;
+}
+
+static uint32_t checksum_buffer_range(lava_file_reader& reader, const trackeddevice& device_data, uint32_t buffer_index, VkDeviceSize offset, VkDeviceSize size, const VkMarkedOffsetsARM* markings)
+{
+	if (!markings) return checksum_buffer_range(device_data, buffer_index, offset, size);
+
+	trackedbuffer& buffer_data = VkBuffer_index.at(buffer_index);
+	suballoc_location loc = device_data.allocator->find_buffer_memory(buffer_index);
+	if (size == VK_WHOLE_SIZE)
+	{
+		size = buffer_data.size - offset;
+	}
+	if (size == 0)
+	{
+		return adler32(nullptr, 0);
+	}
+	assert(offset + size <= buffer_data.size);
+	uint8_t* ptr = (uint8_t*)loc.mapped;
+	assert(ptr != nullptr);
+	return checksum_marked_buffer_range(reader, ptr + offset, size, markings);
+}
+
 void retrace_vkAssertBufferARM(lava_file_reader& reader)
 {
 	const uint32_t device_index = reader.read_handle(DEBUGPARAM("VkDevice"));
@@ -3337,15 +3676,19 @@ void retrace_vkAssertBufferARM(lava_file_reader& reader)
 	}
 	uint32_t checksum_new = adler32(nullptr, 0);
 	uint32_t buffer_index = 0;
-	if (info.dstBuffer != VK_NULL_HANDLE)
+	if (!is_blackhole_mode())
 	{
-		buffer_index = index_to_VkBuffer.index(info.dstBuffer);
-		checksum_new = checksum_buffer_range(device_data, buffer_index, info.dstOffset, info.dataSize);
-		DLOG2("buffer %s[%u] validation checksum origchecksum=%u newchecksum=%u", comment, buffer_index, checksum, checksum_new);
-	}
-	if (checksum != checksum_new && !is_blackhole_mode())
-	{
-		ABORT("Buffer checksum failed: %s", comment);
+		if (info.dstBuffer != VK_NULL_HANDLE)
+		{
+			buffer_index = index_to_VkBuffer.index(info.dstBuffer);
+			VkMarkedOffsetsARM* markings = (VkMarkedOffsetsARM*)find_extension(&info, VK_STRUCTURE_TYPE_MARKED_OFFSETS_ARM);
+			checksum_new = checksum_buffer_range(reader, device_data, buffer_index, info.dstOffset, info.dataSize, markings);
+			DLOG2("buffer %s[%u] validation checksum origchecksum=%u newchecksum=%u", comment, buffer_index, checksum, checksum_new);
+		}
+		if (checksum != checksum_new)
+		{
+			ABORT("Buffer checksum failed: %s", comment);
+		}
 	}
 	callback_context cb_context{ reader };
 	cb_context.result.vkresult = VK_SUCCESS;
@@ -3374,26 +3717,30 @@ void retrace_vkAssertMemoryARM(lava_file_reader& reader)
 		return;
 	}
 	uint32_t checksum_new = adler32(nullptr, 0);
-	if (info.pDstRange && info.pDstRange->address)
+	if (!is_blackhole_mode())
 	{
-		VkDeviceSize size = info.dataSize;
-		if (size == VK_WHOLE_SIZE)
+		if (info.pDstRange && info.pDstRange->address)
 		{
-			size = info.pDstRange->size;
+			VkDeviceSize size = info.dataSize;
+			if (size == VK_WHOLE_SIZE)
+			{
+				size = info.pDstRange->size;
+			}
+			VkDeviceSize buffer_offset = 0;
+			trackedbuffer* buffer_data = find_buffer_by_replay_address(info.pDstRange->address, size ? size : 1, buffer_offset);
+			if (!buffer_data)
+			{
+				ABORT("vkAssertMemoryARM address 0x%llx (size=%llu) is not mapped to a buffer",
+					(unsigned long long)info.pDstRange->address, (unsigned long long)size);
+			}
+			VkMarkedOffsetsARM* markings = (VkMarkedOffsetsARM*)find_extension(&info, VK_STRUCTURE_TYPE_MARKED_OFFSETS_ARM);
+			checksum_new = checksum_buffer_range(reader, device_data, buffer_data->index, buffer_offset, size, markings);
+			NEVER("memory %s[%u] validation checksum origchecksum=%u newchecksum=%u", comment, buffer_data->index, checksum, checksum_new);
 		}
-		VkDeviceSize buffer_offset = 0;
-		trackedbuffer* buffer_data = find_buffer_by_replay_address(info.pDstRange->address, size ? size : 1, buffer_offset);
-		if (!buffer_data)
+		if (checksum != checksum_new)
 		{
-			ABORT("vkAssertMemoryARM address 0x%llx (size=%llu) is not mapped to a buffer",
-				(unsigned long long)info.pDstRange->address, (unsigned long long)size);
+			ABORT("Memory checksum failed: %s", comment);
 		}
-		checksum_new = checksum_buffer_range(device_data, buffer_data->index, buffer_offset, size);
-		NEVER("memory %s[%u] validation checksum origchecksum=%u newchecksum=%u", comment, buffer_data->index, checksum, checksum_new);
-	}
-	if (checksum != checksum_new && !is_blackhole_mode())
-	{
-		ABORT("Memory checksum failed: %s", comment);
 	}
 	callback_context cb_context{ reader };
 	cb_context.result.vkresult = VK_SUCCESS;
