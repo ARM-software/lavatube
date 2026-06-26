@@ -227,6 +227,8 @@ static bool collect_contiguous_device_address_marking(const std::vector<simulato
 	const VkObjectType output_object_type = (source_ref.object_type != VK_OBJECT_TYPE_UNKNOWN) ? source_ref.object_type : range->source_object_type;
 	const uint32_t output_object_index = (source_ref.object_type != VK_OBJECT_TYPE_UNKNOWN) ? source_ref.object_index : range->source_object_index;
 	const uint32_t output_stage_index = (source_ref.object_type != VK_OBJECT_TYPE_UNKNOWN) ? source_ref.stage_index : range->source_stage_index;
+	assert(source_ref.object_type == VK_OBJECT_TYPE_UNKNOWN || source_ref.object_offset >= 0);
+	const VkDeviceSize output_offset = (source_ref.object_type != VK_OBJECT_TYPE_UNKNOWN) ? (VkDeviceSize)source_ref.object_offset : range->buffer_offset + base_offset;
 	VkMarkingSubTypeARM subtype{};
 	subtype.deviceAddressType = VK_DEVICE_ADDRESS_TYPE_BUFFER_ARM;
 	discovered.push_back({
@@ -234,7 +236,7 @@ static bool collect_contiguous_device_address_marking(const std::vector<simulato
 		.output_object_type = output_object_type,
 		.output_object_index = output_object_index,
 		.output_stage_index = output_stage_index,
-		.offset = range->buffer_offset + base_offset,
+		.offset = output_offset,
 		.size = sizeof(VkDeviceAddress),
 		.type = VK_MARKING_TYPE_DEVICE_ADDRESS_ARM,
 		.subtype = subtype,
@@ -374,12 +376,14 @@ static void collect_simulator_physical_address_markings(const std::vector<simula
 			const VkObjectType output_object_type = (source_ref.object_type != VK_OBJECT_TYPE_UNKNOWN) ? source_ref.object_type : range->source_object_type;
 			const uint32_t output_object_index = (source_ref.object_type != VK_OBJECT_TYPE_UNKNOWN) ? source_ref.object_index : range->source_object_index;
 			const uint32_t output_stage_index = (source_ref.object_type != VK_OBJECT_TYPE_UNKNOWN) ? source_ref.stage_index : range->source_stage_index;
+			assert(source_ref.object_type == VK_OBJECT_TYPE_UNKNOWN || source_ref.object_offset >= 0);
+			const VkDeviceSize output_offset = (source_ref.object_type != VK_OBJECT_TYPE_UNKNOWN) ? (VkDeviceSize)source_ref.object_offset : range->buffer_offset + local_offset;
 			discovered.push_back({
 				.buffer_data = range->buffer_data,
 				.output_object_type = output_object_type,
 				.output_object_index = output_object_index,
 				.output_stage_index = output_stage_index,
-				.offset = range->buffer_offset + local_offset,
+				.offset = output_offset,
 				.size = sizeof(VkDeviceAddress),
 				.type = VK_MARKING_TYPE_DEVICE_ADDRESS_ARM,
 				.subtype = subtype,

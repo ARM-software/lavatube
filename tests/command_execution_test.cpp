@@ -134,6 +134,21 @@ static std::vector<uint32_t> bda_buffer_read_shader_code()
 	return shader_code_from_bytes(command_execution_bda_buffer_read_spv, command_execution_bda_buffer_read_spv_len);
 }
 
+static std::vector<uint32_t> bda_interleave_copy_shader_code()
+{
+	return shader_code_from_bytes(command_execution_bda_interleave_copy_spv, command_execution_bda_interleave_copy_spv_len);
+}
+
+static std::vector<uint32_t> bda_interleave_output_shader_code()
+{
+	return shader_code_from_bytes(command_execution_bda_interleave_output_spv, command_execution_bda_interleave_output_spv_len);
+}
+
+static std::vector<uint32_t> bda_two_store_shader_code()
+{
+	return shader_code_from_bytes(command_execution_bda_two_store_direct_spv, command_execution_bda_two_store_direct_spv_len);
+}
+
 static void execute_null()
 {
 	trackeddevice device_data;
@@ -711,6 +726,294 @@ static void execute_compute_shader_bda_copied_address_chain()
 	allocator.destroy();
 }
 
+static void execute_compute_shader_bda_two_lane_output_provenance()
+{
+	constexpr VkDeviceSize address_buffer_size = sizeof(VkDeviceAddress) * 2;
+	constexpr VkDeviceSize color_buffer_size = sizeof(uint32_t) * 4;
+	constexpr VkDeviceSize output_buffer_size = sizeof(uint32_t) * 4;
+	constexpr VkDeviceAddress output_address = 0x770100000ull;
+	constexpr uint32_t color0_lo = 0x12340000;
+	constexpr uint32_t color0_hi = 0x56780000;
+	constexpr uint32_t color1_lo = 0x12340001;
+	constexpr uint32_t color1_hi = 0x56780001;
+
+	VkBuffer_index.clear();
+	VkBuffer_index.resize(3);
+	init_buffer(0, address_buffer_size);
+	init_buffer(1, color_buffer_size);
+	init_buffer(2, output_buffer_size);
+	VkBuffer_index[0].usage |= VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+	VkBuffer_index[1].usage |= VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+	VkBuffer_index[2].usage |= VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+	VkBuffer_index[2].capture_device_address = output_address;
+	VkBuffer_index[2].device_address = output_address;
+
+	std::vector<trackedimage> images;
+	std::vector<trackedtensor> tensors;
+	std::vector<trackeddatagraphpipelinesession> sessions;
+	suballocator allocator;
+	allocator.create(VK_NULL_HANDLE, VK_NULL_HANDLE, images, VkBuffer_index, tensors, sessions, 1, false);
+	allocator.add_trackedobject(0, 1, VkBuffer_index[0]);
+	allocator.add_trackedobject(0, 2, VkBuffer_index[1]);
+	allocator.add_trackedobject(0, 3, VkBuffer_index[2]);
+
+	suballoc_location address_buffer = allocator.find_buffer_memory(0);
+	suballoc_location color_buffer = allocator.find_buffer_memory(1);
+	suballoc_location output_buffer = allocator.find_buffer_memory(2);
+	std::memset(address_buffer.memory, 0, address_buffer.size);
+	std::memset(color_buffer.memory, 0, color_buffer.size);
+	std::memset(output_buffer.memory, 0, output_buffer.size);
+
+	const VkDeviceAddress address0 = output_address;
+	const VkDeviceAddress address1 = output_address + sizeof(VkDeviceAddress);
+	std::memcpy(address_buffer.memory, &address0, sizeof(address0));
+	std::memcpy(reinterpret_cast<char*>(address_buffer.memory) + sizeof(VkDeviceAddress), &address1, sizeof(address1));
+	store_u32(color_buffer, 0, color0_lo);
+	store_u32(color_buffer, sizeof(uint32_t), color0_hi);
+	store_u32(color_buffer, sizeof(uint32_t) * 2, color1_lo);
+	store_u32(color_buffer, sizeof(uint32_t) * 3, color1_hi);
+
+	const change_source address_source = make_source(51);
+	const change_source color_source = make_source(52);
+	VkBuffer_index[0].source.register_source(0, address_buffer_size, address_source, 1, 0, VK_OBJECT_TYPE_BUFFER, 0);
+	VkBuffer_index[1].source.register_source(0, color_buffer_size, color_source, 1, 0, VK_OBJECT_TYPE_BUFFER, 1);
+
+	VkDescriptorSet_index.clear();
+	VkDescriptorSet_index.resize(1);
+	VkDescriptorSet_index[0].bound_buffers[0] = { &VkBuffer_index[0], 0, address_buffer_size };
+	VkDescriptorSet_index[0].bound_buffers[1] = { &VkBuffer_index[1], 0, color_buffer_size };
+
+	init_compute_pipeline(6, bda_two_store_shader_code());
+
+	trackedcmdbuffer cmdbuffer_data;
+	cmdbuffer_data.index = 0;
+	add_bind_descriptorset(cmdbuffer_data, 0);
+	add_bind_compute_pipeline(cmdbuffer_data);
+	add_dispatch(cmdbuffer_data, make_source(53));
+
+	trackeddevice device_data;
+	device_data.index = 0;
+	device_data.allocator = &allocator;
+
+	address_remapper<trackedobject> device_address_remapping;
+	device_address_remapping.add(output_address, &VkBuffer_index[2]);
+	std::list<address_rewrite> global_output_rewrite_queue;
+	std::deque<descriptor_rewrite> pending_descriptor_rewrites;
+	std::vector<descriptor_buffer_payload> descriptor_buffer_payloads;
+
+	command_execution_data data {
+		.device_data = device_data,
+		.cmdbuffer_data = cmdbuffer_data,
+		.device_address_remapping = device_address_remapping,
+		.global_output_rewrite_queue = global_output_rewrite_queue,
+		.pending_descriptor_rewrites = pending_descriptor_rewrites,
+		.descriptor_buffer_payloads = descriptor_buffer_payloads,
+	};
+
+	assert(execute_commands(data));
+	assert(load_u32(output_buffer, 0) == color0_lo);
+	assert(load_u32(output_buffer, sizeof(uint32_t)) == color0_hi);
+	assert(load_u32(output_buffer, sizeof(uint32_t) * 2) == color1_lo);
+	assert(load_u32(output_buffer, sizeof(uint32_t) * 3) == color1_hi);
+	assert(VkPipeline_index[0].shader_stages[0].calls == 1);
+	assert(data.stats.commands == 3);
+	assert(data.stats.execution_commands == 1);
+
+	change_source output_source0;
+	change_source output_source1;
+	assert(VkBuffer_index[2].source.try_get_source(0, sizeof(VkDeviceAddress), output_source0));
+	assert(VkBuffer_index[2].source.try_get_source(sizeof(VkDeviceAddress), sizeof(VkDeviceAddress), output_source1));
+	assert(same_source(output_source0, color_source));
+	assert(same_source(output_source1, color_source));
+	assert(global_output_rewrite_queue.size() == 1);
+	const address_rewrite& rewrite = global_output_rewrite_queue.front();
+	assert(same_source(rewrite.source, address_source));
+	assert(rewrite.object_type == VK_OBJECT_TYPE_BUFFER);
+	assert(rewrite.object_index == 0);
+	assert(rewrite.markings);
+	assert(rewrite.markings->count == 2);
+	assert(rewrite.markings->pMarkingTypes[0] == VK_MARKING_TYPE_DEVICE_ADDRESS_ARM);
+	assert(rewrite.markings->pMarkingTypes[1] == VK_MARKING_TYPE_DEVICE_ADDRESS_ARM);
+	assert(rewrite.markings->pOffsets[0] == 0);
+	assert(rewrite.markings->pOffsets[1] == sizeof(VkDeviceAddress));
+	assert(descriptor_buffer_payloads.empty());
+	for (address_rewrite& entry : global_output_rewrite_queue)
+	{
+		free_marked_offsets(entry.markings);
+	}
+
+	allocator.destroy();
+}
+
+static void execute_compute_shader_bda_interleave_copied_address_provenance()
+{
+	constexpr VkDeviceSize address_buffer_size = sizeof(VkDeviceAddress) * 2;
+	constexpr VkDeviceSize color_buffer_size = sizeof(uint32_t) * 4;
+	constexpr VkDeviceSize interleave_entry_size = sizeof(uint32_t) * 4;
+	constexpr VkDeviceSize interleave_color_offset = 0;
+	constexpr VkDeviceSize interleave_address_offset = sizeof(uint32_t) * 2;
+	constexpr VkDeviceSize interleave_buffer_size = interleave_entry_size * 2;
+	constexpr VkDeviceSize output_buffer_size = sizeof(uint32_t) * 4;
+	constexpr VkDeviceAddress output_address = 0x880100000ull;
+	constexpr uint32_t color0_lo = 0x22340000;
+	constexpr uint32_t color0_hi = 0x66780000;
+	constexpr uint32_t color1_lo = 0x22340001;
+	constexpr uint32_t color1_hi = 0x66780001;
+
+	VkBuffer_index.clear();
+	VkBuffer_index.resize(4);
+	init_buffer(0, address_buffer_size);
+	init_buffer(1, color_buffer_size);
+	init_buffer(2, interleave_buffer_size);
+	init_buffer(3, output_buffer_size);
+	VkBuffer_index[0].usage |= VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+	VkBuffer_index[1].usage |= VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+	VkBuffer_index[2].usage |= VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+	VkBuffer_index[3].usage |= VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+	VkBuffer_index[3].capture_device_address = output_address;
+	VkBuffer_index[3].device_address = output_address;
+
+	std::vector<trackedimage> images;
+	std::vector<trackedtensor> tensors;
+	std::vector<trackeddatagraphpipelinesession> sessions;
+	suballocator allocator;
+	allocator.create(VK_NULL_HANDLE, VK_NULL_HANDLE, images, VkBuffer_index, tensors, sessions, 1, false);
+	allocator.add_trackedobject(0, 1, VkBuffer_index[0]);
+	allocator.add_trackedobject(0, 2, VkBuffer_index[1]);
+	allocator.add_trackedobject(0, 3, VkBuffer_index[2]);
+	allocator.add_trackedobject(0, 4, VkBuffer_index[3]);
+
+	suballoc_location address_buffer = allocator.find_buffer_memory(0);
+	suballoc_location color_buffer = allocator.find_buffer_memory(1);
+	suballoc_location interleave_buffer = allocator.find_buffer_memory(2);
+	suballoc_location output_buffer = allocator.find_buffer_memory(3);
+	std::memset(address_buffer.memory, 0, address_buffer.size);
+	std::memset(color_buffer.memory, 0, color_buffer.size);
+	std::memset(interleave_buffer.memory, 0, interleave_buffer.size);
+	std::memset(output_buffer.memory, 0, output_buffer.size);
+
+	const VkDeviceAddress address0 = output_address;
+	const VkDeviceAddress address1 = output_address + sizeof(VkDeviceAddress);
+	std::memcpy(address_buffer.memory, &address0, sizeof(address0));
+	std::memcpy(reinterpret_cast<char*>(address_buffer.memory) + sizeof(VkDeviceAddress), &address1, sizeof(address1));
+	store_u32(color_buffer, 0, color0_lo);
+	store_u32(color_buffer, sizeof(uint32_t), color0_hi);
+	store_u32(color_buffer, sizeof(uint32_t) * 2, color1_lo);
+	store_u32(color_buffer, sizeof(uint32_t) * 3, color1_hi);
+
+	const change_source address_source = make_source(61);
+	const change_source color_source = make_source(62);
+	VkBuffer_index[0].source.register_source(0, address_buffer_size, address_source, 1, 0, VK_OBJECT_TYPE_BUFFER, 0);
+	VkBuffer_index[1].source.register_source(0, color_buffer_size, color_source, 1, 0, VK_OBJECT_TYPE_BUFFER, 1);
+
+	VkPipeline_index.clear();
+	const uint32_t interleave_pipeline_index = add_compute_pipeline(7, bda_interleave_copy_shader_code());
+	const uint32_t output_pipeline_index = add_compute_pipeline(8, bda_interleave_output_shader_code());
+
+	trackeddevice device_data;
+	device_data.index = 0;
+	device_data.allocator = &allocator;
+
+	address_remapper<trackedobject> device_address_remapping;
+	device_address_remapping.add(output_address, &VkBuffer_index[3]);
+	std::list<address_rewrite> global_output_rewrite_queue;
+	std::deque<descriptor_rewrite> pending_descriptor_rewrites;
+	std::vector<descriptor_buffer_payload> descriptor_buffer_payloads;
+
+	trackedcmdbuffer interleave_cmdbuffer_data;
+	interleave_cmdbuffer_data.index = 0;
+	add_bind_compute_pipeline(interleave_cmdbuffer_data, interleave_pipeline_index);
+	add_dispatch(interleave_cmdbuffer_data, make_source(63));
+
+	command_execution_data interleave_data {
+		.device_data = device_data,
+		.cmdbuffer_data = interleave_cmdbuffer_data,
+		.device_address_remapping = device_address_remapping,
+		.global_output_rewrite_queue = global_output_rewrite_queue,
+		.pending_descriptor_rewrites = pending_descriptor_rewrites,
+		.descriptor_buffer_payloads = descriptor_buffer_payloads,
+	};
+	interleave_data.descriptorsets[0][0] = { &VkBuffer_index[0], 0, address_buffer_size };
+	interleave_data.descriptorsets[0][1] = { &VkBuffer_index[1], 0, color_buffer_size };
+	interleave_data.descriptorsets[0][2] = { &VkBuffer_index[2], 0, interleave_buffer_size };
+
+	assert(execute_commands(interleave_data));
+	assert(load_u32(interleave_buffer, 0) == color0_lo);
+	assert(load_u32(interleave_buffer, sizeof(uint32_t)) == color0_hi);
+	assert(load_u32(interleave_buffer, interleave_address_offset) == (uint32_t)address0);
+	assert(load_u32(interleave_buffer, interleave_address_offset + sizeof(uint32_t)) == (uint32_t)(address0 >> 32));
+	assert(load_u32(interleave_buffer, interleave_entry_size) == color1_lo);
+	assert(load_u32(interleave_buffer, interleave_entry_size + sizeof(uint32_t)) == color1_hi);
+	assert(load_u32(interleave_buffer, interleave_entry_size + interleave_address_offset) == (uint32_t)address1);
+	assert(load_u32(interleave_buffer, interleave_entry_size + interleave_address_offset + sizeof(uint32_t)) == (uint32_t)(address1 >> 32));
+	assert(VkPipeline_index[interleave_pipeline_index].shader_stages[0].calls == 1);
+	assert(interleave_data.stats.commands == 2);
+	assert(interleave_data.stats.execution_commands == 1);
+
+	change_source interleave_color_source0;
+	change_source interleave_color_source1;
+	change_source interleave_address_source0;
+	change_source interleave_address_source1;
+	assert(VkBuffer_index[2].source.try_get_source(interleave_color_offset, sizeof(VkDeviceAddress), interleave_color_source0));
+	assert(VkBuffer_index[2].source.try_get_source(interleave_entry_size + interleave_color_offset, sizeof(VkDeviceAddress), interleave_color_source1));
+	assert(VkBuffer_index[2].source.try_get_source(interleave_address_offset, sizeof(VkDeviceAddress), interleave_address_source0));
+	assert(VkBuffer_index[2].source.try_get_source(interleave_entry_size + interleave_address_offset, sizeof(VkDeviceAddress), interleave_address_source1));
+	assert(same_source(interleave_color_source0, color_source));
+	assert(same_source(interleave_color_source1, color_source));
+	assert(same_source(interleave_address_source0, address_source));
+	assert(same_source(interleave_address_source1, address_source));
+	assert(global_output_rewrite_queue.empty());
+
+	trackedcmdbuffer output_cmdbuffer_data;
+	output_cmdbuffer_data.index = 0;
+	add_bind_compute_pipeline(output_cmdbuffer_data, output_pipeline_index);
+	add_dispatch(output_cmdbuffer_data, make_source(64));
+
+	command_execution_data output_data {
+		.device_data = device_data,
+		.cmdbuffer_data = output_cmdbuffer_data,
+		.device_address_remapping = device_address_remapping,
+		.global_output_rewrite_queue = global_output_rewrite_queue,
+		.pending_descriptor_rewrites = pending_descriptor_rewrites,
+		.descriptor_buffer_payloads = descriptor_buffer_payloads,
+	};
+	output_data.descriptorsets[0][0] = { &VkBuffer_index[2], 0, interleave_buffer_size };
+
+	assert(execute_commands(output_data));
+	assert(load_u32(output_buffer, 0) == color0_lo);
+	assert(load_u32(output_buffer, sizeof(uint32_t)) == color0_hi);
+	assert(load_u32(output_buffer, sizeof(uint32_t) * 2) == color1_lo);
+	assert(load_u32(output_buffer, sizeof(uint32_t) * 3) == color1_hi);
+	assert(VkPipeline_index[output_pipeline_index].shader_stages[0].calls == 1);
+	assert(output_data.stats.commands == 2);
+	assert(output_data.stats.execution_commands == 1);
+
+	change_source output_source0;
+	change_source output_source1;
+	assert(VkBuffer_index[3].source.try_get_source(0, sizeof(VkDeviceAddress), output_source0));
+	assert(VkBuffer_index[3].source.try_get_source(sizeof(VkDeviceAddress), sizeof(VkDeviceAddress), output_source1));
+	assert(same_source(output_source0, color_source));
+	assert(same_source(output_source1, color_source));
+	assert(global_output_rewrite_queue.size() == 1);
+	const address_rewrite& rewrite = global_output_rewrite_queue.front();
+	assert(same_source(rewrite.source, address_source));
+	assert(rewrite.object_type == VK_OBJECT_TYPE_BUFFER);
+	assert(rewrite.object_index == 0);
+	assert(rewrite.markings);
+	assert(rewrite.markings->count == 2);
+	assert(rewrite.markings->pMarkingTypes[0] == VK_MARKING_TYPE_DEVICE_ADDRESS_ARM);
+	assert(rewrite.markings->pMarkingTypes[1] == VK_MARKING_TYPE_DEVICE_ADDRESS_ARM);
+	assert(rewrite.markings->pOffsets[0] == 0);
+	assert(rewrite.markings->pOffsets[1] == sizeof(VkDeviceAddress));
+	assert(descriptor_buffer_payloads.empty());
+	for (address_rewrite& entry : global_output_rewrite_queue)
+	{
+		free_marked_offsets(entry.markings);
+	}
+
+	allocator.destroy();
+}
+
 int main(int argc, char** argv)
 {
 	unsigned perf_run = 0;
@@ -738,6 +1041,8 @@ int main(int argc, char** argv)
 	execute_compute_shader_copy_provenance();
 	execute_compute_shader_bda_unbound_input();
 	execute_compute_shader_bda_copied_address_chain();
+	execute_compute_shader_bda_two_lane_output_provenance();
+	execute_compute_shader_bda_interleave_copied_address_provenance();
 
 	if (perf_run > 0)
 	{

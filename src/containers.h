@@ -51,6 +51,7 @@ struct host_write_reference
 	VkObjectType object_type = VK_OBJECT_TYPE_UNKNOWN;
 	uint32_t object_index = CONTAINER_NULL_VALUE;
 	uint32_t stage_index = CONTAINER_NULL_VALUE;
+	int64_t object_offset = 0;
 };
 
 /// Defining the minimum interface to a concurrent map that we need.
@@ -182,6 +183,7 @@ public:
 		for (const source_span& span : spans)
 		{
 			if (!same_reference(span.reference, reference)) return false;
+			if (has_source_object(reference) && span.reference.object_offset != reference.object_offset + (int64_t)(span.start - address)) return false;
 		}
 		return true;
 	}
@@ -215,17 +217,21 @@ public:
 	}
 
 	void register_source(uint64_t address, uint64_t size, change_source source, uint32_t elements = 1, uint32_t stride = 0,
-		VkObjectType object_type = VK_OBJECT_TYPE_UNKNOWN, uint32_t object_index = CONTAINER_NULL_VALUE, uint32_t stage_index = CONTAINER_NULL_VALUE)
+		VkObjectType object_type = VK_OBJECT_TYPE_UNKNOWN, uint32_t object_index = CONTAINER_NULL_VALUE, uint32_t stage_index = CONTAINER_NULL_VALUE,
+		uint64_t object_offset = UINT64_MAX)
 	{
 		if (size == 0) return;
 		std::unique_lock lock(mutex);
 		assert(elements > 0);
 		source.self_test();
+		if (object_offset == UINT64_MAX) object_offset = address;
+		assert(object_offset <= (uint64_t)INT64_MAX);
 		const host_write_reference reference {
 			.source = source,
 			.object_type = object_type,
 			.object_index = object_index,
 			.stage_index = stage_index,
+			.object_offset = (int64_t)object_offset,
 		};
 
 		if (elements == 1)
@@ -245,7 +251,9 @@ public:
 		for (uint32_t i = 0; i < elements; ++i)
 		{
 			const uint64_t start = address + (uint64_t)i * (uint64_t)stride;
-			register_source_unlocked(start, size, reference);
+			host_write_reference element_reference = reference;
+			element_reference.object_offset = object_offset + (uint64_t)i * (uint64_t)stride;
+			register_source_unlocked(start, size, element_reference);
 		}
 	}
 
@@ -303,6 +311,21 @@ private:
 			&& a.stage_index == b.stage_index;
 	}
 
+	static bool has_source_object(const host_write_reference& reference)
+	{
+		return reference.object_type != VK_OBJECT_TYPE_UNKNOWN
+			&& reference.object_index != CONTAINER_NULL_VALUE;
+	}
+
+	static bool contiguous_reference(const source_span& previous, uint64_t next_start, const host_write_reference& next)
+	{
+		if (!same_reference(previous.reference, next)) return false;
+		if (!has_source_object(previous.reference)) return previous.end == next_start;
+		const uint64_t previous_size = previous.end - previous.start;
+		return previous.reference.object_offset + (int64_t)previous_size == next.object_offset
+			&& previous.end == next_start;
+	}
+
 	static uint64_t checked_end(uint64_t address, uint64_t size)
 	{
 		const uint64_t end = address + size;
@@ -342,8 +365,9 @@ private:
 				if (require_full_coverage) return false;
 				continue;
 			}
+			if (has_source_object(reference)) reference.object_offset += (int64_t)start;
 
-			if (!out.empty() && out.back().end == start && same_reference(out.back().reference, reference))
+			if (!out.empty() && contiguous_reference(out.back(), start, reference))
 			{
 				out.back().end = span_end;
 			}
@@ -367,7 +391,9 @@ private:
 		const auto result = tracker.queryDetailed(address);
 		assert(result.has_value());
 		assert(result->address == address);
-		fragment_sources[result->fragment_id] = reference;
+		host_write_reference stored_reference = reference;
+		if (has_source_object(stored_reference)) stored_reference.object_offset -= (int64_t)address;
+		fragment_sources[result->fragment_id] = stored_reference;
 	}
 
 	tracker_type tracker;
