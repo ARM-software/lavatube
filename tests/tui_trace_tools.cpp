@@ -48,6 +48,7 @@ static std::string fake_response(const std::string& command)
 {
 	if (command == "status") return "PAUSED\n";
 	if (command == "info objects") return "object_type\tcount\nVkBuffer\t2\n";
+	if (command == "info suballocator") return "| Device | Heap | Total Bytes |\n|--------|------|-------------|\n| 0      | 0    | 33554432    |\n";
 	if (command == "step calls 2") return "PAUSED packet=10 call=4 vkQueueSubmit\n";
 	if (command == "show VkBuffer 1") return "{ \"size\" : 32 }\n";
 	if (command == "parameters") return "{ \"command\" : \"vkQueueSubmit\" }\n";
@@ -155,7 +156,7 @@ static void test_service_tools()
 	int port = 0;
 	fake_service_state state;
 	state.listen_fd = make_fake_listener(port);
-	state.expected_connections = 5;
+	state.expected_connections = 6;
 	std::thread thread(fake_service_thread, &state);
 
 	tui_trace_tools_options options;
@@ -179,17 +180,22 @@ static void test_service_tools()
 	assert(result.ok);
 	assert(result.output.find("\"size\"") != std::string::npos);
 
+	result = tools.execute("get_suballocator_info", "{}");
+	assert(result.ok);
+	assert(result.output.find("Total Bytes") != std::string::npos);
+
 	result = tools.execute("get_current_call_parameters", "{}");
 	assert(result.ok);
 	assert(result.output.find("vkQueueSubmit") != std::string::npos);
 
 	thread.join();
-	assert(state.commands.size() == 5);
+	assert(state.commands.size() == 6);
 	assert(state.commands[0] == "status");
 	assert(state.commands[1] == "info objects");
 	assert(state.commands[2] == "step calls 2");
 	assert(state.commands[3] == "show VkBuffer 1");
-	assert(state.commands[4] == "parameters");
+	assert(state.commands[4] == "info suballocator");
+	assert(state.commands[5] == "parameters");
 }
 
 int main()

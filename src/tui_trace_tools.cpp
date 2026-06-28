@@ -206,9 +206,10 @@ Json::Value tui_trace_tools::tool_definitions() const
 		tools.append(function_tool_schema("get_current_call_parameters", "Print JSON parameters for the currently paused Vulkan call.", empty_parameters()));
 		tools.append(function_tool_schema("list_threads", "List traced threads from the replay service.", empty_parameters()));
 		tools.append(function_tool_schema("get_memory_info", "Print current Vulkan memory heap usage and budgets from the replay service.", empty_parameters()));
+		tools.append(function_tool_schema("get_suballocator_info", "Print current suballocator heap internals from the replay service as a Markdown table.", empty_parameters()));
 		tools.append(function_tool_schema("get_service_info", "Print general replay service information.", empty_parameters()));
 	}
-	tools.append(function_tool_schema("list_objects_created", "List Vulkan object types with non-zero creation counts from limits.json as TSV.", empty_parameters()));
+	tools.append(function_tool_schema("list_objects_created", "List Vulkan object types with non-zero creation counts from limits.json as a table.", empty_parameters()));
 	tools.append(function_tool_schema("get_frame_meta", "Return metadata for one frame from frames_<thread>.json.", parameters_with_thread_frame()));
 	tools.append(function_tool_schema("get_thread_meta", "Return per-thread metadata from frames_<thread>.json, excluding the large frames array.", parameters_with_thread()));
 	tools.append(function_tool_schema("get_object_meta", "Return metadata for one object from tracking.json.", parameters_with_object()));
@@ -231,6 +232,7 @@ tui_tool_result tui_trace_tools::execute(const std::string& name, const std::str
 	if (mReplayService && name == "list_threads") return list_threads();
 	if (mReplayService && name == "get_service_info") return get_service_info();
 	if (mReplayService && name == "get_memory_info") return get_memory_info();
+	if (mReplayService && name == "get_suballocator_info") return get_suballocator_info();
 	if (mReplayService && name == "get_service_status") return get_service_status();
 	if (mReplayService && name == "get_current_call_parameters") return get_current_call_parameters();
 	if (mReplayService && name == "continue_replay") return continue_replay();
@@ -384,6 +386,11 @@ tui_tool_result tui_trace_tools::get_service_info() const
 tui_tool_result tui_trace_tools::get_memory_info() const
 {
 	return service_command("info memory");
+}
+
+tui_tool_result tui_trace_tools::get_suballocator_info() const
+{
+	return service_command("info suballocator");
 }
 
 tui_tool_result tui_trace_tools::get_service_status() const

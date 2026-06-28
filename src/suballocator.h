@@ -7,6 +7,8 @@
 #include "util.h"
 #include "vulkan_ext.h"
 
+#include <string>
+
 struct suballoc_location
 {
 	VkDeviceMemory memory;
@@ -46,6 +48,9 @@ struct suballocator
 
 	/// Get performance metrics for the suballocator. This is not thread safe.
 	suballoc_metrics performance() const;
+
+	/// Get heap-level internals for live inspection. This is not thread safe.
+	std::string info_markdown(uint32_t device_index) const;
 
 	suballocator();
 	~suballocator();

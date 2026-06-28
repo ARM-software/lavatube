@@ -30,6 +30,7 @@
 #include "helpers_read.h"
 #include "tostring.h"
 #include "trace_metadata.h"
+#include "suballocator.h"
 
 static lava_reader replayer;
 static std::atomic<bool> done_var { false };
@@ -135,6 +136,21 @@ static std::string cli_memory_info_response()
 		});
 	}
 	return out.to_markdown();
+}
+
+static std::string cli_suballocator_info_response()
+{
+	std::string response;
+	for (uint32_t i = 0; i < VkDevice_index.size(); i++)
+	{
+		trackeddevice& device_data = VkDevice_index.at(i);
+		if (!device_data.allocator) continue;
+		if (!response.empty()) response += "\n";
+		response += device_data.allocator->info_markdown(i);
+	}
+	if (response.empty()) return "No suballocator data available\n";
+	if (response.back() != '\n') response += "\n";
+	return response;
 }
 
 static void cli_clear_function_target(lava_file_reader& reader)
@@ -496,9 +512,20 @@ static void service_listener()
 				response = cli_memory_info_response();
 			}
 		}
+		else if (command.size() == 2 && command[0] == "info" && command[1] == "suballocator")
+		{
+			if (replayer.cli_running.load(std::memory_order_acquire))
+			{
+				response = "ERROR\n";
+			}
+			else
+			{
+				response = cli_suballocator_info_response();
+			}
+		}
 		else if (command.size() == 2 && command[0] == "info" && command[1] == "objects")
 		{
-			response = trace_metadata_objects_tsv(replayer.packed_file());
+			response = trace_metadata_objects_markdown(replayer.packed_file());
 		}
 		else if (command.size() == 3 && command[0] == "info" && command[1] == "thread")
 		{

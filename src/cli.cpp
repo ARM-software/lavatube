@@ -46,6 +46,7 @@ void usage()
 	printf("    info thread THREAD       Print JSON metadata for THREAD.\n");
 	printf("    info frame THREAD FRAME  Print JSON metadata for FRAME in THREAD.\n");
 	printf("    info memory              Print current Vulkan memory heap usage and budgets.\n");
+	printf("    info suballocator        Print current suballocator heap internals.\n");
 	printf("    info                     Print general service info.\n");
 	exit(-1);
 }

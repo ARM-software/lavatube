@@ -25,7 +25,7 @@ Already implemented instructions:
 * `lava-cli stop` - stops the replay
 * `lava-cli step [packets X|calls X]` - step the given number of packets or API calls ahead
 * `lava-cli goto X|NAME` - continue replay until API call number X or the next API call named NAME
-* `lava-cli info threads|memory`
+* `lava-cli info threads|memory|suballocator`
 * `lava-cli params|parameters` - print command or packet input parameters as JSON
 * `lava-cli show <object type> <index>` - print given globally tracked object and its metadata as JSON
 	- pipelines : prints out info from `VK_KHR_pipeline_executable_properties`

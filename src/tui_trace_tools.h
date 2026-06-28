@@ -43,6 +43,7 @@ private:
 	tui_tool_result list_threads() const;
 	tui_tool_result get_service_info() const;
 	tui_tool_result get_memory_info() const;
+	tui_tool_result get_suballocator_info() const;
 	tui_tool_result get_service_status() const;
 	tui_tool_result get_current_call_parameters() const;
 	tui_tool_result continue_replay() const;

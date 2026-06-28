@@ -2,13 +2,16 @@
 
 #include <algorithm>
 #include <memory>
+#include <string.h>
 #include <vector>
 #include <functional>
 #include "containers.h"
+#include "datatable.h"
 #include "lavamutex.h"
 
 #include "lavatube.h"
 #include "memory.h"
+#include "tostring.h"
 
 // --* Vulkan memory suballocator *--
 // Each thread has its own set of heaps.
@@ -107,6 +110,7 @@ struct suballocator_private
 	uint32_t get_device_memory_type(uint32_t type_filter, VkMemoryPropertyFlags properties);
 	suballoc_location allocate(uint16_t tid, uint32_t memoryTypeIndex, suballocation &s, VkMemoryPropertyFlags flags, lava_tiling tiling, bool dedicated, VkMemoryAllocateFlags allocflags);
 	void suballoc_print(FILE* fp) const;
+	std::string info_markdown(uint32_t device_index) const;
 	suballoc_location suballocate(uint16_t tid, uint32_t memoryTypeIndex, suballocation &s, VkMemoryPropertyFlags flags, lava_tiling tiling, VkMemoryAllocateFlags allocflags);
 	void self_test() const;
 	void bind(heap& h, const suballocation& s);
@@ -143,6 +147,75 @@ static bool has_pending_delete(const heap& h, uint32_t offset)
 	return std::find(h.deletes.begin(), h.deletes.end(), offset) != h.deletes.end();
 }
 
+static std::string yes_no(bool value)
+{
+	return value ? "yes" : "no";
+}
+
+static bool string_starts_with(const std::string& value, const char* prefix)
+{
+	const size_t prefix_size = strlen(prefix);
+	return value.size() >= prefix_size && value.compare(0, prefix_size, prefix) == 0;
+}
+
+static std::string compact_flag_token(const std::string& value)
+{
+	std::string out = value;
+	if (string_starts_with(out, "VK_MEMORY_PROPERTY_"))
+	{
+		out.erase(0, strlen("VK_MEMORY_PROPERTY_"));
+	}
+	else if (string_starts_with(out, "VK_MEMORY_ALLOCATE_"))
+	{
+		out.erase(0, strlen("VK_MEMORY_ALLOCATE_"));
+	}
+	if (out.size() >= 4 && out.compare(out.size() - 4, 4, "_BIT") == 0)
+	{
+		out.erase(out.size() - 4);
+	}
+	return out;
+}
+
+static std::string suballocator_flag_string(const std::string& value)
+{
+	if (value.empty()) return "0";
+
+	std::string out;
+	size_t start = 0;
+	while (start < value.size())
+	{
+		const size_t next = value.find(" | ", start);
+		if (!out.empty()) out += " | ";
+		if (next == std::string::npos)
+		{
+			out += compact_flag_token(value.substr(start));
+			break;
+		}
+		out += compact_flag_token(value.substr(start, next - start));
+		start = next + 3;
+	}
+	return out;
+}
+
+static std::string suballocator_tiling_string(lava_tiling tiling)
+{
+	switch (tiling)
+	{
+	case TILING_OPTIMAL: return "optimal";
+	case TILING_LINEAR: return "linear";
+	case TILING_DRM: return "drm";
+	}
+	return "unknown";
+}
+
+static std::string suballocator_percent(uint64_t used, uint64_t total)
+{
+	if (total == 0) return "n/a";
+	char text[64];
+	snprintf(text, sizeof(text), "%.2f%%", ((double)used * 100.0) / (double)total);
+	return text;
+}
+
 // helpers
 
 static VkMemoryPropertyFlags prune_memory_flags(VkMemoryPropertyFlags flags)
@@ -157,6 +230,12 @@ static VkMemoryPropertyFlags prune_memory_flags(VkMemoryPropertyFlags flags)
 suballoc_metrics suballocator::performance() const
 {
 	return priv->performance();
+}
+
+std::string suballocator::info_markdown(uint32_t device_index) const
+{
+	if (!priv) return "No suballocator data available\n";
+	return priv->info_markdown(device_index);
 }
 
 std::vector<std::unique_ptr<heap>>& suballocator_private::thread_heaps(uint16_t tid)
@@ -209,6 +288,75 @@ void suballocator_private::print_memory_usage()
 	}
 	printf("Total memory used:   %10lu\n", (unsigned long)total);
 	printf("Total memory wasted: %10lu\n", (unsigned long)waste);
+}
+
+std::string suballocator_private::info_markdown(uint32_t device_index) const
+{
+	uint64_t total = 0;
+	uint64_t free_bytes = 0;
+	uint64_t objects = 0;
+	uint64_t pending = 0;
+	uint32_t heap_count = 0;
+
+	data_table heaps;
+	heaps.set_headers({"Device", "Heap", "State", "Thread", "Memory Type", "Tiling", "Dedicated", "Flags", "Alloc Flags", "Objects", "Pending Deletes", "Used Bytes", "Free Bytes", "Total Bytes", "Used"});
+
+	uint32_t heap_index = 0;
+	for (const auto& heap_list : heaps_by_thread)
+	{
+		for (const auto& heap_ptr : heap_list)
+		{
+			const heap& h = *heap_ptr;
+			const uint64_t heap_total = h.total;
+			const uint64_t heap_free = h.free;
+			const uint64_t heap_used = heap_total >= heap_free ? heap_total - heap_free : 0;
+			const size_t delete_count = pending_delete_count(h);
+			total += heap_total;
+			free_bytes += heap_free;
+			objects += h.subs.size();
+			pending += delete_count;
+			heap_count++;
+
+			heaps.add_row({
+				_to_string(device_index),
+				_to_string(heap_index),
+				h.mem == VK_NULL_HANDLE ? "retired" : "active",
+				_to_string((unsigned)h.tid),
+				_to_string((unsigned)h.memoryTypeIndex),
+				suballocator_tiling_string(h.tiling),
+				yes_no(h.dedicated),
+				suballocator_flag_string(VkMemoryPropertyFlags_to_string(h.flags)),
+				suballocator_flag_string(VkMemoryAllocateFlags_to_string(h.allocflags)),
+				_to_string((uint64_t)h.subs.size()),
+				_to_string((uint64_t)delete_count),
+				_to_string(heap_used),
+				_to_string(heap_free),
+				_to_string(heap_total),
+				suballocator_percent(heap_used, heap_total)
+			});
+			heap_index++;
+		}
+	}
+
+	const uint64_t used = total >= free_bytes ? total - free_bytes : 0;
+	data_table summary;
+	summary.set_headers({"Device", "Heaps", "Objects", "Pending Deletes", "Used Bytes", "Free Bytes", "Total Bytes", "Used", "Min Heap Bytes", "Remaining Allocations", "Mixed Tiling", "Run"});
+	summary.add_row({
+		_to_string(device_index),
+		_to_string(heap_count),
+		_to_string(objects),
+		_to_string(pending),
+		_to_string(used),
+		_to_string(free_bytes),
+		_to_string(total),
+		suballocator_percent(used, total),
+		_to_string(min_heap_size),
+		_to_string(max_allocations),
+		yes_no(allow_mixed_tiling),
+		yes_no(run)
+	});
+
+	return summary.to_markdown() + "\n" + heaps.to_markdown();
 }
 
 uint32_t suballocator_private::get_device_memory_type(uint32_t type_filter, VkMemoryPropertyFlags properties)
