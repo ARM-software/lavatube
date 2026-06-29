@@ -151,6 +151,7 @@ uint8_t lava_file_reader::step()
 	if (r != PACKET_VULKAN_API_CALL) current.call_id = UINT16_MAX;
 	printed_current_packet = false;
 	print_packet_frame = current.frame;
+	print_packet_number = current.packet;
 	current_packet_open = true;
 	return r;
 }
@@ -272,11 +273,22 @@ void cli_params_packet(callback_context& cb)
 
 void print_params_publish(callback_context& cb, Json::Value v)
 {
+	if (cb.reader.parent->print_thread_index != UINT32_MAX && cb.reader.current.thread != cb.reader.parent->print_thread_index)
+	{
+		cb.reader.printed_current_packet = true;
+		return;
+	}
+	if (cb.reader.parent->print_packet_index != UINT32_MAX && cb.reader.print_packet_number != cb.reader.parent->print_packet_index)
+	{
+		cb.reader.printed_current_packet = true;
+		return;
+	}
 	if (!cb.reader.parent->is_frame_selected(cb.reader.print_packet_frame))
 	{
 		cb.reader.printed_current_packet = true;
 		return;
 	}
+	v["index"] = cb.reader.print_packet_number;
 	v["frame"] = cb.reader.print_packet_frame;
 	Json::FastWriter writer;
 	const std::string out = writer.write(v);
@@ -311,7 +323,7 @@ void lava_reader::finalize()
 {
 	const double total_time_ms = ((gettime() - mStartTime.load()) / 1000000UL);
 	const double fps = (total_time_ms > 0.0) ? ((double)global_frame_count / (total_time_ms / 1000.0)) : 0.0;
-	ILOG("==== %.2f ms, %u frames (%.2f fps) ====", total_time_ms, global_frame_count, fps);
+	if (run) ILOG("==== %.2f ms, %u frames (%.2f fps) ====", total_time_ms, global_frame_count, fps);
 	Json::Value out;
 	out["fps"] = fps;
 	out["frames"] = global_frame_count;
@@ -341,7 +353,7 @@ void lava_reader::finalize()
 	{
 		process_time = diff_timespec(&stop_process_cpu_usage, &process_cpu_usage);
 	}
-	ILOG("CPU time spent in ms - readahead workers %lu, API runners %lu, full process %lu", (long unsigned)worker, (long unsigned)runner, (long unsigned)process_time);
+	if (run) ILOG("CPU time spent in ms - readahead workers %lu, API runners %lu, full process %lu", (long unsigned)worker, (long unsigned)runner, (long unsigned)process_time);
 	out["readahead_workers_time"] = worker;
 	out["api_runners_time"] = runner;
 	out["process_time"] = process_time;

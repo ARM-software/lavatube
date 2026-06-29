@@ -21,6 +21,12 @@ if(DEFINED FRAME_START OR DEFINED FRAME_END)
 	endif()
 	list(APPEND TOOL_ARGS -f "${FRAME_START}" "${FRAME_END}")
 endif()
+if(DEFINED INDEX)
+	list(APPEND TOOL_ARGS -i "${INDEX}")
+endif()
+if(DEFINED THREAD)
+	list(APPEND TOOL_ARGS -t "${THREAD}")
+endif()
 
 execute_process(
 	COMMAND "${LAVA_PRINT}" ${TOOL_ARGS} "${INPUT_TRACE}"
@@ -32,16 +38,21 @@ if(NOT print_result EQUAL 0)
 endif()
 
 if(DEFINED EXPECT_FRAME)
-	execute_process(
-		COMMAND "${PYTHON_EXECUTABLE}" "${CMAKE_CURRENT_LIST_DIR}/check_ndjson_packets.py" "${OUTPUT_FILE}" "${EXPECT_FRAME}"
-		RESULT_VARIABLE check_result
-	)
+	set(CHECK_ARGS --expect-frame "${EXPECT_FRAME}")
 else()
-	execute_process(
-		COMMAND "${PYTHON_EXECUTABLE}" "${CMAKE_CURRENT_LIST_DIR}/check_ndjson_packets.py" "${OUTPUT_FILE}"
-		RESULT_VARIABLE check_result
-	)
+	set(CHECK_ARGS)
 endif()
+if(DEFINED EXPECT_INDEX)
+	list(APPEND CHECK_ARGS --expect-index "${EXPECT_INDEX}")
+endif()
+if(DEFINED EXPECT_THREAD)
+	list(APPEND CHECK_ARGS --expect-thread "${EXPECT_THREAD}")
+endif()
+
+execute_process(
+	COMMAND "${PYTHON_EXECUTABLE}" "${CMAKE_CURRENT_LIST_DIR}/check_ndjson_packets.py" "${OUTPUT_FILE}" ${CHECK_ARGS}
+	RESULT_VARIABLE check_result
+)
 if(NOT check_result EQUAL 0)
 	message(FATAL_ERROR "lava-print NDJSON validation failed with exit code ${check_result}")
 endif()

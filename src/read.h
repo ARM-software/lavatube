@@ -172,6 +172,8 @@ public:
 
 	/// Whether this replay pass should print every packet as JSON.
 	bool print_packets = false;
+	uint32_t print_thread_index = UINT32_MAX;
+	uint32_t print_packet_index = UINT32_MAX;
 	lava::mutex print_mutex;
 
 	/// Whether we should abort on less serious errors or just warn
@@ -350,6 +352,7 @@ public:
 	bool write_output = false;
 	bool printed_current_packet = false;
 	uint32_t print_packet_frame = 0;
+	uint32_t print_packet_number = 0;
 	uint32_t api_call_count = 0;
 
 	// CLI stuff

@@ -25,6 +25,8 @@ void usage()
 	printf("-d/--debug level       Set debug level [0,1,2,3]\n");
 	printf("-df/--debugfile FILE   Output debug output to the given file\n");
 	printf("-f/--frames start end  Select a frame range\n");
+	printf("-i/--index NUM         Print only the given packet index from the selected thread (by default thread zero)\n");
+	printf("-t/--thread NUM        Select a thread and print only outputs from this given thread\n");
 	printf("--skip-missing-input   Exit with code 77 if the input trace file does not exist\n");
 	printf("-s/--sandbox level     Set security sandbox level (from 1 to 3, with 3 the most strict, default %d)\n", (int)p__sandbox_level);
 	exit(-1);
@@ -65,6 +67,8 @@ int main(int argc, char **argv)
 {
 	int start = 0;
 	int end = -1;
+	uint32_t print_thread_index = UINT32_MAX;
+	uint32_t print_packet_index = UINT32_MAX;
 	int remaining = argc - 1; // zeroth is name of program
 	std::string filename_input;
 	bool skip_missing_input = false;
@@ -98,6 +102,18 @@ int main(int argc, char **argv)
 			if (remaining < 2) usage();
 			start = get_int(argv[++i], remaining);
 			end = get_int(argv[++i], remaining);
+		}
+		else if (match(argv[i], "-i", "--index", remaining))
+		{
+			int index = get_int(argv[++i], remaining);
+			if (index < 0) DIE("Invalid packet index %d", index);
+			print_packet_index = index;
+		}
+		else if (match(argv[i], "-t", "--thread", remaining))
+		{
+			int thread = get_int(argv[++i], remaining);
+			if (thread < 0) DIE("Invalid thread index %d", thread);
+			print_thread_index = thread;
 		}
 		else if (match(argv[i], "-s", "--sandbox", remaining))
 		{
@@ -138,11 +154,30 @@ int main(int argc, char **argv)
 		return 77;
 	}
 
+	if (print_packet_index != UINT32_MAX && print_thread_index == UINT32_MAX)
+	{
+		print_thread_index = 0;
+	}
+
+	if (print_thread_index != UINT32_MAX)
+	{
+		Json::Value meta = packed_json("metadata.json", filename_input);
+		const uint32_t trace_threads = meta["threads"].asUInt();
+		if (print_thread_index >= trace_threads)
+		{
+			printf("Invalid thread index %u for trace with %u threads\n", (unsigned)print_thread_index, (unsigned)trace_threads);
+			close_debug_destination();
+			return -1;
+		}
+	}
+
 	if (p__sandbox_level >= 3) sandbox_level_two();
 
 	lava_reader replayer;
 	replayer.run = false;
 	replayer.print_packets = true;
+	replayer.print_thread_index = print_thread_index;
+	replayer.print_packet_index = print_packet_index;
 	replayer.create_results_file = false;
 	replayer.set_frames(start, end);
 	replayer.init(filename_input);
