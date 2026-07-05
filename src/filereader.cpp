@@ -29,7 +29,6 @@ void file_reader::init(int fd, size_t uncompressed_size, size_t uncompressed_tar
 	{
 		compressed_data += strlen(magic_word);
 		const uint8_t version = (uint8_t)compressed_data[0];
-		assert(version == 1 || version == 2);
 		stream_version = version;
 		compression_algorithm = compressed_data[1];
 		assert(compression_algorithm == LAVATUBE_COMPRESSION_DENSITY || compression_algorithm == LAVATUBE_COMPRESSION_LZ4 || compression_algorithm == LAVATUBE_COMPRESSION_UNCOMPRESSED);
@@ -67,7 +66,6 @@ void file_reader::init_mapped(const packed& pf, size_t uncompressed_size, size_t
 	{
 		compressed_data += strlen(magic_word);
 		const uint8_t version = (uint8_t)compressed_data[0];
-		assert(version == 1 || version == 2);
 		stream_version = version;
 		compression_algorithm = compressed_data[1];
 		assert(compression_algorithm == LAVATUBE_COMPRESSION_DENSITY || compression_algorithm == LAVATUBE_COMPRESSION_LZ4 || compression_algorithm == LAVATUBE_COMPRESSION_UNCOMPRESSED);
@@ -105,18 +103,10 @@ file_reader::file_reader(packed pf, unsigned mytid, size_t uncompressed_size, si
 	: preload_activated(preload_active), tid(mytid), mFilename(pf.inside)
 {
 	total_left = pf.filesize;
-	if (pf.zip_handle)
-	{
-		zip_handle = pf.zip_handle;
-		zip_mapping = pf.zip_mapping;
-		init_mapped(pf, uncompressed_size, uncompressed_target);
-	}
-	else
-	{
-		assert(pf.fd != -1);
-		init(pf.fd, uncompressed_size, uncompressed_target);
-		close(pf.fd);
-	}
+	assert(pf.zip_handle);
+	zip_handle = pf.zip_handle;
+	zip_mapping = pf.zip_mapping;
+	init_mapped(pf, uncompressed_size, uncompressed_target);
 	DLOG("%u : %s opened for reading from inside %s (size %lu) and decompressor thread launched!", tid, pf.inside.c_str(), pf.pack.c_str(), (unsigned long)pf.filesize);
 }
 

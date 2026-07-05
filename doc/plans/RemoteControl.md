@@ -11,7 +11,7 @@ The basic functionality is a new option to `lava-replay` that makes it start pro
 a remote controlled service:
 
 ```
-lava-replay --service <my trace file>.vk
+lava-replay --service <my trace file>.api
 ```
 
 When called like this, it launches a background thread that listens on a TCP port, then
@@ -24,7 +24,7 @@ Already implemented instructions:
 * `lava-cli continue` - continues the replay until the end
 * `lava-cli stop` - stops the replay
 * `lava-cli step [packets X|calls X]` - step the given number of packets or API calls ahead
-* `lava-cli goto X|NAME` - continue replay until API call number X or the next API call named NAME
+* `lava-cli goto X|NAME` - continue replay until packet number X or the next API call named NAME
 * `lava-cli info threads|memory|suballocator`
 * `lava-cli params|parameters` - print command or packet input parameters as JSON
 * `lava-cli show <object type> <index>` - print given globally tracked object and its metadata as JSON

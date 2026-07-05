@@ -31,6 +31,7 @@ struct framedata
 {
 	/// start position in the uncompressed byte stream for this frame
 	uint64_t start_pos;
+	uint32_t packet_index;
 	int global_frame;
 	int local_frame;
 };
@@ -134,6 +135,9 @@ public:
 	VkFormat host_copy_format = VK_FORMAT_UNDEFINED;
 
 	inline void write_api_command(uint16_t id);
+	void begin_packet(uint8_t type);
+	void end_packet();
+	void write_raw_packet(const char* data, uint32_t size);
 
 	inline void write_VkAccelerationStructureNV(VkAccelerationStructureNV val) {} // TBD
 
@@ -144,8 +148,8 @@ public:
 			assert(!t->is_state(trackable::states::uninitialized) && !t->is_state(trackable::states::destroyed));
 			write_uint32_t(t->index);
 			write_int8_t(t->last_modified.thread);
-			write_uint32_t(t->last_modified.call);
-			DLOG3("%u : wrote handle idx=%u tid=%d call=%u", current.thread, (unsigned)t->index, (int)t->last_modified.thread, (unsigned)t->last_modified.call);
+			write_uint32_t(t->last_modified.packet);
+			DLOG3("%u : wrote handle idx=%u tid=%d packet=%u", current.thread, (unsigned)t->index, (int)t->last_modified.thread, (unsigned)t->last_modified.packet);
 		}
 		else
 		{
@@ -173,6 +177,9 @@ private:
 	std::string mPath;
 	std::vector<framedata> frames;
 	char thread_name[16];
+	uint64_t packet_start = 0;
+	uint32_t* packet_size = nullptr;
+	bool packet_open = false;
 };
 
 /// Top level singleton instance for the tracer.
@@ -254,10 +261,9 @@ inline void lava_file_writer::write_api_command(uint16_t id)
 		pending_barrier.store(false, std::memory_order_relaxed);
 		frame_mutex.unlock();
 	}
-	write_uint8_t(PACKET_VULKAN_API_CALL); // API call
+	begin_packet(PACKET_VULKAN_API_CALL); // API call
 	write_uint16_t(id); // API call name by id
 	write_uint32_t(0); // reserved for future use
-	current.call++;
 }
 
 inline lava_file_writer& write_header(const char* funcname, lava_function_id id, bool thread_barrier = false)
@@ -268,6 +274,6 @@ inline lava_file_writer& write_header(const char* funcname, lava_function_id id,
 	writer.write_api_command(id);
 	writer.current.call_id = id;
 	writer.current.frame = instance.global_frame;
-	DLOG("[t%02u %06u] Seq %s%s", writer.current.thread, writer.current.call, funcname, thread_barrier ? " (prefaced by thread barrier)" : "");
+	DLOG("[t%02u %06u] Seq %s%s", writer.current.thread, writer.current.packet, funcname, thread_barrier ? " (prefaced by thread barrier)" : "");
 	return writer;
 }

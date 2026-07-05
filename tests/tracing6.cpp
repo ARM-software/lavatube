@@ -130,7 +130,7 @@ static void retrace_me(lava_reader* r, int tid)
 
 static void read_test(int start, int end)
 {
-	lava_reader reader(TEST_NAME ".vk");
+	lava_reader reader(TEST_NAME ".api");
 	reader.set_frames(start, end);
 	test_register_replay_callbacks();
 	std::vector<std::thread*> threads; // main thread + helper threads

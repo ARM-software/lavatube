@@ -20,6 +20,7 @@ static void write_test_stress()
 {
 	lava_file_writer& file = writer.file_writer();
 	file.self_test();
+	file.begin_packet(PACKET_BUFFER_UPDATE);
 	for (int i = 0; i < 200; i++)
 	{
 		file.write_uint64_t(0xffe0ffe0);
@@ -28,6 +29,7 @@ static void write_test_stress()
 		file.write_array(data.data(), data.size());
 		file.write_string("supercalifragilisticexpialidocious");
 	}
+	file.end_packet();
 	file.self_test();
 }
 
@@ -55,9 +57,11 @@ static void read_test_stress()
 {
 	const int mytid = read_tid.fetch_add(1);
 	lava_file_reader& r = reader->file_reader(mytid);
-	const uint8_t barrier_packet = r.read_uint8_t();
+	const uint8_t barrier_packet = r.step();
 	assert(barrier_packet == 3);
 	r.read_barrier();
+	const uint8_t data_packet = r.step();
+	assert(data_packet == PACKET_BUFFER_UPDATE);
 	for (int i = 0; i < 200; i++)
 	{
 		const uint64_t v1 = r.read_uint64_t();
@@ -72,11 +76,12 @@ static void read_test_stress()
 		const char* str = r.read_string();
 		assert(strcmp(str, "supercalifragilisticexpialidocious") == 0);
 	}
+	r.complete_packet();
 }
 
 static void read_test(const char* name, int num_threads)
 {
-	std::string filename = std::string(name) + ".vk";
+	std::string filename = std::string(name) + ".api";
 	read_tid = 0;
 	reader = new lava_reader(filename);
 	std::vector<std::thread*> threads(num_threads);

@@ -136,71 +136,6 @@ static packed_compare_result compare_regular_file(const std::string& path_a, con
 	return result;
 }
 
-static void convert_packfile_to_zip(const std::string& input, const std::string& output)
-{
-	if (input == output)
-	{
-		FAIL("Input and output files must differ");
-	}
-
-	enum zipc_status status = ZIPC_SUCCESS;
-	zipc* archive = zipc_open(output.c_str(), "w", &status);
-	if (!archive)
-	{
-		FAIL("Failed to create output zip file \"%s\": %s", output.c_str(), zipc_strerror(status));
-	}
-
-	const std::vector<std::string> files = packed_files(input);
-	std::vector<char> buffer(1024 * 1024);
-	for (const std::string& name : files)
-	{
-		packed pf = packed_open(name, input);
-		zipcstream* stream = zipc_stream_open(archive, name.c_str(), "", &status);
-		if (!stream)
-		{
-			pf.close();
-			zipc_close(archive);
-			FAIL("Failed to open zip stream for \"%s\": %s", name.c_str(), zipc_strerror(status));
-		}
-
-		uint64_t remaining = pf.size();
-		while (remaining > 0)
-		{
-			const size_t chunk = std::min<uint64_t>(buffer.size(), remaining);
-			pf.read(buffer.data(), chunk);
-			status = zipc_stream_write(archive, stream, chunk, buffer.data());
-			if (status != ZIPC_SUCCESS)
-			{
-				pf.close();
-				zipc_close(archive);
-				FAIL("Failed while writing \"%s\" to \"%s\": %s", name.c_str(), output.c_str(), zipc_strerror(status));
-			}
-			remaining -= chunk;
-		}
-
-		status = zipc_stream_close(archive, stream);
-		pf.close();
-		if (status != ZIPC_SUCCESS)
-		{
-			zipc_close(archive);
-			FAIL("Failed to finalize \"%s\" in \"%s\": %s", name.c_str(), output.c_str(), zipc_strerror(status));
-		}
-	}
-
-	status = zipc_validate(archive);
-	if (status != ZIPC_SUCCESS)
-	{
-		zipc_close(archive);
-		FAIL("Converted zip file \"%s\" failed validation: %s", output.c_str(), zipc_strerror(status));
-	}
-
-	status = zipc_close(archive);
-	if (status != ZIPC_SUCCESS)
-	{
-		FAIL("Failed to close output zip file \"%s\": %s", output.c_str(), zipc_strerror(status));
-	}
-}
-
 struct semantic_compare_result
 {
 	bool identical = true;
@@ -237,7 +172,6 @@ static int usage(const char* argv0)
 {
 	fprintf(stdout, "Usage:\n");
 	fprintf(stdout, "\t%s pack <output file> <input directory>\n", argv0);
-	fprintf(stdout, "\t%s convert <input packaged file> <output zip file>\n", argv0);
 	fprintf(stdout, "\t%s unpack <output directory> <input packaged file>\n", argv0);
 	fprintf(stdout, "\t%s extract <output file> <input packaged file>\n", argv0);
 	fprintf(stdout, "\t%s add <input file> <input packaged file>\n", argv0);
@@ -313,12 +247,12 @@ static std::string markings_location_string(const collected_markings_entry& entr
 	if (entry.instrtype == PACKET_VULKAN_API_CALL && entry.source.call_id != UINT16_MAX)
 	{
 		where += " (" + std::string(get_function_name(entry.source.call_id))
-			+ ", call " + _to_string(entry.source.call) + ")";
+			+ ", call " + _to_string(entry.source.packet) + ")";
 	}
 	else
 	{
 		where += " (" + std::string(packet_type_name(entry.instrtype))
-			+ ", api call " + _to_string(entry.source.call) + ")";
+			+ ", api call " + _to_string(entry.source.packet) + ")";
 	}
 	return where;
 }
@@ -391,7 +325,7 @@ static void print_markings_entry(const collected_markings_entry& entry)
 	else
 	{
 		print_line("  source: frame " + _to_string((unsigned)entry.source.frame)
-			+ " call " + _to_string((unsigned)entry.source.call)
+			+ " call " + _to_string((unsigned)entry.source.packet)
 			+ " thread " + _to_string((unsigned)entry.source.thread)
 			+ " (call id unknown)");
 	}
@@ -1084,12 +1018,6 @@ int main(int argc, char* argv[])
 		{
 			FAIL("Failed to pack directory \"%s\" into \"%s\"", argv[3], argv[2]);
 		}
-		return 0;
-	}
-	else if (strcmp(argv[1], "convert") == 0)
-	{
-		if (argc != 4) return usage(argv[0]);
-		convert_packfile_to_zip(argv[2], argv[3]);
 		return 0;
 	}
 	else if (strcmp(argv[1], "add") == 0)

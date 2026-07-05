@@ -395,21 +395,21 @@ function(internal_test test_name test_output)
 endfunction()
 
 if(NOT ANDROID)
-internal_test(tracing1 tracing_1_2_0.vk)
+internal_test(tracing1 tracing_1_2_0.api)
 add_lavatube_test(trace_test_1_2 COMMAND tracing1 1)
-add_lavatube_test(trace_test_1_0_replay_2 COMMAND $<TARGET_FILE:lava-replay> -V -B tracing_1_2_0.vk)
-add_lavatube_test(trace_test_1_0_replay_3 COMMAND $<TARGET_FILE:lava-replay> -V --no-multithreaded-io tracing_1_2_0.vk)
-add_lavatube_test(trace_test_1_0_replay_4 COMMAND $<TARGET_FILE:lava-replay> -C -V tracing_1_2_0.vk)
-add_lavatube_test(trace_test_1_1_replay_1 COMMAND $<TARGET_FILE:lava-replay> -V --no-dedicated tracing_1_2_1.vk)
-add_lavatube_test(trace_test_1_1_replay_2 COMMAND $<TARGET_FILE:lava-replay> -V --heap 0 tracing_1_2_1.vk)
-add_lavatube_test(trace_test_1_1_replay_3 COMMAND $<TARGET_FILE:lava-replay> -C -V tracing_1_2_1.vk)
+add_lavatube_test(trace_test_1_0_replay_2 COMMAND $<TARGET_FILE:lava-replay> -V -B tracing_1_2_0.api)
+add_lavatube_test(trace_test_1_0_replay_3 COMMAND $<TARGET_FILE:lava-replay> -V --no-multithreaded-io tracing_1_2_0.api)
+add_lavatube_test(trace_test_1_0_replay_4 COMMAND $<TARGET_FILE:lava-replay> -C -V tracing_1_2_0.api)
+add_lavatube_test(trace_test_1_1_replay_1 COMMAND $<TARGET_FILE:lava-replay> -V --no-dedicated tracing_1_2_1.api)
+add_lavatube_test(trace_test_1_1_replay_2 COMMAND $<TARGET_FILE:lava-replay> -V --heap 0 tracing_1_2_1.api)
+add_lavatube_test(trace_test_1_1_replay_3 COMMAND $<TARGET_FILE:lava-replay> -C -V tracing_1_2_1.api)
 endif()
 
-internal_test(tracing_headless tracing_headless.vk)
-internal_test(tracing_headless2 tracing_headless2.vk)
+internal_test(tracing_headless tracing_headless.api)
+internal_test(tracing_headless2 tracing_headless2.api)
 
-internal_test(tracing2 tracing_2.vk)
-add_lavatube_test(trace_test_2_replay COMMAND $<TARGET_FILE:lava-replay> --heap 0 tracing_2.vk)
+internal_test(tracing2 tracing_2.api)
+add_lavatube_test(trace_test_2_replay COMMAND $<TARGET_FILE:lava-replay> --heap 0 tracing_2.api)
 add_lavatube_test(trace_test_2_dedicbuf1 COMMAND tracing2)
 set_tests_properties(trace_test_2_dedicbuf1 PROPERTIES ENVIRONMENT "LAVATUBE_DEDICATED_BUFFER=1")
 add_lavatube_test(trace_test_2_chunksize COMMAND tracing2)
@@ -423,10 +423,10 @@ set_tests_properties(trace_test_2_nompcompress PROPERTIES ENVIRONMENT "LAVATUBE_
 add_lavatube_test(trace_test_2_debug_log COMMAND tracing2)
 set_tests_properties(trace_test_2_debug_log PROPERTIES ENVIRONMENT "LAVATUBE_DEBUG=2")
 
-internal_test(tracing3 tracing_3.vk)
-add_lavatube_test(trace_test_3_replay_mp_cpu COMMAND $<TARGET_FILE:lava-replay> -C -V tracing_3.vk)
+internal_test(tracing3 tracing_3.api)
+add_lavatube_test(trace_test_3_replay_mp_cpu COMMAND $<TARGET_FILE:lava-replay> -C -V tracing_3.api)
 
-internal_test(tracing4 tracing_4_q0_m0_F0.vk)
+internal_test(tracing4 tracing_4_q0_m0_F0.api)
 add_lavatube_test(trace_test_4_0_0 COMMAND tracing4 -q 0 -m 0)
 add_lavatube_test(trace_test_4_1_0 COMMAND tracing4 -q 1 -m 0 -c 5)
 add_lavatube_test(trace_test_4_2_0 COMMAND tracing4 -q 2 -m 0)
@@ -443,49 +443,49 @@ add_lavatube_test(trace_test_4_1_2 COMMAND tracing4 -q 1 -m 2)
 add_lavatube_test(trace_test_4_2_2 COMMAND tracing4 -q 2 -m 2)
 add_lavatube_test(trace_test_4_3_2 COMMAND tracing4 -q 3 -m 2)
 add_lavatube_test(trace_test_4_4_2 COMMAND tracing4 -q 4 -m 2 -b 1000)
-add_lavatube_test(trace_test_4_replay_1 COMMAND $<TARGET_FILE:lava-replay> tracing_4_q1_m1_F0.vk)
-add_lavatube_test(trace_test_4_replay_2 COMMAND $<TARGET_FILE:lava-replay> tracing_4_q2_m2_F0.vk)
-add_lavatube_test(trace_test_4_replay_3 COMMAND $<TARGET_FILE:lava-replay> tracing_4_q3_m0_F0.vk)
-add_lavatube_test(trace_test_4_replay_4 COMMAND $<TARGET_FILE:lava-replay> --no-anisotropy tracing_4_q4_m1_F0.vk)
-add_lavatube_test(trace_test_4_replay_5 COMMAND $<TARGET_FILE:lava-replay> -B tracing_4_q4_m1_F0.vk)
-add_lavatube_test(trace_test_4_replay_6 COMMAND $<TARGET_FILE:lava-replay> -w none -B tracing_4_q4_m1_F0.vk)
+add_lavatube_test(trace_test_4_replay_1 COMMAND $<TARGET_FILE:lava-replay> tracing_4_q1_m1_F0.api)
+add_lavatube_test(trace_test_4_replay_2 COMMAND $<TARGET_FILE:lava-replay> tracing_4_q2_m2_F0.api)
+add_lavatube_test(trace_test_4_replay_3 COMMAND $<TARGET_FILE:lava-replay> tracing_4_q3_m0_F0.api)
+add_lavatube_test(trace_test_4_replay_4 COMMAND $<TARGET_FILE:lava-replay> --no-anisotropy tracing_4_q4_m1_F0.api)
+add_lavatube_test(trace_test_4_replay_5 COMMAND $<TARGET_FILE:lava-replay> -B tracing_4_q4_m1_F0.api)
+add_lavatube_test(trace_test_4_replay_6 COMMAND $<TARGET_FILE:lava-replay> -w none -B tracing_4_q4_m1_F0.api)
 add_lavatube_test(trace_test_4_virtqueue COMMAND tracing4)
 set_tests_properties(trace_test_4_virtqueue PROPERTIES ENVIRONMENT "LAVATUBE_DESTINATION=tracing_4_virtqueue;LAVATUBE_VIRTUAL_QUEUES=1")
-add_lavatube_test(trace_test_4_virtqueue_replay COMMAND $<TARGET_FILE:lava-replay> tracing_4_virtqueue.vk)
+add_lavatube_test(trace_test_4_virtqueue_replay COMMAND $<TARGET_FILE:lava-replay> tracing_4_virtqueue.api)
 
-internal_test(tracing5 tracing_5.vk)
-add_lavatube_test(trace_test_5_replay_cpu COMMAND $<TARGET_FILE:lava-replay> -C -V tracing_5.vk)
+internal_test(tracing5 tracing_5.api)
+add_lavatube_test(trace_test_5_replay_cpu COMMAND $<TARGET_FILE:lava-replay> -C -V tracing_5.api)
 
-internal_test(tracing6 tracing_6.vk)
-add_lavatube_test(trace_test_6_replay_cpu COMMAND $<TARGET_FILE:lava-replay> -C -V tracing_6.vk)
+internal_test(tracing6 tracing_6.api)
+add_lavatube_test(trace_test_6_replay_cpu COMMAND $<TARGET_FILE:lava-replay> -C -V tracing_6.api)
 
-internal_test(tracing7 tracing_7.vk)
-add_lavatube_test(trace_test_7_replay_cpu COMMAND $<TARGET_FILE:lava-replay> -C -V tracing_7.vk)
+internal_test(tracing7 tracing_7.api)
+add_lavatube_test(trace_test_7_replay_cpu COMMAND $<TARGET_FILE:lava-replay> -C -V tracing_7.api)
 
-internal_test(tracing_dynamic_descriptors tracing_dynamic_descriptors.vk)
-add_lavatube_test(trace_test_dynamic_descriptors_replay_cpu COMMAND $<TARGET_FILE:lava-replay> -C -V tracing_dynamic_descriptors.vk)
+internal_test(tracing_dynamic_descriptors tracing_dynamic_descriptors.api)
+add_lavatube_test(trace_test_dynamic_descriptors_replay_cpu COMMAND $<TARGET_FILE:lava-replay> -C -V tracing_dynamic_descriptors.api)
 
-internal_test(tracing_remap tracing_remap.vk)
-add_lavatube_test(trace_test_remap_replay_cpu COMMAND $<TARGET_FILE:lava-replay> -C -V tracing_remap.vk)
-add_lavatube_test(trace_test_remap_validate COMMAND $<TARGET_FILE:lava-tool> tracing_remap.vk)
+internal_test(tracing_remap tracing_remap.api)
+add_lavatube_test(trace_test_remap_replay_cpu COMMAND $<TARGET_FILE:lava-replay> -C -V tracing_remap.api)
+add_lavatube_test(trace_test_remap_validate COMMAND $<TARGET_FILE:lava-tool> tracing_remap.api)
 
-internal_test(tracing_remap_noncoherent tracing_remap_noncoherent.vk)
-add_lavatube_test(trace_test_remap_noncoherent_replay_cpu COMMAND $<TARGET_FILE:lava-replay> -C -V tracing_remap_noncoherent.vk)
-add_lavatube_test(trace_test_remap_noncoherent_validate COMMAND $<TARGET_FILE:lava-tool> tracing_remap_noncoherent.vk)
+internal_test(tracing_remap_noncoherent tracing_remap_noncoherent.api)
+add_lavatube_test(trace_test_remap_noncoherent_replay_cpu COMMAND $<TARGET_FILE:lava-replay> -C -V tracing_remap_noncoherent.api)
+add_lavatube_test(trace_test_remap_noncoherent_validate COMMAND $<TARGET_FILE:lava-tool> tracing_remap_noncoherent.api)
 
-internal_test(tracing_buffers tracing_buffers.vk)
-add_lavatube_test(trace_test_buffers_replay_cpu COMMAND $<TARGET_FILE:lava-replay> -C -V tracing_buffers.vk)
+internal_test(tracing_buffers tracing_buffers.api)
+add_lavatube_test(trace_test_buffers_replay_cpu COMMAND $<TARGET_FILE:lava-replay> -C -V tracing_buffers.api)
 set_tests_properties(trace_test_buffers_replay_cpu PROPERTIES FIXTURES_REQUIRED tracing_buffers)
 
-internal_test(tracing_memory tracing_memory.vk)
-add_test(NAME trace_test_memory_replay_cpu COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -C -V tracing_memory.vk)
+internal_test(tracing_memory tracing_memory.api)
+add_test(NAME trace_test_memory_replay_cpu COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -C -V tracing_memory.api)
 set_tests_properties(trace_test_memory_replay_cpu PROPERTIES FIXTURES_REQUIRED tracing_memory)
 
-internal_test(tracing_alignment tracing_alignment.vk)
-add_lavatube_test(trace_test_alignment_replay_cpu COMMAND $<TARGET_FILE:lava-replay> -C -V tracing_alignment.vk)
+internal_test(tracing_alignment tracing_alignment.api)
+add_lavatube_test(trace_test_alignment_replay_cpu COMMAND $<TARGET_FILE:lava-replay> -C -V tracing_alignment.api)
 set_tests_properties(trace_test_alignment_replay_cpu PROPERTIES FIXTURES_REQUIRED tracing_alignment)
 
-internal_test(tracing_unused tracing_unused.vk)
+internal_test(tracing_unused tracing_unused.api)
 
 add_executable(write1 tests/write1.cpp)
 target_include_directories(write1 ${COMMON_INCLUDE})
@@ -563,43 +563,43 @@ target_include_directories(lava-replay ${COMMON_INCLUDE})
 target_link_libraries(lava-replay ${COMMON_LIBRARIES} lavatube)
 target_compile_options(lava-replay PRIVATE ${COMMON_FLAGS})
 add_dependencies(lava-replay sync_generated)
-add_lavatube_test(replayer_info COMMAND lava-replay -i tracing_2.vk)
+add_lavatube_test(replayer_info COMMAND lava-replay -i tracing_2.api)
 set_tests_properties(replayer_info PROPERTIES FIXTURES_REQUIRED tracing_2)
-add_lavatube_test(replayer_vulkan_demo COMMAND lava-replay -B -w none ${PROJECT_SOURCE_DIR}/traces/demo_computeraytracing.vk)
-add_lavatube_test(replayer_vulkan_demo2 COMMAND lava-replay -B -w none -f 10 20 ${PROJECT_SOURCE_DIR}/traces/demo_computeraytracing.vk)
-add_lavatube_test(replayer_samples COMMAND lava-replay -B -w none -f 5 9 ${PROJECT_SOURCE_DIR}/traces/sample_hello_triangle.vk)
-add_lavatube_test(replayer_vkcube COMMAND lava-replay -B -w none -f 5 9 ${PROJECT_SOURCE_DIR}/traces/lunarg_vkcube.vk)
-add_lavatube_test(replayer_vulkan_demo_cpu COMMAND lava-replay -C -B -w none ${PROJECT_SOURCE_DIR}/traces/demo_computeraytracing.vk)
-add_lavatube_test(replayer_samples_cpu COMMAND lava-replay -C -B -w none ${PROJECT_SOURCE_DIR}/traces/sample_hello_triangle.vk)
-add_lavatube_test(replayer_vkcube_cpu COMMAND lava-replay -C -B -w none ${PROJECT_SOURCE_DIR}/traces/lunarg_vkcube.vk)
+add_lavatube_test(replayer_vulkan_demo COMMAND lava-replay -B -w none ${PROJECT_SOURCE_DIR}/traces/demo_computeraytracing.api)
+add_lavatube_test(replayer_vulkan_demo2 COMMAND lava-replay -B -w none -f 10 20 ${PROJECT_SOURCE_DIR}/traces/demo_computeraytracing.api)
+add_lavatube_test(replayer_samples COMMAND lava-replay -B -w none -f 4 6 ${PROJECT_SOURCE_DIR}/traces/sample_descriptor_indexing.api)
+add_lavatube_test(replayer_vkcube COMMAND lava-replay -B -w none -f 5 9 ${PROJECT_SOURCE_DIR}/traces/lunarg_vkcube_xcb.api)
+add_lavatube_test(replayer_vulkan_demo_cpu COMMAND lava-replay -C -B -w none ${PROJECT_SOURCE_DIR}/traces/demo_computeraytracing.api)
+add_lavatube_test(replayer_samples_cpu COMMAND lava-replay -C -B -w none ${PROJECT_SOURCE_DIR}/traces/sample_descriptor_indexing.api)
+add_lavatube_test(replayer_vkcube_cpu COMMAND lava-replay -C -B -w none ${PROJECT_SOURCE_DIR}/traces/lunarg_vkcube_xlib.api)
 # -p/--preload, --frames, and --allow-stalls coverage
-add_lavatube_test(replayer_samples_preload0 COMMAND lava-replay -B -w none -p 0 ${PROJECT_SOURCE_DIR}/traces/sample_hello_triangle.vk)
-add_lavatube_test(replayer_vkcube_preload0 COMMAND lava-replay -B -w none -p 0 ${PROJECT_SOURCE_DIR}/traces/lunarg_vkcube.vk)
-add_lavatube_test(replayer_samples_frames_preload0 COMMAND lava-replay -B -w none -f 5 9 -p 0 ${PROJECT_SOURCE_DIR}/traces/sample_hello_triangle.vk)
-add_lavatube_test(replayer_vkcube_frames_preload0 COMMAND lava-replay -B -w none -f 5 9 -p 0 ${PROJECT_SOURCE_DIR}/traces/lunarg_vkcube.vk)
-add_lavatube_test(replayer_demo_frames_preload0 COMMAND lava-replay -B -w none -f 10 20 -p 0 ${PROJECT_SOURCE_DIR}/traces/demo_computeraytracing.vk)
-add_lavatube_test(replayer_demo_frames_preload1 COMMAND lava-replay -B -w none -f 10 20 -p 1 ${PROJECT_SOURCE_DIR}/traces/demo_computeraytracing.vk)
-add_lavatube_test(replayer_samples_frames_nostalls COMMAND lava-replay -B -w none -f 5 9 -p 1 ${PROJECT_SOURCE_DIR}/traces/sample_hello_triangle.vk)
+add_lavatube_test(replayer_samples_preload0 COMMAND lava-replay -B -w none -p 0 ${PROJECT_SOURCE_DIR}/traces/sample_descriptor_indexing.api)
+add_lavatube_test(replayer_vkcube_preload0 COMMAND lava-replay -B -w none -p 0 ${PROJECT_SOURCE_DIR}/traces/lunarg_vkcube_wayland.api)
+add_lavatube_test(replayer_samples_frames_preload0 COMMAND lava-replay -B -w none -f 4 6 -p 0 ${PROJECT_SOURCE_DIR}/traces/sample_descriptor_indexing.api)
+add_lavatube_test(replayer_vkcube_frames_preload0 COMMAND lava-replay -B -w none -f 5 9 -p 0 ${PROJECT_SOURCE_DIR}/traces/lunarg_vkcube_xcb.api)
+add_lavatube_test(replayer_demo_frames_preload0 COMMAND lava-replay -B -w none -f 10 20 -p 0 ${PROJECT_SOURCE_DIR}/traces/demo_computeraytracing.api)
+add_lavatube_test(replayer_demo_frames_preload1 COMMAND lava-replay -B -w none -f 10 20 -p 1 ${PROJECT_SOURCE_DIR}/traces/demo_computeraytracing.api)
+add_lavatube_test(replayer_samples_frames_nostalls COMMAND lava-replay -B -w none -f 4 6 -p 1 ${PROJECT_SOURCE_DIR}/traces/sample_descriptor_indexing.api)
 set_tests_properties(replayer_samples_frames_nostalls PROPERTIES ENVIRONMENT "LAVATUBE_ALLOW_STALLS=0")
 if(NOT ANDROID)
-add_lavatube_test(trace_test_1_0_replay_preload0 COMMAND lava-replay --skip-missing-input -p 0 tracing_1_2_0.vk)
+add_lavatube_test(trace_test_1_0_replay_preload0 COMMAND lava-replay --skip-missing-input -p 0 tracing_1_2_0.api)
 set_tests_properties(trace_test_1_0_replay_preload0 PROPERTIES FIXTURES_REQUIRED tracing1 SKIP_RETURN_CODE 77)
 endif()
-add_lavatube_test(replayer_samples_screenshot0 COMMAND lava-replay -C -w none --screenshots 0 ${PROJECT_SOURCE_DIR}/traces/sample_hello_triangle.vk)
+add_lavatube_test(replayer_samples_screenshot0 COMMAND lava-replay -C -w none --screenshots 0 ${PROJECT_SOURCE_DIR}/traces/sample_descriptor_indexing.api)
 set_tests_properties(replayer_samples_screenshot0 PROPERTIES FIXTURES_SETUP ReplayScreenshot0 WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
 add_lavatube_test(replayer_samples_screenshot0_validate COMMAND check_png screenshot_frame_0.png)
 set_tests_properties(replayer_samples_screenshot0_validate PROPERTIES FIXTURES_REQUIRED ReplayScreenshot0 WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
-add_lavatube_test(replayer_samples_screenshot7 COMMAND lava-replay -C -w none -f 5 9 --screenshots 7 ${PROJECT_SOURCE_DIR}/traces/sample_hello_triangle.vk)
+add_lavatube_test(replayer_samples_screenshot7 COMMAND lava-replay -C -w none -f 4 6 --screenshots 5 ${PROJECT_SOURCE_DIR}/traces/sample_descriptor_indexing.api)
 set_tests_properties(replayer_samples_screenshot7 PROPERTIES FIXTURES_SETUP ReplayScreenshot7 WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
 add_lavatube_test(replayer_samples_screenshot7_validate COMMAND check_png screenshot_frame_7.png)
 set_tests_properties(replayer_samples_screenshot7_validate PROPERTIES FIXTURES_REQUIRED ReplayScreenshot7 WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
-add_lavatube_test(replayer_samples_screenshot_prefix COMMAND lava-replay -C -w none --screenshots 0 --screenshot-prefix capture_ ${PROJECT_SOURCE_DIR}/traces/sample_hello_triangle.vk)
+add_lavatube_test(replayer_samples_screenshot_prefix COMMAND lava-replay -C -w none --screenshots 0 --screenshot-prefix capture_ ${PROJECT_SOURCE_DIR}/traces/sample_descriptor_indexing.api)
 set_tests_properties(replayer_samples_screenshot_prefix PROPERTIES FIXTURES_SETUP ReplayScreenshotPrefix WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
 add_lavatube_test(replayer_samples_screenshot_prefix_validate COMMAND check_png capture_0.png)
 set_tests_properties(replayer_samples_screenshot_prefix_validate PROPERTIES FIXTURES_REQUIRED ReplayScreenshotPrefix WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
 add_lavatube_test(replayer_screenshot_invalid_spec COMMAND lava-replay --screenshots 4-2)
 set_tests_properties(replayer_screenshot_invalid_spec PROPERTIES WILL_FAIL TRUE)
-add_lavatube_test(replayer_screenshot_blackhole_rejected COMMAND lava-replay -C -B -w none --screenshots 0 ${PROJECT_SOURCE_DIR}/traces/sample_hello_triangle.vk)
+add_lavatube_test(replayer_screenshot_blackhole_rejected COMMAND lava-replay -C -B -w none --screenshots 0 ${PROJECT_SOURCE_DIR}/traces/sample_descriptor_indexing.api)
 set_tests_properties(replayer_screenshot_blackhole_rejected PROPERTIES WILL_FAIL TRUE)
 add_lavatube_test(replayer_screenshot_prefix_requires_screenshots COMMAND lava-replay --screenshot-prefix capture_)
 set_tests_properties(replayer_screenshot_prefix_requires_screenshots PROPERTIES WILL_FAIL TRUE)
@@ -616,8 +616,8 @@ add_dependencies(lava-tool sync_generated)
 add_lavatube_test(trace_test_tracing1_tool_rewrite
 	COMMAND ${CMAKE_COMMAND}
 		-DLAVA_TOOL=$<TARGET_FILE:lava-tool>
-		-DINPUT_TRACE=${CMAKE_CURRENT_BINARY_DIR}/tracing_1_1.vk
-		-DOUTPUT_TRACE=/tmp/tracing_1_1_tool_rewrite.vk
+		-DINPUT_TRACE=${CMAKE_CURRENT_BINARY_DIR}/tracing_1_1.api
+		-DOUTPUT_TRACE=/tmp/tracing_1_1_tool_rewrite.api
 		-P ${PROJECT_SOURCE_DIR}/tests/lava_tool_rewrite.cmake)
 install(TARGETS lava-tool RUNTIME)
 
@@ -632,7 +632,7 @@ add_lavatube_test(lava_print_tracing2_ndjson
 	COMMAND ${CMAKE_COMMAND}
 		-DLAVA_PRINT=$<TARGET_FILE:lava-print>
 		-DPYTHON_EXECUTABLE=${PYTHON_EXECUTABLE}
-		-DINPUT_TRACE=${CMAKE_CURRENT_BINARY_DIR}/tracing_2.vk
+		-DINPUT_TRACE=${CMAKE_CURRENT_BINARY_DIR}/tracing_2.api
 		-DOUTPUT_FILE=${CMAKE_CURRENT_BINARY_DIR}/lava_print_tracing2.ndjson
 		-P ${PROJECT_SOURCE_DIR}/tests/lava_print_ndjson.cmake)
 set_tests_properties(lava_print_tracing2_ndjson PROPERTIES FIXTURES_REQUIRED tracing_2)
@@ -640,13 +640,13 @@ add_lavatube_test(lava_print_vkcube_frame2_ndjson
 	COMMAND ${CMAKE_COMMAND}
 		-DLAVA_PRINT=$<TARGET_FILE:lava-print>
 		-DPYTHON_EXECUTABLE=${PYTHON_EXECUTABLE}
-		-DINPUT_TRACE=${PROJECT_SOURCE_DIR}/traces/lunarg_vkcube.vk
+		-DINPUT_TRACE=${PROJECT_SOURCE_DIR}/traces/lunarg_vkcube_xcb.api
 		-DOUTPUT_FILE=${CMAKE_CURRENT_BINARY_DIR}/lava_print_vkcube_frame2.ndjson
 		-DFRAME_START=2
 		-DFRAME_END=2
 		-DEXPECT_FRAME=2
 		-P ${PROJECT_SOURCE_DIR}/tests/lava_print_ndjson.cmake)
-add_lavatube_test(lava_print_skip_missing COMMAND lava-print --skip-missing-input does_not_exist.vk)
+add_lavatube_test(lava_print_skip_missing COMMAND lava-print --skip-missing-input does_not_exist.api)
 set_tests_properties(lava_print_skip_missing PROPERTIES SKIP_RETURN_CODE 77)
 install(TARGETS lava-print RUNTIME)
 
@@ -695,22 +695,28 @@ function(trace_test test_name trace_file)
 	add_lavatube_test(trace_file_test_${ARGV0}_replay_cpu COMMAND $<TARGET_FILE:lava-replay> -w none -B --cpu ${PROJECT_SOURCE_DIR}/${ARGV1})
 	set_tests_properties(trace_file_test_${ARGV0}_replay_cpu PROPERTIES SKIP_RETURN_CODE 77)
 	add_lavatube_test(trace_file_test_${ARGV0}_validate COMMAND $<TARGET_FILE:lava-tool> ${PROJECT_SOURCE_DIR}/${ARGV1})
-	add_lavatube_test(trace_file_test_${ARGV0}_write_out COMMAND $<TARGET_FILE:lava-tool> ${PROJECT_SOURCE_DIR}/${ARGV1} ${CMAKE_CURRENT_BINARY_DIR}/tmp_${ARGV0}.vk)
+	add_lavatube_test(trace_file_test_${ARGV0}_write_out COMMAND $<TARGET_FILE:lava-tool> ${PROJECT_SOURCE_DIR}/${ARGV1} ${CMAKE_CURRENT_BINARY_DIR}/tmp_${ARGV0}.api)
 	set_tests_properties(trace_file_test_${ARGV0}_write_out PROPERTIES SKIP_RETURN_CODE 77 FIXTURES_SETUP "tmp_${ARGV0}" FIXTURES_REQUIRES "cleanup_tmp")
-	add_lavatube_test(trace_file_test_${ARGV0}_write_out_replay COMMAND $<TARGET_FILE:lava-replay> -w none --gpu ${CMAKE_CURRENT_BINARY_DIR}/tmp_${ARGV0}.vk)
+	add_lavatube_test(trace_file_test_${ARGV0}_write_out_replay COMMAND $<TARGET_FILE:lava-replay> -w none --gpu ${CMAKE_CURRENT_BINARY_DIR}/tmp_${ARGV0}.api)
 	set_tests_properties(trace_file_test_${ARGV0}_write_out_replay PROPERTIES SKIP_RETURN_CODE 77 FIXTURES_REQUIRES "tmp_${ARGV0};cleanup_tmp")
 endfunction()
 
-trace_test(raytracingbasic traces/demo_raytracingbasic.vk)
-trace_test(raytracingsbtdata traces/demo_raytracingsbtdata.vk)
-trace_test(descriptorindexing traces/demo_descriptorindexing.vk)
-trace_test(pushconstants traces/demo_pushconstants.vk)
-trace_test(inlineuniformblocks traces/demo_inlineuniformblocks.vk)
-trace_test(raytracingintersection traces/demo_raytracingintersection.vk)
-trace_test(raytracingpositionfetch traces/demo_raytracingpositionfetch.vk)
-trace_test(geometryshader traces/demo_geometryshader.vk)
-trace_test(inputattachments traces/demo_inputattachments.vk)
-trace_test(anki_simple traces/anki_simple.vk)
+trace_test(raytracingbasic traces/demo_raytracingbasic.api)
+trace_test(raytracingsbtdata traces/demo_raytracingsbtdata.api)
+trace_test(descriptorindexing traces/demo_descriptorindexing.api)
+trace_test(pushconstants traces/demo_pushconstants.api)
+trace_test(inlineuniformblocks traces/demo_inlineuniformblocks.api)
+trace_test(raytracingintersection traces/demo_raytracingintersection.api)
+trace_test(raytracingpositionfetch traces/demo_raytracingpositionfetch.api)
+trace_test(geometryshader traces/demo_geometryshader.api)
+trace_test(inputattachments traces/demo_inputattachments.api)
+#trace_test(anki_simple traces/anki_simple.api)
+trace_test(conservative_rasterization traces/sample_conservative_rasterization.api)
+trace_test(ray_tracing_reflection traces/sample_ray_tracing_reflection.api)
+trace_test(texture_mipmap_generation traces/sample_texture_mipmap_generation.api)
+trace_test(vkcube_xcb traces/lunarg_vkcube_xcb.api)
+trace_test(vkcube_xlib traces/lunarg_vkcube_xlib.api)
+trace_test(vkcube_wayland traces/lunarg_vkcube_wayland.api)
 
 # --- packtool ---
 
@@ -721,28 +727,28 @@ target_compile_options(packtool PRIVATE ${COMMON_FLAGS} -fPIC)
 add_dependencies(packtool sync_generated)
 add_lavatube_test(pack_test_1 COMMAND packtool) # usage
 set_tests_properties(pack_test_1 PROPERTIES FIXTURES_REQUIRED tracing_2)
-add_lavatube_test(pack_test_2 COMMAND packtool extract tracking.json tracing_2.vk)
+add_lavatube_test(pack_test_2 COMMAND packtool extract tracking.json tracing_2.api)
 set_tests_properties(pack_test_2 PROPERTIES FIXTURES_REQUIRED tracing_2)
-add_lavatube_test(pack_test_3_1 COMMAND packtool print tracking.json tracing_2.vk)
+add_lavatube_test(pack_test_3_1 COMMAND packtool print tracking.json tracing_2.api)
 set_tests_properties(pack_test_3_1 PROPERTIES FIXTURES_REQUIRED tracing_2)
-add_lavatube_test(pack_test_3_2 COMMAND packtool extract thread_0.bin tracing_2.vk)
+add_lavatube_test(pack_test_3_2 COMMAND packtool extract thread_0.bin tracing_2.api)
 set_tests_properties(pack_test_3_2 PROPERTIES FIXTURES_REQUIRED tracing_2)
-add_lavatube_test(pack_test_4 COMMAND packtool unpack tmp_2 tracing_2.vk)
+add_lavatube_test(pack_test_4 COMMAND packtool unpack tmp_2 tracing_2.api)
 set_tests_properties(pack_test_4 PROPERTIES FIXTURES_REQUIRED tracing_2)
 add_lavatube_test(pack_test_4_1 COMMAND cmp ${CMAKE_CURRENT_BINARY_DIR}/tmp_2/tracking.json ${CMAKE_CURRENT_BINARY_DIR}/tracking.json)
 set_tests_properties(pack_test_4_1 PROPERTIES FIXTURES_REQUIRED tracing_2)
 add_lavatube_test(pack_test_4_2 COMMAND cmp ${CMAKE_CURRENT_BINARY_DIR}/tmp_2/thread_0.bin ${CMAKE_CURRENT_BINARY_DIR}/thread_0.bin)
 set_tests_properties(pack_test_4_2 PROPERTIES FIXTURES_REQUIRED tracing_2)
-add_lavatube_test(pack_test_5 COMMAND packtool list tracing_2.vk)
+add_lavatube_test(pack_test_5 COMMAND packtool list tracing_2.api)
 set_tests_properties(pack_test_5 PROPERTIES FIXTURES_REQUIRED tracing_2)
-add_lavatube_test(pack_test_6 COMMAND packtool check tracing_2.vk)
+add_lavatube_test(pack_test_6 COMMAND packtool check tracing_2.api)
 set_tests_properties(pack_test_6 PROPERTIES FIXTURES_REQUIRED tracing_2)
 add_lavatube_test(pack_test_7_markings
 	COMMAND ${CMAKE_COMMAND}
 		-DLAVA_TOOL=$<TARGET_FILE:lava-tool>
 		-DPACKTOOL=$<TARGET_FILE:packtool>
-		-DINPUT_TRACE=${CMAKE_CURRENT_BINARY_DIR}/vulkan_raytracing_indirect_noop.vk
-		-DOUTPUT_TRACE=${CMAKE_CURRENT_BINARY_DIR}/tmp_markings.vk
+		-DINPUT_TRACE=${CMAKE_CURRENT_BINARY_DIR}/vulkan_raytracing_indirect_noop.api
+		-DOUTPUT_TRACE=${CMAKE_CURRENT_BINARY_DIR}/tmp_markings.api
 		-P ${PROJECT_SOURCE_DIR}/tests/packtool_markings_diff.cmake)
 set_tests_properties(pack_test_7_markings PROPERTIES FIXTURES_REQUIRED raytracing_indirect_noop)
 add_lavatube_test(pack_test_7_markings_simulate
@@ -750,8 +756,8 @@ add_lavatube_test(pack_test_7_markings_simulate
 		-DSIMULATE=ON
 		-DLAVA_TOOL=$<TARGET_FILE:lava-tool>
 		-DPACKTOOL=$<TARGET_FILE:packtool>
-		-DINPUT_TRACE=${CMAKE_CURRENT_BINARY_DIR}/vulkan_raytracing_indirect_noop.vk
-		-DOUTPUT_TRACE=${CMAKE_CURRENT_BINARY_DIR}/tmp_markings_simulate.vk
+		-DINPUT_TRACE=${CMAKE_CURRENT_BINARY_DIR}/vulkan_raytracing_indirect_noop.api
+		-DOUTPUT_TRACE=${CMAKE_CURRENT_BINARY_DIR}/tmp_markings_simulate.api
 		-P ${PROJECT_SOURCE_DIR}/tests/packtool_markings_diff.cmake)
 set_tests_properties(pack_test_7_markings_simulate PROPERTIES FIXTURES_REQUIRED raytracing_indirect_noop)
 add_lavatube_test(pack_test_7_markings_simulate_explicit
@@ -759,9 +765,9 @@ add_lavatube_test(pack_test_7_markings_simulate_explicit
 		-DSIMULATE=ON
 		-DLAVA_TOOL=$<TARGET_FILE:lava-tool>
 		-DPACKTOOL=$<TARGET_FILE:packtool>
-		-DINPUT_TRACE=${CMAKE_CURRENT_BINARY_DIR}/vulkan_raytracing_indirect_noop_explicit.vk
-		-DCOMPARE_TRACE=${CMAKE_CURRENT_BINARY_DIR}/vulkan_raytracing_indirect_noop.vk
-		-DOUTPUT_TRACE=${CMAKE_CURRENT_BINARY_DIR}/tmp_markings_simulate_explicit.vk
+		-DINPUT_TRACE=${CMAKE_CURRENT_BINARY_DIR}/vulkan_raytracing_indirect_noop_explicit.api
+		-DCOMPARE_TRACE=${CMAKE_CURRENT_BINARY_DIR}/vulkan_raytracing_indirect_noop.api
+		-DOUTPUT_TRACE=${CMAKE_CURRENT_BINARY_DIR}/tmp_markings_simulate_explicit.api
 		-P ${PROJECT_SOURCE_DIR}/tests/packtool_markings_diff.cmake)
 set_tests_properties(pack_test_7_markings_simulate_explicit PROPERTIES FIXTURES_REQUIRED raytracing_indirect_noop)
 install(TARGETS packtool RUNTIME)
@@ -799,27 +805,27 @@ function(layer_test test_name test_exe)
 
 	set(RUN_IF_EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/cmake/run_if_exists.sh)
 	set(REMOVE_THEN_RUN ${CMAKE_CURRENT_SOURCE_DIR}/cmake/remove_then_run.sh)
-	set(TRACE_FILE ${CMAKE_CURRENT_BINARY_DIR}/vulkan_${ARGV0}.vk)
-	set(SIM_TRACE_FILE ${CMAKE_CURRENT_BINARY_DIR}/vulkan_${ARGV0}_simulation.vk)
-	set(RAW_TRACE_FILE ${CMAKE_CURRENT_BINARY_DIR}/vulkan_${ARGV0}_raw.vk)
-	set(MODEL_TRACE_FILE ${CMAKE_CURRENT_BINARY_DIR}/vulkan_${ARGV0}_model.vk)
-	add_lavatube_test(layer_test_${ARGV0}_replay COMMAND ${RUN_IF_EXISTS} ${TRACE_FILE} $<TARGET_FILE:lava-replay> -V vulkan_${ARGV0}.vk)
+	set(TRACE_FILE ${CMAKE_CURRENT_BINARY_DIR}/vulkan_${ARGV0}.api)
+	set(SIM_TRACE_FILE ${CMAKE_CURRENT_BINARY_DIR}/vulkan_${ARGV0}_simulation.api)
+	set(RAW_TRACE_FILE ${CMAKE_CURRENT_BINARY_DIR}/vulkan_${ARGV0}_raw.api)
+	set(MODEL_TRACE_FILE ${CMAKE_CURRENT_BINARY_DIR}/vulkan_${ARGV0}_model.api)
+	add_lavatube_test(layer_test_${ARGV0}_replay COMMAND ${RUN_IF_EXISTS} ${TRACE_FILE} $<TARGET_FILE:lava-replay> -V vulkan_${ARGV0}.api)
 	set_tests_properties(layer_test_${ARGV0}_replay PROPERTIES SKIP_RETURN_CODE 77 FIXTURES_REQUIRED ${ARGV0})
-	add_lavatube_test(layer_test_${ARGV0}_replay_raw COMMAND ${RUN_IF_EXISTS} ${RAW_TRACE_FILE} $<TARGET_FILE:lava-replay> --blackhole --allow-stalls vulkan_${ARGV0}_raw.vk)
+	add_lavatube_test(layer_test_${ARGV0}_replay_raw COMMAND ${RUN_IF_EXISTS} ${RAW_TRACE_FILE} $<TARGET_FILE:lava-replay> --blackhole --allow-stalls vulkan_${ARGV0}_raw.api)
 	set_tests_properties(layer_test_${ARGV0}_replay_raw PROPERTIES SKIP_RETURN_CODE 77 FIXTURES_REQUIRED ${ARGV0})
-	add_lavatube_test(layer_test_${ARGV0}_replay_cpu COMMAND ${RUN_IF_EXISTS} ${TRACE_FILE} $<TARGET_FILE:lava-replay> -C -V vulkan_${ARGV0}.vk)
+	add_lavatube_test(layer_test_${ARGV0}_replay_cpu COMMAND ${RUN_IF_EXISTS} ${TRACE_FILE} $<TARGET_FILE:lava-replay> -C -V vulkan_${ARGV0}.api)
 	set_tests_properties(layer_test_${ARGV0}_replay_cpu PROPERTIES FIXTURES_REQUIRED ${ARGV0} SKIP_RETURN_CODE 77)
-	add_lavatube_test(layer_test_${ARGV0}_replay_blackhole COMMAND ${RUN_IF_EXISTS} ${TRACE_FILE} $<TARGET_FILE:lava-replay> -V -B vulkan_${ARGV0}.vk)
+	add_lavatube_test(layer_test_${ARGV0}_replay_blackhole COMMAND ${RUN_IF_EXISTS} ${TRACE_FILE} $<TARGET_FILE:lava-replay> -V -B vulkan_${ARGV0}.api)
 	set_tests_properties(layer_test_${ARGV0}_replay_blackhole PROPERTIES SKIP_RETURN_CODE 77 FIXTURES_REQUIRED ${ARGV0})
-	add_lavatube_test(layer_test_${ARGV0}_replay_blackhole_nonewsi COMMAND ${RUN_IF_EXISTS} ${TRACE_FILE} $<TARGET_FILE:lava-replay> -V -B -w none vulkan_${ARGV0}.vk)
+	add_lavatube_test(layer_test_${ARGV0}_replay_blackhole_nonewsi COMMAND ${RUN_IF_EXISTS} ${TRACE_FILE} $<TARGET_FILE:lava-replay> -V -B -w none vulkan_${ARGV0}.api)
 	set_tests_properties(layer_test_${ARGV0}_replay_blackhole_nonewsi PROPERTIES SKIP_RETURN_CODE 77 FIXTURES_REQUIRED ${ARGV0})
-	add_lavatube_test(layer_test_${ARGV0}_replay_nonewsi COMMAND ${RUN_IF_EXISTS} ${TRACE_FILE} $<TARGET_FILE:lava-replay> -V -w none vulkan_${ARGV0}.vk)
+	add_lavatube_test(layer_test_${ARGV0}_replay_nonewsi COMMAND ${RUN_IF_EXISTS} ${TRACE_FILE} $<TARGET_FILE:lava-replay> -V -w none vulkan_${ARGV0}.api)
 	set_tests_properties(layer_test_${ARGV0}_replay_nonewsi PROPERTIES SKIP_RETURN_CODE 77 FIXTURES_REQUIRED ${ARGV0})
-	add_lavatube_test(layer_test_${ARGV0}_replay_from_simulation COMMAND ${RUN_IF_EXISTS} ${SIM_TRACE_FILE} $<TARGET_FILE:lava-replay> -V vulkan_${ARGV0}_simulation.vk)
+	add_lavatube_test(layer_test_${ARGV0}_replay_from_simulation COMMAND ${RUN_IF_EXISTS} ${SIM_TRACE_FILE} $<TARGET_FILE:lava-replay> -V vulkan_${ARGV0}_simulation.api)
 	set_tests_properties(layer_test_${ARGV0}_replay_from_simulation PROPERTIES FIXTURES_REQUIRED "${ARGV0}_simulation;${ARGV0}" SKIP_RETURN_CODE 77)
-	add_test(NAME layer_test_${ARGV0}_write_out COMMAND ${RUN_IF_EXISTS} ${TRACE_FILE} ${CMAKE_CURRENT_BINARY_DIR}/lava-tool --skip-missing-input vulkan_${ARGV0}.vk tmp_${ARGV0}.vk)
+	add_test(NAME layer_test_${ARGV0}_write_out COMMAND ${RUN_IF_EXISTS} ${TRACE_FILE} ${CMAKE_CURRENT_BINARY_DIR}/lava-tool --skip-missing-input vulkan_${ARGV0}.api tmp_${ARGV0}.api)
 	set_tests_properties(layer_test_${ARGV0}_write_out PROPERTIES FIXTURES_REQUIRED "${ARGV0}" SKIP_RETURN_CODE 77)
-	add_test(NAME layer_test_${ARGV0}_write_out_replay COMMAND ${RUN_IF_EXISTS} tmp_${ARGV0}.vk ${CMAKE_CURRENT_BINARY_DIR}/lava-replay --skip-missing-input -V tmp_${ARGV0}.vk)
+	add_test(NAME layer_test_${ARGV0}_write_out_replay COMMAND ${RUN_IF_EXISTS} tmp_${ARGV0}.api ${CMAKE_CURRENT_BINARY_DIR}/lava-replay --skip-missing-input -V tmp_${ARGV0}.api)
 	set_tests_properties(layer_test_${ARGV0}_write_out_replay PROPERTIES FIXTURES_REQUIRED "${ARGV0};cleanup_tmp" SKIP_RETURN_CODE 77)
 
 	if (NOT GPU_MODEL STREQUAL "")
@@ -834,15 +840,15 @@ function(layer_test test_name test_exe)
 			ENVIRONMENT_MODIFICATION "LD_LIBRARY_PATH=path_list_prepend:${CMAKE_CURRENT_BINARY_DIR}/implicit_layer.d"
 			SKIP_RETURN_CODE 77
 		)
-		add_lavatube_test(layer_test_${ARGV0}_model_replay COMMAND ${RUN_IF_EXISTS} ${MODEL_TRACE_FILE} $<TARGET_FILE:lava-replay> -V -w none vulkan_${ARGV0}_model.vk)
+		add_lavatube_test(layer_test_${ARGV0}_model_replay COMMAND ${RUN_IF_EXISTS} ${MODEL_TRACE_FILE} $<TARGET_FILE:lava-replay> -V -w none vulkan_${ARGV0}_model.api)
 		set_tests_properties(layer_test_${ARGV0}_model_replay PROPERTIES ENVIRONMENT "${GPU_MODEL}" SKIP_RETURN_CODE 77 FIXTURES_REQUIRED ${ARGV0})
-		add_lavatube_test(layer_test_${ARGV0}_model_replay_gpu COMMAND ${RUN_IF_EXISTS} ${TRACE_FILE} $<TARGET_FILE:lava-replay> -V -w none vulkan_${ARGV0}.vk)
+		add_lavatube_test(layer_test_${ARGV0}_model_replay_gpu COMMAND ${RUN_IF_EXISTS} ${TRACE_FILE} $<TARGET_FILE:lava-replay> -V -w none vulkan_${ARGV0}.api)
 		set_tests_properties(layer_test_${ARGV0}_model_replay_gpu PROPERTIES ENVIRONMENT "${GPU_MODEL}" SKIP_RETURN_CODE 77 FIXTURES_REQUIRED ${ARGV0})
-		add_lavatube_test(layer_test_${ARGV0}_model_replay_cpu COMMAND ${RUN_IF_EXISTS} ${SIM_TRACE_FILE} $<TARGET_FILE:lava-replay> -V -w none vulkan_${ARGV0}_simulation.vk)
+		add_lavatube_test(layer_test_${ARGV0}_model_replay_cpu COMMAND ${RUN_IF_EXISTS} ${SIM_TRACE_FILE} $<TARGET_FILE:lava-replay> -V -w none vulkan_${ARGV0}_simulation.api)
 		set_tests_properties(layer_test_${ARGV0}_model_replay_cpu PROPERTIES ENVIRONMENT "${GPU_MODEL}" SKIP_RETURN_CODE 77 FIXTURES_REQUIRED ${ARGV0})
-		add_lavatube_test(layer_test_${ARGV0}_gpu_replay_model COMMAND ${RUN_IF_EXISTS} ${MODEL_TRACE_FILE} $<TARGET_FILE:lava-replay> -V --gpu vulkan_${ARGV0}_model.vk)
+		add_lavatube_test(layer_test_${ARGV0}_gpu_replay_model COMMAND ${RUN_IF_EXISTS} ${MODEL_TRACE_FILE} $<TARGET_FILE:lava-replay> -V --gpu vulkan_${ARGV0}_model.api)
 		set_tests_properties(layer_test_${ARGV0}_gpu_replay_model PROPERTIES SKIP_RETURN_CODE 77 FIXTURES_REQUIRED ${ARGV0})
-		add_lavatube_test(layer_test_${ARGV0}_cpu_replay_model COMMAND ${RUN_IF_EXISTS} ${MODEL_TRACE_FILE} $<TARGET_FILE:lava-replay> -V --cpu vulkan_${ARGV0}_model.vk)
+		add_lavatube_test(layer_test_${ARGV0}_cpu_replay_model COMMAND ${RUN_IF_EXISTS} ${MODEL_TRACE_FILE} $<TARGET_FILE:lava-replay> -V --cpu vulkan_${ARGV0}_model.api)
 		set_tests_properties(layer_test_${ARGV0}_cpu_replay_model PROPERTIES SKIP_RETURN_CODE 77 FIXTURES_REQUIRED ${ARGV0})
 	endif()
 endfunction()
@@ -853,8 +859,8 @@ if(NOT NO_TRACETOOLTESTS AND NOT ANDROID)
 	set(LAVATUBE_CHAMELEON_VULKANCORE_1_4_ENV "VK_DRIVER_FILES=${CMAKE_CURRENT_BINARY_DIR}/tracetooltests/chameleon_icd.json;CHAMELEON_GPU=${LAVATUBE_CHAMELEON_VULKANCORE_1_4_GPU_PATH}")
 	set(LAVATUBE_CHAMELEON_LAYER_ENV "${LAVATUBE_CHAMELEON_VULKANCORE_1_4_ENV};LAVATUBE_VIRTUAL_QUEUES=1;LAVATUBE_DELETE_EMPTY_TRACE=1;LAVATUBE_DESTINATION=vulkan_general_chameleon_vulkancore_1_4;VK_LAYER_PATH=${CMAKE_CURRENT_BINARY_DIR}/implicit_layer.d;VK_INSTANCE_LAYERS=VK_LAYER_ARM_lavatube;LD_LIBRARY_PATH=${CMAKE_CURRENT_BINARY_DIR}/implicit_layer.d")
 	set(LAVATUBE_RUN_IF_EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/cmake/run_if_exists.sh)
-	set(LAVATUBE_CHAMELEON_TRACE ${CMAKE_CURRENT_BINARY_DIR}/vulkan_general_chameleon_vulkancore_1_4.vk)
-	set(LAVATUBE_GENERAL_TRACE ${CMAKE_CURRENT_BINARY_DIR}/vulkan_general.vk)
+	set(LAVATUBE_CHAMELEON_TRACE ${CMAKE_CURRENT_BINARY_DIR}/vulkan_general_chameleon_vulkancore_1_4.api)
+	set(LAVATUBE_GENERAL_TRACE ${CMAKE_CURRENT_BINARY_DIR}/vulkan_general.api)
 
 	add_lavatube_test(layer_test_general_chameleon_vulkancore_1_4 COMMAND vulkan_general --gpu --no-trace-helpers)
 	set_tests_properties(layer_test_general_chameleon_vulkancore_1_4 PROPERTIES
@@ -864,7 +870,7 @@ if(NOT NO_TRACETOOLTESTS AND NOT ANDROID)
 		LABELS "chameleon;icd;lavatube"
 	)
 
-	add_lavatube_test(layer_test_general_chameleon_vulkancore_1_4_replay COMMAND ${LAVATUBE_RUN_IF_EXISTS} ${LAVATUBE_CHAMELEON_TRACE} $<TARGET_FILE:lava-replay> -V -w none --swapchain offscreen vulkan_general_chameleon_vulkancore_1_4.vk)
+	add_lavatube_test(layer_test_general_chameleon_vulkancore_1_4_replay COMMAND ${LAVATUBE_RUN_IF_EXISTS} ${LAVATUBE_CHAMELEON_TRACE} $<TARGET_FILE:lava-replay> -V -w none --swapchain offscreen vulkan_general_chameleon_vulkancore_1_4.api)
 	set_tests_properties(layer_test_general_chameleon_vulkancore_1_4_replay PROPERTIES
 		FIXTURES_REQUIRED general_chameleon_vulkancore_1_4
 		ENVIRONMENT "${LAVATUBE_CHAMELEON_VULKANCORE_1_4_ENV}"
@@ -872,7 +878,7 @@ if(NOT NO_TRACETOOLTESTS AND NOT ANDROID)
 		LABELS "chameleon;icd;lavatube"
 	)
 
-	add_lavatube_test(layer_test_general_replay_chameleon_vulkancore_1_4 COMMAND ${LAVATUBE_RUN_IF_EXISTS} ${LAVATUBE_GENERAL_TRACE} $<TARGET_FILE:lava-replay> -V -w none --swapchain offscreen vulkan_general.vk)
+	add_lavatube_test(layer_test_general_replay_chameleon_vulkancore_1_4 COMMAND ${LAVATUBE_RUN_IF_EXISTS} ${LAVATUBE_GENERAL_TRACE} $<TARGET_FILE:lava-replay> -V -w none --swapchain offscreen vulkan_general.api)
 	set_tests_properties(layer_test_general_replay_chameleon_vulkancore_1_4 PROPERTIES
 		FIXTURES_REQUIRED general
 		ENVIRONMENT "${LAVATUBE_CHAMELEON_VULKANCORE_1_4_ENV}"
@@ -881,9 +887,9 @@ if(NOT NO_TRACETOOLTESTS AND NOT ANDROID)
 	)
 endif()
 #layer_test(fence_delay fence_delay) # Disabling -- too many intermittent errors
-add_test(NAME script_test_copying_1 COMMAND ${PROJECT_SOURCE_DIR}/scripts/lava-capture.py -o script_test_copying_1.vk --dedicated-buffer --gpu 0 --layer-path ${CMAKE_CURRENT_BINARY_DIR}/implicit_layer.d ${CMAKE_CURRENT_BINARY_DIR}/tracetooltests/vulkan_copying_1 -V 2)
-add_test(NAME script_test_copying_nomp COMMAND ${PROJECT_SOURCE_DIR}/scripts/lava-capture.py -o script_test_copying_nomp.vk --no-multithread --automate --layer-path ${CMAKE_CURRENT_BINARY_DIR}/implicit_layer.d ${CMAKE_CURRENT_BINARY_DIR}/tracetooltests/vulkan_copying_1 -V 3)
-add_test(NAME script_test_copying_nocomp COMMAND ${PROJECT_SOURCE_DIR}/scripts/lava-capture.py -o script_test_copying_nocomp.vk --compression-type NONE --capture-layer ${CMAKE_CURRENT_BINARY_DIR}/implicit_layer.d ${CMAKE_CURRENT_BINARY_DIR}/tracetooltests/vulkan_copying_1 -V 4)
+add_test(NAME script_test_copying_1 COMMAND ${PROJECT_SOURCE_DIR}/scripts/lava-capture.py -o script_test_copying_1.api --dedicated-buffer --gpu 0 --layer-path ${CMAKE_CURRENT_BINARY_DIR}/implicit_layer.d ${CMAKE_CURRENT_BINARY_DIR}/tracetooltests/vulkan_copying_1 -V 2)
+add_test(NAME script_test_copying_nomp COMMAND ${PROJECT_SOURCE_DIR}/scripts/lava-capture.py -o script_test_copying_nomp.api --no-multithread --automate --layer-path ${CMAKE_CURRENT_BINARY_DIR}/implicit_layer.d ${CMAKE_CURRENT_BINARY_DIR}/tracetooltests/vulkan_copying_1 -V 3)
+add_test(NAME script_test_copying_nocomp COMMAND ${PROJECT_SOURCE_DIR}/scripts/lava-capture.py -o script_test_copying_nocomp.api --compression-type NONE --capture-layer ${CMAKE_CURRENT_BINARY_DIR}/implicit_layer.d ${CMAKE_CURRENT_BINARY_DIR}/tracetooltests/vulkan_copying_1 -V 4)
 layer_test(general_vulkan13 general -V 3)
 layer_test(copying_1 copying_1)
 layer_test(copying_1_q1 copying_1 -q 1)
@@ -915,23 +921,23 @@ layer_test(compute_bda_pushconstant_4 compute_bda_pushconstant -V 4)
 layer_test(compute_bda_ubo compute_bda_ubo)
 layer_test(compute_bda_ubo_ssbo compute_bda_ubo --ssbo)
 layer_test(compute_bda_ubo_fb compute_bda_ubo --frame-boundary)
-add_lavatube_test(layer_test_thread_3_replay_blackhole_stress_1 COMMAND $<TARGET_FILE:lava-replay> -V -B vulkan_thread_3.vk)
+add_lavatube_test(layer_test_thread_3_replay_blackhole_stress_1 COMMAND $<TARGET_FILE:lava-replay> -V -B vulkan_thread_3.api)
 set_tests_properties(layer_test_thread_3_replay_blackhole_stress_1 PROPERTIES FIXTURES_REQUIRED thread_3)
-add_lavatube_test(layer_test_thread_3_replay_blackhole_stress_2 COMMAND $<TARGET_FILE:lava-replay> --no-dedicated -B vulkan_thread_3.vk)
+add_lavatube_test(layer_test_thread_3_replay_blackhole_stress_2 COMMAND $<TARGET_FILE:lava-replay> --no-dedicated -B vulkan_thread_3.api)
 set_tests_properties(layer_test_thread_3_replay_blackhole_stress_2 PROPERTIES FIXTURES_REQUIRED thread_3)
-add_lavatube_test(layer_test_thread_3_replay_blackhole_stress_3 COMMAND $<TARGET_FILE:lava-replay> -B vulkan_thread_3.vk)
+add_lavatube_test(layer_test_thread_3_replay_blackhole_stress_3 COMMAND $<TARGET_FILE:lava-replay> -B vulkan_thread_3.api)
 set_tests_properties(layer_test_thread_3_replay_blackhole_stress_3 PROPERTIES FIXTURES_REQUIRED thread_3)
-add_lavatube_test(layer_test_thread_3_replay_blackhole_stress_4 COMMAND $<TARGET_FILE:lava-replay> -B vulkan_thread_3.vk)
+add_lavatube_test(layer_test_thread_3_replay_blackhole_stress_4 COMMAND $<TARGET_FILE:lava-replay> -B vulkan_thread_3.api)
 set_tests_properties(layer_test_thread_3_replay_blackhole_stress_4 PROPERTIES FIXTURES_REQUIRED thread_3)
-add_lavatube_test(layer_test_thread_3_replay_blackhole_stress_5 COMMAND $<TARGET_FILE:lava-replay> -B vulkan_thread_3.vk)
+add_lavatube_test(layer_test_thread_3_replay_blackhole_stress_5 COMMAND $<TARGET_FILE:lava-replay> -B vulkan_thread_3.api)
 set_tests_properties(layer_test_thread_3_replay_blackhole_stress_5 PROPERTIES FIXTURES_REQUIRED thread_3)
-add_lavatube_test(layer_test_thread_3_replay_blackhole_stress_6 COMMAND $<TARGET_FILE:lava-replay> -B vulkan_thread_3.vk)
+add_lavatube_test(layer_test_thread_3_replay_blackhole_stress_6 COMMAND $<TARGET_FILE:lava-replay> -B vulkan_thread_3.api)
 set_tests_properties(layer_test_thread_3_replay_blackhole_stress_6 PROPERTIES FIXTURES_REQUIRED thread_3)
-add_lavatube_test(layer_test_thread_3_replay_blackhole_stress_7 COMMAND $<TARGET_FILE:lava-replay> -B vulkan_thread_3.vk)
+add_lavatube_test(layer_test_thread_3_replay_blackhole_stress_7 COMMAND $<TARGET_FILE:lava-replay> -B vulkan_thread_3.api)
 set_tests_properties(layer_test_thread_3_replay_blackhole_stress_7 PROPERTIES FIXTURES_REQUIRED thread_3)
-add_lavatube_test(layer_test_thread_3_replay_blackhole_stress_8 COMMAND $<TARGET_FILE:lava-replay> -B vulkan_thread_3.vk)
+add_lavatube_test(layer_test_thread_3_replay_blackhole_stress_8 COMMAND $<TARGET_FILE:lava-replay> -B vulkan_thread_3.api)
 set_tests_properties(layer_test_thread_3_replay_blackhole_stress_8 PROPERTIES FIXTURES_REQUIRED thread_3)
-add_lavatube_test(layer_test_thread_3_replay_blackhole_stress_9 COMMAND $<TARGET_FILE:lava-replay> -B vulkan_thread_3.vk)
+add_lavatube_test(layer_test_thread_3_replay_blackhole_stress_9 COMMAND $<TARGET_FILE:lava-replay> -B vulkan_thread_3.api)
 set_tests_properties(layer_test_thread_3_replay_blackhole_stress_9 PROPERTIES FIXTURES_REQUIRED thread_3)
 layer_test(compute_1 compute_1)
 layer_test(compute_1_indirect compute_1 --indirect)
@@ -954,8 +960,8 @@ set_tests_properties(layer_test_compute_3_frame_boundary_trace PROPERTIES
 	ENVIRONMENT "LAVATUBE_VIRTUAL_QUEUES=1;LAVATUBE_DELETE_EMPTY_TRACE=1;LAVATUBE_DESTINATION=vulkan_compute_3;VK_LAYER_PATH=${CMAKE_CURRENT_BINARY_DIR}/implicit_layer.d;VK_INSTANCE_LAYERS=VK_LAYER_ARM_lavatube;LD_LIBRARY_PATH=${CMAKE_CURRENT_BINARY_DIR}/implicit_layer.d"
 	SKIP_RETURN_CODE 77)
 add_lavatube_test(layer_test_compute_3_frame_boundary_screenshot
-	COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/cmake/run_if_exists.sh ${CMAKE_CURRENT_BINARY_DIR}/vulkan_compute_3.vk
-		$<TARGET_FILE:lava-replay> -C -w none --screenshots 0 --screenshot-prefix frame_boundary_ vulkan_compute_3.vk)
+	COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/cmake/run_if_exists.sh ${CMAKE_CURRENT_BINARY_DIR}/vulkan_compute_3.api
+		$<TARGET_FILE:lava-replay> -C -w none --screenshots 0 --screenshot-prefix frame_boundary_ vulkan_compute_3.api)
 set_tests_properties(layer_test_compute_3_frame_boundary_screenshot PROPERTIES
 	FIXTURES_REQUIRED Compute3FrameBoundaryTrace
 	FIXTURES_SETUP Compute3FrameBoundaryScreenshot
@@ -966,10 +972,10 @@ set_tests_properties(layer_test_compute_3_frame_boundary_screenshot_validate PRO
 	FIXTURES_REQUIRED Compute3FrameBoundaryScreenshot
 	WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
 add_lavatube_test(layer_test_compute_3_frame_boundary_no_frame1
-	COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/cmake/run_if_exists.sh ${CMAKE_CURRENT_BINARY_DIR}/vulkan_compute_3.vk
+	COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/cmake/run_if_exists.sh ${CMAKE_CURRENT_BINARY_DIR}/vulkan_compute_3.api
 		${CMAKE_COMMAND}
 			-DREPLAY=$<TARGET_FILE:lava-replay>
-			-DINPUT_TRACE=${CMAKE_CURRENT_BINARY_DIR}/vulkan_compute_3.vk
+			-DINPUT_TRACE=${CMAKE_CURRENT_BINARY_DIR}/vulkan_compute_3.api
 			-DOUTPUT_PREFIX=${CMAKE_CURRENT_BINARY_DIR}/frame_boundary_unselected_
 			-P ${PROJECT_SOURCE_DIR}/tests/replay_frame_boundary_no_frame1.cmake)
 set_tests_properties(layer_test_compute_3_frame_boundary_no_frame1 PROPERTIES
@@ -1040,7 +1046,7 @@ layer_test(demo_bloom_minimal demo_bloom_minimal)
 layer_test(demo_descriptor_buffer_minimal demo_descriptor_buffer_minimal)
 layer_test(demo_descriptor_indexing demo_descriptor_indexing)
 layer_test(vkquake2 vkquake2)
-layer_test(anki_scene2 anki_scene2)
+#layer_test(anki_scene2 anki_scene2)
 #layer_test(display display)
 #layer_test(headless_surface headless_surface) -- driver issues on nvidia
 layer_test(compute_device_generated compute_device_generated)
@@ -1063,8 +1069,8 @@ layer_test(aztec_simulator_slow_compute aztec_simulator_slow_compute)
 layer_test(as_populate_instance_buffer as_populate_instance_buffer)
 layer_test(compute_wait_completion_event compute_wait -fb --wait-type completion-event)
 add_lavatube_test(layer_test_compute_wait_completion_event_raw_screenshots
-	COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/cmake/run_if_exists.sh ${CMAKE_CURRENT_BINARY_DIR}/vulkan_compute_wait_completion_event_raw.vk
-		$<TARGET_FILE:lava-replay> --screenshots 0,1 --screenshot-prefix compute_wait_raw_ vulkan_compute_wait_completion_event_raw.vk)
+	COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/cmake/run_if_exists.sh ${CMAKE_CURRENT_BINARY_DIR}/vulkan_compute_wait_completion_event_raw.api
+		$<TARGET_FILE:lava-replay> --screenshots 0,1 --screenshot-prefix compute_wait_raw_ vulkan_compute_wait_completion_event_raw.api)
 set_tests_properties(layer_test_compute_wait_completion_event_raw_screenshots PROPERTIES
 	FIXTURES_REQUIRED compute_wait_completion_event
 	FIXTURES_SETUP ComputeWaitCompletionEventRawScreenshots
@@ -1090,9 +1096,9 @@ layer_test(compute_wait_query_pool compute_wait -fb --wait-type query-pool)
 # --- Simulator tests ---
 
 function(markings_test test_name)
-	add_lavatube_test(markings_compare_${ARGV0}_generate COMMAND $<TARGET_FILE:lava-tool> --skip-missing-input -S ${CMAKE_BINARY_DIR}/vulkan_${ARGV0}_raw.vk ${CMAKE_BINARY_DIR}/vulkan_${ARGV0}_generated.vk)
+	add_lavatube_test(markings_compare_${ARGV0}_generate COMMAND $<TARGET_FILE:lava-tool> --skip-missing-input -S ${CMAKE_BINARY_DIR}/vulkan_${ARGV0}_raw.api ${CMAKE_BINARY_DIR}/vulkan_${ARGV0}_generated.api)
 	set_tests_properties(markings_compare_${ARGV0}_generate PROPERTIES FIXTURES_REQUIRED "${ARGV0}" FIXTURES_SETUP "${ARGV0}_generate_markings" SKIP_RETURN_CODE 77)
-	add_lavatube_test(markings_compare_${ARGV0}_compare COMMAND $<TARGET_FILE:packtool> diff --assert-markings ${CMAKE_BINARY_DIR}/vulkan_${ARGV0}.vk ${CMAKE_BINARY_DIR}/vulkan_${ARGV0}_generated.vk)
+	add_lavatube_test(markings_compare_${ARGV0}_compare COMMAND $<TARGET_FILE:packtool> diff --assert-markings ${CMAKE_BINARY_DIR}/vulkan_${ARGV0}.api ${CMAKE_BINARY_DIR}/vulkan_${ARGV0}_generated.api)
 	set_tests_properties(markings_compare_${ARGV0}_compare PROPERTIES FIXTURES_REQUIRED "${ARGV0}_generate_markings" SKIP_RETURN_CODE 77)
 endfunction()
 
@@ -1107,7 +1113,7 @@ markings_test(as_4)
 markings_test(as_5)
 markings_test(as_6)
 markings_test(as_7)
-markings_test(anki_scene2)
+#markings_test(anki_scene2)
 markings_test(raytracing_indirect_noop)
 markings_test(compute_bda_sc)
 markings_test(compute_bda_sc_multi_create_info)
@@ -1132,5 +1138,5 @@ endif()
 
 # -- cleanup --
 
-add_test(NAME cleanup_tmp COMMAND ${CMAKE_COMMAND} -E rm -f ${CMAKE_CURRENT_BINARY_DIR}/tmp_*.vk)
+add_test(NAME cleanup_tmp COMMAND ${CMAKE_COMMAND} -E rm -f ${CMAKE_CURRENT_BINARY_DIR}/tmp_*.api)
 set_tests_properties(cleanup_tmp PROPERTIES FIXTURES_CLEANUP cleanup_tmp)

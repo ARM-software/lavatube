@@ -2357,16 +2357,16 @@ static VkPhysicalDevice descriptor_buffer_physical_device(lava_file_reader& read
 	const std::string descriptor_name = VkDescriptorType_to_string(descriptor_type);
 	if (region_size != 0)
 	{
-		printf("SKIP: descriptor buffer portability unsupported while replaying %s at thread=%u call=%u frame=%u: replay device requires %zu bytes, "
+		printf("SKIP: descriptor buffer portability unsupported while replaying %s at thread=%u packet=%u frame=%u: replay device requires %zu bytes, "
 			"but the captured marked region only provides %zu bytes at offset %lu in a %lu-byte update.\n",
-			descriptor_name.c_str(), reader.current.thread, reader.current.call, reader.current.frame, replay_size, capture_size,
+			descriptor_name.c_str(), reader.current.thread, reader.current.packet, reader.current.frame, replay_size, capture_size,
 			(unsigned long)offset, (unsigned long)region_size);
 	}
 	else
 	{
-		printf("SKIP: descriptor buffer portability unsupported while replaying %s at thread=%u call=%u frame=%u: replay device requires %zu bytes, "
+		printf("SKIP: descriptor buffer portability unsupported while replaying %s at thread=%u packet=%u frame=%u: replay device requires %zu bytes, "
 			"but the trace captured only %zu bytes.\n",
-			descriptor_name.c_str(), reader.current.thread, reader.current.call, reader.current.frame, replay_size, capture_size);
+			descriptor_name.c_str(), reader.current.thread, reader.current.packet, reader.current.frame, replay_size, capture_size);
 	}
 	printf("SKIP: capture and replay across devices with different descriptor-buffer sizes is not supported for this trace.\n");
 	reader.parent->exit_status = 77;
@@ -3232,26 +3232,6 @@ void replay_pre_vkDestroyInstance(lava_file_reader& reader, VkInstance instance,
 		wrap_vkDestroyDebugReportCallbackEXT(instance, stored_callback, pAllocator);
 		stored_callback = VK_NULL_HANDLE;
 	}
-}
-
-void retrace_vkGetDeviceProcAddr(lava_file_reader& reader)
-{
-	// FIXME We no longer trace this function. Replace the below with an assert later.
-	const uint32_t device_index = reader.read_handle(DEBUGPARAM("VkDevice"));
-	VkDevice device = index_to_VkDevice.at(device_index);
-	const char* pName = reader.read_string();
-	PFN_vkVoidFunction ptr = nullptr;
-	if (reader.run) wrap_vkGetDeviceProcAddr(device, pName);
-}
-
-void retrace_vkGetInstanceProcAddr(lava_file_reader& reader)
-{
-	// FIXME We no longer trace this function. Replace the below with an assert later.
-	const uint32_t instance_index = reader.read_handle(DEBUGPARAM("VkInstance"));
-	VkInstance instance = index_to_VkInstance.at(instance_index);
-	const char* pName = reader.read_string();
-	PFN_vkVoidFunction ptr = nullptr;
-	if (reader.run) wrap_vkGetInstanceProcAddr(instance, pName);
 }
 
 void retrace_vkGetDeviceTracingObjectPropertyTRACETOOLTEST(lava_file_reader& reader)
@@ -4184,23 +4164,6 @@ static void mem_unmap(lava_file_reader& reader, VkDevice device, const suballoc_
 		flush.size = loc.size;
 		wrap_vkFlushMappedMemoryRanges(device, 1, &flush);
 	}
-}
-
-void retrace_vkThreadBarrierTRACETOOLTEST(lava_file_reader& reader)
-{
-	// FIXME This is no longer used, to be removed
-	const unsigned size = reader.read_uint32_t();
-	for (int i = 0; i < (int)size; i++)
-	{
-		const unsigned call = reader.read_uint32_t();
-		DLOG3("Thread barrier on thread %d, waiting for call %u on thread %d / %u", reader.thread_index(), call, i, size - 1);
-		while (i != reader.thread_index() && call > reader.parent->thread_call_numbers->at(i).load(std::memory_order_relaxed))
-		{
-			if (reader.parent->stop_requested()) reader.throw_stop_requested();
-			usleep(1);
-		}
-	}
-	DLOG2("Passed thread barrier on thread %d, waited for %u threads", reader.thread_index(), size);
 }
 
 void read_VkUpdateBufferInfoARM(lava_file_reader& reader, VkUpdateBufferInfoARM* sptr)

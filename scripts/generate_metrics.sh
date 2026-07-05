@@ -175,7 +175,7 @@ run_common_sanity_checks()
 	require_command mktemp
 	require_executable_file /usr/bin/time
 	require_executable_file build_release/lava-replay
-	require_readable_file traces/anki_simple.vk
+	require_readable_file traces/anki_simple.api
 	require_positive_integer "$REPEATS" "REPEATS"
 }
 
@@ -350,7 +350,7 @@ run_common_sanity_checks
 
 CAPTURE_LAYER_DIR="$(pwd)/build_release/implicit_layer.d"
 CAPTURE_OUTPUT_DIR=$(mktemp -d)
-CAPTURE_OUTPUT_FILE="$CAPTURE_OUTPUT_DIR/anki_simple_capture.vk"
+CAPTURE_OUTPUT_FILE="$CAPTURE_OUTPUT_DIR/anki_simple_capture.api"
 trap cleanup_on_exit EXIT
 
 require_executable_file scripts/lava-capture.py
@@ -358,8 +358,8 @@ require_directory "$CAPTURE_LAYER_DIR"
 require_readable_file "$CAPTURE_LAYER_DIR/VkLayer_lavatube.json"
 require_readable_file "$CAPTURE_LAYER_DIR/libVkLayer_lavatube.so"
 
-REPLAY_COMMAND=(build_release/lava-replay -w none traces/anki_simple.vk)
-CAPTURE_COMMAND=(scripts/lava-capture.py --capture-layer "$CAPTURE_LAYER_DIR" -o "$CAPTURE_OUTPUT_FILE" build_release/lava-replay -w none traces/anki_simple.vk)
+REPLAY_COMMAND=(build_release/lava-replay -w none traces/anki_simple.api)
+CAPTURE_COMMAND=(scripts/lava-capture.py --capture-layer "$CAPTURE_LAYER_DIR" -o "$CAPTURE_OUTPUT_FILE" build_release/lava-replay -w none traces/anki_simple.api)
 
 benchmark "Replay" results.lst results2.list cleanup_noop "${REPLAY_COMMAND[@]}"
 benchmark "Capture" capture_results.lst capture_results2.list cleanup_capture_output "${CAPTURE_COMMAND[@]}"

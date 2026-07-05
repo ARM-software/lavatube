@@ -25,11 +25,13 @@ static void thread_test_stress()
 	assert(tid < THREADS);
 	assert(used[tid] == 0);
 	used[tid] = 1;
+	file.begin_packet(PACKET_BUFFER_UPDATE);
 	file.write_uint32_t(42);
 	if (tid % 2 == 1) usleep(tid * 10000); // introduce some pseudo-random timings
 	file.write_uint32_t(84);
 	file.write_string("supercalifragilisticexpialidocious");
 	file.write_uint64_t(3);
+	file.end_packet();
 	file.finalize();
 }
 

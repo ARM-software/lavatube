@@ -7,7 +7,7 @@
 
 static bool valid_change_source(const change_source& c)
 {
-	return c.call != UINT32_MAX && c.frame != UINT32_MAX && c.thread != UINT8_MAX && (c.packet_type != UINT8_MAX || c.call_id != UINT16_MAX);
+	return c.packet != UINT32_MAX && c.frame != UINT32_MAX && c.thread != UINT8_MAX && (c.packet_type != UINT8_MAX || c.call_id != UINT16_MAX);
 }
 
 static const char* trackable_state_string(const trackable* t)
@@ -28,11 +28,11 @@ static void strip_show_meta_lifecycle(Json::Value& meta)
 	static const char* keys[] =
 	{
 		"frame_created",
-		"call_created",
+		"packet_created",
 		"thread_created",
 		"api_created",
 		"frame_destroyed",
-		"call_destroyed",
+		"packet_destroyed",
 		"thread_destroyed",
 		"api_destroyed",
 		"name",
@@ -48,13 +48,13 @@ Json::Value trackable_json(const trackable* t)
 	Json::Value v;
 	assert(t->creation.frame != UINT32_MAX);
 	v["frame_created"] = t->creation.frame;
-	v["call_created"] = t->creation.call; // local call number
+	v["packet_created"] = t->creation.packet; // local packet number
 	v["thread_created"] = t->creation.thread;
 	v["api_created"] = t->creation.call_id;
 	if (t->destroyed.frame != UINT32_MAX)
 	{
 		v["frame_destroyed"] = t->destroyed.frame;
-		v["call_destroyed"] = t->destroyed.call;
+		v["packet_destroyed"] = t->destroyed.packet;
 		v["thread_destroyed"] = t->destroyed.thread;
 		v["api_destroyed"] = t->destroyed.call_id;
 	}
@@ -410,7 +410,7 @@ static void trackable_helper(trackable& t, const Json::Value& v)
 {
 	t.index = v["index"].asUInt();
 	t.creation.frame = v["frame_created"].asUInt();
-	if (v.isMember("call_created")) t.creation.call = v["call_created"].asUInt();
+	if (v.isMember("packet_created")) t.creation.packet = v["packet_created"].asUInt();
 	if (v.isMember("thread_created")) t.creation.thread = v["thread_created"].asUInt();
 	if (v.isMember("api_created")) t.creation.call_id = v["api_created"].asUInt();
 	if (v.isMember("frame_destroyed")) // check for legacy value of -1
@@ -418,7 +418,7 @@ static void trackable_helper(trackable& t, const Json::Value& v)
 		if (v["frame_destroyed"].type() == Json::intValue && v["frame_destroyed"].asInt() == -1) { t.destroyed.frame = UINT32_MAX; }
 		else t.destroyed.frame = v["frame_destroyed"].asUInt();
 	}
-	if (v.isMember("call_destroyed")) t.destroyed.call = v["call_destroyed"].asUInt();
+	if (v.isMember("packet_destroyed")) t.destroyed.packet = v["packet_destroyed"].asUInt();
 	if (v.isMember("thread_destroyed")) t.destroyed.thread = v["thread_destroyed"].asUInt();
 	if (v.isMember("api_destroyed")) t.destroyed.call_id = v["api_destroyed"].asUInt();
 	if (v.isMember("name")) t.name = v["name"].asString();
@@ -821,7 +821,7 @@ void write_json(const std::string& path, const Json::Value& v)
 Json::Value from_change_source(const change_source& c)
 {
 	Json::Value v;
-	v["index"] = c.call;
+	v["index"] = c.packet;
 	v["frame"] = c.frame;
 	v["thread"] = c.thread;
 	const uint8_t packet = c.packet_type != UINT8_MAX ? c.packet_type : (c.call_id != UINT16_MAX ? PACKET_VULKAN_API_CALL : UINT8_MAX);

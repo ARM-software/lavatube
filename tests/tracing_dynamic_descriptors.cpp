@@ -512,7 +512,7 @@ static void assert_no_update(uint32_t buffer_index)
 
 static void retrace()
 {
-	lava_reader reader(TEST_NAME ".vk");
+	lava_reader reader(TEST_NAME ".api");
 	lava_file_reader& thread = reader.file_reader(0);
 	thread.run = false;
 	while (process_next(thread)) {}

@@ -177,7 +177,7 @@ static uint32_t cli_current_packet(lava_file_reader& reader)
 
 static uint32_t cli_current_call(lava_file_reader& reader)
 {
-	const uint32_t completed_calls = reader.current.call;
+	const uint32_t completed_calls = reader.api_call_count;
 	if (cli_has_paused_command(reader) && reader.current.packet_type == PACKET_VULKAN_API_CALL) return completed_calls + 1;
 	return completed_calls;
 }
@@ -192,7 +192,7 @@ static std::string cli_paused_command_response(lava_file_reader& reader)
 	if (!cli_has_paused_command(reader)) return "PAUSED\n";
 	const char* packet_name = get_packet_name((packet_type)reader.current.packet_type, reader.current.call_id);
 	const int thread_id = replayer.cli_thread.load(std::memory_order_acquire);
-	return "PAUSED @ packet=" + std::to_string(cli_current_packet(reader)) + " call=" + std::to_string(cli_current_call(reader))
+	return "PAUSED @ packet=" + std::to_string(cli_current_packet(reader)) + " api_calls=" + std::to_string(cli_current_call(reader))
 	       + " name=" + packet_name + " frame="
 	       + std::to_string(replayer.global_frame) + "/" + std::to_string(replayer.global_frame_count)
 	       + " thread=" + std::to_string(thread_id) + "\n";
@@ -390,7 +390,7 @@ static void service_listener()
 		}
 		else if (command[0] == "goto")
 		{
-			uint32_t target_call = 0;
+			uint32_t target_packet = 0;
 			if (command.size() != 2)
 			{
 				response = "ERROR\n";
@@ -403,22 +403,22 @@ static void service_listener()
 			{
 				const int thread_id = replayer.cli_thread.load(std::memory_order_acquire);
 				lava_file_reader& reader = replayer.file_reader(thread_id);
-				if (parse_u32(command[1], target_call))
+				if (parse_u32(command[1], target_packet))
 				{
-					const uint32_t current_call = cli_current_call(reader);
-					if (target_call < current_call)
+					const uint32_t current_packet = cli_current_packet(reader);
+					if (target_packet < current_packet)
 					{
 						response = "ERROR\n";
 					}
-					else if (target_call == current_call)
+					else if (target_packet == current_packet)
 					{
 						response = cli_paused_command_response(reader);
 					}
 					else
 					{
 						cli_clear_function_target(reader);
-						reader.cli_step.store(cli_step_mode::calls, std::memory_order_release);
-						reader.cli_call.store(target_call, std::memory_order_release);
+						reader.cli_step.store(cli_step_mode::packets, std::memory_order_release);
+						reader.cli_call.store(target_packet, std::memory_order_release);
 						replayer.cli_running.store(true, std::memory_order_release);
 						replayer.cli_running.notify_all();
 						replayer.cli_running.wait(true);

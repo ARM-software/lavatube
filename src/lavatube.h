@@ -4,7 +4,7 @@
 
 #define LAVATUBE_VERSION_MAJOR 0
 #define LAVATUBE_VERSION_MINOR 0
-// Patch version 2 - Unhardcoded vkDestroySurfaceKHR which requires a workaround
+// Patch version 2 - Unhardcoded vkDestroySurfaceKHR
 #define LAVATUBE_VERSION_PATCH 2
 
 #ifndef VK_NO_PROTOTYPES
@@ -1149,5 +1149,5 @@ inline std::string describe_change_source(const change_source& src)
 {
 	assert(src.packet_type != UINT8_MAX);
 	const char* name = get_packet_name((packet_type)src.packet_type, src.call_id);
-	return "Memory last written to by " + std::string(name) + " at frame " + std::to_string(src.frame) + " call number " + std::to_string(src.call) + " thread " + std::to_string(src.thread);
+	return "Memory last written to by " + std::string(name) + " at frame " + std::to_string(src.frame) + " packet number " + std::to_string(src.packet) + " thread " + std::to_string(src.thread);
 }

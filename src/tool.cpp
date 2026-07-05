@@ -219,60 +219,19 @@ static std::list<address_rewrite>::iterator find_stage_rewrite_entry(lava_file_r
 	});
 }
 
-static uint32_t read_unaligned_u32(const char* data)
-{
-	uint32_t value = 0;
-	memcpy(&value, data, sizeof(value));
-	return value;
-}
-
-static uint16_t read_unaligned_u16(const char* data)
-{
-	uint16_t value = 0;
-	memcpy(&value, data, sizeof(value));
-	return value;
-}
-
-static const char* write_output_version2_handle(lava_file_writer& writer, const char* src)
-{
-	writer.write_uint32_t(read_unaligned_u32(src));
-	src += sizeof(uint32_t);
-	writer.write_int8_t(*src);
-	src += sizeof(int8_t);
-	writer.write_uint32_t(read_unaligned_u16(src));
-	src += sizeof(uint16_t);
-	return src;
-}
-
 static void write_output_update_packet_prefix(lava_file_reader& reader, lava_file_writer& writer, uint64_t packet_start, uint64_t header_start)
 {
-	if (reader.version() == 2)
-	{
-		writer.write_array(reader.stream_data(packet_start), header_start - packet_start);
-		return;
-	}
-
-	assert(reader.version() == 1);
-	const char* src = reader.stream_data(packet_start);
-	writer.write_uint8_t((uint8_t)*src);
-	src++;
-	src = write_output_version2_handle(writer, src);
-	src = write_output_version2_handle(writer, src);
-	assert(src == reader.stream_data(header_start));
+	const uint64_t packet_payload_start = packet_start + sizeof(uint8_t) + sizeof(uint32_t);
+	assert(header_start >= packet_payload_start);
+	writer.write_array(reader.stream_data(packet_payload_start), header_start - packet_payload_start);
 }
 
 static void write_output_update_packet(lava_file_reader& reader, lava_file_writer& writer, uint64_t packet_start, uint64_t packet_end)
 {
-	if (reader.version() == 2)
-	{
-		writer.write_array(reader.stream_data(packet_start), packet_end - packet_start);
-		return;
-	}
-
-	const uint64_t version1_handle_size = sizeof(uint32_t) + sizeof(int8_t) + sizeof(uint16_t);
-	const uint64_t header_start = packet_start + sizeof(uint8_t) + version1_handle_size * 2;
-	write_output_update_packet_prefix(reader, writer, packet_start, header_start);
-	writer.write_array(reader.stream_data(header_start), packet_end - header_start);
+	assert(packet_end >= packet_start);
+	const uint64_t packet_size = packet_end - packet_start;
+	if (packet_size > UINT32_MAX) ABORT("Packet too large to copy: %lu bytes", (unsigned long)packet_size);
+	writer.write_raw_packet(reader.stream_data(packet_start), (uint32_t)packet_size);
 }
 
 static bool is_flush_markings_source(const change_source& source)
@@ -357,6 +316,7 @@ static bool maybe_write_rewritten_update_packet(lava_file_reader& reader, lava_f
 		ILOG("Injecting VkMarkedOffsetsARM on %s (%u markings)", describe_change_source(reader.current).c_str(), (unsigned)desired->count);
 	}
 
+	writer.begin_packet(update.instrtype);
 	write_output_update_packet_prefix(reader, writer, packet_start, update.header_start);
 	const uint64_t payload_bytes = packet_end - update.payload_start;
 	const uint64_t new_header_bytes = sizeof(uint16_t) + marked_offsets_extension_size(desired);
@@ -364,6 +324,7 @@ static bool maybe_write_rewritten_update_packet(lava_file_reader& reader, lava_f
 	writer.write_uint16_t(PACKET_FLAG_HAS_PNEXT);
 	write_marked_offsets_extension(writer, desired);
 	writer.write_array(reader.stream_data(update.payload_start), packet_end - update.payload_start);
+	writer.end_packet();
 
 	free_marked_offsets(existing);
 	free_marked_offsets(desired);
@@ -889,7 +850,7 @@ static void write_descriptor_buffer_update_packet(lava_file_writer& writer, uint
 		.pOffsets = offsets.data(),
 	};
 
-	writer.write_uint8_t((uint8_t)PACKET_BUFFER_UPDATE2);
+	writer.begin_packet(PACKET_BUFFER_UPDATE2);
 	writer.write_handle(writer_device);
 	writer.write_handle(writer_buffer);
 	uint64_t* sizeptr = writer.write_later_uint64_t();
@@ -917,7 +878,7 @@ static void write_descriptor_buffer_update_packet(lava_file_writer& writer, uint
 	writer_buffer->updates++;
 	writer_buffer->written += written;
 	*sizeptr = writer.uncompressed_bytes - packet_payload_start;
-	writer.thaw();
+	writer.end_packet();
 }
 
 static void flush_synthetic_descriptor_buffer_updates()
@@ -1083,7 +1044,7 @@ static void output_vkQueueSubmit2KHR(callback_context& cb, VkQueue queue, uint32
 
 static bool rewrite_call_less(const address_rewrite& a, const address_rewrite& b)
 {
-	return a.source.call < b.source.call;
+	return a.source.packet < b.source.packet;
 }
 
 void usage()
@@ -1246,18 +1207,18 @@ static void replay_thread(lava_reader* replayer, int thread_id)
 		while ((instrtype = t.step()))
 		{
 			uint64_t packet_start = 0;
-			uint32_t output_call = 0;
+			uint32_t output_packet = 0;
 			if (write_output)
 			{
 				t.current_update_packet.clear();
-				packet_start = t.stream_position() - 1; // include the packet type already consumed by step()
+				packet_start = t.packet_start();
 				if (instrtype != PACKET_VULKAN_API_CALL && instrtype != PACKET_THREAD_BARRIER && !is_update_packet(instrtype))
 				{
-					ABORT("Output mode does not yet support packet type %u on thread %u call %u", (unsigned)instrtype, (unsigned)t.thread_index(), (unsigned)t.current.call);
+					ABORT("Output mode does not yet support packet type %u on thread %u packet %u", (unsigned)instrtype, (unsigned)t.thread_index(), (unsigned)t.current.packet);
 				}
 				if (instrtype == PACKET_VULKAN_API_CALL)
 				{
-					output_call = output_writer->current.call;
+					output_packet = output_writer->current.packet;
 				}
 			}
 			switchboard_packet(instrtype, t);
@@ -1270,15 +1231,15 @@ static void replay_thread(lava_reader* replayer, int thread_id)
 					output_writer->pending_barrier.store(false, std::memory_order_relaxed);
 					frame_mutex.unlock();
 				}
-				const uint64_t packet_end = t.stream_position();
+				const uint64_t packet_end = t.packet_end();
 				if (!simulate || !maybe_write_rewritten_update_packet(t, *output_writer, packet_start, packet_end))
 				{
 					write_output_update_packet(t, *output_writer, packet_start, packet_end);
 				}
 			}
-			if (write_output && instrtype == PACKET_VULKAN_API_CALL && output_writer->current.call != output_call + 1)
+			if (write_output && instrtype == PACKET_VULKAN_API_CALL && output_writer->current.packet == output_packet)
 			{
-				ABORT("Output mode does not yet support API call %s on thread %u call %u", get_function_name(t.current.call_id), (unsigned)t.thread_index(), (unsigned)t.current.call);
+				write_output_update_packet(t, *output_writer, packet_start, t.packet_end());
 			}
 			t.self_test();
 		}

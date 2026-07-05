@@ -18,7 +18,7 @@ lava::mutex sync_mutex;
 
 bool same_change_source(const change_source& a, const change_source& b)
 {
-	return a.call == b.call && a.frame == b.frame && a.thread == b.thread && a.call_id == b.call_id;
+	return a.packet == b.packet && a.frame == b.frame && a.thread == b.thread && a.call_id == b.call_id;
 }
 
 static bool same_rewrite_target(const address_rewrite& entry, VkObjectType object_type, uint32_t object_index, uint32_t stage_index)
@@ -84,7 +84,7 @@ lava_file_reader::lava_file_reader(lava_reader* _parent, const std::string& path
 	write_output = parent->write_output;
 	global_frames = frames;
 	current.thread = mytid;
-	current.call = 0;
+	current.packet = 0;
 	current.frame = 0;
 	current.thread = mytid;
 	memset(trace_thread_name, 0, sizeof(trace_thread_name));
@@ -126,6 +126,7 @@ lava_file_reader::lava_file_reader(lava_reader* _parent, const std::string& path
 
 uint8_t lava_file_reader::step()
 {
+	complete_packet();
 	if (parent->stop_requested())
 	{
 		terminated.store(true);
@@ -137,13 +138,39 @@ uint8_t lava_file_reader::step()
 		return 0; // done
 	}
 	release_checkpoint();
+	current_packet_start = read_position;
 	const uint8_t r = read_uint8_t();
 	assert(r != 0); // invalid value for instrtype
+	current_packet_size = read_uint32_t();
+	if (current_packet_size < sizeof(uint8_t) + sizeof(uint32_t))
+	{
+		ABORT("Invalid packet size %u on thread %u", (unsigned)current_packet_size, (unsigned)current.thread);
+	}
+	current_packet_end = current_packet_start + current_packet_size;
 	current.packet_type = r;
 	if (r != PACKET_VULKAN_API_CALL) current.call_id = UINT16_MAX;
 	printed_current_packet = false;
 	print_packet_frame = current.frame;
+	current_packet_open = true;
 	return r;
+}
+
+void lava_file_reader::complete_packet()
+{
+	if (!current_packet_open) return;
+	if (read_position > current_packet_end)
+	{
+		ABORT("Packet %u on thread %u overread by %lu bytes", (unsigned)current.packet, (unsigned)current.thread, (unsigned long)(read_position - current_packet_end));
+	}
+	if (read_position < current_packet_end)
+	{
+		DLOG("Skipping %lu unread bytes at end of packet %u on thread %u", (unsigned long)(current_packet_end - read_position), (unsigned)current.packet, (unsigned)current.thread);
+		read_position = current_packet_end;
+	}
+	current_packet_open = false;
+	current.packet++;
+	parent->thread_packet_numbers->at(current.thread).fetch_add(1, std::memory_order_relaxed);
+	pool.reset();
 }
 
 void lava_file_reader::note_markings(const VkMarkedOffsetsARM* markings)
@@ -161,7 +188,7 @@ uint16_t lava_file_reader::read_apicall()
 	set_checkpoint();
 	const uint16_t apicall = parent->dictionary.at(read_uint16_t());
 	(void)read_uint32_t(); // reserved for future use
-	DLOG2("[t%02u f%u %06d] %s", current.thread, current.frame, (int)parent->thread_call_numbers->at(current.thread).load(std::memory_order_relaxed) + 1, get_function_name(apicall));
+	DLOG2("[t%02u f%u %06d] %s", current.thread, current.frame, (int)parent->thread_packet_numbers->at(current.thread).load(std::memory_order_relaxed) + 1, get_function_name(apicall));
 	lava_replay_func func = retrace_getcall(apicall);
 	current.call_id = apicall;
 	current.packet_type = PACKET_VULKAN_API_CALL;
@@ -172,9 +199,7 @@ uint16_t lava_file_reader::read_apicall()
 		callback_context cb_context{ *this };
 		print_params_unavailable(cb_context);
 	}
-	current.call++;
-	parent->thread_call_numbers->at(current.thread).fetch_add(1, std::memory_order_relaxed);
-	pool.reset();
+	api_call_count++;
 	return apicall;
 }
 
@@ -274,7 +299,7 @@ void print_params_packet(callback_context& cb)
 
 lava_reader::~lava_reader()
 {
-	delete thread_call_numbers;
+	delete thread_packet_numbers;
 	for (auto& t : thread_streams)
 	{
 		delete t;
@@ -379,7 +404,7 @@ void lava_reader::init(const std::string& path)
 	// initialize threads -- note that this happens before threading begins, so thread safe
 	threads.resize(num_threads);
 	thread_streams.resize(num_threads);
-	thread_call_numbers = new std::vector<std::atomic_uint_fast32_t>(num_threads);
+	thread_packet_numbers = new std::vector<std::atomic_uint_fast32_t>(num_threads);
 
 	for (int thread_id = 0; thread_id < num_threads; thread_id++)
 	{

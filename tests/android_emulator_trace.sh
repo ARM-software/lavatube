@@ -326,11 +326,11 @@ print_trace_sanity()
     echo "Trace sanity:"
 
     if [ -x "$packtool" ]; then
-        metadata=$("$packtool" print metadata.json calendar.vk 2>/dev/null || true)
+        metadata=$("$packtool" print metadata.json calendar.api 2>/dev/null || true)
         global_frames=$(echo "$metadata" | awk -F: '/"global_frames"/ { gsub(/[, ]/, "", $2); print $2; exit }')
         android_ext=$(echo "$metadata" | awk '/"VK_ANDROID_frame_boundary"/ { count++ } END { print count + 0 }')
         ext_ext=$(echo "$metadata" | awk '/"VK_EXT_frame_boundary"/ { count++ } END { print count + 0 }')
-        frames=$("$packtool" print frames_0.json calendar.vk 2>/dev/null || true)
+        frames=$("$packtool" print frames_0.json calendar.api 2>/dev/null || true)
         frame_table_entries=$(echo "$frames" | awk '/"global_frame"/ { count++ } END { print count + 0 }')
 
         echo "  global_frames: ${global_frames:-unknown}"
@@ -342,7 +342,7 @@ print_trace_sanity()
     fi
 
     if [ -x "$lava_print" ] && [ "${COUNT_TRACE_PACKETS:-0}" = "1" ]; then
-        boundary_count=$("$lava_print" calendar.vk 2>/dev/null | awk '/"name":"vkFrameBoundaryANDROID"/ { count++ } END { print count + 0 }')
+        boundary_count=$("$lava_print" calendar.api 2>/dev/null | awk '/"name":"vkFrameBoundaryANDROID"/ { count++ } END { print count + 0 }')
         echo "  vkFrameBoundaryANDROID packets: $boundary_count"
     elif [ -x "$lava_print" ]; then
         echo "  vkFrameBoundaryANDROID packets: skipped (set COUNT_TRACE_PACKETS=1 to count)"
@@ -366,7 +366,7 @@ validate_layer_for_device
 APP_NAME="com.google.android.calendar"
 LAYER_DIR="/data/local/debug/vulkan"
 TRACE_DIR="/data/local/tmp/lavatube-traces"
-TRACE_PATH="$TRACE_DIR/calendar.vk"
+TRACE_PATH="$TRACE_DIR/calendar.api"
 TRACE_SECONDS=${TRACE_SECONDS:-3}
 MIN_TRACE_FRAMES=${MIN_TRACE_FRAMES:-120}
 
@@ -449,7 +449,7 @@ fi
 
 # Pull trace
 echo "Pulling trace from $TRACE_PATH..."
-rm -rf calendar.vk
+rm -rf calendar.api
 if ! adb -e pull "$TRACE_PATH" .; then
     echo "Failed to pull trace."
     show_trace_errors
@@ -463,6 +463,6 @@ print_trace_sanity
 
 # Replay on desktop - skipping for now
 #echo "Replaying trace on desktop..."
-#"$REPLAY_PATH" -V -B calendar.vk
+#"$REPLAY_PATH" -V -B calendar.api
 
 echo "Test successful!"

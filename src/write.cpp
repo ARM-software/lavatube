@@ -102,12 +102,12 @@ static bool has_suffix(const std::string& value, const char* suffix)
 
 static const char* trace_pack_suffix()
 {
-	return p__zipcontainer ? ".api" : ".vk";
+	return ".api";
 }
 
 static std::string trace_pack_path(const std::string& path, bool explicit_output)
 {
-	if (has_suffix(path, ".vk") || has_suffix(path, ".api")) return path;
+	if (has_suffix(path, ".api")) return path;
 	if (explicit_output) return path + trace_pack_suffix();
 	return path + trace_pack_suffix();
 }
@@ -117,7 +117,7 @@ static std::string trace_pack_path(const std::string& path, bool explicit_output
 lava_file_writer::lava_file_writer(uint16_t _tid, lava_writer* _parent) : file_writer(_tid), parent(_parent)
 {
 	current.thread = _tid;
-	current.call = 0;
+	current.packet = 0;
 	run = parent->run;
 	write_output = parent->write_output;
 	get_thread_name(thread_name);
@@ -148,20 +148,22 @@ void lava_file_writer::push_thread_barriers()
 
 void lava_file_writer::inject_thread_barrier()
 {
-	write_uint8_t(PACKET_THREAD_BARRIER); // packet type
+	begin_packet(PACKET_THREAD_BARRIER);
 	int size = parent->thread_streams.size();
 	write_uint8_t(size); // threads to sync
 	for (int i = 0; i < size; i++)
 	{
-		const uint32_t call = parent->thread_streams.at(i)->current.call;
-		assert(call != UINT32_MAX);
-		write_uint32_t(call);
+		const uint32_t packet_index = parent->thread_streams.at(i)->current.packet;
+		assert(packet_index != UINT32_MAX);
+		write_uint32_t(packet_index);
 	}
 	DLOG2("Injected thread barrier on thread %d with %d targets", thread_index(), size);
+	end_packet();
 }
 
 lava_file_writer::~lava_file_writer()
 {
+	end_packet();
 	self_test();
 	file_writer::finalize();
 
@@ -177,7 +179,7 @@ lava_file_writer::~lava_file_writer()
 		k["global_frame"] = frame.global_frame;
 		k["local_frame"] = frame.local_frame;
 		k["position"] = (Json::Value::Int64)frame.start_pos;
-		k["call"] = current.call;
+		k["packet"] = frame.packet_index;
 		v["frames"].append(k);
 		highest = std::max(highest, frame.global_frame);
 	}
@@ -195,12 +197,49 @@ void lava_file_writer::new_frame(int global_frame)
 {
 	framedata data;
 	data.start_pos = uncompressed_bytes;
+	data.packet_index = current.packet;
 	data.global_frame = global_frame;
 	data.local_frame = current.frame;
 	frames.push_back(data);
 	assert(global_frame >= (int)current.frame);
 	current.frame++;
 	self_test();
+}
+
+void lava_file_writer::begin_packet(uint8_t type)
+{
+	end_packet();
+	current.packet_type = type;
+	if (type != PACKET_VULKAN_API_CALL) current.call_id = UINT16_MAX;
+	packet_start = uncompressed_bytes;
+	write_uint8_t(type);
+	packet_size = write_later_uint32_t(0);
+	packet_open = true;
+}
+
+void lava_file_writer::end_packet()
+{
+	if (!packet_open) return;
+	assert(packet_size);
+	const uint64_t size = uncompressed_bytes - packet_start;
+	if (size > UINT32_MAX)
+	{
+		ABORT("Packet on thread %u is too large: %lu bytes", (unsigned)current.thread, (unsigned long)size);
+	}
+	*packet_size = (uint32_t)size;
+	packet_size = nullptr;
+	packet_open = false;
+	thaw();
+	current.packet++;
+}
+
+void lava_file_writer::write_raw_packet(const char* data, uint32_t size)
+{
+	assert(data);
+	assert(size >= sizeof(uint8_t) + sizeof(uint32_t));
+	end_packet();
+	write_array(data, size);
+	current.packet++;
 }
 
 // --- trace writer

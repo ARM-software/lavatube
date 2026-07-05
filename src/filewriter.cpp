@@ -91,7 +91,7 @@ void file_writer::set(const std::string& filename)
 	memset(header.data(), 0, header.size());
 	memcpy(header.data(), magic_word, strlen(magic_word)); // bytes 0..7
 	uint8_t* headerptr = (uint8_t*)header.data() + strlen(magic_word);
-	headerptr[0] = 2; // file version
+	headerptr[0] = 3; // file version
 	headerptr[1] = p__compression_type; // compression algorithm
 	write_chunk(header);
 

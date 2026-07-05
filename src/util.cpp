@@ -346,7 +346,6 @@ uint_fast8_t p__trust_host_flushes = get_env_int("LAVATUBE_TRUST_HOST_FLUSHING",
 int_fast32_t p__suballocator_heap_size = get_env_int("LAVATUBE_SUBALLOCATOR_HEAP_SIZE", -1);
 uint_fast8_t p__delete_empty_trace = get_env_bool("LAVATUBE_DELETE_EMPTY_TRACE", 0);
 uint_fast8_t p__skip_remove_unused = get_env_bool("LAVATUBE_SKIP_REMOVE_UNUSED", 0);
-uint_fast8_t p__zipcontainer = get_env_bool("LAVATUBE_ZIPFILE", 0);
 uint_fast16_t p__port = get_env_int("LAVATUBE_PORT", 11901);
 
 void copy_recorded_memory_requirements(memory_requirements& dst, const VkMemoryRequirements2* src)

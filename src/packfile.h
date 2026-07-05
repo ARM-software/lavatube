@@ -1,10 +1,10 @@
 #pragma once
 
 #include <assert.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <string>
-#include <unistd.h>
 #include <stdint.h>
-#include <errno.h>
 #include <vector>
 #include <cstring>
 #include "jsoncpp/json/value.h"
@@ -19,20 +19,8 @@ struct packed
 	inline void read(void* ptr, uint_fast32_t _size)
 	{
 		assert(_size <= filesize - consumed);
-		if (zip_handle)
-		{
-			memcpy(ptr, static_cast<const char*>(zip_mapping.data) + consumed, _size);
-			consumed += _size;
-			return;
-		}
-		size_t actually_read = 0;
-		errno = 0;
-		do
-		{
-			ssize_t res = ::read(fd, ptr, _size - actually_read);
-			if (res > 0) actually_read += res;
-		} while (actually_read < _size && (errno == EWOULDBLOCK || errno == EINTR));
-		assert(actually_read == _size);
+		assert(zip_handle);
+		memcpy(ptr, static_cast<const char*>(zip_mapping.data) + consumed, _size);
 		consumed += _size;
 	}
 
@@ -45,11 +33,6 @@ struct packed
 			zip_handle = nullptr;
 			zip_mapping = {};
 		}
-		if (fd != -1)
-		{
-			::close(fd);
-			fd = -1;
-		}
 		filesize = 0;
 		consumed = 0;
 	}
@@ -57,9 +40,6 @@ struct packed
 	// treat these as private:
 	uint64_t filesize = 0;
 	uint64_t consumed = 0;
-	uint64_t last_idx_ptr_pos = 0; // position of last next-index pointer, if non-zero
-	int fd = -1;
-	int version = 0;
 	zipc* zip_handle = nullptr;
 	zipc_mapping zip_mapping = {};
 	std::string inside;
@@ -87,5 +67,5 @@ void packed_list(const std::string& pack);
 /// Return list of files, optionally filtering by a starting string that must match.
 std::vector<std::string> packed_files(const std::string& pack, const std::string& startsWith = std::string());
 
-/// Append a new file to a packfile
+/// Append a new file to a trace container
 bool pack_add(const std::string& newfile, const std::string& pack);

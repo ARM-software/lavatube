@@ -315,7 +315,7 @@ static void trace_2(int variant)
 
 static void getnext(lava_file_reader& t, const char* expected_s)
 {
-	const uint8_t instrtype = t.read_uint8_t();
+	const uint8_t instrtype = t.step();
 	if (instrtype == PACKET_VULKAN_API_CALL)
 	{
 		const uint16_t expected = retrace_getid(expected_s);
@@ -335,7 +335,7 @@ static void getnext(lava_file_reader& t, const char* expected_s)
 
 static void retrace_1()
 {
-	lava_reader r(TEST_NAME_1 ".vk");
+	lava_reader r(TEST_NAME_1 ".api");
 	test_register_replay_callbacks();
 	lava_file_reader& t = r.file_reader(0);
 
@@ -347,7 +347,7 @@ static void retrace_1()
 
 static void retrace_2(int variant)
 {
-	std::string testname = std::string(TEST_NAME_2) + "_" +  _to_string(variant) + ".vk";
+	std::string testname = std::string(TEST_NAME_2) + "_" +  _to_string(variant) + ".api";
 	lava_reader r(testname);
 	test_register_replay_callbacks();
 	lava_file_reader& t = r.file_reader(0);
@@ -448,8 +448,11 @@ int main(int argc, char** argv)
 	}
 
 	// test initialization without any extensions
+	const uint_fast8_t old_delete_empty_trace = p__delete_empty_trace;
+	p__delete_empty_trace = 0;
 	trace_1();
 	retrace_1();
+	p__delete_empty_trace = old_delete_empty_trace;
 
 	// test bigger init & destroy sequence; also check that re-initialization works
 	trace_2(variant);

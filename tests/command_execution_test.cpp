@@ -179,10 +179,10 @@ static void execute_null()
 	assert(descriptor_buffer_payloads.empty());
 }
 
-static change_source make_source(uint32_t call)
+static change_source make_source(uint32_t packet)
 {
 	change_source source;
-	source.call = call;
+	source.packet = packet;
 	source.frame = 0;
 	source.thread = 0;
 	source.call_id = VKCMDUPDATEBUFFER;
@@ -191,7 +191,7 @@ static change_source make_source(uint32_t call)
 
 static bool same_source(const change_source& a, const change_source& b)
 {
-	return a.call == b.call && a.frame == b.frame && a.thread == b.thread && a.call_id == b.call_id;
+	return a.packet == b.packet && a.frame == b.frame && a.thread == b.thread && a.call_id == b.call_id;
 }
 
 static void init_buffer(uint32_t index, VkDeviceSize size)
@@ -711,8 +711,8 @@ static void execute_compute_shader_bda_copied_address_chain()
 	assert(global_output_rewrite_queue.size() == 1);
 	const address_rewrite& rewrite = global_output_rewrite_queue.front();
 	assert(same_source(rewrite.source, update_source));
-	assert(rewrite.object_type == VK_OBJECT_TYPE_BUFFER);
-	assert(rewrite.object_index == 0);
+	assert(rewrite.object_type == VK_OBJECT_TYPE_UNKNOWN);
+	assert(rewrite.object_index == CONTAINER_NULL_VALUE);
 	assert(rewrite.markings);
 	assert(rewrite.markings->count == 1);
 	assert(rewrite.markings->pMarkingTypes[0] == VK_MARKING_TYPE_DEVICE_ADDRESS_ARM);
@@ -828,8 +828,8 @@ static void execute_compute_shader_bda_two_lane_output_provenance()
 	assert(global_output_rewrite_queue.size() == 1);
 	const address_rewrite& rewrite = global_output_rewrite_queue.front();
 	assert(same_source(rewrite.source, address_source));
-	assert(rewrite.object_type == VK_OBJECT_TYPE_BUFFER);
-	assert(rewrite.object_index == 0);
+	assert(rewrite.object_type == VK_OBJECT_TYPE_UNKNOWN);
+	assert(rewrite.object_index == CONTAINER_NULL_VALUE);
 	assert(rewrite.markings);
 	assert(rewrite.markings->count == 2);
 	assert(rewrite.markings->pMarkingTypes[0] == VK_MARKING_TYPE_DEVICE_ADDRESS_ARM);
@@ -997,8 +997,8 @@ static void execute_compute_shader_bda_interleave_copied_address_provenance()
 	assert(global_output_rewrite_queue.size() == 1);
 	const address_rewrite& rewrite = global_output_rewrite_queue.front();
 	assert(same_source(rewrite.source, address_source));
-	assert(rewrite.object_type == VK_OBJECT_TYPE_BUFFER);
-	assert(rewrite.object_index == 0);
+	assert(rewrite.object_type == VK_OBJECT_TYPE_UNKNOWN);
+	assert(rewrite.object_index == CONTAINER_NULL_VALUE);
 	assert(rewrite.markings);
 	assert(rewrite.markings->count == 2);
 	assert(rewrite.markings->pMarkingTypes[0] == VK_MARKING_TYPE_DEVICE_ADDRESS_ARM);

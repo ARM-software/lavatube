@@ -35,8 +35,8 @@ test case of the basic workflow.
   `vkCmdTraceRaysIndirect2KHR`, similar to how spirv-simulator is a source for
   these.
 * Add code to verify memory markings coming from `vkCmdTraceRaysIndirect2KHR`
-  (verify with `lava-tool -V vulkan_raytracing_indirect_noop.vk`)
+  (verify with `lava-tool -V vulkan_raytracing_indirect_noop.api`)
 * We have a trace `vulkan_raytracing_indirect_noop_raw` without memory markings.
-  Run `lava-tool -S vulkan_raytracing_indirect_noop_raw.vk tmp.vk` and verify
-  with `packtool diff --assert-markings vulkan_raytracing_indirect.vk tmp.vk`,
+  Run `lava-tool -S vulkan_raytracing_indirect_noop_raw.api tmp.api` and verify
+  with `packtool diff --assert-markings vulkan_raytracing_indirect.api tmp.api`,
   comparing our manual markings with the newly inserted ones.

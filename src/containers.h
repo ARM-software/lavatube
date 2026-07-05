@@ -30,15 +30,15 @@
 
 struct change_source
 {
-	uint32_t call = UINT32_MAX;
+	uint32_t packet = UINT32_MAX;
 	uint32_t frame = UINT32_MAX; // global frame
 	uint8_t thread = UINT8_MAX;
 	uint8_t packet_type = UINT8_MAX;
-	uint16_t call_id = UINT16_MAX; // type of call
+	uint16_t call_id = UINT16_MAX; // type of call, if a call
 
 	void self_test() const
 	{
-		assert(call != UINT32_MAX);
+		assert(packet != UINT32_MAX);
 		assert(thread != UINT8_MAX);
 		if (packet_type == 2) assert(call_id != UINT16_MAX); // PACKET_VULKAN_API_CALL
 		assert(frame != UINT32_MAX);
@@ -48,8 +48,6 @@ struct change_source
 struct host_write_reference
 {
 	change_source source;
-	VkObjectType object_type = VK_OBJECT_TYPE_UNKNOWN;
-	uint32_t object_index = CONTAINER_NULL_VALUE;
 	uint32_t stage_index = CONTAINER_NULL_VALUE;
 	int64_t object_offset = 0;
 };
@@ -228,11 +226,11 @@ public:
 		assert(object_offset <= (uint64_t)INT64_MAX);
 		const host_write_reference reference {
 			.source = source,
-			.object_type = object_type,
-			.object_index = object_index,
 			.stage_index = stage_index,
 			.object_offset = (int64_t)object_offset,
 		};
+		(void)object_type;
+		(void)object_index;
 
 		if (elements == 1)
 		{
@@ -300,21 +298,19 @@ private:
 
 	static bool same_source(const change_source& a, const change_source& b)
 	{
-		return a.call == b.call && a.frame == b.frame && a.thread == b.thread && a.call_id == b.call_id;
+		return a.packet == b.packet && a.frame == b.frame && a.thread == b.thread && a.call_id == b.call_id;
 	}
 
 	static bool same_reference(const host_write_reference& a, const host_write_reference& b)
 	{
 		return same_source(a.source, b.source)
-			&& a.object_type == b.object_type
-			&& a.object_index == b.object_index
 			&& a.stage_index == b.stage_index;
 	}
 
 	static bool has_source_object(const host_write_reference& reference)
 	{
-		return reference.object_type != VK_OBJECT_TYPE_UNKNOWN
-			&& reference.object_index != CONTAINER_NULL_VALUE;
+		(void)reference;
+		return true;
 	}
 
 	static bool contiguous_reference(const source_span& previous, uint64_t next_start, const host_write_reference& next)

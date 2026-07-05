@@ -33,7 +33,7 @@ void usage()
 	printf("    step                     Advance one packet.\n");
 	printf("    step packets N           Advance N packets.\n");
 	printf("    step calls N             Advance N Vulkan API calls.\n");
-	printf("    goto CALL                Continue until absolute Vulkan API call number CALL.\n");
+	printf("    goto PACKET              Continue until thread-relative packet number PACKET.\n");
 	printf("    goto NAME                Continue until next Vulkan command NAME, e.g. vkQueueSubmit.\n");
 	printf("\n");
 	printf("Call inspection:\n");

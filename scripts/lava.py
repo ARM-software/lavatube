@@ -467,7 +467,7 @@ out([gh], '\t\tif (threads.contains(call_info.thread_id)) { tid = threads[call_i
 out([gh], '\t\telse { tid = threads.size(); threads[call_info.thread_id] = tid; }')
 out([gh], '\t\treturn write_header(funcname, id, tid, thread_barrier);')
 out([gh], '\t}')
-out([gh], '\tinline void finish(lava_file_writer& writer) { writer.thaw(); }')
+out([gh], '\tinline void finish(lava_file_writer& writer) { writer.end_packet(); }')
 out([gh])
 out([gh], '\tstd::unordered_map<uint64_t, int> threads;')
 out([gh], '};')
@@ -533,7 +533,7 @@ out(targets_read, '\tswitch(call)')
 out(targets_read, '\t{')
 idx = 0
 for f in spec.functions:
-	if f in vk.functions_noop or f in spec.disabled_functions or spec.str_contains_vendor(f):
+	if f in vk.functions_noop or f in vk.untraced or f in spec.disabled_functions or spec.str_contains_vendor(f):
 		out(targets_read, '\tcase %d:' % idx)
 		out(targets_read, '\t\tDLOG3("Attempt to use retrace_getcall on unimplemented function %s with index %d.");' % (f, idx))
 		out(targets_read, '\t\treturn nullptr;')

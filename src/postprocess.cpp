@@ -32,8 +32,8 @@ static bool setup_execute_commands(lava_file_reader& reader, const trackeddevice
 	const uint64_t command_buffer_time_ns = gettime() - command_buffer_start;
 	if (data.stats.execution_commands > 0 && command_buffer_time_ns > 0)
 	{
-		DLOG("Simulator execution of cmd_buffer=%u frame=%u call=%u thread=%u simulator_time=%.2fms commands=%d execution_commands=%d slowest_shader=%d slowest_type=%s slowest_time=%.2fms", (unsigned)cmdbuffer_index,
-		     (unsigned)reader.current.frame, (unsigned)reader.current.call, (unsigned)reader.current.thread, ns_to_ms(command_buffer_time_ns), data.stats.commands,
+		DLOG("Simulator execution of cmd_buffer=%u frame=%u packet=%u thread=%u simulator_time=%.2fms commands=%d execution_commands=%d slowest_shader=%d slowest_type=%s slowest_time=%.2fms", (unsigned)cmdbuffer_index,
+		     (unsigned)reader.current.frame, (unsigned)reader.current.packet, (unsigned)reader.current.thread, ns_to_ms(command_buffer_time_ns), data.stats.commands,
 		     data.stats.execution_commands, (int)data.stats.slowest.shader_module_index, shader_stage_name(data.stats.slowest.stage), ns_to_ms(data.stats.slowest.run_time_ns));
 	}
 	return r;
@@ -626,7 +626,7 @@ void postprocess_compute_command(callback_context& cb, uint32_t commandbuffer_in
 	{
 		const auto& last = commandbuffer_data.commands.back();
 		if (last.id == VKCMDDISPATCHDATAGRAPHARM &&
-			last.source.call == cb.reader.current.call &&
+			last.source.packet == cb.reader.current.packet &&
 			last.source.frame == cb.reader.current.frame &&
 			last.source.thread == cb.reader.current.thread &&
 			last.source.call_id == cb.reader.current.call_id)

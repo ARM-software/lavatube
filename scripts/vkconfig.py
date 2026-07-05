@@ -111,17 +111,19 @@ virtualswap_calls = [ 'vkCreateSwapchainKHR', 'vkDestroySwapchainKHR', 'vkCreate
 validate_funcs(virtualswap_calls)
 
 # These functions are hard-coded in hardcode_{write|read}.cpp
-hardcoded = [ 'vkGetSwapchainImagesKHR', 'vkCreateAndroidSurfaceKHR', 'vkGetDeviceProcAddr',
-	'vkGetInstanceProcAddr', 'vkCreateWaylandSurfaceKHR', 'vkCreateHeadlessSurfaceEXT', 'vkCreateXcbSurfaceKHR', 'vkCreateXlibSurfaceKHR',
+hardcoded = [ 'vkGetSwapchainImagesKHR', 'vkCreateAndroidSurfaceKHR',
+	'vkCreateWaylandSurfaceKHR', 'vkCreateHeadlessSurfaceEXT', 'vkCreateXcbSurfaceKHR', 'vkCreateXlibSurfaceKHR',
 	'vkGetDeviceQueue', 'vkGetDeviceQueue2', "vkGetAndroidHardwareBufferPropertiesANDROID", "vkGetMemoryAndroidHardwareBufferANDROID",
 	'vkEnumerateInstanceLayerProperties', 'vkEnumerateInstanceExtensionProperties', 'vkEnumerateDeviceLayerProperties', 'vkEnumerateDeviceExtensionProperties',
 	'vkGetPhysicalDeviceXlibPresentationSupportKHR', 'vkGetPhysicalDeviceXcbPresentationSupportKHR', 'vkCreateWin32SurfaceKHR', 'vkCreateDirectFBSurfaceEXT', 'vkCreateMetalSurfaceEXT' ]
 validate_funcs(hardcoded)
 hardcoded_write = [ 'vkGetPhysicalDeviceToolPropertiesEXT', 'vkGetPhysicalDeviceToolProperties', 'vkGetPhysicalDeviceQueueFamilyProperties',
-	'vkGetPhysicalDeviceQueueFamilyProperties2KHR', 'vkGetPhysicalDeviceQueueFamilyProperties2' ]
+	'vkGetPhysicalDeviceQueueFamilyProperties2KHR', 'vkGetPhysicalDeviceQueueFamilyProperties2', 'vkGetDeviceProcAddr', 'vkGetInstanceProcAddr' ]
 validate_funcs(hardcoded_write)
 hardcoded_read = [ 'vkGetSemaphoreFdKHR', 'vkImportSemaphoreFdKHR' ]
 validate_funcs(hardcoded_read)
+untraced = [ 'vkGetDeviceProcAddr', 'vkGetInstanceProcAddr' ]
+validate_funcs(untraced)
 # For these functions it is ok if the function pointer is missing, since we implement them ourselves
 layer_implemented = [ 'vkCreateDebugReportCallbackEXT', 'vkDestroyDebugReportCallbackEXT', 'vkDebugReportMessageEXT', 'vkDebugMarkerSetObjectTagEXT',
 	'vkDebugMarkerSetObjectNameEXT', 'vkCmdDebugMarkerBeginEXT', 'vkCmdDebugMarkerEndEXT', 'vkCmdDebugMarkerInsertEXT', 'vkSetDebugUtilsObjectNameEXT',

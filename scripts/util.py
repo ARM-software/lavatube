@@ -878,9 +878,6 @@ class parameter(spec.base_parameter):
 			elif self.name == 'memoryOffset':
 				z.do('if (reader.run) %s = loc.offset;' % varname) # relying on the order of arguments here; see case above
 
-		if self.funcname == 'vkDestroySurfaceKHR' and self.name == 'instance':
-			z.do('if (reader.parent->stored_version_patch < 2) (void)reader.read_uint8_t();') # TBD remove this hack one day
-
 		if self.funcname in ['vkDestroyBuffer', 'vkDestroyImage', 'vkDestroyTensorARM', 'vkDestroyDataGraphPipelineSessionARM', 'vkDestroyDevice', 'VkCreateDevice'] and self.name == 'device':
 			z.do('%s& %s = %s_index.at(%s);' % (vk.trackable_type_map_replay['VkDevice'], totrackable('VkDevice'), self.type, toindex('VkDevice')))
 
@@ -1529,7 +1526,7 @@ def save_add_tracking(name):
 				z.do('add->buffer_index = writer.parent->records.VkBuffer_index.at(pCreateInfo->buffer)->index;')
 				z.do('add->size = pCreateInfo->size;')
 			z.do('add->object_type = VK_OBJECT_TYPE_ACCELERATION_STRUCTURE_KHR;')
-		z.do('DLOG2("insert %s into %s index %%u at call=%%d", (unsigned)add->index, (int)writer.current.call);' % (type, name))
+		z.do('DLOG2("insert %s into %s index %%u at packet=%%d", (unsigned)add->index, (int)writer.current.packet);' % (type, name))
 		z.do('add->enter_created();')
 		z.do('add->self_test();')
 		z.do('writer.write_handle(add);')
@@ -1571,7 +1568,7 @@ def save_add_tracking(name):
 			elif name == 'vkCreateRayTracingPipelinesKHR': z.do('add->type = VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR;')
 		elif type == 'VkSwapchainKHR':
 			z.do('add->info = pCreateInfos[i];')
-		z.do('DLOG2("insert %s into %s index %%u call=%%d", (unsigned)add->index, (int)writer.current.call);' % (type, name))
+		z.do('DLOG2("insert %s into %s index %%u packet=%%d", (unsigned)add->index, (int)writer.current.packet);' % (type, name))
 		z.do('add->enter_created();')
 		z.do('writer.write_handle(add);')
 		z.brace_end()
@@ -1660,7 +1657,7 @@ def load_add_tracking(name):
 		if count == '1':
 			z.do('if (retval == VK_SUCCESS && %s != CONTAINER_NULL_VALUE)' % toindex(type))
 			z.brace_begin()
-			z.do('DLOG2("insert %s by %s index %%u call=%%d", (unsigned)%s, (int)reader.current.call);' % (type, name, toindex(type)))
+			z.do('DLOG2("insert %s by %s index %%u packet=%%d", (unsigned)%s, (int)reader.current.packet);' % (type, name, toindex(type)))
 			if type == 'VkSwapchainKHR':
 				z.do('if (is_noscreen() || !reader.run) pSwapchain = fake_handle<VkSwapchainKHR>(swapchainkhr_index);')
 			else:
@@ -1711,7 +1708,7 @@ def load_add_tracking(name):
 		else: # multiple
 			z.do('for (unsigned i = 0; i < %s && retval == VK_SUCCESS; i++)' % count)
 			z.brace_begin()
-			z.do('DLOG2("insert %s into %s index %%u at pos=%%u call=%%d", indices[i], i, (int)reader.current.call);' % (type, name))
+			z.do('DLOG2("insert %s into %s index %%u at pos=%%u packet=%%d", indices[i], i, (int)reader.current.packet);' % (type, name))
 			z.do('auto& data = %s_index.at(indices[i]);' % type)
 			z.do('data.creation = reader.current;')
 			z.do('data.last_modified = reader.current;')
@@ -1830,7 +1827,7 @@ def loadfunc(name, node, target, header):
 		print('typedef void(*replay_%s_callback)(%s);' % (name, 'callback_context& cb, ' + ', '.join(paramlist)), file=header)
 		if name in spec.protected_funcs:
 			print('#endif', file=header)
-	if name in spec.disabled or name in vk.functions_noop or name in spec.disabled_functions or spec.str_contains_vendor(name):
+	if name in spec.disabled or name in vk.functions_noop or name in vk.untraced or name in spec.disabled_functions or spec.str_contains_vendor(name):
 		func_common_end(name, target=target, header=header, add_dummy=True)
 		return
 	if header:
@@ -2300,7 +2297,7 @@ def savefunc(name, node, target, header):
 	elif name == 'vkBeginCommandBuffer': # special case for above, need to add the level param
 		z.do('special_vkBeginCommandBuffer(commandBuffer, pBeginInfo, commandbuffer_data->level);')
 
-	z.do('writer.thaw();')
+	z.do('writer.end_packet();')
 
 	if retval != 'void':
 		z.do('// -- Return --')

@@ -134,7 +134,7 @@ static void trace()
 static bool getnext(lava_file_reader& t)
 {
 	bool done = false;
-	const uint8_t instrtype = t.read_uint8_t();
+	const uint8_t instrtype = t.step();
 	if (instrtype == PACKET_VULKAN_API_CALL)
 	{
 		const uint16_t apicall = t.read_apicall();
@@ -164,7 +164,7 @@ static bool getnext(lava_file_reader& t)
 
 static void retrace()
 {
-	lava_reader r(TEST_NAME ".vk");
+	lava_reader r(TEST_NAME ".api");
 	test_register_replay_callbacks();
 	lava_file_reader& t = r.file_reader(0);
 	while (getnext(t)) {}

@@ -72,7 +72,7 @@ static void trace_4()
 {
 	vulkan_req_t reqs;
 	std::string name = filename();
-	printf("Creating %s.vk\n", name.c_str());
+	printf("Creating %s.api\n", name.c_str());
 	vulkan_setup_t vulkan = test_init(name, reqs);
 	VkResult result;
 
@@ -497,7 +497,7 @@ static void vkDestroyDevice_callback(callback_context& cb, VkDevice device, cons
 
 static void retrace_4()
 {
-	std::string name = filename() + ".vk";
+	std::string name = filename() + ".api";
 	printf("Running %s\n", name.c_str());
 	lava_reader r(name);
 	test_register_replay_callbacks();

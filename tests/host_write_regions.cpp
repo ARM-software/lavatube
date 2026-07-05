@@ -9,7 +9,7 @@
 static change_source make_source(uint32_t frame)
 {
 	change_source s;
-	s.call = frame + 1;
+	s.packet = frame + 1;
 	s.frame = frame;
 	s.thread = 1;
 	s.call_id = 1;
@@ -18,7 +18,7 @@ static change_source make_source(uint32_t frame)
 
 static bool same_source(const change_source& a, const change_source& b)
 {
-	return a.call == b.call && a.frame == b.frame && a.thread == b.thread && a.call_id == b.call_id;
+	return a.packet == b.packet && a.frame == b.frame && a.thread == b.thread && a.call_id == b.call_id;
 }
 
 static void test_contiguous_basic()

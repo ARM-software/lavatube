@@ -21,7 +21,7 @@ For the most part we rely on this guarantee to provide multi-threading support.
 ## Object runtime order
 
 All Vulkan objects inside lavatube are stored with a handle which consists of the
-object's index as well as the index of the thread and thread local call number
+object's index as well as the index of the thread and thread local packet number
 where it was last touched during tracing. Whenever a handle is encountered, the
 replayer will verify that the thread that last touched this handle has passed this
 recorded point in time, and if not, we will spin lock until the other thread has

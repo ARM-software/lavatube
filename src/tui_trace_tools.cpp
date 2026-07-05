@@ -95,7 +95,7 @@ static Json::Value parameters_with_step()
 static Json::Value parameters_with_target()
 {
 	Json::Value parameters = empty_parameters();
-	parameters["properties"]["target"] = string_property("Absolute Vulkan API call number or Vulkan command name, for example 300 or vkQueueSubmit.");
+	parameters["properties"]["target"] = string_property("Absolute packet number or Vulkan command name, for example 300 or vkQueueSubmit.");
 	parameters["required"].append("target");
 	return parameters;
 }
@@ -202,7 +202,7 @@ Json::Value tui_trace_tools::tool_definitions() const
 		tools.append(function_tool_schema("continue_replay", "Resume replay until completion, stop, or the next target. Use only when the user wants replay to continue.", empty_parameters()));
 		tools.append(function_tool_schema("stop_replay", "Stop the replay service and replay. Use only when the user explicitly asks to stop the service.", empty_parameters()));
 		tools.append(function_tool_schema("step_replay", "Advance replay by packets or Vulkan API calls from the current pause point.", parameters_with_step()));
-		tools.append(function_tool_schema("goto_replay_target", "Continue replay until an absolute Vulkan API call number or the next named Vulkan command.", parameters_with_target()));
+		tools.append(function_tool_schema("goto_replay_target", "Continue replay until an absolute packet number or the next named Vulkan command.", parameters_with_target()));
 		tools.append(function_tool_schema("get_current_call_parameters", "Print JSON parameters for the currently paused Vulkan call.", empty_parameters()));
 		tools.append(function_tool_schema("list_threads", "List traced threads from the replay service.", empty_parameters()));
 		tools.append(function_tool_schema("get_memory_info", "Print current Vulkan memory heap usage and budgets from the replay service.", empty_parameters()));

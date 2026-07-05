@@ -80,7 +80,7 @@ static void trace()
 static bool getnext(lava_file_reader& t)
 {
 	bool done = false;
-	const uint8_t instrtype = t.read_uint8_t();
+	const uint8_t instrtype = t.step();
 	if (instrtype == PACKET_VULKAN_API_CALL)
 	{
 		const uint16_t apicall = t.read_apicall();
@@ -120,7 +120,7 @@ static void record_vkGetBufferMemoryRequirements(callback_context& cb, VkDevice 
 static void retrace()
 {
 	// Verify trace file itself
-	Json::Value tracking = packed_json("tracking.json", TEST_NAME ".vk");
+	Json::Value tracking = packed_json("tracking.json", TEST_NAME ".api");
 	unsigned matched = 0;
 	for (const auto& entry : tracking["VkBuffer"])
 	{
@@ -133,7 +133,7 @@ static void retrace()
 	assert(matched == trace_alignments.size());
 
 	// Replay it
-	lava_reader r(TEST_NAME ".vk");
+	lava_reader r(TEST_NAME ".api");
 	test_register_replay_callbacks();
 	replay_call_index = 0;
 	replay_alignments.clear();

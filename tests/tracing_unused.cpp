@@ -25,7 +25,7 @@ static replay_observation observation;
 static bool getnext(lava_file_reader& t)
 {
 	bool done = false;
-	const uint8_t instrtype = t.read_uint8_t();
+	const uint8_t instrtype = t.step();
 	if (instrtype == PACKET_VULKAN_API_CALL)
 	{
 		const uint16_t apicall = t.read_apicall();
@@ -123,7 +123,7 @@ static void trace()
 
 static void verify_metadata()
 {
-	Json::Value meta = packed_json("metadata.json", TEST_NAME ".vk");
+	Json::Value meta = packed_json("metadata.json", TEST_NAME ".api");
 
 	assert(json_array_contains(meta["instanceRequested"]["removedExtensions"], UNUSED_INSTANCE_EXTENSION));
 	assert(!json_array_contains(meta["instanceRequested"]["enabledExtensions"], UNUSED_INSTANCE_EXTENSION));
@@ -148,7 +148,7 @@ static void replay_and_verify(bool skip_remove_unused)
 	vkCreateDevice_callbacks.push_back(record_vkCreateDevice);
 
 	{
-		lava_reader r(TEST_NAME ".vk");
+		lava_reader r(TEST_NAME ".api");
 		lava_file_reader& t = r.file_reader(0);
 		while (getnext(t)) {}
 	}

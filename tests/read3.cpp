@@ -19,9 +19,11 @@ void read_test_stress()
 {
 	const int mytid = read_tid.fetch_add(1);
 	lava_file_reader& r = reader->file_reader(mytid);
-	const uint8_t barrier_packet = r.read_uint8_t();
+	const uint8_t barrier_packet = r.step();
 	assert(barrier_packet == 3);
 	r.read_barrier();
+	const uint8_t data_packet = r.step();
+	assert(data_packet == PACKET_BUFFER_UPDATE);
 	const uint32_t v1 = r.read_uint32_t();
 	assert(v1 == 42);
 	const uint32_t v2 = r.read_uint32_t();
@@ -35,12 +37,13 @@ void read_test_stress()
 	assert(strcmp(str, s) == 0);
 	r.append_string(":%d", (int)v2);
 	assert(strcmp(s, "supercalifragilisticexpialidocious:84") == 0);
+	r.complete_packet();
 }
 
 void read_test()
 {
 	read_tid = 0;
-	reader = new lava_reader("write_3.vk");
+	reader = new lava_reader("write_3.api");
 	std::vector<std::thread*> threads(THREADS);
 	for (auto& t : threads)
 	{

@@ -160,6 +160,21 @@ static bool get_range_source_reference(const simulator_buffer_range& range, VkDe
 	return false;
 }
 
+static VkObjectType range_output_object_type(const simulator_buffer_range& range)
+{
+	return range.source_object_type;
+}
+
+static uint32_t range_output_object_index(const simulator_buffer_range& range)
+{
+	return range.source_object_type == VK_OBJECT_TYPE_UNKNOWN ? CONTAINER_NULL_VALUE : range.source_object_index;
+}
+
+static uint32_t range_output_stage_index(const simulator_buffer_range& range, const host_write_reference& source_ref)
+{
+	return range.source_stage_index == CONTAINER_NULL_VALUE ? source_ref.stage_index : range.source_stage_index;
+}
+
 static void abort_missing_range_source(const simulator_buffer_range& range, VkDeviceSize local_offset, VkDeviceSize size, const char* context)
 {
 	if (range.buffer_data)
@@ -224,11 +239,10 @@ static bool collect_contiguous_device_address_marking(const std::vector<simulato
 	{
 		abort_missing_range_source(*range, base_offset, sizeof(VkDeviceAddress), "SPIR-V physical-address source marking");
 	}
-	const VkObjectType output_object_type = (source_ref.object_type != VK_OBJECT_TYPE_UNKNOWN) ? source_ref.object_type : range->source_object_type;
-	const uint32_t output_object_index = (source_ref.object_type != VK_OBJECT_TYPE_UNKNOWN) ? source_ref.object_index : range->source_object_index;
-	const uint32_t output_stage_index = (source_ref.object_type != VK_OBJECT_TYPE_UNKNOWN) ? source_ref.stage_index : range->source_stage_index;
-	assert(source_ref.object_type == VK_OBJECT_TYPE_UNKNOWN || source_ref.object_offset >= 0);
-	const VkDeviceSize output_offset = (source_ref.object_type != VK_OBJECT_TYPE_UNKNOWN) ? (VkDeviceSize)source_ref.object_offset : range->buffer_offset + base_offset;
+	const VkObjectType output_object_type = range_output_object_type(*range);
+	const uint32_t output_object_index = range_output_object_index(*range);
+	const uint32_t output_stage_index = range_output_stage_index(*range, source_ref);
+	const VkDeviceSize output_offset = (source_ref.object_offset >= 0) ? (VkDeviceSize)source_ref.object_offset : range->buffer_offset + base_offset;
 	VkMarkingSubTypeARM subtype{};
 	subtype.deviceAddressType = VK_DEVICE_ADDRESS_TYPE_BUFFER_ARM;
 	discovered.push_back({
@@ -347,8 +361,18 @@ static void merge_simulator_memory_metadata(const change_source& source, const s
 			const uint64_t start = std::max<uint64_t>(span.start, base);
 			const uint64_t end = std::min<uint64_t>(span.end, base + range.size);
 			if (start >= end) continue;
-			range.buffer_data->source.register_source(range.buffer_offset + (start - base), end - start, source,
-				1, 0, range.buffer_data->object_type, range.buffer_data->index);
+			const VkDeviceSize range_offset = range.buffer_offset + (start - base);
+			host_write_reference reference;
+			if (range.buffer_data->source.try_get_reference(range_offset, end - start, reference))
+			{
+				range.buffer_data->source.register_source(range_offset, end - start, reference.source,
+					1, 0, VK_OBJECT_TYPE_UNKNOWN, CONTAINER_NULL_VALUE, reference.stage_index, reference.object_offset);
+			}
+			else
+			{
+				range.buffer_data->source.register_source(range_offset, end - start, source,
+					1, 0, range.buffer_data->object_type, range.buffer_data->index);
+			}
 		}
 	}
 }
@@ -373,11 +397,10 @@ static void collect_simulator_physical_address_markings(const std::vector<simula
 			{
 				abort_missing_range_source(*range, local_offset, sizeof(VkDeviceAddress), "SPIR-V physical-address source marking");
 			}
-			const VkObjectType output_object_type = (source_ref.object_type != VK_OBJECT_TYPE_UNKNOWN) ? source_ref.object_type : range->source_object_type;
-			const uint32_t output_object_index = (source_ref.object_type != VK_OBJECT_TYPE_UNKNOWN) ? source_ref.object_index : range->source_object_index;
-			const uint32_t output_stage_index = (source_ref.object_type != VK_OBJECT_TYPE_UNKNOWN) ? source_ref.stage_index : range->source_stage_index;
-			assert(source_ref.object_type == VK_OBJECT_TYPE_UNKNOWN || source_ref.object_offset >= 0);
-			const VkDeviceSize output_offset = (source_ref.object_type != VK_OBJECT_TYPE_UNKNOWN) ? (VkDeviceSize)source_ref.object_offset : range->buffer_offset + local_offset;
+			const VkObjectType output_object_type = range_output_object_type(*range);
+			const uint32_t output_object_index = range_output_object_index(*range);
+			const uint32_t output_stage_index = range_output_stage_index(*range, source_ref);
+			const VkDeviceSize output_offset = (source_ref.object_offset >= 0) ? (VkDeviceSize)source_ref.object_offset : range->buffer_offset + local_offset;
 			discovered.push_back({
 				.buffer_data = range->buffer_data,
 				.output_object_type = output_object_type,
@@ -703,9 +726,9 @@ static void merge_discovered_markings(command_execution_data& data, const std::v
 
 		auto output_it = std::find_if(output_buckets.begin(), output_buckets.end(), [&](const discovered_output_markings_bucket& bucket)
 		{
-			const VkObjectType object_type = (marking.output_object_type != VK_OBJECT_TYPE_UNKNOWN)
+			const VkObjectType object_type = (marking.has_explicit_source || marking.output_object_type != VK_OBJECT_TYPE_UNKNOWN)
 				? marking.output_object_type : (marking.buffer_data ? marking.buffer_data->object_type : VK_OBJECT_TYPE_UNKNOWN);
-			const uint32_t object_index = (marking.output_object_type != VK_OBJECT_TYPE_UNKNOWN)
+			const uint32_t object_index = (marking.has_explicit_source || marking.output_object_type != VK_OBJECT_TYPE_UNKNOWN)
 				? marking.output_object_index : (marking.buffer_data ? marking.buffer_data->index : CONTAINER_NULL_VALUE);
 			return same_change_source(bucket.source, source)
 				&& bucket.object_type == object_type
@@ -716,9 +739,9 @@ static void merge_discovered_markings(command_execution_data& data, const std::v
 		{
 			discovered_output_markings_bucket bucket;
 			bucket.source = source;
-			bucket.object_type = (marking.output_object_type != VK_OBJECT_TYPE_UNKNOWN)
+			bucket.object_type = (marking.has_explicit_source || marking.output_object_type != VK_OBJECT_TYPE_UNKNOWN)
 				? marking.output_object_type : (marking.buffer_data ? marking.buffer_data->object_type : VK_OBJECT_TYPE_UNKNOWN);
-			bucket.object_index = (marking.output_object_type != VK_OBJECT_TYPE_UNKNOWN)
+			bucket.object_index = (marking.has_explicit_source || marking.output_object_type != VK_OBJECT_TYPE_UNKNOWN)
 				? marking.output_object_index : (marking.buffer_data ? marking.buffer_data->index : CONTAINER_NULL_VALUE);
 			bucket.stage_index = marking.output_stage_index;
 			bucket.entries.push_back(marking);

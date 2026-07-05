@@ -229,7 +229,7 @@ When tracing, the following files will be created in a separate directory:
   dictionary.json -- mapping of API call names to index values
   limits.json -- number of each type of data structured created during tracing
   metadata.json -- metadata from the traced platform
-  thread_X.vk -- one file for each thread containing API calls
+  thread_X.bin -- one file for each thread containing packets
   frames_X.json --- one JSON for each thread containing per-frame data
 
 Replay security

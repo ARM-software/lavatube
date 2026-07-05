@@ -25,6 +25,7 @@ static void write_test_1_2()
 	writer.set("write_1_2");
 	lava_file_writer& file = writer.file_writer();
 
+	file.begin_packet(PACKET_BUFFER_UPDATE);
 	file.write_memory(orig, 0, 65535);
 	int changed = patch(file, orig, mod, 1024, 1024);
 	assert(orig[1023] == 0);
@@ -44,6 +45,7 @@ static void write_test_1_2()
 	changed = patch(file, orig, mod, 4096, 1024);
 	assert(changed == 0); // as above
 
+	file.end_packet();
 	writer.serialize();
 	writer.finish();
 }
@@ -53,11 +55,13 @@ void read_test_1_2()
 	std::vector<char> big1(65535, 0);
 	char* buf = big1.data();
 
-	lava_reader r("write_1_2.vk");
+	lava_reader r("write_1_2.api");
 	lava_file_reader& t0 = r.file_reader(0);
-	const uint8_t barrier_packet = t0.read_uint8_t();
+	const uint8_t barrier_packet = t0.step();
 	assert(barrier_packet == 3);
 	t0.read_barrier();
+	const uint8_t data_packet = t0.step();
+	assert(data_packet == PACKET_BUFFER_UPDATE);
 	int changed = t0.read_patch((char*)buf, 65535); // all zeroes
 	assert(changed == 65535);
 	assert(buf[0] == 0);
@@ -92,6 +96,7 @@ static void write_test_1()
 	lava_writer& writer = lava_writer::instance();
 	writer.set("write_1");
 	lava_file_writer& file = writer.file_writer();
+	file.begin_packet(PACKET_BUFFER_UPDATE);
 	file.write_uint8_t(8);
 	file.write_uint16_t(16);
 	file.write_uint32_t(32);
@@ -196,17 +201,20 @@ static void write_test_1()
 	changed = file.write_patch(clone, big.data(), 0, 14);
 	assert(changed >= 4);
 
+	file.end_packet();
 	writer.serialize();
 	writer.finish();
 }
 
 void read_test_1()
 {
-	lava_reader r("write_1.vk");
+	lava_reader r("write_1.api");
 	lava_file_reader& t0 = r.file_reader(0);
-	const uint8_t barrier_packet = t0.read_uint8_t();
+	const uint8_t barrier_packet = t0.step();
 	assert(barrier_packet == 3);
 	t0.read_barrier();
+	const uint8_t data_packet = t0.step();
+	assert(data_packet == PACKET_BUFFER_UPDATE);
 	std::vector<char> big(65535, 0);
 	const uint8_t v1 = t0.read_uint8_t();
 	assert(v1 == 8);

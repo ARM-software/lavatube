@@ -1631,9 +1631,9 @@ static uint64_t write_out_object(lava_file_writer& writer, const auto* device_da
 {
 	switch (object_data->object_type)
 	{
-	case VK_OBJECT_TYPE_IMAGE: writer.write_uint8_t((uint8_t)PACKET_IMAGE_UPDATE2); break;
-	case VK_OBJECT_TYPE_BUFFER: writer.write_uint8_t((uint8_t)PACKET_BUFFER_UPDATE2); break;
-	case VK_OBJECT_TYPE_TENSOR_ARM: writer.write_uint8_t((uint8_t)PACKET_TENSOR_UPDATE); break;
+	case VK_OBJECT_TYPE_IMAGE: writer.begin_packet(PACKET_IMAGE_UPDATE2); break;
+	case VK_OBJECT_TYPE_BUFFER: writer.begin_packet(PACKET_BUFFER_UPDATE2); break;
+	case VK_OBJECT_TYPE_TENSOR_ARM: writer.begin_packet(PACKET_TENSOR_UPDATE); break;
 	default: assert(false); break;
 	}
 	writer.write_handle(device_data);
@@ -1649,7 +1649,7 @@ static uint64_t write_out_object(lava_file_writer& writer, const auto* device_da
 	object_data->updates++;
 	object_data->written += written;
 	*sizeptr = writer.uncompressed_bytes - bytes; // includes size of flags and anything beyond until the end of our packet
-	writer.thaw(); // releases write chunks again
+	writer.end_packet();
 	return written;
 }
 
@@ -2495,7 +2495,7 @@ VKAPI_ATTR VkResult VKAPI_CALL trace_vkGetPhysicalDeviceToolPropertiesEXT(VkPhys
 	uint32_t physicaldevice_index = 0;
 	lava_file_writer& writer = write_header("vkGetPhysicalDeviceToolPropertiesEXT", VKGETPHYSICALDEVICETOOLPROPERTIESEXT);
 	VkResult retval = common_vkGetPhysicalDeviceToolProperties(writer, physicalDevice, pToolCount, pToolProperties);
-	writer.thaw();
+	writer.end_packet();
 	return retval;
 }
 
@@ -2503,7 +2503,7 @@ VKAPI_ATTR VkResult VKAPI_CALL trace_vkGetPhysicalDeviceToolProperties(VkPhysica
 {
 	lava_file_writer& writer = write_header("vkGetPhysicalDeviceToolProperties", VKGETPHYSICALDEVICETOOLPROPERTIES);
 	VkResult retval = common_vkGetPhysicalDeviceToolProperties(writer, physicalDevice, pToolCount, pToolProperties);
-	writer.thaw();
+	writer.end_packet();
 	return retval;
 }
 
@@ -2667,11 +2667,12 @@ VKAPI_ATTR void VKAPI_CALL trace_vkSyncBufferTRACETOOLTEST(VkDevice device, VkBu
 	char* ptr = nullptr;
 	VkResult result = wrap_vkMapMemory(device, memory_data->backing, buffer_data->offset, buffer_data->size, 0, (void**)&ptr);
 	assert(result == VK_SUCCESS);
-	writer.write_uint8_t((uint8_t)PACKET_BUFFER_UPDATE);
+	writer.begin_packet(PACKET_BUFFER_UPDATE);
 	writer.write_handle(device_data);
 	writer.write_handle(buffer_data);
 	buffer_data->written += writer.write_patch(memory_data->clone + buffer_data->offset, ptr, 0, buffer_data->size);
 	buffer_data->updates++;
+	writer.end_packet();
 	wrap_vkUnmapMemory(device, memory_data->backing);
 
 	(void)write_header("vkSyncBufferTRACETOOLTEST", VKSYNCBUFFERTRACETOOLTEST);
@@ -2712,7 +2713,7 @@ VKAPI_ATTR void VKAPI_CALL trace_vkFrameBoundaryANDROID(VkDevice device, VkSemap
 
 	lava_writer::instance().new_frame();
 	writer.push_thread_barriers();
-	writer.thaw();
+	writer.end_packet();
 }
 
 void write_VkDataGraphPipelineConstantARM(lava_file_writer& writer, const VkDataGraphPipelineConstantARM* sptr)
@@ -3298,7 +3299,7 @@ VKAPI_ATTR VkResult VKAPI_CALL trace_vkGetSwapchainImagesKHR(VkDevice device, Vk
 	{
 		writer.write_handle(writer.parent->records.VkImage_index.at(pSwapchainImages[i]));
 	}
-	writer.thaw();
+	writer.end_packet();
 	// Return
 	return retval;
 }
@@ -3336,7 +3337,7 @@ void tool_write_vkCreateSurfaceKHR_packet(const surface_create_packet& packet, c
 	{
 		writer.write_handle(nullptr);
 	}
-	writer.thaw();
+	writer.end_packet();
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL trace_vkCreateHeadlessSurfaceEXT(VkInstance instance, const VkHeadlessSurfaceCreateInfoEXT* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkSurfaceKHR* pSurface)
@@ -3356,7 +3357,7 @@ VKAPI_ATTR VkResult VKAPI_CALL trace_vkCreateHeadlessSurfaceEXT(VkInstance insta
 	DLOG("insert VkSurfaceKHR into vkCreateHeadlessSurfaceEXT index %u", (unsigned)surface_data->index);
 	surface_data->enter_created();
 	writer.write_handle(surface_data); // id tracking
-	writer.thaw();
+	writer.end_packet();
 	// Return
 	return retval;
 }
@@ -3415,7 +3416,7 @@ VKAPI_ATTR VkResult VKAPI_CALL trace_vkCreateXlibSurfaceKHR(VkInstance instance,
 	surface_data->y = attr.y;
 	surface_data->enter_created();
 	writer.write_handle(surface_data); // id tracking
-	writer.thaw();
+	writer.end_packet();
 	// -- Return --
 	return retval;
 }
@@ -3475,7 +3476,7 @@ VKAPI_ATTR VkResult VKAPI_CALL trace_vkCreateXcbSurfaceKHR(VkInstance instance, 
 	free(geom_reply);
 	free(tree_reply);
 	free(trans_reply);
-	writer.thaw();
+	writer.end_packet();
 
 	// Return
 	return retval;
@@ -3503,7 +3504,7 @@ VKAPI_ATTR VkResult VKAPI_CALL trace_vkCreateWaylandSurfaceKHR(VkInstance instan
 	// just letting swapchain creation add our metadata, as wayland is too much of a brainrot API to handle here
 	surface_data->enter_created();
 	writer.write_handle(surface_data); // id tracking
-	writer.thaw();
+	writer.end_packet();
 	// Return
 	return retval;
 }
@@ -3580,7 +3581,7 @@ VKAPI_ATTR void VKAPI_CALL trace_vkGetDeviceQueue2(VkDevice device, const VkDevi
 	if (p__virtualqueues != 0) *pQueue = (VkQueue)queue_data;
 	queue_data->self_test();
 	writer.write_handle(queue_data);
-	writer.thaw();
+	writer.end_packet();
 }
 
 VKAPI_ATTR void VKAPI_CALL trace_vkGetDeviceQueue(VkDevice device, uint32_t queueFamilyIndex, uint32_t queueIndex, VkQueue* pQueue)
@@ -3633,7 +3634,7 @@ VKAPI_ATTR void VKAPI_CALL trace_vkGetDeviceQueue(VkDevice device, uint32_t queu
 	if (p__virtualqueues != 0) *pQueue = (VkQueue)queue_data;
 	queue_data->self_test();
 	writer.write_handle(queue_data);
-	writer.thaw();
+	writer.end_packet();
 }
 
 #ifdef VK_USE_PLATFORM_ANDROID_KHR // vkCreateAndroidSurfaceKHR
@@ -3668,7 +3669,7 @@ VKAPI_ATTR VkResult VKAPI_CALL trace_vkCreateAndroidSurfaceKHR(VkInstance instan
 	{
 		writer.write_handle(nullptr);
 	}
-	writer.thaw();
+	writer.end_packet();
 	// Return
 	return retval;
 }
@@ -3737,7 +3738,7 @@ VKAPI_ATTR VkResult VKAPI_CALL trace_vkGetAndroidHardwareBufferPropertiesANDROID
 	write_extension(writer, (VkBaseOutStructure*)pProperties->pNext);
 	writer.write_uint64_t(pProperties->allocationSize);
 	writer.write_uint32_t(pProperties->memoryTypeBits);
-	writer.thaw();
+	writer.end_packet();
 	// Return
 	return retval;
 }
@@ -3758,7 +3759,7 @@ VKAPI_ATTR VkResult VKAPI_CALL trace_vkGetMemoryAndroidHardwareBufferANDROID(VkD
 	// Post
 	// Store metadata for debug purposes
 	save_hw_buffer(*pBuffer);
-	writer.thaw();
+	writer.end_packet();
 	return retval;
 }
 
@@ -3773,7 +3774,7 @@ VKAPI_ATTR VkResult VKAPI_CALL trace_vkEnumerateInstanceLayerProperties(uint32_t
 	{
 		const VkResult retval = writer.use_result.result;
 		writer.write_uint32_t(retval);
-		writer.thaw();
+		writer.end_packet();
 		return retval;
 	}
 #ifdef COMPILE_LAYER
@@ -3795,7 +3796,7 @@ VKAPI_ATTR VkResult VKAPI_CALL trace_vkEnumerateInstanceLayerProperties(uint32_t
 
 	writer.write_uint32_t(retval);
 	// Post
-	writer.thaw();
+	writer.end_packet();
 	// Return
 	return retval;
 }
@@ -3812,7 +3813,7 @@ VKAPI_ATTR VkResult VKAPI_CALL trace_vkEnumerateInstanceExtensionProperties(cons
 	{
 		if (pPropertyCount) *pPropertyCount = 0;
 		writer.write_uint32_t(retval);
-		writer.thaw();
+		writer.end_packet();
 		return retval;
 	}
 #endif
@@ -3836,7 +3837,7 @@ VKAPI_ATTR VkResult VKAPI_CALL trace_vkEnumerateInstanceExtensionProperties(cons
 	}
 	frame_mutex.unlock();
 	writer.write_uint32_t(retval);
-	writer.thaw();
+	writer.end_packet();
 	return retval;
 }
 
@@ -3856,7 +3857,7 @@ VKAPI_ATTR VkResult VKAPI_CALL trace_vkEnumerateDeviceLayerProperties(VkPhysical
 	{
 		const VkResult retval = writer.use_result.result;
 		writer.write_uint32_t(retval);
-		writer.thaw();
+		writer.end_packet();
 		return retval;
 	}
 #ifdef COMPILE_LAYER
@@ -3876,7 +3877,7 @@ VKAPI_ATTR VkResult VKAPI_CALL trace_vkEnumerateDeviceLayerProperties(VkPhysical
 	VkResult retval = wrap_vkEnumerateDeviceLayerProperties(physicalDevice, pPropertyCount, pProperties);
 #endif
 	writer.write_uint32_t(retval);
-	writer.thaw();
+	writer.end_packet();
 	return retval;
 }
 
@@ -3899,7 +3900,7 @@ VKAPI_ATTR VkResult VKAPI_CALL trace_vkEnumerateDeviceExtensionProperties(VkPhys
 	{
 		if (pPropertyCount) *pPropertyCount = 0;
 		writer.write_uint32_t(retval);
-		writer.thaw();
+		writer.end_packet();
 		return retval;
 	}
 #endif
@@ -3925,7 +3926,7 @@ VKAPI_ATTR VkResult VKAPI_CALL trace_vkEnumerateDeviceExtensionProperties(VkPhys
 	}
 	frame_mutex.unlock();
 	writer.write_uint32_t(retval);
-	writer.thaw();
+	writer.end_packet();
 	return retval;
 }
 
@@ -3955,7 +3956,7 @@ VKAPI_ATTR VkBool32 VKAPI_CALL trace_vkGetPhysicalDeviceXlibPresentationSupportK
 	writer.write_uint32_t(virtual_family ? LAVATUBE_VIRTUAL_QUEUE : queueFamilyIndex);
 	VkBool32 retval = writer.run ? wrap_vkGetPhysicalDeviceXlibPresentationSupportKHR(physicalDevice, queueFamilyIndex, dpy, visualID) : writer.use_result.uint_32;
 	writer.write_uint32_t(retval);
-	writer.thaw();
+	writer.end_packet();
 	return retval;
 }
 
@@ -3976,7 +3977,7 @@ VKAPI_ATTR VkBool32 VKAPI_CALL trace_vkGetPhysicalDeviceXcbPresentationSupportKH
 	(void)connection;
 	VkBool32 retval = writer.run ? wrap_vkGetPhysicalDeviceXcbPresentationSupportKHR(physicalDevice, queueFamilyIndex, connection, visualID) : writer.use_result.uint_32;
 	writer.write_uint32_t(retval);
-	writer.thaw();
+	writer.end_packet();
 	return retval;
 }
 
@@ -4065,7 +4066,7 @@ static void common_vkGetPhysicalDeviceQueueFamilyProperties2(lava_file_writer& w
 		if (pQueueFamilyPropertyCount) *pQueueFamilyPropertyCount = 1;
 		if (pQueueFamilyProperties != nullptr) common_virtual_VkQueueFamilyProperties2(physicalDevice, pQueueFamilyProperties);
 	}
-	writer.thaw();
+	writer.end_packet();
 }
 
 VKAPI_ATTR void VKAPI_CALL trace_vkGetPhysicalDeviceQueueFamilyProperties2(VkPhysicalDevice physicalDevice, uint32_t* pQueueFamilyPropertyCount, VkQueueFamilyProperties2* pQueueFamilyProperties)
@@ -4103,5 +4104,5 @@ VKAPI_ATTR void VKAPI_CALL trace_vkGetPhysicalDeviceQueueFamilyProperties(VkPhys
 		if (pQueueFamilyPropertyCount) *pQueueFamilyPropertyCount = 1;
 		if (pQueueFamilyProperties != nullptr) common_virtual_VkQueueFamilyProperties(physicalDevice, pQueueFamilyProperties);
 	}
-	writer.thaw();
+	writer.end_packet();
 }

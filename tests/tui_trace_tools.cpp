@@ -49,7 +49,7 @@ static std::string fake_response(const std::string& command)
 	if (command == "status") return "PAUSED\n";
 	if (command == "info objects") return "object_type\tcount\nVkBuffer\t2\n";
 	if (command == "info suballocator") return "| Device | Heap | Total Bytes |\n|--------|------|-------------|\n| 0      | 0    | 33554432    |\n";
-	if (command == "step calls 2") return "PAUSED packet=10 call=4 vkQueueSubmit\n";
+	if (command == "step calls 2") return "PAUSED packet=10 api_calls=4 vkQueueSubmit\n";
 	if (command == "show VkBuffer 1") return "{ \"size\" : 32 }\n";
 	if (command == "parameters") return "{ \"command\" : \"vkQueueSubmit\" }\n";
 	return "ERROR\n";
@@ -95,7 +95,7 @@ static std::string make_trace()
 	char* dir = mkdtemp(path);
 	assert(dir != nullptr);
 	const std::string directory = dir;
-	const std::string pack = directory + ".vk";
+	const std::string pack = directory + ".api";
 
 	write_file(directory + "/limits.json", "{ \"VkBuffer\": 2, \"VkImage\": 0, \"VkDevice\": 1 }\n");
 	write_file(directory + "/tracking.json", "{ \"VkBuffer\": [ { \"index\": 0, \"size\": 16 }, { \"index\": 1, \"size\": 32 } ] }\n");
