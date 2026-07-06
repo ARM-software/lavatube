@@ -30,3 +30,9 @@ What we can do:
   3. After ctest, run a script that copies screenshots into build/visual-report/
    and generates an index page with pass/fail status and thumbnails.
   4. Keep --output-junit for CI summary, and publish the HTML folder as an artifact.
+
+## Test splitting
+
+We should label tests so we don't have to run all of them every run. We can
+start by labeling all GPU model tests and only run those if a particular
+environment variable is set.

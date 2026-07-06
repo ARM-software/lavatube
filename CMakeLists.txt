@@ -737,6 +737,7 @@ trace_test(texture_mipmap_generation traces/sample_texture_mipmap_generation.api
 trace_test(vkcube_xcb traces/lunarg_vkcube_xcb.api)
 trace_test(vkcube_xlib traces/lunarg_vkcube_xlib.api)
 trace_test(vkcube_wayland traces/lunarg_vkcube_wayland.api)
+trace_test(calendar traces/calendar.api)
 
 # --- packtool ---
 

@@ -39,11 +39,11 @@ Do not push `build/libVkLayer_lavatube.so` to Android. It is a desktop Linux sha
 ## Trace Verification
 
 After a successful script run, inspect the trace you captured from the repo root (here assuming that the trace
-is named `calendar.vk`):
+is named `calendar.api`):
 
 ```bash
-build/packtool print metadata.json calendar.vk | rg "VK_ANDROID_frame_boundary|VK_EXT_frame_boundary"
-build/lava-print calendar.vk | rg "vkFrameBoundaryANDROID|vkCreateDevice"
+build/packtool print metadata.json calendar.api | rg "VK_ANDROID_frame_boundary|VK_EXT_frame_boundary"
+build/lava-print calendar.api | rg "vkFrameBoundaryANDROID|vkCreateDevice"
 ```
 
 ## Common Failures
