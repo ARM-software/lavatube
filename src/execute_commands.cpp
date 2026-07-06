@@ -892,20 +892,20 @@ bool execute_commands(command_execution_data& data)
 			{
 				uint32_t set = c.data.bind_descriptorsets.firstSet + i;
 				auto& tds = VkDescriptorSet_index.at(c.data.bind_descriptorsets.pDescriptorSets[i]); // is index now
-				for (auto pair : tds.bound_buffers)
+				for (const auto& pair : tds.bound_buffers)
 				{
 					data.descriptorsets[set][pair.first] = pair.second;
 				}
-				for (auto pair : tds.bound_images)
+				for (const auto& pair : tds.bound_images)
 				{
 					data.imagesets[set][pair.first] = pair.second;
 				}
-				for (auto pair : tds.bound_opaque_descriptors)
+				for (const auto& pair : tds.bound_opaque_descriptors)
 				{
 					data.opaquesets[set][pair.first] = pair.second;
 				}
 				uint32_t binding = 0;
-				for (auto pair : tds.dynamic_buffers)
+				for (const auto& pair : tds.dynamic_buffers)
 				{
 					buffer_access access;
 					const uint32_t buffer_index = index_to_VkBuffer.index(pair.second.buffer);

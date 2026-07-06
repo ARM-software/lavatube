@@ -2555,7 +2555,7 @@ VKAPI_ATTR uint64_t VKAPI_CALL trace_vkGetDeviceTracingObjectPropertyTRACETOOLTE
 		else if (objectType == VK_OBJECT_TYPE_COMMAND_BUFFER)
 		{
 			writer.parent->records.VkCommandBuffer_index.at((VkCommandBuffer)objectHandle)->self_test();
-			for (auto pair : writer.parent->records.VkCommandBuffer_index.at((VkCommandBuffer)objectHandle)->touched) retval += pair.second.size();
+			for (const auto& pair : writer.parent->records.VkCommandBuffer_index.at((VkCommandBuffer)objectHandle)->touched) retval += pair.second.size();
 		}
 		else assert(false);
 		break;
@@ -2568,7 +2568,7 @@ VKAPI_ATTR uint64_t VKAPI_CALL trace_vkGetDeviceTracingObjectPropertyTRACETOOLTE
 		else if (objectType == VK_OBJECT_TYPE_COMMAND_BUFFER)
 		{
 			writer.parent->records.VkCommandBuffer_index.at((VkCommandBuffer)objectHandle)->self_test();
-			for (auto pair : writer.parent->records.VkCommandBuffer_index.at((VkCommandBuffer)objectHandle)->touched) retval += pair.second.bytes();
+			for (const auto& pair : writer.parent->records.VkCommandBuffer_index.at((VkCommandBuffer)objectHandle)->touched) retval += pair.second.bytes();
 		}
 		else assert(false);
 		break;
@@ -2609,7 +2609,7 @@ VKAPI_ATTR uint64_t VKAPI_CALL trace_vkGetDeviceTracingObjectPropertyTRACETOOLTE
 		else if (objectType == VK_OBJECT_TYPE_COMMAND_BUFFER)
 		{
 			writer.parent->records.VkCommandBuffer_index.at((VkCommandBuffer)objectHandle)->self_test();
-			for (auto pair : writer.parent->records.VkCommandBuffer_index.at((VkCommandBuffer)objectHandle)->touched) retval += pair.first->updates;
+			for (const auto& pair : writer.parent->records.VkCommandBuffer_index.at((VkCommandBuffer)objectHandle)->touched) retval += pair.first->updates;
 		} else assert(false);
 		break;
 	case VK_TRACING_OBJECT_PROPERTY_UPDATES_BYTES_TRACETOOLTEST:
@@ -2624,7 +2624,7 @@ VKAPI_ATTR uint64_t VKAPI_CALL trace_vkGetDeviceTracingObjectPropertyTRACETOOLTE
 		else if (objectType == VK_OBJECT_TYPE_COMMAND_BUFFER)
 		{
 			writer.parent->records.VkCommandBuffer_index.at((VkCommandBuffer)objectHandle)->self_test();
-			for (auto pair : writer.parent->records.VkCommandBuffer_index.at((VkCommandBuffer)objectHandle)->touched) retval += pair.first->written;
+			for (const auto& pair : writer.parent->records.VkCommandBuffer_index.at((VkCommandBuffer)objectHandle)->touched) retval += pair.first->written;
 		} else assert(false);
 		break;
 	case VK_TRACING_OBJECT_PROPERTY_BACKING_STORE_TRACETOOLTEST:
