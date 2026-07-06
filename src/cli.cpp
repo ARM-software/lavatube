@@ -29,7 +29,9 @@ void usage()
 	printf("Replay control:\n");
 	printf("    status                   Show replay state. Outputs RUNNING, DONE, PAUSED, or current paused packet/call.\n");
 	printf("    continue                 Resume replay until completion, stop, or next target.\n");
-	printf("    stop                     Stop the service and replay.\n");
+	printf("    stop                     Stop the replay.\n");
+	printf("    set debug LEVEL          Set replay debug level (zero is the least verbose) [0,1,2,3].\n");
+	printf("    set blackhole BOOL       Set replay blackhole mode (submit empty commandbuffers) [true,false].\n");
 	printf("    step                     Advance one packet.\n");
 	printf("    step packets N           Advance N packets.\n");
 	printf("    step calls N             Advance N Vulkan API calls.\n");

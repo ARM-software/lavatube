@@ -69,6 +69,29 @@ static bool parse_positive_u32(const std::string& text, uint32_t& out)
 	return parse_u32(text, out) && out > 0;
 }
 
+static bool parse_debug_level(const std::string& text, uint_fast8_t& out)
+{
+	uint32_t value = 0;
+	if (!parse_u32(text, value) || value > 3) return false;
+	out = (uint_fast8_t)value;
+	return true;
+}
+
+static bool parse_bool(const std::string& text, bool& out)
+{
+	if (text == "true")
+	{
+		out = true;
+		return true;
+	}
+	if (text == "false")
+	{
+		out = false;
+		return true;
+	}
+	return false;
+}
+
 static bool cli_show_json(const char* object_type, uint32_t index, Json::Value& out)
 {
 	if (!cli_show_object_json(object_type, index, out)) return false;
@@ -342,6 +365,32 @@ static void service_listener()
 			done_var.store(true, std::memory_order_release);
 			done_var.notify_all();
 			response = "OK\n";
+		}
+		else if (command.size() == 3 && command[0] == "set" && command[1] == "debug")
+		{
+			uint_fast8_t level = 0;
+			if (parse_debug_level(command[2], level))
+			{
+				p__debug_level = level;
+				response = "OK\n";
+			}
+			else
+			{
+				response = "ERROR\n";
+			}
+		}
+		else if (command.size() == 3 && command[0] == "set" && command[1] == "blackhole")
+		{
+			bool enabled = false;
+			if (parse_bool(command[2], enabled))
+			{
+				p__blackhole = enabled ? 1 : 0;
+				response = "OK\n";
+			}
+			else
+			{
+				response = "ERROR\n";
+			}
 		}
 		else if (command[0] == "step")
 		{
