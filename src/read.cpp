@@ -74,6 +74,11 @@ static void load_requested_extensions(const Json::Value& root, bool& has_extensi
 	}
 }
 
+static bool requested_extensions_contains(const std::vector<std::string>& extensions, const char* extension)
+{
+	return std::find(extensions.begin(), extensions.end(), extension) != extensions.end();
+}
+
 // --- file reader
 
 lava_file_reader::lava_file_reader(lava_reader* _parent, const std::string& path, int mytid, int frames, const Json::Value& frameinfo, size_t uncompressed_size, size_t uncompressed_target, int start, int end)
@@ -412,6 +417,8 @@ void lava_reader::init(const std::string& path)
 	stored_version_patch = meta["lavatube_version_patch"].asInt();
 	load_requested_extensions(meta["instanceRequested"]["enabledExtensions"], has_stored_instance_requested_extensions, stored_instance_requested_extensions);
 	load_requested_extensions(meta["deviceRequested"]["enabledExtensions"], has_stored_device_requested_extensions, stored_device_requested_extensions);
+	trace_uses_trace_helpers = has_stored_device_requested_extensions
+		&& requested_extensions_contains(stored_device_requested_extensions, VK_ARM_TRACE_HELPERS_EXTENSION_NAME);
 
 	// initialize threads -- note that this happens before threading begins, so thread safe
 	threads.resize(num_threads);

@@ -70,7 +70,7 @@ Building
 For Ubuntu x86, install these packages:
 
 ```
-sudo apt-get install git cmake pkg-config python3 libxcb1-dev libxrandr-dev libxcb-randr0-dev libtbb-dev \
+sudo apt-get install git cmake pkg-config python3 libxcb1-dev libxrandr-dev libxcb-randr0-dev \
  libvulkan-dev spirv-headers ocl-icd-opencl-dev libgles-dev libegl-dev libglm-dev liblz4-dev libwayland-dev \
  libcurl4-gnutls-dev
 ```
@@ -136,19 +136,6 @@ make
 If you are running Ubuntu, here are some tips on how to properly set up
 a cross-compilation environment where you can install required packages:
 https://askubuntu.com/questions/430705/how-to-use-apt-get-to-download-multi-arch-library
-
-If you don't have Intel TBB install for your platform, you can build and install it like
-this (example for aarch64):
-
-```
-git clone https://github.com/oneapi-src/oneTBB.git tbb
-cd tbb
-mkdir build_arm
-cd build_arm
-cmake -DCMAKE_INSTALL_PREFIX=/usr/aarch64-linux-gnu -DCMAKE_TOOLCHAIN_FILE=<PATH TO LAVATUBE>/cmake/toolchain/linux_arm64.cmake ..
-make
-sudo make install
-```
 
 Debug
 =====

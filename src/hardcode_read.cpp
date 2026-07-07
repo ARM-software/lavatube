@@ -1954,6 +1954,7 @@ static bool fixup_sbt_region(lava_file_reader& reader, const trackeddevice& devi
 
 static void replay_fixup_commandbuffer_raytracing_sbt(lava_file_reader& reader, trackedcmdbuffer& commandbuffer_data)
 {
+	if (reader.parent->trace_uses_trace_helpers) return;
 	if (commandbuffer_data.raytracing_sbt_uses.empty()) return;
 	const auto& device_data = VkDevice_index.at(commandbuffer_data.device_index);
 	const VkDevice device = commandbuffer_data.device;
@@ -1981,6 +1982,7 @@ static void replay_fixup_commandbuffer_raytracing_sbt(lava_file_reader& reader, 
 
 static void replay_fixup_commandbuffer_raytracing_instances(lava_file_reader& reader, trackedcmdbuffer& commandbuffer_data)
 {
+	if (reader.parent->trace_uses_trace_helpers) return;
 	if (!reader.run || commandbuffer_data.raytracing_instance_uses.empty()) return;
 	const auto& device_data = VkDevice_index.at(commandbuffer_data.device_index);
 	const VkDevice device = commandbuffer_data.device;
@@ -4316,8 +4318,7 @@ void retrace_vkGetSwapchainImagesKHR(lava_file_reader& reader)
 		pinfo.samples = VK_SAMPLE_COUNT_1_BIT;
 		pinfo.tiling = VK_IMAGE_TILING_OPTIMAL;
 		pinfo.usage = data.info.imageUsage | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
-		pinfo.sharingMode = data.info.imageSharingMode;
-		assert(pinfo.sharingMode == VK_SHARING_MODE_EXCLUSIVE); // TBD
+		pinfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 		pinfo.queueFamilyIndexCount = selected_queue_family_index;
 		pinfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 		data.virtual_images.resize(stored_image_count);

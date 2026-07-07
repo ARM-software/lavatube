@@ -198,6 +198,7 @@ public:
 	bool has_stored_device_requested_extensions = false;
 	std::vector<std::string> stored_instance_requested_extensions;
 	std::vector<std::string> stored_device_requested_extensions;
+	bool trace_uses_trace_helpers = false;
 	lava_markings_observer markings_observer = nullptr;
 	void* markings_observer_data = nullptr;
 	bool create_results_file = true;

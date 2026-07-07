@@ -138,7 +138,7 @@ ignore_on_read = [ 'vkGetMemoryHostPointerPropertiesEXT', 'vkCreateDebugUtilsMes
 	'vkGetImageMemoryRequirements2KHR', 'vkGetBufferMemoryRequirements2KHR', 'vkGetImageSparseMemoryRequirements2KHR', 'vkGetImageMemoryRequirements',
 	'vkGetBufferMemoryRequirements', 'vkGetImageSparseMemoryRequirements', 'vkGetImageMemoryRequirements2', 'vkGetBufferMemoryRequirements2',
 	'vkGetImageSparseMemoryRequirements2', 'vkMapMemory2', 'vkUnmapMemory2', 'vkGetPhysicalDeviceWaylandPresentationSupportKHR',
-	'vkGetDescriptorEXT' ]
+	'vkGetDescriptorEXT', 'vkGetPhysicalDeviceVideoCapabilitiesKHR' ]
 validate_funcs(ignore_on_read)
 # Ignore return value only
 ignore_retval = [ 'vkGetDeferredOperationMaxConcurrencyKHR' ]
