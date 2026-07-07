@@ -435,6 +435,19 @@ const char* const* instance_layers(lava_file_reader& reader, uint32_t& len)
 	return dst.data();
 }
 
+static const char* const* requested_extensions_for_output(const std::vector<std::string>& extensions, uint32_t& len)
+{
+	static thread_local std::vector<const char*> dst;
+	dst.clear();
+	dst.reserve(extensions.size());
+	for (const std::string& extension : extensions)
+	{
+		dst.push_back(extension.c_str());
+	}
+	len = static_cast<uint32_t>(dst.size());
+	return dst.data();
+}
+
 const char* const* device_extensions(VkDeviceCreateInfo* sptr, lava_file_reader& reader, uint32_t& len)
 {
 	bool trace_has_frame_boundary = false;
@@ -450,6 +463,10 @@ const char* const* device_extensions(VkDeviceCreateInfo* sptr, lava_file_reader&
 	const bool use_stored_metadata = reader.run && !p__skip_remove_unused && reader.parent->has_stored_device_requested_extensions;
 	reader.parent->cli_pipeline_executable_stats_enabled.store(false, std::memory_order_release);
 	reader.parent->cli_memory_budget_enabled.store(false, std::memory_order_release);
+	if (reader.write_output && reader.parent->has_stored_device_requested_extensions)
+	{
+		return requested_extensions_for_output(reader.parent->stored_device_requested_extensions, len);
+	}
 	if (!reader.run) return stored;
 	const std::vector<const char*> do_not_copy = {
 		VK_KHR_SWAPCHAIN_EXTENSION_NAME, VK_KHR_GET_MEMORY_REQUIREMENTS_2_EXTENSION_NAME,
@@ -651,6 +668,10 @@ const char* const* instance_extensions(lava_file_reader& reader, uint32_t& len)
 	const uint32_t stored_len = len;
 	const uint32_t metadata_len = reader.parent->stored_instance_requested_extensions.size();
 	const bool use_stored_metadata = reader.run && !p__skip_remove_unused && reader.parent->has_stored_instance_requested_extensions;
+	if (reader.write_output && reader.parent->has_stored_instance_requested_extensions)
+	{
+		return requested_extensions_for_output(reader.parent->stored_instance_requested_extensions, len);
+	}
 	if (!reader.run) return stored;
 
 	bool host_has_surface = false;
