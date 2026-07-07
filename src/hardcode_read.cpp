@@ -1980,6 +1980,19 @@ static void replay_fixup_commandbuffer_raytracing_sbt(lava_file_reader& reader, 
 	}
 }
 
+[[noreturn]] static void fail_unmappable_raytracing_fixup(lava_file_reader& reader, const char* target, const trackedbuffer& buffer_data,
+	VkDeviceAddress address, VkDeviceSize size)
+{
+	printf("ERROR: ray tracing %s address fixup unsupported while replaying thread=%u packet=%u frame=%u: "
+		"buffer=%u \"%s\" at address 0x%llx size=%llu is not host-visible.\n",
+		target, reader.current.thread, reader.current.packet, reader.current.frame, buffer_data.index, buffer_data.name.c_str(),
+		(unsigned long long)address, (unsigned long long)size);
+	printf("ERROR: this raw trace needs VK_ARM_trace_helpers markings or simulator-generated markings before GPU replay.\n");
+	reader.parent->exit_status = 1;
+	reader.parent->request_stop(reader.device);
+	reader.throw_stop_requested();
+}
+
 static void replay_fixup_commandbuffer_raytracing_instances(lava_file_reader& reader, trackedcmdbuffer& commandbuffer_data)
 {
 	if (reader.parent->trace_uses_trace_helpers) return;
@@ -2001,6 +2014,10 @@ static void replay_fixup_commandbuffer_raytracing_instances(lava_file_reader& re
 		}
 
 		suballoc_location loc = device_data.allocator->find_buffer_memory(buffer_data->index);
+		if (!loc.mapped && (buffer_data->memory_flags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) == 0)
+		{
+			fail_unmappable_raytracing_fixup(reader, "acceleration-structure instance", *buffer_data, base_address, total_size);
+		}
 		char* mapped = mem_map(reader, device, loc);
 		char* base = mapped;
 		VkAccelerationStructureInstanceKHR* instance_data = reinterpret_cast<VkAccelerationStructureInstanceKHR*>(base + buffer_offset);
