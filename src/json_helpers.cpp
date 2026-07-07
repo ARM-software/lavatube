@@ -790,6 +790,122 @@ trackedsurface trackedsurface_json(const Json::Value& v)
 	return t;
 }
 
+static const char* marking_type_json_name(VkMarkingTypeARM type)
+{
+	switch (type)
+	{
+	case VK_MARKING_TYPE_DEVICE_ADDRESS_ARM: return "device_address";
+	case VK_MARKING_TYPE_DESCRIPTOR_SIZE_ARM: return "descriptor_size";
+	case VK_MARKING_TYPE_DESCRIPTOR_OFFSET_ARM: return "descriptor_offset";
+	case VK_MARKING_TYPE_DESCRIPTOR_ARM: return "descriptor";
+	case VK_MARKING_TYPE_SHADER_GROUP_HANDLE_ARM: return "shader_group_handle";
+	default: assert(false); return "invalid";
+	}
+}
+
+static const char* device_address_type_json_name(VkDeviceAddressTypeARM type)
+{
+	switch (type)
+	{
+	case VK_DEVICE_ADDRESS_TYPE_BUFFER_ARM: return "buffer";
+	case VK_DEVICE_ADDRESS_TYPE_ACCELERATION_STRUCTURE_ARM: return "acceleration_structure";
+	default: assert(false); return "invalid";
+	}
+}
+
+static const char* descriptor_type_json_name(VkDescriptorType type)
+{
+	switch (type)
+	{
+	case VK_DESCRIPTOR_TYPE_SAMPLER: return "sampler";
+	case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER: return "combined_image_sampler";
+	case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE: return "sampled_image";
+	case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE: return "storage_image";
+	case VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER: return "uniform_texel_buffer";
+	case VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER: return "storage_texel_buffer";
+	case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER: return "uniform_buffer";
+	case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER: return "storage_buffer";
+	case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC: return "uniform_buffer_dynamic";
+	case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC: return "storage_buffer_dynamic";
+	case VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT: return "input_attachment";
+	case VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK: return "inline_uniform_block";
+	case VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR: return "acceleration_structure_khr";
+	case VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_NV: return "acceleration_structure_nv";
+	case VK_DESCRIPTOR_TYPE_SAMPLE_WEIGHT_IMAGE_QCOM: return "sample_weight_image_qcom";
+	case VK_DESCRIPTOR_TYPE_BLOCK_MATCH_IMAGE_QCOM: return "block_match_image_qcom";
+	case VK_DESCRIPTOR_TYPE_TENSOR_ARM: return "tensor_arm";
+	case VK_DESCRIPTOR_TYPE_MUTABLE_EXT: return "mutable_ext";
+	case VK_DESCRIPTOR_TYPE_PARTITIONED_ACCELERATION_STRUCTURE_NV: return "partitioned_acceleration_structure_nv";
+	default: assert(false); return "invalid";
+	}
+}
+
+static const char* shader_group_type_json_name(VkShaderGroupShaderKHR type)
+{
+	switch (type)
+	{
+	case VK_SHADER_GROUP_SHADER_GENERAL_KHR: return "general";
+	case VK_SHADER_GROUP_SHADER_CLOSEST_HIT_KHR: return "closest_hit";
+	case VK_SHADER_GROUP_SHADER_ANY_HIT_KHR: return "any_hit";
+	case VK_SHADER_GROUP_SHADER_INTERSECTION_KHR: return "intersection";
+	default: assert(false); return "invalid";
+	}
+}
+
+Json::Value marked_offsets_json(const VkMarkedOffsetsARM* markings)
+{
+	assert(markings);
+	assert(markings->sType == VK_STRUCTURE_TYPE_MARKED_OFFSETS_ARM);
+
+	Json::Value item;
+	item["type"] = "VkMarkedOffsetsARM";
+	item["sType"] = (Json::Value::UInt64)markings->sType;
+	item["count"] = (Json::Value::UInt64)markings->count;
+
+	Json::Value entries(Json::arrayValue);
+	if (markings->count > 0)
+	{
+		assert(markings->pMarkingTypes);
+		assert(markings->pSubTypes);
+		assert(markings->pOffsets);
+	}
+
+	for (uint32_t i = 0; i < markings->count; i++)
+	{
+		const VkMarkingTypeARM type = markings->pMarkingTypes[i];
+		const VkMarkingSubTypeARM subtype = markings->pSubTypes[i];
+
+		Json::Value entry;
+		entry["index"] = (Json::Value::UInt64)i;
+		entry["offset"] = (Json::Value::UInt64)markings->pOffsets[i];
+		entry["type"] = marking_type_json_name(type);
+
+		Json::Value subtype_json;
+		switch (type)
+		{
+		case VK_MARKING_TYPE_DEVICE_ADDRESS_ARM:
+			subtype_json["deviceAddressType"] = device_address_type_json_name(subtype.deviceAddressType);
+			break;
+		case VK_MARKING_TYPE_DESCRIPTOR_SIZE_ARM:
+		case VK_MARKING_TYPE_DESCRIPTOR_OFFSET_ARM:
+		case VK_MARKING_TYPE_DESCRIPTOR_ARM:
+			subtype_json["descriptorType"] = descriptor_type_json_name(subtype.descriptorType);
+			break;
+		case VK_MARKING_TYPE_SHADER_GROUP_HANDLE_ARM:
+			subtype_json["shaderGroupType"] = shader_group_type_json_name(subtype.shaderGroupType);
+			break;
+		default:
+			assert(false);
+			break;
+		}
+		entry["subtype"] = subtype_json;
+		entries.append(entry);
+	}
+
+	item["markings"] = entries;
+	return item;
+}
+
 void write_json(FILE* fp, const Json::Value& v)
 {
 	Json::StyledWriter writer;

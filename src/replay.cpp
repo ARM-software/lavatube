@@ -192,10 +192,20 @@ static bool cli_has_paused_command(lava_file_reader& reader)
 	return reader.cli_paused_call.load(std::memory_order_acquire) != 0;
 }
 
-static uint32_t cli_current_packet(lava_file_reader& reader)
+static uint32_t cli_current_packet_count(lava_file_reader& reader)
 {
 	const uint32_t completed_packets = reader.cli_packet.load(std::memory_order_relaxed);
 	return cli_has_paused_command(reader) ? completed_packets + 1 : completed_packets;
+}
+
+static uint32_t cli_current_packet_index(lava_file_reader& reader)
+{
+	if (cli_has_paused_command(reader) && reader.cli_step.load(std::memory_order_acquire) == cli_step_mode::packets)
+	{
+		return reader.cli_paused_call.load(std::memory_order_acquire) - 1;
+	}
+	if (cli_has_paused_command(reader)) return reader.current.packet;
+	return reader.cli_packet.load(std::memory_order_relaxed);
 }
 
 static uint32_t cli_current_call(lava_file_reader& reader)
@@ -207,7 +217,7 @@ static uint32_t cli_current_call(lava_file_reader& reader)
 
 static uint32_t cli_completed_count(lava_file_reader& reader, cli_step_mode mode)
 {
-	return mode == cli_step_mode::calls ? cli_current_call(reader) : cli_current_packet(reader);
+	return mode == cli_step_mode::calls ? cli_current_call(reader) : cli_current_packet_count(reader);
 }
 
 static std::string cli_paused_command_response(lava_file_reader& reader)
@@ -215,7 +225,7 @@ static std::string cli_paused_command_response(lava_file_reader& reader)
 	if (!cli_has_paused_command(reader)) return "PAUSED\n";
 	const char* packet_name = get_packet_name((packet_type)reader.current.packet_type, reader.current.call_id);
 	const int thread_id = replayer.cli_thread.load(std::memory_order_acquire);
-	return "PAUSED @ packet=" + std::to_string(cli_current_packet(reader)) + " api_calls=" + std::to_string(cli_current_call(reader))
+	return "PAUSED @ packet=" + std::to_string(cli_current_packet_index(reader)) + " api_calls=" + std::to_string(cli_current_call(reader))
 	       + " name=" + packet_name + " frame="
 	       + std::to_string(replayer.global_frame) + "/" + std::to_string(replayer.global_frame_count)
 	       + " thread=" + std::to_string(thread_id) + "\n";
@@ -454,12 +464,12 @@ static void service_listener()
 				lava_file_reader& reader = replayer.file_reader(thread_id);
 				if (parse_u32(command[1], target_packet))
 				{
-					const uint32_t current_packet = cli_current_packet(reader);
+					const uint32_t current_packet = cli_current_packet_index(reader);
 					if (target_packet < current_packet)
 					{
 						response = "ERROR\n";
 					}
-					else if (target_packet == current_packet)
+					else if (target_packet == current_packet && cli_has_paused_command(reader))
 					{
 						response = cli_paused_command_response(reader);
 					}
@@ -467,7 +477,7 @@ static void service_listener()
 					{
 						cli_clear_function_target(reader);
 						reader.cli_step.store(cli_step_mode::packets, std::memory_order_release);
-						reader.cli_call.store(target_packet, std::memory_order_release);
+						reader.cli_call.store(target_packet + 1, std::memory_order_release);
 						replayer.cli_running.store(true, std::memory_order_release);
 						replayer.cli_running.notify_all();
 						replayer.cli_running.wait(true);

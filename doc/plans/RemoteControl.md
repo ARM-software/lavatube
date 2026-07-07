@@ -226,3 +226,41 @@ invasive, so we should go with this to begin with at least.
  others blocked on a condition variable, you need to ensure this doesn't cause deadlocks if
  Thread A's next command is waiting on a fence signaled by Thread B. Providing a `step-all`
  vs `step-thread` distinction might be necessary eventually.
+
+## lava-tool service mode (written by codex)
+
+There is value in allowing `lava-tool` to run in service mode as well, especially for
+debugging simulator and post-processing runs. This should reuse the same `lava-cli`
+protocol where possible, but the service implementation should not remain tied to
+`lava-replay`'s file-scope `replayer` object. The command listener and common helper
+functions should be moved into a shared service module that can operate on a currently
+active `lava_reader`.
+
+Unlike `lava-replay`, `lava-tool` can run multiple passes. Service mode should pause at
+the start of each pass before worker threads are started, so the user can inspect which
+pass is about to run and choose when to continue. The service should update its active
+`lava_reader` pointer for each pass and expose the pass in status output, for example
+analysis/simulation pass 0 and output-rewrite pass 1.
+
+Needed code changes:
+* Add `--service`, `-P/--port`, and `-H/--host` handling to `lava-tool`.
+* Extract the reusable parts of `src/replay.cpp`'s service listener into shared code.
+* Make the shared service target a `lava_reader*` supplied by the current tool pass.
+* Add service lifecycle handling around each `lava-tool` pass: start/listen before the
+  first pass, set the current reader before pausing, wake worker threads on `continue`,
+  and cleanly stop/join the listener on `stop` or normal completion.
+* Add `check_cli()` handling to `lava-tool`'s replay loop after `switchboard_packet()`,
+  mirroring `lava-replay`, and update `cli_packet` as packets are processed.
+* Keep generated and hardcoded parameter serialization shared through the existing
+  `cli_params_*` helpers.
+* Reset or clearly publish per-pass state so commands do not accidentally inspect a
+  finalized previous pass.
+
+Initial command support should include `status`, `continue`, `stop`, `step`, `goto`,
+`parameters`, `show`, `info objects`, `info threads`, `info thread`, `info frame`, and
+`set debug`. `set blackhole` should not be supported for `lava-tool`, since blackhole
+mode only makes sense for actual replay execution and not for tool analysis or trace
+rewriting. Runtime-state commands that depend on live Vulkan replay state, such as
+`info memory`, `info suballocator`, and pipeline executable statistics, should either be
+omitted from `lava-tool` service mode or return a clear unsupported response until there
+is a concrete tool use case for them.

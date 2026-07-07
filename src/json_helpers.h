@@ -78,3 +78,4 @@ trackedsurface trackedsurface_json(const Json::Value& v);
 // --- Other ---
 
 Json::Value from_change_source(const change_source& c);
+Json::Value marked_offsets_json(const VkMarkedOffsetsARM* markings);

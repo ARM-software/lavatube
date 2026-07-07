@@ -7,6 +7,7 @@
 #include <cstring>
 #include <cstdlib>
 #include <cstddef>
+#include <cstdio>
 #include "spirv-simulator/framework/spirv_simulator.hpp"
 
 #include "execute_commands.h"
@@ -51,6 +52,72 @@ static SPIRVSimulator::InternalPersistentData simulator_persistent_data;
 static uint64_t simulator_pointer_bits(const void* ptr)
 {
 	return static_cast<uint64_t>(reinterpret_cast<uintptr_t>(ptr));
+}
+
+static size_t count_simulator_output_candidates(const SPIRVSimulator::SimulationResults& results)
+{
+	size_t count = 0;
+	for (const auto& candidates : results.output_candidates)
+	{
+		count += candidates.second.size();
+	}
+	return count;
+}
+
+static const char* simulator_owner_name(VkPipelineBindPoint bind_point, bool shader_object)
+{
+	if (shader_object) return "shader_object";
+	switch (bind_point)
+	{
+	case VK_PIPELINE_BIND_POINT_COMPUTE: return "compute_pipeline";
+	case VK_PIPELINE_BIND_POINT_GRAPHICS: return "graphics_pipeline";
+	case VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR: return "raytracing_pipeline";
+	case VK_PIPELINE_BIND_POINT_DATA_GRAPH_ARM: return "data_graph_pipeline";
+	default: return "unknown_pipeline";
+	}
+}
+
+static std::string summarize_simulator_descriptor_ranges(const std::vector<simulator_buffer_range>& ranges,
+	uint32_t& descriptor_count, uint32_t& physical_address_count, uint32_t& other_count)
+{
+	descriptor_count = 0;
+	physical_address_count = 0;
+	other_count = 0;
+	std::string summary;
+	uint32_t printed = 0;
+	for (const simulator_buffer_range& range : ranges)
+	{
+		if (range.physical_address_backing)
+		{
+			physical_address_count++;
+			continue;
+		}
+		if (range.set == UINT32_MAX || range.binding == UINT32_MAX)
+		{
+			other_count++;
+			continue;
+		}
+		descriptor_count++;
+		if (printed >= 8) continue;
+		char text[160];
+		snprintf(text, sizeof(text), "%sset=%u.binding=%u.%s[%u]+%llu:%llu",
+			printed == 0 ? "" : ",",
+			(unsigned)range.set, (unsigned)range.binding,
+			range.buffer_data ? pretty_print_VkObjectType(range.buffer_data->object_type) : "source",
+			range.buffer_data ? range.buffer_data->index : CONTAINER_NULL_VALUE,
+			(unsigned long long)range.buffer_offset,
+			(unsigned long long)range.size);
+		summary += text;
+		printed++;
+	}
+	if (descriptor_count > printed)
+	{
+		char text[64];
+		snprintf(text, sizeof(text), ",...+%u", (unsigned)(descriptor_count - printed));
+		summary += text;
+	}
+	if (summary.empty()) summary = "none";
+	return summary;
 }
 
 static void register_simulator_buffer_range(std::vector<simulator_buffer_range>& ranges, const void* base_ptr, size_t size,
@@ -419,7 +486,8 @@ static void collect_simulator_physical_address_markings(const std::vector<simula
 	}
 }
 
-static bool run_spirv(command_execution_data& data, const shader_stage& stage, const change_source& source)
+static bool run_spirv(command_execution_data& data, const shader_stage& stage, const change_source& source,
+	VkPipelineBindPoint owner_bind_point, uint32_t owner_index, bool shader_object)
 {
 	SPIRVSimulator::SimulationData inputs;
 	SPIRVSimulator::SimulationResults results;
@@ -560,6 +628,38 @@ static bool run_spirv(command_execution_data& data, const shader_stage& stage, c
 	std::vector<discovered_buffer_marking> discovered_markings;
 	merge_simulator_source_copies(simulator_ranges, memory_flag_tracker);
 	collect_simulator_physical_address_markings(simulator_ranges, results, discovered_markings);
+	if (p__debug_level >= 1)
+	{
+		uint32_t descriptor_count = 0;
+		uint32_t physical_address_count = 0;
+		uint32_t other_count = 0;
+		const std::string descriptor_summary = summarize_simulator_descriptor_ranges(simulator_ranges,
+			descriptor_count, physical_address_count, other_count);
+		const std::string source_summary = describe_change_source(source);
+		DLOG("SPIRV summary cmd_buffer=%u source=\"%s\" owner=%s[%u] stage_index=%u stage=%s shader_module=%u entry=%s init_time=%.2fms run_time=%.2fms ranges=%u descriptor_ranges=%u physical_address_buffers=%u other_inputs=%u descriptors=%s physical_address_data=%u output_candidate_sets=%u output_candidates=%u discovered_markings=%u full_dispatch_needed=%u aborted_long_loop=%u had_arbitrary_write=%u",
+			(unsigned)data.cmdbuffer_data.index,
+			source_summary.c_str(),
+			simulator_owner_name(owner_bind_point, shader_object),
+			(unsigned)owner_index,
+			(unsigned)stage.index,
+			shader_stage_name(stage.stage),
+			(unsigned)stage.shader_module_index,
+			stage.name.c_str(),
+			ns_to_ms(simulator_run_start - simulator_init_start),
+			ns_to_ms(simulator_run_time_ns),
+			(unsigned)simulator_ranges.size(),
+			(unsigned)descriptor_count,
+			(unsigned)physical_address_count,
+			(unsigned)other_count,
+			descriptor_summary.c_str(),
+			(unsigned)results.physical_address_data.size(),
+			(unsigned)results.output_candidates.size(),
+			(unsigned)count_simulator_output_candidates(results),
+			(unsigned)discovered_markings.size(),
+			(unsigned)results.full_dispatch_needed,
+			(unsigned)results.aborted_long_loop,
+			(unsigned)results.had_arbitrary_write);
+	}
 	merge_discovered_markings(data, discovered_markings);
 	merge_simulator_output_candidates(stage, source, range_lookup, results);
 	merge_simulator_memory_metadata(source, simulator_ranges, memory_flag_tracker);
@@ -796,7 +896,7 @@ static void collect_stages_from_sbt_region(const command_execution_data& data, c
 }
 
 static void collect_acceleration_structure_instance_markings(const command_execution_data& data, VkDeviceAddress address,
-	VkDeviceSize primitive_offset, uint32_t primitive_count, std::vector<discovered_buffer_marking>& discovered)
+	VkDeviceSize primitive_offset, uint32_t primitive_count, const change_source& source, std::vector<discovered_buffer_marking>& discovered)
 {
 	if (address == 0 || primitive_count == 0) return;
 	address += primitive_offset;
@@ -806,20 +906,68 @@ static void collect_acceleration_structure_instance_markings(const command_execu
 
 	VkMarkingSubTypeARM subtype{};
 	subtype.deviceAddressType = VK_DEVICE_ADDRESS_TYPE_ACCELERATION_STRUCTURE_ARM;
+	uint32_t nonzero_references = 0;
+	uint32_t source_covered_references = 0;
+	host_write_reference first_source_reference;
+	bool have_first_source_reference = false;
 	for (uint32_t i = 0; i < primitive_count; i++)
 	{
 		const VkDeviceSize instance_offset = (VkDeviceSize)i * sizeof(VkAccelerationStructureInstanceKHR);
 		const std::byte* instance_ptr = mapping.ptr + instance_offset;
+		const VkDeviceSize reference_offset = mapping.buffer_offset + instance_offset + offsetof(VkAccelerationStructureInstanceKHR, accelerationStructureReference);
+		host_write_reference source_reference;
+		if (mapping.buffer_data->source.try_get_reference(reference_offset, sizeof(VkDeviceAddress), source_reference))
+		{
+			source_covered_references++;
+			if (!have_first_source_reference)
+			{
+				first_source_reference = source_reference;
+				have_first_source_reference = true;
+			}
+		}
 		uint64_t reference = 0;
 		memcpy(&reference, instance_ptr + offsetof(VkAccelerationStructureInstanceKHR, accelerationStructureReference), sizeof(reference));
 		if (reference == 0) continue;
+		nonzero_references++;
 		discovered.push_back({
 			.buffer_data = mapping.buffer_data,
-			.offset = mapping.buffer_offset + instance_offset + offsetof(VkAccelerationStructureInstanceKHR, accelerationStructureReference),
+			.offset = reference_offset,
 			.size = sizeof(VkDeviceAddress),
 			.type = VK_MARKING_TYPE_DEVICE_ADDRESS_ARM,
 			.subtype = subtype,
 		});
+	}
+	if (nonzero_references == 0)
+	{
+		const std::string source_summary = describe_change_source(source);
+		if (have_first_source_reference)
+		{
+			const std::string first_source_summary = describe_change_source(first_source_reference.source);
+			DLOG("Acceleration structure instance range address=0x%llx buffer=%s[%u]+%llu size=%llu primitive_count=%u consumed_by=\"%s\" has only zero references; %u/%u reference slots have source coverage, first_source=\"%s\" first_stage=%u first_object_offset=%lld",
+				(unsigned long long)address,
+				pretty_print_VkObjectType(mapping.buffer_data->object_type),
+				(unsigned)mapping.buffer_data->index,
+				(unsigned long long)mapping.buffer_offset,
+				(unsigned long long)mapping.size,
+				(unsigned)primitive_count,
+				source_summary.c_str(),
+				(unsigned)source_covered_references,
+				(unsigned)primitive_count,
+				first_source_summary.c_str(),
+				(unsigned)first_source_reference.stage_index,
+				(long long)first_source_reference.object_offset);
+		}
+		else
+		{
+			DLOG("Acceleration structure instance range address=0x%llx buffer=%s[%u]+%llu size=%llu primitive_count=%u consumed_by=\"%s\" has only zero references and no reference-slot source coverage",
+				(unsigned long long)address,
+				pretty_print_VkObjectType(mapping.buffer_data->object_type),
+				(unsigned)mapping.buffer_data->index,
+				(unsigned long long)mapping.buffer_offset,
+				(unsigned long long)mapping.size,
+				(unsigned)primitive_count,
+				source_summary.c_str());
+		}
 	}
 }
 
@@ -1053,13 +1201,15 @@ bool execute_commands(command_execution_data& data)
 				assert(pipeline_data.shader_stages.size() == 1);
 				assert(pipeline_data.shader_stages[0].stage == VK_SHADER_STAGE_COMPUTE_BIT);
 				pipeline_data.shader_stages[0].calls++;
-				run_spirv(data, pipeline_data.shader_stages[0], c.source);
+				run_spirv(data, pipeline_data.shader_stages[0], c.source,
+					VK_PIPELINE_BIND_POINT_COMPUTE, compute_pipeline_bound, false);
 			}
 			else // shader objects
 			{
 				auto& shader_object_data = VkShaderEXT_index.at(shader_objects.at(VK_SHADER_STAGE_COMPUTE_BIT));
 				shader_object_data.stage.calls++;
-				run_spirv(data, shader_object_data.stage, c.source);
+				run_spirv(data, shader_object_data.stage, c.source,
+					VK_PIPELINE_BIND_POINT_MAX_ENUM, shader_object_data.index, true);
 			}
 			break;
 		case VKCMDDISPATCHDATAGRAPHARM:
@@ -1091,7 +1241,8 @@ bool execute_commands(command_execution_data& data)
 				{
 					if (stage.stage == VK_SHADER_STAGE_COMPUTE_BIT) continue;
 					stage.calls++;
-					run_spirv(data, stage, c.source);
+					run_spirv(data, stage, c.source,
+						VK_PIPELINE_BIND_POINT_GRAPHICS, graphics_pipeline_bound, false);
 				}
 			}
 			else for (auto& pair : shader_objects) // shader objects
@@ -1101,7 +1252,8 @@ bool execute_commands(command_execution_data& data)
 				shader_stage& stage = shader_object_data.stage;
 				assert(pair.first == stage.stage);
 				stage.calls++;
-				run_spirv(data, stage, c.source);
+				run_spirv(data, stage, c.source,
+					VK_PIPELINE_BIND_POINT_MAX_ENUM, shader_object_data.index, true);
 			}
 			break;
 		case VKCMDBUILDACCELERATIONSTRUCTURESKHR:
@@ -1123,6 +1275,7 @@ bool execute_commands(command_execution_data& data)
 						c.data.build_acceleration_structures.instance_addresses[i],
 						primitive_offset,
 						primitive_count,
+						c.source,
 						discovered_markings);
 				}
 				merge_discovered_markings(data, discovered_markings);
@@ -1143,7 +1296,8 @@ bool execute_commands(command_execution_data& data)
 					for (auto& stage : pipeline_data.shader_stages)
 					{
 						stage.calls++;
-						run_spirv(data, stage, c.source);
+						run_spirv(data, stage, c.source,
+							VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, raytracing_pipeline_bound, false);
 					}
 					break;
 				}
@@ -1254,7 +1408,8 @@ bool execute_commands(command_execution_data& data)
 					for (auto& stage : pipeline_data.shader_stages)
 					{
 						stage.calls++;
-						run_spirv(data, stage, c.source);
+						run_spirv(data, stage, c.source,
+							VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, raytracing_pipeline_bound, false);
 					}
 				}
 				else
@@ -1262,7 +1417,8 @@ bool execute_commands(command_execution_data& data)
 					for (uint32_t stage_index : stages_to_run)
 					{
 						pipeline_data.shader_stages[stage_index].calls++;
-						run_spirv(data, pipeline_data.shader_stages[stage_index], c.source);
+						run_spirv(data, pipeline_data.shader_stages[stage_index], c.source,
+							VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, raytracing_pipeline_bound, false);
 					}
 				}
 				(void)width;

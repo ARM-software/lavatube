@@ -352,9 +352,12 @@ for v in spec.extension_structs:
 		out(targets_read, '#endif')
 for k,v in fake_extension_structs.items():
 	out(targets_read, '\t\t\tcase %s:' % v)
-	out(targets_read, '\t\t\t\titem["type"] = "%s";' % k)
-	out(targets_read, '\t\t\t\titem["sType"] = (Json::UInt64)sptr->sType;')
-	out(targets_read, '\t\t\t\titem["TODO"] = "pNext serialization not implemented for this hardcoded extension struct";')
+	if k == 'VkMarkedOffsetsARM':
+		out(targets_read, '\t\t\t\titem = marked_offsets_json(reinterpret_cast<const VkMarkedOffsetsARM*>(sptr));')
+	else:
+		out(targets_read, '\t\t\t\titem["type"] = "%s";' % k)
+		out(targets_read, '\t\t\t\titem["sType"] = (Json::UInt64)sptr->sType;')
+		out(targets_read, '\t\t\t\titem["TODO"] = "pNext serialization not implemented for this hardcoded extension struct";')
 	out(targets_read, '\t\t\t\tbreak;')
 out(targets_read, '\t\t}')
 out(targets_read, '\t\tchain.append(item);')
