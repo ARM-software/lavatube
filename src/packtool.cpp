@@ -11,6 +11,7 @@
 #include <set>
 #include <string>
 #include <sstream>
+#include <thread>
 #include "util.h"
 #include "packfile.h"
 #include "zipc.h"
@@ -160,12 +161,16 @@ struct collected_markings_entry
 	VkMarkedOffsetsARM* markings = nullptr;
 };
 
+struct markings_collect_thread_state
+{
+	std::vector<collected_markings_entry> entries;
+	uint32_t last_packet = UINT32_MAX;
+	uint32_t occurrence = 0;
+};
+
 struct markings_collect_state
 {
-	std::vector<collected_markings_entry>* out = nullptr;
-	uint64_t packet = 0;
-	uint8_t instrtype = 0;
-	uint32_t occurrence = 0;
+	std::vector<markings_collect_thread_state>* threads = nullptr;
 };
 
 static int usage(const char* argv0)
@@ -400,14 +405,46 @@ static void collect_markings_observer(const change_source& source, const VkMarke
 {
 	if (!userdata || !markings) return;
 	markings_collect_state& state = *(markings_collect_state*)userdata;
+	if (!state.threads || source.thread >= state.threads->size()) DIE("Invalid markings source thread %u", (unsigned)source.thread);
+	markings_collect_thread_state& thread_state = state.threads->at(source.thread);
+	if (thread_state.last_packet != source.packet)
+	{
+		thread_state.last_packet = source.packet;
+		thread_state.occurrence = 0;
+	}
 	collected_markings_entry entry;
 	entry.source = source;
-	entry.packet = state.packet;
-	entry.instrtype = state.instrtype;
-	entry.occurrence = state.occurrence++;
+	entry.packet = (uint64_t)source.packet + 1;
+	entry.instrtype = source.packet_type;
+	entry.occurrence = thread_state.occurrence++;
 	entry.markings = clone_marked_offsets(markings);
 	sort_marked_offsets(entry.markings);
-	state.out->push_back(entry);
+	thread_state.entries.push_back(entry);
+}
+
+static void collect_markings_replay_thread(lava_reader* reader, int thread_id)
+{
+	lava_file_reader& t = reader->file_reader(thread_id);
+	t.bind_runner_thread();
+	t.bind_trace_thread_name();
+	t.start_measurement();
+	uint8_t instrtype;
+	assert(t.run == false);
+	try
+	{
+		while ((instrtype = t.step()))
+		{
+			switchboard_packet(instrtype, t);
+			t.self_test();
+		}
+	}
+	catch (const replay_stop_requested&)
+	{
+	}
+	t.terminated.store(true, std::memory_order_release);
+	uint64_t worker_local = 0;
+	uint64_t runner_local = 0;
+	t.stop_measurement(worker_local, runner_local);
 }
 
 static std::vector<collected_markings_entry> collect_trace_markings(const std::string& pack)
@@ -416,7 +453,9 @@ static std::vector<collected_markings_entry> collect_trace_markings(const std::s
 	retrace_reset_all();
 	lava_reader reader;
 	markings_collect_state state;
-	state.out = &out;
+	Json::Value meta = packed_json("metadata.json", pack);
+	std::vector<markings_collect_thread_state> thread_states(meta["threads"].asUInt());
+	state.threads = &thread_states;
 	reader.run = false;
 	reader.write_output = false;
 	reader.validate = false;
@@ -426,22 +465,17 @@ static std::vector<collected_markings_entry> collect_trace_markings(const std::s
 	reader.markings_observer_data = &state;
 	reader.init(pack);
 
-	const std::vector<std::string> thread_files = packed_files(pack, "thread_");
-	for (uint16_t thread_id = 0; thread_id < thread_files.size(); thread_id++)
+	for (unsigned i = 0; i < reader.threads.size(); i++)
 	{
-		lava_file_reader& t = reader.file_reader(thread_id);
-		state.packet = 0;
-		state.instrtype = 0;
-		state.occurrence = 0;
-		while (true)
-		{
-			const uint8_t instrtype = t.step();
-			if (instrtype == 0) break;
-			state.packet++;
-			state.instrtype = instrtype;
-			state.occurrence = 0;
-			switchboard_packet(instrtype, t);
-		}
+		reader.threads[i] = std::thread(&collect_markings_replay_thread, &reader, i);
+	}
+	for (unsigned i = 0; i < reader.threads.size(); i++)
+	{
+		reader.threads[i].join();
+	}
+	for (markings_collect_thread_state& thread_state : thread_states)
+	{
+		out.insert(out.end(), thread_state.entries.begin(), thread_state.entries.end());
 	}
 	reader.markings_observer = nullptr;
 	reader.markings_observer_data = nullptr;
