@@ -2196,7 +2196,12 @@ def savefunc(name, node, target, header):
 	add_multi_draw_stride_check(name)
 	for param in params:
 		if param.inparam:
-			param.print_save(param.name, '')
+			if name == 'vkCreateInstance' and param.name == 'pCreateInfo':
+				param.print_save('const_cast<VkInstanceCreateInfo*>(pCreateInfo_ORIGINAL)', '')
+			elif name == 'vkCreateDevice' and param.name == 'pCreateInfo':
+				param.print_save('const_cast<VkDeviceCreateInfo*>(pCreateInfo_ORIGINAL)', '')
+			else:
+				param.print_save(param.name, '')
 	if name in spec.special_count_funcs: # functions that work differently based on whether last param is a nullptr or not
 		parlist = []
 		for vv in spec.special_count_funcs[name][2]:
