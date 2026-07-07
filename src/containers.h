@@ -25,7 +25,7 @@
 #include "vulkan/vulkan.h"
 
 #include "lavamutex.h"
-#include "unordered_dense/include/ankerl/unordered_dense.h"
+#include <ankerl/unordered_dense.h>
 #include "spirv-simulator/framework/memory_flag_tracker.hpp"
 
 struct change_source

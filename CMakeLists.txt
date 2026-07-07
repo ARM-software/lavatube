@@ -145,10 +145,6 @@ if (NOT LZ4_FOUND)
     endif()
 endif()
 
-# --- unordered_dense ---
-
-add_subdirectory(external/unordered_dense)
-
 # --- common ---
 
 # Debug Release RelWithDebInfo MinSizeRel
@@ -167,11 +163,11 @@ if ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
 	set(COMMON_FLAGS ${COMMON_FLAGS} -Wthread-safety -Wno-error=thread-safety-analysis -Wno-error=unused-but-set-variable)
 endif()
 if(ANDROID)
-    set(MOST_COMMON_LIBRARIES ${SANITIZER} dl ${ANDROID_LIBRARIES})
+    set(MOST_COMMON_LIBRARIES ${SANITIZER} dl ${ANDROID_LIBRARIES} unordered_dense::unordered_dense)
 else()
-    set(MOST_COMMON_LIBRARIES ${SANITIZER} stdc++ dl pthread ${ANDROID_LIBRARIES})
+    set(MOST_COMMON_LIBRARIES ${SANITIZER} stdc++ dl pthread ${ANDROID_LIBRARIES} unordered_dense::unordered_dense)
 endif()
-set(COMMON_LIBRARIES ${MOST_COMMON_LIBRARIES} unordered_dense::unordered_dense atomic density LZ4::LZ4 ${XCB_LIBRARIES} spirv_simulator_lib zipcontainer)
+set(COMMON_LIBRARIES ${MOST_COMMON_LIBRARIES} atomic density LZ4::LZ4 ${XCB_LIBRARIES} spirv_simulator_lib zipcontainer)
 
 set(COMMON_INCLUDE
     PUBLIC ${SRC_ROOT}
