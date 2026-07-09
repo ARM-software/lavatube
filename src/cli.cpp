@@ -50,6 +50,8 @@ void usage()
 	printf("    info memory              Print current Vulkan memory heap usage and budgets.\n");
 	printf("    info suballocator        Print current suballocator heap internals.\n");
 	printf("    info                     Print general service info.\n");
+	printf("\n");
+	printf("    Long running commands keep 'status', 'info threads', and 'stop' responsive; other concurrent commands fail.\n");
 	exit(-1);
 }
 

@@ -227,6 +227,7 @@ public:
 	std::atomic_int cli_thread{ -1 };
 	std::atomic_bool cli_running{ false };
 	std::atomic_bool cli_service{ false };
+	std::atomic_bool cli_command_active{ false };
 	std::string cli_response; // response data from cli thread to control thread
 	std::atomic_bool cli_params_requested{ false };
 	std::atomic_bool cli_params_ready{ false };

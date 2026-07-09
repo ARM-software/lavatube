@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <errno.h>
+#include <poll.h>
 #include <sys/socket.h>
 
 #include <atomic>
@@ -386,25 +387,17 @@ void usage()
 	exit(-1);
 }
 
-static void service_listener()
+static bool cli_command_bypasses_active(const std::vector<std::string>& command)
 {
-	set_thread_name("replay-listener");
-	const int listen_fd = lava_tcp_listen(hostname, port);
-	ILOG("Remote control listening on %s:%d", hostname.c_str(), port);
+	if (command.size() == 1 && command[0] == "status") return true;
+	if (command.size() == 1 && command[0] == "stop") return true;
+	if (command.size() == 2 && command[0] == "info" && command[1] == "threads") return true;
+	return false;
+}
 
-	while (!done_var.load(std::memory_order_acquire))
-	{
-		const int client_fd = accept(listen_fd, nullptr, nullptr);
-		if (client_fd < 0)
-		{
-			if (errno == EINTR) continue;
-			ELOG("Failed to accept remote control connection: %s", strerror(errno));
-			continue;
-		}
-
-		const std::string keyword = lava_tcp_receive_line(client_fd);
-		const std::vector<std::string> command = split_command(keyword);
-		std::string response;
+static std::string service_command_response(const std::vector<std::string>& command)
+{
+	std::string response;
 		if (command.empty())
 		{
 			response = "ERROR\n";
@@ -705,13 +698,98 @@ static void service_listener()
 			response = "ERROR\n";
 		}
 
-		if (!lava_tcp_send_all(client_fd, response))
+	return response;
+}
+
+struct service_client_state
+{
+	std::atomic_uint active_clients{ 0 };
+};
+
+static void service_client_done(service_client_state* state)
+{
+	state->active_clients.fetch_sub(1, std::memory_order_acq_rel);
+	state->active_clients.notify_all();
+}
+
+static void service_client(service_client_state* state, int client_fd)
+{
+	set_thread_name("replay-client");
+	const std::string keyword = lava_tcp_receive_line(client_fd);
+	const std::vector<std::string> command = split_command(keyword);
+	std::string response;
+	const bool bypass_active = cli_command_bypasses_active(command);
+	bool command_active = false;
+
+	if (!bypass_active)
+	{
+		bool expected = false;
+		command_active = replayer.cli_command_active.compare_exchange_strong(expected, true, std::memory_order_acq_rel);
+		if (!command_active)
 		{
-			ELOG("Failed to send remote control response: %s", strerror(errno));
+			response = "ERROR\n";
 		}
-		close(client_fd);
 	}
+
+	if (response.empty())
+	{
+		response = service_command_response(command);
+	}
+
+	if (command_active)
+	{
+		replayer.cli_command_active.store(false, std::memory_order_release);
+	}
+
+	if (!lava_tcp_send_all(client_fd, response))
+	{
+		ELOG("Failed to send remote control response: %s", strerror(errno));
+	}
+	close(client_fd);
+	service_client_done(state);
+}
+
+static void service_listener()
+{
+	set_thread_name("replay-listener");
+	const int listen_fd = lava_tcp_listen(hostname, port);
+	ILOG("Remote control listening on %s:%d", hostname.c_str(), port);
+	service_client_state client_state;
+
+	while (!done_var.load(std::memory_order_acquire))
+	{
+		struct pollfd poll_fd = {};
+		poll_fd.fd = listen_fd;
+		poll_fd.events = POLLIN;
+		const int poll_result = poll(&poll_fd, 1, 100);
+		if (poll_result < 0)
+		{
+			if (errno == EINTR) continue;
+			ELOG("Failed to poll remote control listener: %s", strerror(errno));
+			continue;
+		}
+		if (poll_result == 0) continue;
+		if ((poll_fd.revents & POLLIN) == 0) continue;
+
+		const int client_fd = accept(listen_fd, nullptr, nullptr);
+		if (client_fd < 0)
+		{
+			if (errno == EINTR) continue;
+			ELOG("Failed to accept remote control connection: %s", strerror(errno));
+			continue;
+		}
+		client_state.active_clients.fetch_add(1, std::memory_order_acq_rel);
+		std::thread client_thread(service_client, &client_state, client_fd);
+		client_thread.detach();
+	}
+
 	close(listen_fd);
+	unsigned active_clients = client_state.active_clients.load(std::memory_order_acquire);
+	while (active_clients != 0)
+	{
+		client_state.active_clients.wait(active_clients);
+		active_clients = client_state.active_clients.load(std::memory_order_acquire);
+	}
 }
 
 static void replay_thread(int thread_id)
@@ -1063,6 +1141,8 @@ int main(int argc, char **argv)
 		replayer.cli_running.wait(false);
 		if (service_stop_requested.load(std::memory_order_acquire))
 		{
+			replay_done.store(true, std::memory_order_release);
+			replay_done.notify_all();
 			service_thread.join();
 			close_debug_destination();
 			return replayer.exit_status;
