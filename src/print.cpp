@@ -27,6 +27,7 @@ void usage()
 	printf("-f/--frames start end  Select a frame range\n");
 	printf("-i/--index NUM         Print only the given packet index from the selected thread (by default thread zero)\n");
 	printf("-t/--thread NUM        Select a thread and print only outputs from this given thread\n");
+	printf("-m/--max NUM           Stop after printing this many entries\n");
 	printf("--skip-missing-input   Exit with code 77 if the input trace file does not exist\n");
 	printf("-s/--sandbox level     Set security sandbox level (from 1 to 3, with 3 the most strict, default %d)\n", (int)p__sandbox_level);
 	exit(-1);
@@ -69,6 +70,7 @@ int main(int argc, char **argv)
 	int end = -1;
 	uint32_t print_thread_index = UINT32_MAX;
 	uint32_t print_packet_index = UINT32_MAX;
+	uint32_t print_max_entries = UINT32_MAX;
 	int remaining = argc - 1; // zeroth is name of program
 	std::string filename_input;
 	bool skip_missing_input = false;
@@ -114,6 +116,12 @@ int main(int argc, char **argv)
 			int thread = get_int(argv[++i], remaining);
 			if (thread < 0) DIE("Invalid thread index %d", thread);
 			print_thread_index = thread;
+		}
+		else if (match(argv[i], "-m", "--max", remaining))
+		{
+			int max_entries = get_int(argv[++i], remaining);
+			if (max_entries < 0) DIE("Invalid max entries %d", max_entries);
+			print_max_entries = max_entries;
 		}
 		else if (match(argv[i], "-s", "--sandbox", remaining))
 		{
@@ -178,9 +186,14 @@ int main(int argc, char **argv)
 	replayer.print_packets = true;
 	replayer.print_thread_index = print_thread_index;
 	replayer.print_packet_index = print_packet_index;
+	replayer.print_max_entries = print_max_entries;
 	replayer.create_results_file = false;
 	replayer.set_frames(start, end);
 	replayer.init(filename_input);
+	if (print_max_entries == 0)
+	{
+		replayer.request_stop();
+	}
 
 	if (verbose)
 	{

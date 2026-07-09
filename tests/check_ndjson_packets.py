@@ -11,12 +11,13 @@ def fail(message):
 
 def main():
 	if len(sys.argv) < 2:
-		return fail("usage: check_ndjson_packets.py <path> [expected-frame] [--expect-frame N] [--expect-index N] [--expect-thread N]")
+		return fail("usage: check_ndjson_packets.py <path> [expected-frame] [--expect-frame N] [--expect-index N] [--expect-thread N] [--expect-count N]")
 
 	path = sys.argv[1]
 	expected_frame = None
 	expected_index = None
 	expected_thread = None
+	expected_count = None
 	args = sys.argv[2:]
 	if args and not args[0].startswith("--"):
 		expected_frame = int(args[0])
@@ -30,6 +31,8 @@ def main():
 			expected_index = int(args[1])
 		elif args[0] == "--expect-thread":
 			expected_thread = int(args[1])
+		elif args[0] == "--expect-count":
+			expected_count = int(args[1])
 		else:
 			return fail("unknown option " + args[0])
 		args = args[2:]
@@ -54,7 +57,9 @@ def main():
 				return fail(f"{path}:{lineno}: expected thread {expected_thread}, got {packet['thread']}")
 			count += 1
 
-	if count == 0:
+	if expected_count is not None and count != expected_count:
+		return fail(f"{path}: expected {expected_count} packets printed, got {count}")
+	if expected_count is None and count == 0:
 		return fail(f"{path}: no packets printed")
 	return 0
 

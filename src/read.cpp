@@ -298,7 +298,18 @@ void print_params_publish(callback_context& cb, Json::Value v)
 	Json::FastWriter writer;
 	const std::string out = writer.write(v);
 	lava::lock_guard lock(cb.reader.parent->print_mutex);
+	if (cb.reader.parent->print_max_entries != UINT32_MAX && cb.reader.parent->print_entry_count >= cb.reader.parent->print_max_entries)
+	{
+		cb.reader.printed_current_packet = true;
+		cb.reader.parent->request_stop();
+		return;
+	}
 	printf("%s", out.c_str());
+	cb.reader.parent->print_entry_count++;
+	if (cb.reader.parent->print_max_entries != UINT32_MAX && cb.reader.parent->print_entry_count >= cb.reader.parent->print_max_entries)
+	{
+		cb.reader.parent->request_stop();
+	}
 	cb.reader.printed_current_packet = true;
 }
 

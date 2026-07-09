@@ -27,6 +27,9 @@ endif()
 if(DEFINED THREAD)
 	list(APPEND TOOL_ARGS -t "${THREAD}")
 endif()
+if(DEFINED MAX)
+	list(APPEND TOOL_ARGS --max "${MAX}")
+endif()
 
 execute_process(
 	COMMAND "${LAVA_PRINT}" ${TOOL_ARGS} "${INPUT_TRACE}"
@@ -47,6 +50,9 @@ if(DEFINED EXPECT_INDEX)
 endif()
 if(DEFINED EXPECT_THREAD)
 	list(APPEND CHECK_ARGS --expect-thread "${EXPECT_THREAD}")
+endif()
+if(DEFINED EXPECT_COUNT)
+	list(APPEND CHECK_ARGS --expect-count "${EXPECT_COUNT}")
 endif()
 
 execute_process(

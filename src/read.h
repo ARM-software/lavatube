@@ -174,6 +174,8 @@ public:
 	bool print_packets = false;
 	uint32_t print_thread_index = UINT32_MAX;
 	uint32_t print_packet_index = UINT32_MAX;
+	uint32_t print_max_entries = UINT32_MAX;
+	uint32_t print_entry_count = 0;
 	lava::mutex print_mutex;
 
 	/// Whether we should abort on less serious errors or just warn
