@@ -57,6 +57,9 @@ endif()
 if(DEFINED EXPECT_PAIRS)
 	list(APPEND CHECK_ARGS --expect-pairs "${EXPECT_PAIRS}")
 endif()
+if(DEFINED EXPECT_THREAD_BARRIER_PARAMS)
+	list(APPEND CHECK_ARGS --expect-thread-barrier-params "${EXPECT_THREAD_BARRIER_PARAMS}")
+endif()
 
 execute_process(
 	COMMAND "${PYTHON_EXECUTABLE}" "${CMAKE_CURRENT_LIST_DIR}/check_ndjson_packets.py" "${OUTPUT_FILE}" ${CHECK_ARGS}

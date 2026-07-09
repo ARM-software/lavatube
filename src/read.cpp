@@ -228,6 +228,41 @@ static Json::Value params_unavailable_json(const callback_context& cb)
 	return v;
 }
 
+static Json::Value params_thread_barrier_json(const callback_context& cb)
+{
+	Json::Value params;
+	const uint64_t header_size = sizeof(uint8_t) + sizeof(uint32_t);
+	const uint32_t packet_size = cb.reader.packet_size();
+	assert(packet_size >= header_size + sizeof(uint8_t));
+	const uint64_t payload_start = cb.reader.packet_start() + header_size;
+	const uint64_t payload_size = (uint64_t)packet_size - header_size;
+	const char* payload = cb.reader.stream_data(payload_start);
+	uint8_t thread_count = 0;
+	memcpy(&thread_count, payload, sizeof(thread_count));
+	params["thread_count"] = thread_count;
+	const uint64_t expected_payload_size = sizeof(uint8_t) + (uint64_t)thread_count * sizeof(uint32_t);
+	assert(payload_size >= expected_payload_size);
+	Json::Value targets(Json::arrayValue);
+	for (uint32_t i = 0; i < thread_count; i++)
+	{
+		const char* src = payload + sizeof(uint8_t) + i * sizeof(uint32_t);
+		uint32_t packet_index = UINT32_MAX;
+		memcpy(&packet_index, src, sizeof(packet_index));
+
+		Json::Value target;
+		target["thread"] = i;
+		target["packet_index"] = packet_index;
+		target["waited"] = i != cb.reader.current.thread;
+		targets.append(target);
+	}
+	params["targets"] = targets;
+	if (payload_size > expected_payload_size)
+	{
+		params["extra_payload_bytes"] = (Json::UInt64)(payload_size - expected_payload_size);
+	}
+	return params;
+}
+
 static Json::Value params_packet_json(const callback_context& cb)
 {
 	Json::Value v = cli_params_base_json(cb);
@@ -243,7 +278,7 @@ static Json::Value params_packet_json(const callback_context& cb)
 	}
 	else if (cb.reader.current.packet_type == PACKET_THREAD_BARRIER)
 	{
-		params["TODO"] = "thread barrier packet parameters are not retained after replaying the packet";
+		params = params_thread_barrier_json(cb);
 	}
 	else
 	{

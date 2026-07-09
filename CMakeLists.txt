@@ -681,6 +681,7 @@ add_lavatube_test(lava_print_tracing2_max1_ndjson
 		-DOUTPUT_FILE=${CMAKE_CURRENT_BINARY_DIR}/lava_print_tracing2_max1.ndjson
 		-DMAX=1
 		-DEXPECT_COUNT=1
+		-DEXPECT_THREAD_BARRIER_PARAMS=1
 		-P ${PROJECT_SOURCE_DIR}/tests/lava_print_ndjson.cmake)
 set_tests_properties(lava_print_tracing2_max1_ndjson PROPERTIES FIXTURES_REQUIRED tracing_2)
 add_lavatube_test(lava_print_vkcube_frame2_ndjson
