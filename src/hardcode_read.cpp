@@ -4402,18 +4402,27 @@ void retrace_vkGetSwapchainImagesKHR(lava_file_reader& reader)
 		for (uint32_t i = 0; i < stored_image_count; i++)
 		{
 			const uint32_t remap_index = reader.read_handle(DEBUGPARAM("VkImage"));
+			VkImage remap_image = VK_NULL_HANDLE;
 			if (!reader.run)
 			{
-				index_to_VkImage.set(remap_index, fake_handle<VkImage>(remap_index));
+				remap_image = fake_handle<VkImage>(remap_index);
 				if (reader.write_output) output_images[i] = fake_handle<VkImage>(remap_index);
 			}
 			else if (!is_virtualswapchain())
 			{
-				index_to_VkImage.set(remap_index, data.pSwapchainImages[i]);
+				remap_image = data.pSwapchainImages[i];
 			}
 			else
 			{
-				index_to_VkImage.set(remap_index, data.virtual_images[i]);
+				remap_image = data.virtual_images[i];
+			}
+			if (index_to_VkImage.contains(remap_index))
+			{
+				assert(index_to_VkImage.at(remap_index) == remap_image);
+			}
+			else
+			{
+				index_to_VkImage.set(remap_index, remap_image);
 			}
 			DLOG("Image index %u is swapchain image index %u", remap_index, i);
 		}
