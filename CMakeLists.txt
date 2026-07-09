@@ -758,6 +758,7 @@ trace_test(raytracingintersection traces/demo_raytracingintersection.api)
 trace_test(raytracingpositionfetch traces/demo_raytracingpositionfetch.api)
 trace_test(geometryshader traces/demo_geometryshader.api)
 trace_test(inputattachments traces/demo_inputattachments.api)
+trace_test(multithreading traces/demo_multithreading.api)
 trace_test(anki_simple traces/anki_simple.api)
 trace_test(anki_simple_raw traces/anki_simple_raw.api) # this will fail as it cannot be hot-fixed during replay and requires postprocessing
 set_tests_properties(trace_file_test_anki_simple_raw_replay trace_file_test_anki_simple_raw_write_out_replay PROPERTIES WILL_FAIL TRUE)
