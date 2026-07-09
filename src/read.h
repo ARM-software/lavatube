@@ -385,6 +385,8 @@ public:
 	std::atomic_uint_fast16_t cli_function{ UINT16_MAX };
 	std::atomic<cli_step_mode> cli_step{ cli_step_mode::packets };
 	std::atomic<cli_thread_state> cli_state{ cli_thread_state::not_started };
+	std::atomic_int_fast16_t cli_wait_thread{ -1 };
+	std::atomic_uint_fast32_t cli_wait_packet{ UINT32_MAX };
 
 	// Replay-only: per-thread queue for AS build sizes and internal AS buffers.
 	std::deque<VkAccelerationStructureBuildSizesInfoKHR> pending_as_build_sizes;
@@ -441,7 +443,12 @@ inline void lava_file_reader::read_barrier()
 		const unsigned packet_index = packet_indices[i];
 		DLOG3("Thread barrier on thread %d, waiting for packet %u on thread %d / %u", current.thread, packet_index, i, size - 1);
 		const bool publish_wait = i != current.thread && packet_index > parent->thread_packet_numbers->at(i).load(std::memory_order_relaxed) && parent->cli_service.load(std::memory_order_acquire);
-		if (publish_wait) cli_state.store(cli_thread_state::wait_barrier, std::memory_order_release);
+		if (publish_wait)
+		{
+			cli_wait_thread.store(i, std::memory_order_relaxed);
+			cli_wait_packet.store(packet_index, std::memory_order_relaxed);
+			cli_state.store(cli_thread_state::wait_barrier, std::memory_order_release);
+		}
 		while (i != current.thread && packet_index > parent->thread_packet_numbers->at(i).load(std::memory_order_relaxed))
 		{
 			if (parent->stop_requested()) throw_stop_requested();
@@ -469,7 +476,12 @@ inline uint32_t lava_file_reader::read_handle(DEBUGPARAM(const char* name))
 	else DLOG2("[t%02d %06d] read handle %s index=%u, MUST WAIT for tid=%d packet=%u, it is now at packet=%u", (int)current.thread, (int)current.packet + 1, name, (unsigned)index, (int)req_thread, req_packet, completed_packets);
 #endif
 	const bool publish_wait = req_packet >= completed_packets && parent->cli_service.load(std::memory_order_acquire);
-	if (publish_wait) cli_state.store(cli_thread_state::wait_handle, std::memory_order_release);
+	if (publish_wait)
+	{
+		cli_wait_thread.store(req_thread, std::memory_order_relaxed);
+		cli_wait_packet.store(req_packet, std::memory_order_relaxed);
+		cli_state.store(cli_thread_state::wait_handle, std::memory_order_release);
+	}
 	while (req_packet >= completed_packets)
 	{
 		if (parent->stop_requested()) throw_stop_requested();

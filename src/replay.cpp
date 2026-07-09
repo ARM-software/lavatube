@@ -191,6 +191,18 @@ static const char* cli_thread_state_name(cli_thread_state state)
 	}
 }
 
+static std::string cli_thread_wait_description(lava_file_reader& reader, cli_thread_state state)
+{
+	if (state != cli_thread_state::wait_barrier && state != cli_thread_state::wait_handle) return "";
+
+	const int wait_thread = reader.cli_wait_thread.load(std::memory_order_relaxed);
+	const uint32_t wait_packet = reader.cli_wait_packet.load(std::memory_order_relaxed);
+	if (wait_thread < 0 || wait_thread >= (int)replayer.threads.size() || wait_packet == UINT32_MAX) return "";
+
+	const char* wait_type = state == cli_thread_state::wait_barrier ? "barrier" : "handle";
+	return std::string(wait_type) + ": thread " + std::to_string(wait_thread) + ", packet " + std::to_string(wait_packet);
+}
+
 static bool cli_thread_quiescent(lava_file_reader& reader)
 {
 	if (reader.terminated.load(std::memory_order_acquire)) return true;
@@ -620,7 +632,7 @@ static std::string service_command_response(const std::vector<std::string>& comm
 		else if (command.size() == 2 && command[0] == "info" && command[1] == "threads") // list thread info
 		{
 			data_table out;
-			out.set_headers({"Thread", "Name", "State", "Packet", "Paused"});
+			out.set_headers({"Thread", "Name", "State", "Packet", "Waiting On"});
 			for (unsigned i = 0; i < replayer.threads.size(); i++)
 			{
 				lava_file_reader& reader = replayer.file_reader(i);
@@ -631,7 +643,7 @@ static std::string service_command_response(const std::vector<std::string>& comm
 					thread_name,
 					cli_thread_state_name(state),
 					std::to_string(reader.cli_packet.load(std::memory_order_relaxed)),
-					std::to_string(reader.cli_paused_call.load(std::memory_order_acquire))
+					cli_thread_wait_description(reader, state)
 				});
 			}
 			response = out.to_markdown();
