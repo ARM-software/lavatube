@@ -207,7 +207,11 @@ static bool cli_thread_quiescent(lava_file_reader& reader)
 {
 	if (reader.terminated.load(std::memory_order_acquire)) return true;
 	const cli_thread_state state = reader.cli_state.load(std::memory_order_acquire);
-	return state == cli_thread_state::cli_paused || state == cli_thread_state::wait_handle || state == cli_thread_state::wait_barrier || state == cli_thread_state::terminated;
+	return state == cli_thread_state::not_started
+	       || state == cli_thread_state::cli_paused
+	       || state == cli_thread_state::wait_handle
+	       || state == cli_thread_state::wait_barrier
+	       || state == cli_thread_state::terminated;
 }
 
 static bool cli_all_threads_quiescent()
@@ -302,13 +306,51 @@ static uint32_t cli_completed_count(lava_file_reader& reader, cli_step_mode mode
 
 static std::string cli_paused_command_response(lava_file_reader& reader)
 {
-	if (!cli_has_paused_command(reader)) return "PAUSED\n";
-	const char* packet_name = get_packet_name((packet_type)reader.current.packet_type, reader.current.call_id);
 	const int thread_id = replayer.cli_thread.load(std::memory_order_acquire);
+	if (!cli_has_paused_command(reader)) return "PAUSED thread=" + std::to_string(thread_id) + "\n";
+	const char* packet_name = get_packet_name((packet_type)reader.current.packet_type, reader.current.call_id);
 	return "PAUSED @ packet=" + std::to_string(cli_current_packet_index(reader)) + " api_calls=" + std::to_string(cli_current_call(reader))
 	       + " name=" + packet_name + " frame="
 	       + std::to_string(replayer.global_frame) + "/" + std::to_string(replayer.global_frame_count)
 	       + " thread=" + std::to_string(thread_id) + "\n";
+}
+
+static std::string cli_select_thread(uint32_t thread_id)
+{
+	if (replay_done.load(std::memory_order_acquire) || replayer.cli_running.load(std::memory_order_acquire)) return "ERROR\n";
+	if (thread_id >= replayer.threads.size()) return "ERROR\n";
+	lava_file_reader& reader = replayer.file_reader(thread_id);
+	if (reader.terminated.load(std::memory_order_acquire)) return "ERROR\n";
+
+	const int current_thread = replayer.cli_thread.load(std::memory_order_acquire);
+	if (current_thread == (int)thread_id)
+	{
+		const std::string idle_response = cli_wait_for_quiescence_and_idle();
+		return idle_response == "OK\n" ? cli_paused_command_response(reader) : idle_response;
+	}
+
+	const uint32_t generation = reader.cli_pause_generation.load(std::memory_order_acquire);
+	const uint32_t current_packet = reader.cli_packet.load(std::memory_order_relaxed);
+	if (current_packet == UINT32_MAX) return "ERROR\n";
+	reader.cli_paused_call.store(0, std::memory_order_release);
+	cli_clear_function_target(reader);
+	reader.cli_step.store(cli_step_mode::packets, std::memory_order_release);
+	reader.cli_call.store(current_packet + 1, std::memory_order_release);
+	replayer.cli_thread.store((int)thread_id, std::memory_order_release);
+	replayer.cli_running.store(true, std::memory_order_release);
+	replayer.cli_running.notify_all();
+
+	while (!replay_done.load(std::memory_order_acquire)
+	       && reader.cli_pause_generation.load(std::memory_order_acquire) == generation)
+	{
+		usleep(50);
+	}
+
+	if (replay_done.load(std::memory_order_acquire)) return "DONE\n";
+
+	const std::string idle_response = cli_wait_for_quiescence_and_idle();
+	if (idle_response != "OK\n") return idle_response;
+	return cli_paused_command_response(reader);
 }
 
 static void register_replay_callbacks()
@@ -410,184 +452,99 @@ static bool cli_command_bypasses_active(const std::vector<std::string>& command)
 static std::string service_command_response(const std::vector<std::string>& command)
 {
 	std::string response;
-		if (command.empty())
-		{
-			response = "ERROR\n";
-		}
-		else if (command.size() == 1 && command[0] == "status")
-		{
-			if (replay_done.load(std::memory_order_acquire)) response = "DONE\n";
-			else if (replayer.cli_running.load(std::memory_order_acquire)) response = "RUNNING\n";
-			else
-			{
-				if (cli_thread_ready())
-				{
-					const int thread_id = replayer.cli_thread.load(std::memory_order_acquire);
-					lava_file_reader& reader = replayer.file_reader(thread_id);
-					response = cli_paused_command_response(reader);
-				}
-				else
-				{
-					response = "PAUSED\n";
-				}
-			}
-		}
-		else if (command.size() == 1 && command[0] == "continue")
+	if (command.empty())
+	{
+		response = "ERROR\n";
+	}
+	else if (command.size() == 1 && command[0] == "status")
+	{
+		if (replay_done.load(std::memory_order_acquire)) response = "DONE\n";
+		else if (replayer.cli_running.load(std::memory_order_acquire)) response = "RUNNING\n";
+		else
 		{
 			if (cli_thread_ready())
 			{
-				lava_file_reader& reader = replayer.file_reader(replayer.cli_thread.load(std::memory_order_acquire));
-				cli_clear_function_target(reader);
-				reader.cli_call.store(UINT32_MAX, std::memory_order_release);
-			}
-			replayer.cli_running.store(true, std::memory_order_release);
-			replayer.cli_running.notify_all();
-			response = cli_wait_for_done_and_idle();
-		}
-		else if (command.size() == 1 && command[0] == "stop")
-		{
-			service_stop_requested.store(true, std::memory_order_release);
-			replayer.cli_running.store(true, std::memory_order_release);
-			replayer.cli_running.notify_all();
-			replayer.request_stop();
-			done_var.store(true, std::memory_order_release);
-			done_var.notify_all();
-			response = "OK\n";
-		}
-		else if (command.size() == 3 && command[0] == "set" && command[1] == "debug")
-		{
-			uint_fast8_t level = 0;
-			if (parse_debug_level(command[2], level))
-			{
-				p__debug_level = level;
-				response = "OK\n";
-			}
-			else
-			{
-				response = "ERROR\n";
-			}
-		}
-		else if (command.size() == 3 && command[0] == "set" && command[1] == "blackhole")
-		{
-			bool enabled = false;
-			if (parse_bool(command[2], enabled))
-			{
-				p__blackhole = enabled ? 1 : 0;
-				response = "OK\n";
-			}
-			else
-			{
-				response = "ERROR\n";
-			}
-		}
-		else if (command[0] == "step")
-		{
-			uint32_t count = 1;
-			cli_step_mode step_mode = cli_step_mode::packets;
-			if (command.size() == 3 && (command[1] == "calls" || command[1] == "packets"))
-			{
-				step_mode = command[1] == "calls" ? cli_step_mode::calls : cli_step_mode::packets;
-				if (!parse_positive_u32(command[2], count))
-				{
-					response = "ERROR\n";
-				}
-			}
-			else if (command.size() != 1)
-			{
-				response = "ERROR\n";
-			}
-			if (response.empty())
-			{
-				if (replay_done.load(std::memory_order_acquire) || replayer.cli_running.load(std::memory_order_acquire) || !cli_thread_ready())
-				{
-					response = "ERROR\n";
-				}
-				else
-				{
-					const int thread_id = replayer.cli_thread.load(std::memory_order_acquire);
-					lava_file_reader& reader = replayer.file_reader(thread_id);
-					const uint32_t base_count = cli_completed_count(reader, step_mode);
-					if (count > UINT32_MAX - base_count)
-					{
-						response = "ERROR\n";
-					}
-					else
-					{
-						cli_clear_function_target(reader);
-						reader.cli_step.store(step_mode, std::memory_order_release);
-						reader.cli_call.store(base_count + count, std::memory_order_release);
-						replayer.cli_running.store(true, std::memory_order_release);
-						replayer.cli_running.notify_all();
-						replayer.cli_running.wait(true);
-						const std::string idle_response = cli_wait_for_quiescence_and_idle();
-						response = idle_response == "OK\n" ? cli_paused_command_response(reader) : idle_response;
-					}
-				}
-			}
-		}
-		else if (command[0] == "goto")
-		{
-			uint32_t target_packet = 0;
-			if (command.size() != 2)
-			{
-				response = "ERROR\n";
-			}
-			else if (replay_done.load(std::memory_order_acquire) || replayer.cli_running.load(std::memory_order_acquire) || !cli_thread_ready())
-			{
-				response = "ERROR\n";
-			}
-			else
-			{
 				const int thread_id = replayer.cli_thread.load(std::memory_order_acquire);
 				lava_file_reader& reader = replayer.file_reader(thread_id);
-				if (parse_u32(command[1], target_packet))
-				{
-					const uint32_t current_packet = cli_current_packet_index(reader);
-					if (target_packet < current_packet)
-					{
-						response = "ERROR\n";
-					}
-					else if (target_packet == current_packet && cli_has_paused_command(reader))
-					{
-						const std::string idle_response = cli_wait_for_quiescence_and_idle();
-						response = idle_response == "OK\n" ? cli_paused_command_response(reader) : idle_response;
-					}
-					else
-					{
-						cli_clear_function_target(reader);
-						reader.cli_step.store(cli_step_mode::packets, std::memory_order_release);
-						reader.cli_call.store(target_packet + 1, std::memory_order_release);
-						replayer.cli_running.store(true, std::memory_order_release);
-						replayer.cli_running.notify_all();
-						replayer.cli_running.wait(true);
-						const std::string idle_response = cli_wait_for_quiescence_and_idle();
-						if (idle_response != "OK\n") response = idle_response;
-						else response = replay_done.load(std::memory_order_acquire) ? "DONE\n" : cli_paused_command_response(reader);
-					}
-				}
-				else
-				{
-					const uint16_t function_id = retrace_getid(command[1].c_str());
-					if (function_id == UINT16_MAX)
-					{
-						response = "ERROR\n";
-					}
-					else
-					{
-						reader.cli_function.store(function_id, std::memory_order_release);
-						reader.cli_call.store(cli_current_call(reader) + 1, std::memory_order_release);
-						reader.cli_step.store(cli_step_mode::function, std::memory_order_release);
-						replayer.cli_running.store(true, std::memory_order_release);
-						replayer.cli_running.notify_all();
-						replayer.cli_running.wait(true);
-						const std::string idle_response = cli_wait_for_quiescence_and_idle();
-						if (idle_response != "OK\n") response = idle_response;
-						else response = replay_done.load(std::memory_order_acquire) ? "DONE\n" : cli_paused_command_response(reader);
-					}
-				}
+				response = cli_paused_command_response(reader);
+			}
+			else
+			{
+				response = "PAUSED\n";
 			}
 		}
-		else if (command.size() == 1 && (command[0] == "params" || command[0] == "parameters")) // show parameters
+	}
+	else if (command.size() == 1 && command[0] == "continue")
+	{
+		if (cli_thread_ready())
+		{
+			lava_file_reader& reader = replayer.file_reader(replayer.cli_thread.load(std::memory_order_acquire));
+			cli_clear_function_target(reader);
+			reader.cli_call.store(UINT32_MAX, std::memory_order_release);
+		}
+		replayer.cli_running.store(true, std::memory_order_release);
+		replayer.cli_running.notify_all();
+		response = cli_wait_for_done_and_idle();
+	}
+	else if (command.size() == 1 && command[0] == "stop")
+	{
+		service_stop_requested.store(true, std::memory_order_release);
+		replayer.cli_running.store(true, std::memory_order_release);
+		replayer.cli_running.notify_all();
+		replayer.request_stop();
+		done_var.store(true, std::memory_order_release);
+		done_var.notify_all();
+		response = "OK\n";
+	}
+	else if (command.size() == 2 && command[0] == "thread")
+	{
+		uint32_t thread_id = 0;
+		if (!parse_u32(command[1], thread_id)) response = "ERROR\n";
+		else response = cli_select_thread(thread_id);
+	}
+	else if (command.size() == 3 && command[0] == "set" && command[1] == "debug")
+	{
+		uint_fast8_t level = 0;
+		if (parse_debug_level(command[2], level))
+		{
+			p__debug_level = level;
+			response = "OK\n";
+		}
+		else
+		{
+			response = "ERROR\n";
+		}
+	}
+	else if (command.size() == 3 && command[0] == "set" && command[1] == "blackhole")
+	{
+		bool enabled = false;
+		if (parse_bool(command[2], enabled))
+		{
+			p__blackhole = enabled ? 1 : 0;
+			response = "OK\n";
+		}
+		else
+		{
+			response = "ERROR\n";
+		}
+	}
+	else if (command[0] == "step")
+	{
+		uint32_t count = 1;
+		cli_step_mode step_mode = cli_step_mode::packets;
+		if (command.size() == 3 && (command[1] == "calls" || command[1] == "packets"))
+		{
+			step_mode = command[1] == "calls" ? cli_step_mode::calls : cli_step_mode::packets;
+			if (!parse_positive_u32(command[2], count))
+			{
+				response = "ERROR\n";
+			}
+		}
+		else if (command.size() != 1)
+		{
+			response = "ERROR\n";
+		}
+		if (response.empty())
 		{
 			if (replay_done.load(std::memory_order_acquire) || replayer.cli_running.load(std::memory_order_acquire) || !cli_thread_ready())
 			{
@@ -597,118 +554,211 @@ static std::string service_command_response(const std::vector<std::string>& comm
 			{
 				const int thread_id = replayer.cli_thread.load(std::memory_order_acquire);
 				lava_file_reader& reader = replayer.file_reader(thread_id);
-				if (!cli_has_paused_command(reader))
+				const uint32_t base_count = cli_completed_count(reader, step_mode);
+				if (count > UINT32_MAX - base_count)
 				{
 					response = "ERROR\n";
 				}
 				else
 				{
-					replayer.cli_response.clear();
-					replayer.cli_params_ready.store(false, std::memory_order_release);
-					replayer.cli_params_requested.store(true, std::memory_order_release);
-					replayer.cli_params_ready.wait(false);
-					response = replayer.cli_response.empty() ? "ERROR\n" : replayer.cli_response;
+					cli_clear_function_target(reader);
+					reader.cli_step.store(step_mode, std::memory_order_release);
+					reader.cli_call.store(base_count + count, std::memory_order_release);
+					replayer.cli_running.store(true, std::memory_order_release);
+					replayer.cli_running.notify_all();
+					replayer.cli_running.wait(true);
+					const std::string idle_response = cli_wait_for_quiescence_and_idle();
+					response = idle_response == "OK\n" ? cli_paused_command_response(reader) : idle_response;
 				}
 			}
 		}
-		else if (command.size() == 3 && command[0] == "show")
-		{
-			uint32_t index = 0;
-			Json::Value v;
-			if (replayer.cli_running.load(std::memory_order_acquire) || !parse_u32(command[2], index) || !cli_show_json(command[1].c_str(), index, v))
-			{
-				response = "ERROR\n";
-			}
-			else
-			{
-				response = v.toStyledString();
-				if (response.empty() || response.back() != '\n') response += "\n";
-			}
-		}
-		else if (command.size() == 1 && command[0] == "info") // general info
-		{
-			response = "INFO\n"; // TODO just a placeholder for now
-		}
-		else if (command.size() == 2 && command[0] == "info" && command[1] == "threads") // list thread info
-		{
-			data_table out;
-			out.set_headers({"Thread", "Name", "State", "Packet", "Waiting On"});
-			for (unsigned i = 0; i < replayer.threads.size(); i++)
-			{
-				lava_file_reader& reader = replayer.file_reader(i);
-				const char* thread_name = reader.get_trace_thread_name();
-				const cli_thread_state state = reader.cli_state.load(std::memory_order_acquire);
-				out.add_row({
-					std::to_string(i),
-					thread_name,
-					cli_thread_state_name(state),
-					std::to_string(reader.cli_packet.load(std::memory_order_relaxed)),
-					cli_thread_wait_description(reader, state)
-				});
-			}
-			response = out.to_markdown();
-		}
-		else if (command.size() == 2 && command[0] == "info" && command[1] == "memory")
-		{
-			if (replayer.cli_running.load(std::memory_order_acquire))
-			{
-				response = "ERROR\n";
-			}
-			else
-			{
-				response = cli_memory_info_response();
-			}
-		}
-		else if (command.size() == 2 && command[0] == "info" && command[1] == "suballocator")
-		{
-			if (replayer.cli_running.load(std::memory_order_acquire))
-			{
-				response = "ERROR\n";
-			}
-			else
-			{
-				response = cli_suballocator_info_response();
-			}
-		}
-		else if (command.size() == 2 && command[0] == "info" && command[1] == "objects")
-		{
-			response = trace_metadata_objects_markdown(replayer.packed_file());
-		}
-		else if (command.size() == 3 && command[0] == "info" && command[1] == "thread")
-		{
-			uint32_t thread = 0;
-			Json::Value v;
-			std::string error;
-			if (!parse_u32(command[2], thread) || !trace_metadata_thread_json(replayer.packed_file(), thread, v, error))
-			{
-				response = "ERROR\n";
-			}
-			else
-			{
-				response = trace_metadata_json_pretty(v);
-				if (response.empty() || response.back() != '\n') response += "\n";
-			}
-		}
-		else if (command.size() == 4 && command[0] == "info" && command[1] == "frame")
-		{
-			uint32_t thread = 0;
-			uint32_t frame = 0;
-			Json::Value v;
-			std::string error;
-			if (!parse_u32(command[2], thread) || !parse_u32(command[3], frame) || !trace_metadata_frame_json(replayer.packed_file(), thread, frame, v, error))
-			{
-				response = "ERROR\n";
-			}
-			else
-			{
-				response = trace_metadata_json_pretty(v);
-				if (response.empty() || response.back() != '\n') response += "\n";
-			}
-		}
-		else
+	}
+	else if (command[0] == "goto")
+	{
+		uint32_t target_packet = 0;
+		if (command.size() != 2)
 		{
 			response = "ERROR\n";
 		}
+		else if (replay_done.load(std::memory_order_acquire) || replayer.cli_running.load(std::memory_order_acquire) || !cli_thread_ready())
+		{
+			response = "ERROR\n";
+		}
+		else
+		{
+			const int thread_id = replayer.cli_thread.load(std::memory_order_acquire);
+			lava_file_reader& reader = replayer.file_reader(thread_id);
+			if (parse_u32(command[1], target_packet))
+			{
+				const uint32_t current_packet = cli_current_packet_index(reader);
+				if (target_packet < current_packet)
+				{
+					response = "ERROR\n";
+				}
+				else if (target_packet == current_packet && cli_has_paused_command(reader))
+				{
+					const std::string idle_response = cli_wait_for_quiescence_and_idle();
+					response = idle_response == "OK\n" ? cli_paused_command_response(reader) : idle_response;
+				}
+				else
+				{
+					cli_clear_function_target(reader);
+					reader.cli_step.store(cli_step_mode::packets, std::memory_order_release);
+					reader.cli_call.store(target_packet + 1, std::memory_order_release);
+					replayer.cli_running.store(true, std::memory_order_release);
+					replayer.cli_running.notify_all();
+					replayer.cli_running.wait(true);
+					const std::string idle_response = cli_wait_for_quiescence_and_idle();
+					if (idle_response != "OK\n") response = idle_response;
+					else response = replay_done.load(std::memory_order_acquire) ? "DONE\n" : cli_paused_command_response(reader);
+				}
+			}
+			else
+			{
+				const uint16_t function_id = retrace_getid(command[1].c_str());
+				if (function_id == UINT16_MAX)
+				{
+					response = "ERROR\n";
+				}
+				else
+				{
+					reader.cli_function.store(function_id, std::memory_order_release);
+					reader.cli_call.store(cli_current_call(reader) + 1, std::memory_order_release);
+					reader.cli_step.store(cli_step_mode::function, std::memory_order_release);
+					replayer.cli_running.store(true, std::memory_order_release);
+					replayer.cli_running.notify_all();
+					replayer.cli_running.wait(true);
+					const std::string idle_response = cli_wait_for_quiescence_and_idle();
+					if (idle_response != "OK\n") response = idle_response;
+					else response = replay_done.load(std::memory_order_acquire) ? "DONE\n" : cli_paused_command_response(reader);
+				}
+			}
+		}
+	}
+	else if (command.size() == 1 && (command[0] == "params" || command[0] == "parameters")) // show parameters
+	{
+		if (replay_done.load(std::memory_order_acquire) || replayer.cli_running.load(std::memory_order_acquire) || !cli_thread_ready())
+		{
+			response = "ERROR\n";
+		}
+		else
+		{
+			const int thread_id = replayer.cli_thread.load(std::memory_order_acquire);
+			lava_file_reader& reader = replayer.file_reader(thread_id);
+			if (!cli_has_paused_command(reader))
+			{
+				response = "ERROR\n";
+			}
+			else
+			{
+				replayer.cli_response.clear();
+				replayer.cli_params_ready.store(false, std::memory_order_release);
+				replayer.cli_params_requested.store(true, std::memory_order_release);
+				replayer.cli_params_ready.wait(false);
+				response = replayer.cli_response.empty() ? "ERROR\n" : replayer.cli_response;
+			}
+		}
+	}
+	else if (command.size() == 3 && command[0] == "show")
+	{
+		uint32_t index = 0;
+		Json::Value v;
+		if (replayer.cli_running.load(std::memory_order_acquire) || !parse_u32(command[2], index) || !cli_show_json(command[1].c_str(), index, v))
+		{
+			response = "ERROR\n";
+		}
+		else
+		{
+			response = v.toStyledString();
+			if (response.empty() || response.back() != '\n') response += "\n";
+		}
+	}
+	else if (command.size() == 1 && command[0] == "info") // general info
+	{
+		response = "INFO\n"; // TODO just a placeholder for now
+	}
+	else if (command.size() == 2 && command[0] == "info" && command[1] == "threads") // list thread info
+	{
+		data_table out;
+		const int current_thread = replayer.cli_thread.load(std::memory_order_acquire);
+		out.set_headers({"Thread", "Current", "Name", "State", "Packet", "Waiting On"});
+		for (unsigned i = 0; i < replayer.threads.size(); i++)
+		{
+			lava_file_reader& reader = replayer.file_reader(i);
+			const char* thread_name = reader.get_trace_thread_name();
+			const cli_thread_state state = reader.cli_state.load(std::memory_order_acquire);
+			out.add_row({
+				std::to_string(i),
+				current_thread >= 0 && i == (unsigned)current_thread ? "*" : "",
+				thread_name,
+				cli_thread_state_name(state),
+				std::to_string(reader.cli_packet.load(std::memory_order_relaxed)),
+				cli_thread_wait_description(reader, state)
+			});
+		}
+		response = out.to_markdown();
+	}
+	else if (command.size() == 2 && command[0] == "info" && command[1] == "memory")
+	{
+		if (replayer.cli_running.load(std::memory_order_acquire))
+		{
+			response = "ERROR\n";
+		}
+		else
+		{
+			response = cli_memory_info_response();
+		}
+	}
+	else if (command.size() == 2 && command[0] == "info" && command[1] == "suballocator")
+	{
+		if (replayer.cli_running.load(std::memory_order_acquire))
+		{
+			response = "ERROR\n";
+		}
+		else
+		{
+			response = cli_suballocator_info_response();
+		}
+	}
+	else if (command.size() == 2 && command[0] == "info" && command[1] == "objects")
+	{
+		response = trace_metadata_objects_markdown(replayer.packed_file());
+	}
+	else if (command.size() == 3 && command[0] == "info" && command[1] == "thread")
+	{
+		uint32_t thread = 0;
+		Json::Value v;
+		std::string error;
+		if (!parse_u32(command[2], thread) || !trace_metadata_thread_json(replayer.packed_file(), thread, v, error))
+		{
+			response = "ERROR\n";
+		}
+		else
+		{
+			response = trace_metadata_json_pretty(v);
+			if (response.empty() || response.back() != '\n') response += "\n";
+		}
+	}
+	else if (command.size() == 4 && command[0] == "info" && command[1] == "frame")
+	{
+		uint32_t thread = 0;
+		uint32_t frame = 0;
+		Json::Value v;
+		std::string error;
+		if (!parse_u32(command[2], thread) || !parse_u32(command[3], frame) || !trace_metadata_frame_json(replayer.packed_file(), thread, frame, v, error))
+		{
+			response = "ERROR\n";
+		}
+		else
+		{
+			response = trace_metadata_json_pretty(v);
+			if (response.empty() || response.back() != '\n') response += "\n";
+		}
+	}
+	else
+	{
+		response = "ERROR\n";
+	}
 
 	return response;
 }

@@ -385,6 +385,7 @@ public:
 	std::atomic_uint_fast16_t cli_function{ UINT16_MAX };
 	std::atomic<cli_step_mode> cli_step{ cli_step_mode::packets };
 	std::atomic<cli_thread_state> cli_state{ cli_thread_state::not_started };
+	std::atomic_uint_fast32_t cli_pause_generation{ 0 };
 	std::atomic_int_fast16_t cli_wait_thread{ -1 };
 	std::atomic_uint_fast32_t cli_wait_packet{ UINT32_MAX };
 
@@ -498,19 +499,28 @@ static inline bool check_cli(const callback_context& cb)
 	const int req_thread = parent->cli_thread.load(std::memory_order_acquire);
 	if (req_thread == -1) return false; // fast out if not running under CLI control
 	if (parent->stop_requested()) cb.reader.throw_stop_requested();
-	if (req_thread != cb.reader.current.thread)
+	bool selected_thread = req_thread == cb.reader.current.thread;
+	if (!selected_thread)
 	{
 		if (!parent->cli_running.load(std::memory_order_acquire))
 		{
 			cb.reader.cli_state.store(cli_thread_state::cli_paused, std::memory_order_release);
-			while (!parent->cli_running.load(std::memory_order_acquire))
+			while (!parent->cli_running.load(std::memory_order_acquire)
+			       && parent->cli_thread.load(std::memory_order_acquire) != cb.reader.current.thread)
 			{
 				if (parent->stop_requested()) cb.reader.throw_stop_requested();
 				usleep(50);
 			}
-			cb.reader.cli_state.store(cli_thread_state::running, std::memory_order_release);
+			if (parent->cli_thread.load(std::memory_order_acquire) == cb.reader.current.thread)
+			{
+				selected_thread = true;
+			}
 		}
-		return false;
+		if (!selected_thread)
+		{
+			cb.reader.cli_state.store(cli_thread_state::running, std::memory_order_release);
+			return false;
+		}
 	}
 	uint32_t completed_call = 0;
 	const cli_step_mode step_mode = cb.reader.cli_step.load(std::memory_order_acquire);
@@ -543,6 +553,8 @@ static inline bool check_cli(const callback_context& cb)
 	}
 	cb.reader.cli_paused_call.store(completed_call, std::memory_order_release);
 	cb.reader.cli_state.store(cli_thread_state::cli_paused, std::memory_order_release);
+	cb.reader.cli_pause_generation.fetch_add(1, std::memory_order_acq_rel);
+	cb.reader.cli_pause_generation.notify_all();
 	parent->cli_running.store(false, std::memory_order_release);
 	parent->cli_running.notify_all();
 	usleep(50);

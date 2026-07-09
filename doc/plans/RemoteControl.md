@@ -7,33 +7,12 @@ Inspired by [Renderdoc's CLI tool](https://github.com/BANANASJIM/rdc-cli).
 
 ## Functionality
 
-The basic functionality is a new option to `lava-replay` that makes it start providing
-a remote controlled service:
-
-```
-lava-replay --service <my trace file>.api
-```
-
-When called like this, it launches a background thread that listens on a TCP port, then
-waits for further instructions on this port.
-
-These instructions are sent from a new tool `lava-cli`.
-
-Already implemented instructions:
-* `lava-cli status` - show our basic status
-* `lava-cli continue` - continues the replay until the end
-* `lava-cli stop` - stops the replay
-* `lava-cli step [packets X|calls X]` - step the given number of packets or API calls ahead
-* `lava-cli goto X|NAME` - continue replay until packet number X or the next API call named NAME
-* `lava-cli info threads|memory|suballocator`
-* `lava-cli params|parameters` - print command or packet input parameters as JSON
-* `lava-cli show <object type> <index>` - print given globally tracked object and its metadata as JSON
-	- pipelines : prints out info from `VK_KHR_pipeline_executable_properties`
-* `lava-cli set debug <level>` - change global debug level
-* `lava-cli set blackhole <true|false>` - change blackhole setting
+The basic functionality is a new `--service` option to `lava-replay` that makes it
+start providing a remote controlled service. When called like this, it launches a
+background thread that listens on a TCP port, then waits for further instructions
+on this port. These instructions are sent from a new tool `lava-cli`.
 
 More instructions to implement - in prioritized order:
-* `lava-cli thread N` - updates the stored current thread index
 * `lava-cli step frames X` - step the given number of frames ahead in the current thread, then pause again
 - `lava-cli goto frame X` - replay until we get to the given frame
 * `lava-cli info <topic>` - show input parameters and important state
