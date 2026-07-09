@@ -30,6 +30,16 @@ enum class cli_step_mode : uint8_t
 	calls = 1,
 	function = 2,
 };
+
+enum class cli_thread_state : uint8_t
+{
+	not_started = 0,
+	running = 1,
+	cli_paused = 2,
+	wait_handle = 3,
+	wait_barrier = 4,
+	terminated = 5,
+};
 using lava_markings_observer = void (*)(const change_source&, const VkMarkedOffsetsARM*, void*);
 
 extern lava::mutex sync_mutex;
@@ -216,6 +226,7 @@ public:
 	// CLI stuff
 	std::atomic_int cli_thread{ -1 };
 	std::atomic_bool cli_running{ false };
+	std::atomic_bool cli_service{ false };
 	std::string cli_response; // response data from cli thread to control thread
 	std::atomic_bool cli_params_requested{ false };
 	std::atomic_bool cli_params_ready{ false };
@@ -372,6 +383,7 @@ public:
 	std::atomic_uint_fast32_t cli_packet{ 0 };
 	std::atomic_uint_fast16_t cli_function{ UINT16_MAX };
 	std::atomic<cli_step_mode> cli_step{ cli_step_mode::packets };
+	std::atomic<cli_thread_state> cli_state{ cli_thread_state::not_started };
 
 	// Replay-only: per-thread queue for AS build sizes and internal AS buffers.
 	std::deque<VkAccelerationStructureBuildSizesInfoKHR> pending_as_build_sizes;
@@ -427,11 +439,14 @@ inline void lava_file_reader::read_barrier()
 	{
 		const unsigned packet_index = packet_indices[i];
 		DLOG3("Thread barrier on thread %d, waiting for packet %u on thread %d / %u", current.thread, packet_index, i, size - 1);
+		const bool publish_wait = i != current.thread && packet_index > parent->thread_packet_numbers->at(i).load(std::memory_order_relaxed) && parent->cli_service.load(std::memory_order_acquire);
+		if (publish_wait) cli_state.store(cli_thread_state::wait_barrier, std::memory_order_release);
 		while (i != current.thread && packet_index > parent->thread_packet_numbers->at(i).load(std::memory_order_relaxed))
 		{
 			if (parent->stop_requested()) throw_stop_requested();
 			usleep(1);
 		}
+		if (publish_wait) cli_state.store(cli_thread_state::running, std::memory_order_release);
 	}
 	DLOG2("[t%02d] Passed thread barrier, waited for %u threads", (int)current.thread, size);
 }
@@ -452,12 +467,15 @@ inline uint32_t lava_file_reader::read_handle(DEBUGPARAM(const char* name))
 	if (req_packet < completed_packets) DLOG2("[t%02d %06d] read handle %s index=%u, was for tid=%d packet=%u, it is already at packet=%u", (int)current.thread, (int)current.packet + 1, name, (unsigned)index, (int)req_thread, req_packet, completed_packets);
 	else DLOG2("[t%02d %06d] read handle %s index=%u, MUST WAIT for tid=%d packet=%u, it is now at packet=%u", (int)current.thread, (int)current.packet + 1, name, (unsigned)index, (int)req_thread, req_packet, completed_packets);
 #endif
+	const bool publish_wait = req_packet >= completed_packets && parent->cli_service.load(std::memory_order_acquire);
+	if (publish_wait) cli_state.store(cli_thread_state::wait_handle, std::memory_order_release);
 	while (req_packet >= completed_packets)
 	{
 		if (parent->stop_requested()) throw_stop_requested();
 		usleep(1);
 		completed_packets = parent->thread_packet_numbers->at(req_thread).load(std::memory_order_relaxed);
 	}
+	if (publish_wait) cli_state.store(cli_thread_state::running, std::memory_order_release);
 	return index;
 }
 
@@ -466,14 +484,35 @@ static inline bool check_cli(const callback_context& cb)
 	lava_reader* parent = cb.reader.parent;
 	const int req_thread = parent->cli_thread.load(std::memory_order_acquire);
 	if (req_thread == -1) return false; // fast out if not running under CLI control
-	if (req_thread != cb.reader.current.thread) return false; // not current CLI thread, continue until we hit a sync point
 	if (parent->stop_requested()) cb.reader.throw_stop_requested();
+	if (req_thread != cb.reader.current.thread)
+	{
+		if (!parent->cli_running.load(std::memory_order_acquire))
+		{
+			cb.reader.cli_state.store(cli_thread_state::cli_paused, std::memory_order_release);
+			while (!parent->cli_running.load(std::memory_order_acquire))
+			{
+				if (parent->stop_requested()) cb.reader.throw_stop_requested();
+				usleep(50);
+			}
+			cb.reader.cli_state.store(cli_thread_state::running, std::memory_order_release);
+		}
+		return false;
+	}
 	uint32_t completed_call = 0;
 	const cli_step_mode step_mode = cb.reader.cli_step.load(std::memory_order_acquire);
 	if (step_mode == cli_step_mode::calls || step_mode == cli_step_mode::function)
 	{
-		if (cb.reader.current.packet_type != PACKET_VULKAN_API_CALL) return false;
-		if (step_mode == cli_step_mode::function && cb.reader.current.call_id != cb.reader.cli_function.load(std::memory_order_acquire)) return false;
+		if (cb.reader.current.packet_type != PACKET_VULKAN_API_CALL)
+		{
+			cb.reader.cli_state.store(cli_thread_state::running, std::memory_order_release);
+			return false;
+		}
+		if (step_mode == cli_step_mode::function && cb.reader.current.call_id != cb.reader.cli_function.load(std::memory_order_acquire))
+		{
+			cb.reader.cli_state.store(cli_thread_state::running, std::memory_order_release);
+			return false;
+		}
 		completed_call = cb.reader.api_call_count + 1;
 	}
 	else
@@ -485,10 +524,12 @@ static inline bool check_cli(const callback_context& cb)
 		const uint32_t req_call = cb.reader.cli_call.load(std::memory_order_acquire);
 		if (completed_call < req_call)
 		{
+			cb.reader.cli_state.store(cli_thread_state::running, std::memory_order_release);
 			return false;
 		}
 	}
 	cb.reader.cli_paused_call.store(completed_call, std::memory_order_release);
+	cb.reader.cli_state.store(cli_thread_state::cli_paused, std::memory_order_release);
 	parent->cli_running.store(false, std::memory_order_release);
 	parent->cli_running.notify_all();
 	usleep(50);

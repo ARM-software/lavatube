@@ -107,22 +107,14 @@ Ideas:
 
 ## Multi-threading
 
-Lavatube is multithreaded and traces _can_ be heavily multi-threaded. If we pause one thread,
-the other threads will continue until they hit their next synchronization point. We will want
+Lavatube is multithreaded and traces can be heavily multi-threaded. If we pause one thread,
+the other threads will continue until they hit their next synchronization point. We want
 to make sure we let all threads hit their next synchronization point before we return control
-to `lava-cli` (possibly means that we need an atomic state machine status in each running
-thread to say whether we are running or waiting, unless there is some other way to check this,
-eg see if we are at the next synchronization point or not).
+to `lava-cli`.
 
 One issue we will have is our use of spinlocks for most replay thread synchronizations. This
-means even though the process is in 'pause' state, it will consume quite a bit of CPU. (Also
-the moment we step beyond a waiting point, threads waiting for it will race ahead.)
-
-## State machine
-
-We should have a very simple state machine: We can be in states `paused`, `running` or `done`.
-When in `running` state we only accept the `stop` command. For most commands, we need to be
-in the `paused` state.
+means even though the process is in 'pause' state, it will consume quite a bit of CPU, and
+the moment we step beyond a waiting point, threads waiting for it will race ahead.
 
 ## Security
 
@@ -197,35 +189,6 @@ have received a connection and been told to proceed.
 If there is a disconnect during capture, we keep going. There is no good other option here.
 If there is a disconnect during replay, we have more options, but keep going is the least
 invasive, so we should go with this to begin with at least.
-
-## Additional questions to resolve (from Gemini review)
-
-### Thread Pausing Behavior
-
-* **Synchronization Points:** The plan mentions: *"If we pause one thread, the other threads
- will continue until they hit their next synchronization point."*
-
-* **Risk:** Vulkan apps can have worker threads that just process compute shaders or build
- command buffers for a long time without hitting a heavy Vulkan synchronization primitive. If
- you wait for them to hit a sync point before giving control to `lava-cli`, the tool might hang
- indefinitely.
-
-* **Recommendation:** When a pause is requested (or a breakpoint/step completes), you should
- probably flip a global `atomic<bool> is_paused` flag. **All** threads should check this flag
- right before they dispatch their next Vulkan command. This ensures all threads freeze at their
- current command boundaries almost immediately, rather than waiting for an API-level
- synchronization point.
-
-### Stepping Semantics Across Threads
-
-* **The "Step" Command:** When you `lava-cli step call 1` on Thread A, what should Thread B do?
-
-* **Recommendation:** Usually, in debuggers, if you step a specific thread, the other threads
- remain frozen to prevent the state from changing under your feet. You should explicitly define
- this behavior in the plan. If `lava-cli step` only advances the active thread while keeping
- others blocked on a condition variable, you need to ensure this doesn't cause deadlocks if
- Thread A's next command is waiting on a fence signaled by Thread B. Providing a `step-all`
- vs `step-thread` distinction might be necessary eventually.
 
 ## lava-tool service mode (written by codex)
 

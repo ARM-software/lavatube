@@ -28,7 +28,7 @@ void usage()
 	printf("\n");
 	printf("Replay control:\n");
 	printf("    status                   Show replay state. Outputs RUNNING, DONE, PAUSED, or current paused packet/call.\n");
-	printf("    continue                 Resume replay until completion, stop, or next target.\n");
+	printf("    continue                 Resume replay and wait until completion.\n");
 	printf("    stop                     Stop the replay.\n");
 	printf("    set debug LEVEL          Set replay debug level (zero is the least verbose) [0,1,2,3].\n");
 	printf("    set blackhole BOOL       Set replay blackhole mode (submit empty commandbuffers) [true,false].\n");
@@ -114,7 +114,7 @@ int main(int argc, char **argv)
 	close(fd);
 
 	printf("%s", response.c_str());
-	if (response.empty() || response == "ERROR\n" || response == "ERROR") return 1;
+	if (response.empty() || response == "ERROR\n" || response == "ERROR" || response == "DEVICE_LOST\n" || response == "DEVICE_LOST") return 1;
 
 	return 0;
 }
