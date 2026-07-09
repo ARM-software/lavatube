@@ -2,10 +2,12 @@
 #include <string.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <unistd.h>
 #include <errno.h>
 
 #include <string>
+#include <vector>
 
 #include "vulkan/vulkan.h"
 #include "util.h"
@@ -25,12 +27,79 @@ void usage()
 	printf("-d/--debug level       Set debug level [0,1,2,3]\n");
 	printf("-df/--debugfile FILE   Output debug output to the given file\n");
 	printf("-f/--frames start end  Select a frame range\n");
-	printf("-i/--index NUM         Print only the given packet index from the selected thread (by default thread zero)\n");
-	printf("-t/--thread NUM        Select a thread and print only outputs from this given thread\n");
+	printf("-t/--thread NUM        Only print for this thread (can explicitly override with --select)\n");
+	printf("--select LIST          Print selected packets: INDEX or INDEX:THREAD, comma-separated. Set default thread with --thread\n");
 	printf("-m/--max NUM           Stop after printing this many entries\n");
 	printf("--skip-missing-input   Exit with code 77 if the input trace file does not exist\n");
 	printf("-s/--sandbox level     Set security sandbox level (from 1 to 3, with 3 the most strict, default %d)\n", (int)p__sandbox_level);
 	exit(-1);
+}
+
+static uint32_t get_selector_uint32(const std::string& text, const char* label)
+{
+	if (text.empty()) DIE("Invalid empty %s in --select", label);
+	char* end = nullptr;
+	errno = 0;
+	const unsigned long value = strtoul(text.c_str(), &end, 10);
+	if (errno != 0 || *end != '\0' || value >= UINT32_MAX)
+	{
+		DIE("Invalid %s in --select: %s", label, text.c_str());
+	}
+	return (uint32_t)value;
+}
+
+static void parse_selectors(const char* list, std::vector<print_packet_selector>& selectors)
+{
+	const std::string text = list;
+	size_t start = 0;
+	while (start <= text.size())
+	{
+		const size_t comma = text.find(',', start);
+		const size_t end = comma == std::string::npos ? text.size() : comma;
+		const std::string entry = text.substr(start, end - start);
+		if (entry.empty()) DIE("Invalid empty selector in --select");
+		const size_t colon = entry.find(':');
+		if (colon != std::string::npos && entry.find(':', colon + 1) != std::string::npos)
+		{
+			DIE("Invalid selector in --select: %s", entry.c_str());
+		}
+		print_packet_selector selector;
+		if (colon == std::string::npos)
+		{
+			selector.packet = get_selector_uint32(entry, "packet index");
+		}
+		else
+		{
+			selector.packet = get_selector_uint32(entry.substr(0, colon), "packet index");
+			selector.thread = get_selector_uint32(entry.substr(colon + 1), "thread index");
+		}
+		selectors.push_back(selector);
+		if (comma == std::string::npos) break;
+		start = comma + 1;
+	}
+}
+
+static bool selector_exists(const std::vector<print_packet_selector>& selectors, uint32_t packet, uint32_t thread)
+{
+	for (const print_packet_selector& selector : selectors)
+	{
+		if (selector.packet == packet && selector.thread == thread) return true;
+	}
+	return false;
+}
+
+static void normalize_selectors(std::vector<print_packet_selector>& selectors, uint32_t default_thread)
+{
+	std::vector<print_packet_selector> deduplicated;
+	for (print_packet_selector& selector : selectors)
+	{
+		if (selector.thread == UINT32_MAX) selector.thread = default_thread;
+		if (!selector_exists(deduplicated, selector.packet, selector.thread))
+		{
+			deduplicated.push_back(selector);
+		}
+	}
+	selectors.swap(deduplicated);
 }
 
 static void replay_thread(lava_reader* replayer, int thread_id)
@@ -69,11 +138,12 @@ int main(int argc, char **argv)
 	int start = 0;
 	int end = -1;
 	uint32_t print_thread_index = UINT32_MAX;
-	uint32_t print_packet_index = UINT32_MAX;
+	std::vector<print_packet_selector> print_selectors;
 	uint32_t print_max_entries = UINT32_MAX;
 	int remaining = argc - 1; // zeroth is name of program
 	std::string filename_input;
 	bool skip_missing_input = false;
+	bool have_select = false;
 
 	if (p__debug_destination == stdout) p__debug_destination = stderr;
 	if (p__sandbox_level >= 1) sandbox_level_one();
@@ -105,17 +175,19 @@ int main(int argc, char **argv)
 			start = get_int(argv[++i], remaining);
 			end = get_int(argv[++i], remaining);
 		}
-		else if (match(argv[i], "-i", "--index", remaining))
-		{
-			int index = get_int(argv[++i], remaining);
-			if (index < 0) DIE("Invalid packet index %d", index);
-			print_packet_index = index;
-		}
 		else if (match(argv[i], "-t", "--thread", remaining))
 		{
 			int thread = get_int(argv[++i], remaining);
 			if (thread < 0) DIE("Invalid thread index %d", thread);
 			print_thread_index = thread;
+		}
+		else if (match(argv[i], nullptr, "--select", remaining))
+		{
+			if (have_select) DIE("--select can only be specified once");
+			if (remaining < 1) usage();
+			const std::string selectors = get_str(argv[++i], remaining);
+			parse_selectors(selectors.c_str(), print_selectors);
+			have_select = true;
 		}
 		else if (match(argv[i], "-m", "--max", remaining))
 		{
@@ -162,20 +234,26 @@ int main(int argc, char **argv)
 		return 77;
 	}
 
-	if (print_packet_index != UINT32_MAX && print_thread_index == UINT32_MAX)
-	{
-		print_thread_index = 0;
-	}
+	normalize_selectors(print_selectors, print_thread_index == UINT32_MAX ? 0 : print_thread_index);
 
-	if (print_thread_index != UINT32_MAX)
+	if (print_thread_index != UINT32_MAX || !print_selectors.empty())
 	{
 		Json::Value meta = packed_json("metadata.json", filename_input);
 		const uint32_t trace_threads = meta["threads"].asUInt();
-		if (print_thread_index >= trace_threads)
+		if (print_thread_index != UINT32_MAX && print_thread_index >= trace_threads)
 		{
 			printf("Invalid thread index %u for trace with %u threads\n", (unsigned)print_thread_index, (unsigned)trace_threads);
 			close_debug_destination();
 			return -1;
+		}
+		for (const print_packet_selector& selector : print_selectors)
+		{
+			if (selector.thread >= trace_threads)
+			{
+				printf("Invalid selector thread index %u for trace with %u threads\n", (unsigned)selector.thread, (unsigned)trace_threads);
+				close_debug_destination();
+				return -1;
+			}
 		}
 	}
 
@@ -185,7 +263,7 @@ int main(int argc, char **argv)
 	replayer.run = false;
 	replayer.print_packets = true;
 	replayer.print_thread_index = print_thread_index;
-	replayer.print_packet_index = print_packet_index;
+	replayer.print_selectors = print_selectors;
 	replayer.print_max_entries = print_max_entries;
 	replayer.create_results_file = false;
 	replayer.set_frames(start, end);

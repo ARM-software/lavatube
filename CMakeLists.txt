@@ -632,16 +632,37 @@ add_lavatube_test(lava_print_tracing2_ndjson
 		-DOUTPUT_FILE=${CMAKE_CURRENT_BINARY_DIR}/lava_print_tracing2.ndjson
 		-P ${PROJECT_SOURCE_DIR}/tests/lava_print_ndjson.cmake)
 set_tests_properties(lava_print_tracing2_ndjson PROPERTIES FIXTURES_REQUIRED tracing_2)
-add_lavatube_test(lava_print_tracing2_index0_ndjson
+add_lavatube_test(lava_print_tracing2_select0_ndjson
 	COMMAND ${CMAKE_COMMAND}
 		-DLAVA_PRINT=$<TARGET_FILE:lava-print>
 		-DPYTHON_EXECUTABLE=${PYTHON_EXECUTABLE}
 		-DINPUT_TRACE=${CMAKE_CURRENT_BINARY_DIR}/tracing_2.api
-		-DOUTPUT_FILE=${CMAKE_CURRENT_BINARY_DIR}/lava_print_tracing2_index0.ndjson
-		-DINDEX=0
+		-DOUTPUT_FILE=${CMAKE_CURRENT_BINARY_DIR}/lava_print_tracing2_select0.ndjson
+		-DSELECT=0
 		-DEXPECT_INDEX=0
 		-P ${PROJECT_SOURCE_DIR}/tests/lava_print_ndjson.cmake)
-set_tests_properties(lava_print_tracing2_index0_ndjson PROPERTIES FIXTURES_REQUIRED tracing_2)
+set_tests_properties(lava_print_tracing2_select0_ndjson PROPERTIES FIXTURES_REQUIRED tracing_2)
+add_lavatube_test(lava_print_tracing2_select_list_ndjson
+	COMMAND ${CMAKE_COMMAND}
+		-DLAVA_PRINT=$<TARGET_FILE:lava-print>
+		-DPYTHON_EXECUTABLE=${PYTHON_EXECUTABLE}
+		-DINPUT_TRACE=${CMAKE_CURRENT_BINARY_DIR}/tracing_2.api
+		-DOUTPUT_FILE=${CMAKE_CURRENT_BINARY_DIR}/lava_print_tracing2_select_list.ndjson
+		-DSELECT=0,1
+		-DEXPECT_PAIRS=0:0,1:0
+		-P ${PROJECT_SOURCE_DIR}/tests/lava_print_ndjson.cmake)
+set_tests_properties(lava_print_tracing2_select_list_ndjson PROPERTIES FIXTURES_REQUIRED tracing_2)
+add_lavatube_test(lava_print_tracing2_thread_select_list_ndjson
+	COMMAND ${CMAKE_COMMAND}
+		-DLAVA_PRINT=$<TARGET_FILE:lava-print>
+		-DPYTHON_EXECUTABLE=${PYTHON_EXECUTABLE}
+		-DINPUT_TRACE=${CMAKE_CURRENT_BINARY_DIR}/tracing_2.api
+		-DOUTPUT_FILE=${CMAKE_CURRENT_BINARY_DIR}/lava_print_tracing2_thread_select_list.ndjson
+		-DTHREAD=0
+		-DSELECT=0,1
+		-DEXPECT_PAIRS=0:0,1:0
+		-P ${PROJECT_SOURCE_DIR}/tests/lava_print_ndjson.cmake)
+set_tests_properties(lava_print_tracing2_thread_select_list_ndjson PROPERTIES FIXTURES_REQUIRED tracing_2)
 add_lavatube_test(lava_print_tracing2_thread0_ndjson
 	COMMAND ${CMAKE_COMMAND}
 		-DLAVA_PRINT=$<TARGET_FILE:lava-print>

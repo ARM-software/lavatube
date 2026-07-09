@@ -276,19 +276,46 @@ void cli_params_packet(callback_context& cb)
 	cli_params_publish(cb, params_packet_json(cb));
 }
 
+static bool print_selector_matches(const lava_reader* parent, uint32_t thread, uint32_t packet)
+{
+	for (const print_packet_selector& selector : parent->print_selectors)
+	{
+		if (selector.thread == thread && selector.packet == packet) return true;
+	}
+	return false;
+}
+
+static void print_mark_selectors(lava_reader* parent, uint32_t thread, uint32_t packet)
+{
+	for (print_packet_selector& selector : parent->print_selectors)
+	{
+		if (!selector.printed && selector.thread == thread && selector.packet == packet)
+		{
+			selector.printed = true;
+			parent->print_selector_count++;
+		}
+	}
+}
+
 void print_params_publish(callback_context& cb, Json::Value v)
 {
-	if (cb.reader.parent->print_thread_index != UINT32_MAX && cb.reader.current.thread != cb.reader.parent->print_thread_index)
+	lava_reader* parent = cb.reader.parent;
+	const bool thread_selected = parent->print_thread_index != UINT32_MAX && cb.reader.current.thread == parent->print_thread_index;
+	const bool selector_selected = print_selector_matches(parent, cb.reader.current.thread, cb.reader.print_packet_number);
+	if (!parent->print_selectors.empty())
+	{
+		if (!selector_selected)
+		{
+			cb.reader.printed_current_packet = true;
+			return;
+		}
+	}
+	else if (parent->print_thread_index != UINT32_MAX && !thread_selected)
 	{
 		cb.reader.printed_current_packet = true;
 		return;
 	}
-	if (cb.reader.parent->print_packet_index != UINT32_MAX && cb.reader.print_packet_number != cb.reader.parent->print_packet_index)
-	{
-		cb.reader.printed_current_packet = true;
-		return;
-	}
-	if (!cb.reader.parent->is_frame_selected(cb.reader.print_packet_frame))
+	if (!parent->is_frame_selected(cb.reader.print_packet_frame))
 	{
 		cb.reader.printed_current_packet = true;
 		return;
@@ -297,18 +324,26 @@ void print_params_publish(callback_context& cb, Json::Value v)
 	v["frame"] = cb.reader.print_packet_frame;
 	Json::FastWriter writer;
 	const std::string out = writer.write(v);
-	lava::lock_guard lock(cb.reader.parent->print_mutex);
-	if (cb.reader.parent->print_max_entries != UINT32_MAX && cb.reader.parent->print_entry_count >= cb.reader.parent->print_max_entries)
+	lava::lock_guard lock(parent->print_mutex);
+	if (parent->print_max_entries != UINT32_MAX && parent->print_entry_count >= parent->print_max_entries)
 	{
 		cb.reader.printed_current_packet = true;
-		cb.reader.parent->request_stop();
+		parent->request_stop();
 		return;
 	}
 	printf("%s", out.c_str());
-	cb.reader.parent->print_entry_count++;
-	if (cb.reader.parent->print_max_entries != UINT32_MAX && cb.reader.parent->print_entry_count >= cb.reader.parent->print_max_entries)
+	parent->print_entry_count++;
+	if (selector_selected)
 	{
-		cb.reader.parent->request_stop();
+		print_mark_selectors(parent, cb.reader.current.thread, cb.reader.print_packet_number);
+	}
+	if (parent->print_max_entries != UINT32_MAX && parent->print_entry_count >= parent->print_max_entries)
+	{
+		parent->request_stop();
+	}
+	if (!parent->print_selectors.empty() && parent->print_selector_count >= parent->print_selectors.size())
+	{
+		parent->request_stop();
 	}
 	cb.reader.printed_current_packet = true;
 }

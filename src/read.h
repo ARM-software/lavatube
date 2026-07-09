@@ -63,6 +63,13 @@ struct output_update_packet
 	}
 };
 
+struct print_packet_selector
+{
+	uint32_t packet = UINT32_MAX;
+	uint32_t thread = UINT32_MAX;
+	bool printed = false;
+};
+
 // Only used to unwind replay threads out of stop-aware wait paths during shutdown.
 struct replay_stop_requested
 {
@@ -173,7 +180,8 @@ public:
 	/// Whether this replay pass should print every packet as JSON.
 	bool print_packets = false;
 	uint32_t print_thread_index = UINT32_MAX;
-	uint32_t print_packet_index = UINT32_MAX;
+	std::vector<print_packet_selector> print_selectors;
+	uint32_t print_selector_count = 0;
 	uint32_t print_max_entries = UINT32_MAX;
 	uint32_t print_entry_count = 0;
 	lava::mutex print_mutex;
