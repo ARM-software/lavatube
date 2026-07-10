@@ -1,59 +1,47 @@
 # TUI
 
+## What it is
+
+New tool `lava-tui` that communicates with `lava-replay` (or `lava-tool`) similarly
+to `lava-cli` but implements a text-based user-interface that calls LLM models to
+implement a natural language interface similar to codex.
+
+It offers a text user-interface for manipulating the currently running replay service,
+backed by an LLM engine that translates free text into actions and investigations. It
+is meant to be run from a desktop or laptop host, while the replayer could run locally
+or on a devboard or Android device.
+
+## TODO
+
 Remaining todo list:
 * Add support for `lava-tui <trace file>` that launches the replayer
 	- Either launch with gdb
 	- Or set core file vars and use c++ callstack ops to fetch callstacks whenever (maybe try this in lava-cli first)
+	- This would only work locally, although we could support replaying over adb on Android.
 * Remove the TUI's own commands.
+	- Or always launch it with local copy of trace file so that we can inspect it simultaneously while replaying it.
+	- We can have need for being able to run the equivalent of `lava-print` commands on the trace
+* Multi-model support (see below)
 
-New tool `lava-tui` that communicates with `lava-replay` (or `lava-tool`) similarly
-to `lava-cli`.
+## Implementation
 
-Started as `lava-tui`, then offers a text user-interface for manipulating the currently
-running replay service, backed by an LLM engine that translates free text into actions
-and investigations.
-
-We will also offer `lava-tui <trace file>` as before - in which case we could run it
-from inside `lava-tui` but with gdb (or some other way to get a call stack on crash),
-so crashes can be provided to the LLM if they happen.
-
-We should skip building this for Android to avoid it being burdened by any new dependencies.
-
-We interface directly with chatgpt using `libcurl`. This uses a JSON format.
+We interface directly with chatgpt using `libcurl` using a JSON format with the OpenAI
+response interface.
 
 We need to efficiently describe the actions that the agent can take and respond with, and
 even more efficiently trim down any information provided to avoid overwhelming the agent
 with tokens and context.
 
+All actions currently supported by `lava-replay` over its CLI TCP connection interface should
+be supported. We also support some actions directly on a trace file that also work even if
+we don't connect to a replayer.
+
 ## Visual looks
 
-The screen should be composed into three sections: The view, the input line and the status line.
-
-At the very bottom we have the status line with information such the current model.
-
-Just above the status line we have input field where the user can enter prompt text. If the
-text exceeds one line, it should ideally expand in size, but if that is difficult it could also
-start multi-line and support scrolling instead.
-
-The remaining screen space is taken up by the view which shows all the model output.
-
-## Actions
-
-All actions currently supported by `lava-replay` over its TCP connection interface should be supported.
-
-We currently implement these directly:
-- get list of objects created (from `limits.json`, prune all zero value entries, then turned into TSV using datatable)
-- get frame meta info (thread X frame Y from `frames_<X>.json` selecting frame Y in `frames` key, JSON format)
-- get thread X meta info (all entries from `frames_<X>.json` except for `frames` key, JSON format)
-- get meta info for object type X index Y (from `tracking.json`, format JSON)
-
-## Long-term plan
-
-We would like to run most commands through a locally-hosted LLM for low-latency and saving
-token costs, but have it evaluate the complexity of the prompt then pass high-complexity
-prompts to chatgpt. We would use whichever tool allows us to reuse our chatgpt implementation,
-probably ollama or vllm. Our Intel GPU-based laptops have very poor support for GPU accelerated
-models, so best to dedicate some desktop with a more powerful GPU as a shared server for this.
+The screen is composed into three sections: The view, the input line and the status line.
+At the very bottom we have the status line with information such the current model. Just
+above the status line we have input field where the user can enter prompt text. The remaining
+screen space is taken up by the transcript view which shows all the model output.
 
 ## Separation of concerns
 
@@ -61,4 +49,31 @@ models, so best to dedicate some desktop with a more powerful GPU as a shared se
 `lava-cli` is an agent interface to the same. The `lava-tui` interface _could_ be entirely
 replaced by a user using `codex` (or similar) tool, where the real agent CLI would be far
 more powerful. The advantages of our TUI would come from closer integration, faster iteration,
-and local model support.
+closer prompt control, and local model support. It is not yet entirely clear what are the real
+advantages of one way over the other.
+
+## Multi-model support
+
+We would like to run most commands through a locally-hosted LLM for lower latency and saving
+token costs. We will implement this using a router-first design similar to how `Gemini CLI`
+implemented it - a local model is used to classify the request and we use this classification
+to pick either local or cloud model to provide an answer. This way we retain the integrity
+of the transcript.
+
+The routing question should provide a JSON response that gives `routing` recommendation (`local`
+vs `cloud`), floating-point `confidence`, and a `reason` very brief free text. Then `lava-tui`
+can use this to decide where to send the request using a confidence threshold that overrides to
+cloud model by default for now (until we get more confidence with the local model). We should
+print in the transcript which model did respond along with the confidence and reason.
+
+New user settings (with defaults):
+```
+LAVATUI_LOCAL_BASE_URL=http://localhost:11434/v1
+LAVATUI_LOCAL_MODEL=gemma4:latest
+LAVATUI_CLOUD_BASE_URL=https://api.openai.com/v1
+LAVATUI_CLOUD_MODEL=gpt-5.5
+LAVATUI_CLOUD_REASONING=low
+```
+
+Since this is still just an experiment, we do not need to care about backwards compatibility
+for users, nor support setups that do not have both local and cloud models.

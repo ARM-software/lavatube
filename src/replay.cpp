@@ -96,19 +96,35 @@ static bool parse_bool(const std::string& text, bool& out)
 static bool cli_show_json(const char* object_type, uint32_t index, Json::Value& out)
 {
 	if (!cli_show_object_json(object_type, index, out)) return false;
-	if (strcmp(object_type, "VkPipeline") != 0) return true;
-	if (!replayer.cli_pipeline_executable_stats_enabled.load(std::memory_order_acquire)) return true;
-	if (index >= VkPipeline_index.size()) return true;
-
-	trackedpipeline& pipeline_data = VkPipeline_index.at(index);
-	if (!pipeline_data.is_state(trackable::states::created)) return true;
-	if (pipeline_data.device_index == UINT32_MAX || pipeline_data.device_index >= VkDevice_index.size()) return true;
-	if (!index_to_VkPipeline.contains(index)) return true;
-	if (!index_to_VkDevice.contains(pipeline_data.device_index)) return true;
-
-	VkDevice device = index_to_VkDevice.at(pipeline_data.device_index);
-	VkPipeline pipeline = index_to_VkPipeline.at(index);
-	(void)append_pipeline_executable_statistics_json(device, pipeline, out);
+	if (strcmp(object_type, "VkFence") == 0 && index < VkFence_index.size())
+	{
+		const trackedfence& fence_data = VkFence_index.at(index);
+		Json::Value replay;
+		replay["handle_mapped"] = index_to_VkFence.contains(index);
+		replay["flags"] = VkFenceCreateFlags_to_string(fence_data.flags);
+		replay["pending_commandbuffer_count"] = (int)fence_data.replay_pending_commandbuffers.size();
+		Json::Value pending(Json::arrayValue);
+		for (uint32_t commandbuffer_index : fence_data.replay_pending_commandbuffers)
+		{
+			pending.append(commandbuffer_index);
+		}
+		replay["pending_commandbuffers"] = pending;
+		out["replay"] = replay;
+	}
+	else if (strcmp(object_type, "VkPipeline") == 0 && index < VkPipeline_index.size())
+	{
+		trackedpipeline& pipeline_data = VkPipeline_index.at(index);
+		// sanity checks
+		if (!replayer.cli_pipeline_executable_stats_enabled.load(std::memory_order_acquire)) return true;
+		if (!pipeline_data.is_state(trackable::states::created)) return true;
+		if (pipeline_data.device_index == UINT32_MAX || pipeline_data.device_index >= VkDevice_index.size()) return true;
+		if (!index_to_VkPipeline.contains(index)) return true;
+		if (!index_to_VkDevice.contains(pipeline_data.device_index)) return true;
+		// actual work
+		VkDevice device = index_to_VkDevice.at(pipeline_data.device_index);
+		VkPipeline pipeline = index_to_VkPipeline.at(index);
+		(void)append_pipeline_executable_statistics_json(device, pipeline, out);
+	}
 	return true;
 }
 

@@ -148,6 +148,11 @@ You can use `lava-cli` combined with `lava-replay --service` to step through a t
 while dumping out stored meta-information and replay state. See `lava-cli --help` for more
 information.
 
+You can also use the highly experimental `lava-tui` instead of `lava-cli` to have your own
+natural language interface to traces. It can use any OpenAI compatible interface, such as
+chatgpt with an API key, or Ollama. Example of how to run with Ollama and Gemma 4:
+`LAVATUI_OPENAI_API_KEY=ollama LAVATUI_OPENAI_BASE_URL=http://localhost:11434/v1 LAVATUI_MODEL=gemma4:latest ./build/lava-tui`
+
 Testing
 =======
 
