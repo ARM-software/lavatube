@@ -38,7 +38,10 @@ enum class cli_thread_state : uint8_t
 	cli_paused = 2,
 	wait_handle = 3,
 	wait_barrier = 4,
-	terminated = 5,
+	wait_fence = 5,
+	wait_queue_idle = 6,
+	wait_device_idle = 7,
+	terminated = 8,
 };
 using lava_markings_observer = void (*)(const change_source&, const VkMarkedOffsetsARM*, void*);
 
@@ -388,6 +391,9 @@ public:
 	std::atomic_uint_fast32_t cli_pause_generation{ 0 };
 	std::atomic_int_fast16_t cli_wait_thread{ -1 };
 	std::atomic_uint_fast32_t cli_wait_packet{ UINT32_MAX };
+	std::atomic_uint_fast32_t cli_wait_object_type{ VK_OBJECT_TYPE_UNKNOWN };
+	std::atomic_uint_fast32_t cli_wait_object_index{ CONTAINER_INVALID_INDEX };
+	std::atomic_uint_fast32_t cli_wait_aux_index{ CONTAINER_INVALID_INDEX };
 
 	// Replay-only: per-thread queue for AS build sizes and internal AS buffers.
 	std::deque<VkAccelerationStructureBuildSizesInfoKHR> pending_as_build_sizes;
@@ -502,25 +508,8 @@ static inline bool check_cli(const callback_context& cb)
 	bool selected_thread = req_thread == cb.reader.current.thread;
 	if (!selected_thread)
 	{
-		if (!parent->cli_running.load(std::memory_order_acquire))
-		{
-			cb.reader.cli_state.store(cli_thread_state::cli_paused, std::memory_order_release);
-			while (!parent->cli_running.load(std::memory_order_acquire)
-			       && parent->cli_thread.load(std::memory_order_acquire) != cb.reader.current.thread)
-			{
-				if (parent->stop_requested()) cb.reader.throw_stop_requested();
-				usleep(50);
-			}
-			if (parent->cli_thread.load(std::memory_order_acquire) == cb.reader.current.thread)
-			{
-				selected_thread = true;
-			}
-		}
-		if (!selected_thread)
-		{
-			cb.reader.cli_state.store(cli_thread_state::running, std::memory_order_release);
-			return false;
-		}
+		cb.reader.cli_state.store(cli_thread_state::running, std::memory_order_release);
+		return false;
 	}
 	uint32_t completed_call = 0;
 	const cli_step_mode step_mode = cb.reader.cli_step.load(std::memory_order_acquire);

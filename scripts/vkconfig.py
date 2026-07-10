@@ -150,7 +150,8 @@ blackhole_ignore = [ 'vkGetQueryPoolResults' ]
 # these functions have hard-coded post-execute callbacks
 replay_pre_calls = [ 'vkDestroyInstance', 'vkDestroyDevice', 'vkCreateDevice', 'vkCreateSampler', 'vkQueuePresentKHR', 'vkCreateSwapchainKHR',
 	'vkCreateSharedSwapchainsKHR', 'vkCreateGraphicsPipelines', 'vkCreateComputePipelines', 'vkCreateRayTracingPipelinesKHR', 'vkCreateShadersEXT', 'vkCmdPushConstants2KHR',
-	'vkCmdPushConstants2', 'vkQueueSubmit', 'vkQueueSubmit2', 'vkQueueSubmit2KHR', 'vkDestroyPipelineCache', 'vkDestroySwapchainKHR', 'vkDestroyBuffer',
+	'vkCmdPushConstants2', 'vkQueueSubmit', 'vkQueueSubmit2', 'vkQueueSubmit2KHR', 'vkQueueWaitIdle', 'vkDeviceWaitIdle', 'vkWaitForFences',
+	'vkDestroyPipelineCache', 'vkDestroySwapchainKHR', 'vkDestroyBuffer',
 	'vkBeginCommandBuffer', 'vkResetCommandBuffer', 'vkResetCommandPool', 'vkDestroyCommandPool', 'vkFreeCommandBuffers', 'vkDestroySurfaceKHR',
 	'vkDestroyAccelerationStructureKHR', 'vkCreateInstance', 'vkCreateAccelerationStructureKHR', 'vkCmdBuildAccelerationStructuresKHR',
 	'vkCmdBuildAccelerationStructuresIndirectKHR',

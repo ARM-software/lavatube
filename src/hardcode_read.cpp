@@ -930,6 +930,28 @@ static bool is_known_replay_as_address(VkDeviceAddress address)
 	return false;
 }
 
+static void replay_cli_publish_object_wait(lava_file_reader& reader, cli_thread_state state, VkObjectType object_type, uint32_t object_index,
+	uint32_t aux_index = CONTAINER_INVALID_INDEX)
+{
+	if (!reader.parent || !reader.parent->cli_service.load(std::memory_order_acquire)) return;
+	reader.cli_wait_thread.store(-1, std::memory_order_relaxed);
+	reader.cli_wait_packet.store(UINT32_MAX, std::memory_order_relaxed);
+	reader.cli_wait_object_type.store(object_type, std::memory_order_relaxed);
+	reader.cli_wait_object_index.store(object_index, std::memory_order_relaxed);
+	reader.cli_wait_aux_index.store(aux_index, std::memory_order_relaxed);
+	reader.cli_state.store(state, std::memory_order_release);
+}
+
+static void replay_cli_clear_object_wait(lava_file_reader& reader, cli_thread_state state)
+{
+	if (!reader.parent || !reader.parent->cli_service.load(std::memory_order_acquire)) return;
+	if (reader.cli_state.load(std::memory_order_acquire) != state) return;
+	reader.cli_wait_object_type.store(VK_OBJECT_TYPE_UNKNOWN, std::memory_order_relaxed);
+	reader.cli_wait_object_index.store(CONTAINER_INVALID_INDEX, std::memory_order_relaxed);
+	reader.cli_wait_aux_index.store(CONTAINER_INVALID_INDEX, std::memory_order_relaxed);
+	reader.cli_state.store(cli_thread_state::running, std::memory_order_release);
+}
+
 static void replay_clear_pending_commandbuffer(uint32_t commandbuffer_index)
 {
 	if (commandbuffer_index == CONTAINER_INVALID_INDEX) return;
@@ -946,7 +968,7 @@ static void replay_clear_pending_commandbuffer(uint32_t commandbuffer_index)
 	commandbuffer_data.replay_submit_fence_index = CONTAINER_INVALID_INDEX;
 }
 
-static void replay_mark_pending_commandbuffer(uint32_t commandbuffer_index, VkQueue queue, VkFence fence)
+static void replay_mark_pending_commandbuffer(lava_file_reader& reader, uint32_t commandbuffer_index, VkQueue queue, VkFence fence)
 {
 	if (commandbuffer_index == CONTAINER_INVALID_INDEX) return;
 	trackedcmdbuffer& commandbuffer_data = VkCommandBuffer_index.at(commandbuffer_index);
@@ -954,9 +976,14 @@ static void replay_mark_pending_commandbuffer(uint32_t commandbuffer_index, VkQu
 	commandbuffer_data.replay_pending = true;
 	commandbuffer_data.replay_submit_queue = queue;
 	commandbuffer_data.replay_submit_fence_index = (fence == VK_NULL_HANDLE) ? CONTAINER_INVALID_INDEX : index_to_VkFence.index(fence);
+	commandbuffer_data.replay_last_submit_source = reader.current;
+	commandbuffer_data.replay_last_submit_source_valid = true;
 	if (commandbuffer_data.replay_submit_fence_index != CONTAINER_INVALID_INDEX)
 	{
-		VkFence_index.at(commandbuffer_data.replay_submit_fence_index).replay_pending_commandbuffers.push_back(commandbuffer_index);
+		trackedfence& fence_data = VkFence_index.at(commandbuffer_data.replay_submit_fence_index);
+		fence_data.replay_pending_commandbuffers.push_back(commandbuffer_index);
+		fence_data.replay_last_submit_source = reader.current;
+		fence_data.replay_last_submit_source_valid = true;
 	}
 }
 
@@ -982,7 +1009,6 @@ static void replay_clear_pending_fence(uint32_t fence_index)
 static void replay_wait_for_pending_commandbuffer(lava_file_reader& reader, uint32_t commandbuffer_index, trackedcmdbuffer& commandbuffer_data,
 	bool allow_simultaneous_use)
 {
-	(void)reader;
 	if (!commandbuffer_data.replay_pending) return;
 	if (allow_simultaneous_use && (commandbuffer_data.replay_begin_flags & VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT)) return;
 
@@ -990,7 +1016,10 @@ static void replay_wait_for_pending_commandbuffer(lava_file_reader& reader, uint
 		index_to_VkFence.contains(commandbuffer_data.replay_submit_fence_index))
 	{
 		VkFence fence = index_to_VkFence.at(commandbuffer_data.replay_submit_fence_index);
+		replay_cli_publish_object_wait(reader, cli_thread_state::wait_fence, VK_OBJECT_TYPE_FENCE,
+			commandbuffer_data.replay_submit_fence_index, commandbuffer_index);
 		const VkResult result = wrap_vkWaitForFences(commandbuffer_data.device, 1, &fence, VK_TRUE, UINT64_MAX);
+		replay_cli_clear_object_wait(reader, cli_thread_state::wait_fence);
 		if (result != VK_SUCCESS)
 		{
 			ABORT("Failed to wait for pending command buffer %u fence on replay: %s",
@@ -1002,7 +1031,10 @@ static void replay_wait_for_pending_commandbuffer(lava_file_reader& reader, uint
 
 	if (commandbuffer_data.replay_submit_queue != VK_NULL_HANDLE)
 	{
+		const uint32_t queue_index = index_to_VkQueue.index_or_invalid(commandbuffer_data.replay_submit_queue);
+		replay_cli_publish_object_wait(reader, cli_thread_state::wait_queue_idle, VK_OBJECT_TYPE_QUEUE, queue_index, commandbuffer_index);
 		const VkResult result = wrap_vkQueueWaitIdle(commandbuffer_data.replay_submit_queue);
+		replay_cli_clear_object_wait(reader, cli_thread_state::wait_queue_idle);
 		if (result != VK_SUCCESS)
 		{
 			ABORT("Failed to wait for pending command buffer %u queue on replay: %s",
@@ -1273,7 +1305,7 @@ void replay_callback_vkQueueSubmit(callback_context& cb, VkQueue queue, uint32_t
 	{
 		for (uint32_t j = 0; j < pSubmits[i].commandBufferCount; j++)
 		{
-			replay_mark_pending_commandbuffer(index_to_VkCommandBuffer.index(pSubmits[i].pCommandBuffers[j]), queue, fence);
+			replay_mark_pending_commandbuffer(cb.reader, index_to_VkCommandBuffer.index(pSubmits[i].pCommandBuffers[j]), queue, fence);
 		}
 	}
 }
@@ -1296,7 +1328,7 @@ void replay_callback_vkQueueSubmit2(callback_context& cb, VkQueue queue, uint32_
 	{
 		for (uint32_t j = 0; j < pSubmits[i].commandBufferInfoCount; j++)
 		{
-			replay_mark_pending_commandbuffer(index_to_VkCommandBuffer.index(pSubmits[i].pCommandBufferInfos[j].commandBuffer), queue, fence);
+			replay_mark_pending_commandbuffer(cb.reader, index_to_VkCommandBuffer.index(pSubmits[i].pCommandBufferInfos[j].commandBuffer), queue, fence);
 		}
 	}
 }
@@ -1304,6 +1336,32 @@ void replay_callback_vkQueueSubmit2(callback_context& cb, VkQueue queue, uint32_
 void replay_callback_vkQueueSubmit2KHR(callback_context& cb, VkQueue queue, uint32_t submitCount, const VkSubmitInfo2* pSubmits, VkFence fence)
 {
 	replay_callback_vkQueueSubmit2(cb, queue, submitCount, pSubmits, fence);
+}
+
+void replay_pre_vkQueueWaitIdle(lava_file_reader& reader, VkQueue queue)
+{
+	const uint32_t queue_index = index_to_VkQueue.index_or_invalid(queue);
+	replay_cli_publish_object_wait(reader, cli_thread_state::wait_queue_idle, VK_OBJECT_TYPE_QUEUE, queue_index);
+}
+
+void replay_pre_vkDeviceWaitIdle(lava_file_reader& reader, VkDevice device)
+{
+	const uint32_t device_index = index_to_VkDevice.index_or_invalid(device);
+	replay_cli_publish_object_wait(reader, cli_thread_state::wait_device_idle, VK_OBJECT_TYPE_DEVICE, device_index);
+}
+
+void replay_pre_vkWaitForFences(lava_file_reader& reader, VkDevice device, uint32_t fenceCount, const VkFence* pFences, VkBool32 waitAll,
+	uint64_t timeout)
+{
+	(void)device;
+	(void)waitAll;
+	(void)timeout;
+	uint32_t fence_index = CONTAINER_INVALID_INDEX;
+	if (pFences && fenceCount > 0)
+	{
+		fence_index = index_to_VkFence.index_or_invalid(pFences[0]);
+	}
+	replay_cli_publish_object_wait(reader, cli_thread_state::wait_fence, VK_OBJECT_TYPE_FENCE, fence_index);
 }
 
 void replay_callback_vkQueueBindSparse(callback_context& cb, VkQueue queue, uint32_t bindInfoCount, const VkBindSparseInfo* pBindInfo, VkFence fence)
@@ -1320,6 +1378,7 @@ void replay_callback_vkQueueBindSparse(callback_context& cb, VkQueue queue, uint
 
 void replay_callback_vkQueueWaitIdle(callback_context& cb, VkQueue queue)
 {
+	replay_cli_clear_object_wait(cb.reader, cli_thread_state::wait_queue_idle);
 	if (!cb.reader.run || cb.result.vkresult != VK_SUCCESS) return;
 	for (uint32_t commandbuffer_index = 1; commandbuffer_index < VkCommandBuffer_index.size(); commandbuffer_index++)
 	{
@@ -1334,6 +1393,7 @@ void replay_callback_vkQueueWaitIdle(callback_context& cb, VkQueue queue)
 
 void replay_callback_vkDeviceWaitIdle(callback_context& cb, VkDevice device)
 {
+	replay_cli_clear_object_wait(cb.reader, cli_thread_state::wait_device_idle);
 	if (!cb.reader.run || cb.result.vkresult != VK_SUCCESS) return;
 	for (uint32_t commandbuffer_index = 1; commandbuffer_index < VkCommandBuffer_index.size(); commandbuffer_index++)
 	{
@@ -1366,6 +1426,7 @@ void replay_callback_vkResetFences(callback_context& cb, VkDevice device, uint32
 void replay_callback_vkWaitForFences(callback_context& cb, VkDevice device, uint32_t fenceCount, const VkFence* pFences, VkBool32 waitAll, uint64_t timeout)
 {
 	(void)timeout;
+	replay_cli_clear_object_wait(cb.reader, cli_thread_state::wait_fence);
 	if (!cb.reader.run || !pFences) return;
 	if (waitAll)
 	{

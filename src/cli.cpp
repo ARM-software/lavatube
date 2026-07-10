@@ -30,6 +30,7 @@ void usage()
 	printf("    status                   Show replay state. Outputs RUNNING, DONE, PAUSED, or current paused packet/call.\n");
 	printf("    continue                 Resume replay and wait until completion.\n");
 	printf("    stop                     Stop the replay.\n");
+	printf("    diagnose deadlock        Detect replay thread wait cycles and blocking GPU waits.\n");
 	printf("    set debug LEVEL          Set replay debug level (zero is the least verbose) [0,1,2,3].\n");
 	printf("    set blackhole BOOL       Set replay blackhole mode (submit empty commandbuffers) [true,false].\n");
 	printf("    thread INDEX             Select which traced thread receives step and goto commands.\n");
@@ -52,7 +53,7 @@ void usage()
 	printf("    info suballocator        Print current suballocator heap internals.\n");
 	printf("    info                     Print general service info.\n");
 	printf("\n");
-	printf("    Long running commands keep 'status', 'info threads', and 'stop' responsive; other concurrent commands fail.\n");
+	printf("    Long running commands keep 'status', 'info threads', 'diagnose deadlock', and 'stop' responsive; other concurrent commands fail.\n");
 	exit(-1);
 }
 

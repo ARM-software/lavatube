@@ -32,6 +32,7 @@
 #include "tostring.h"
 #include "trace_metadata.h"
 #include "suballocator.h"
+#include "replay_diagnostics.h"
 
 static lava_reader replayer;
 static std::atomic<bool> done_var { false };
@@ -193,32 +194,6 @@ static std::string cli_suballocator_info_response()
 	return response;
 }
 
-static const char* cli_thread_state_name(cli_thread_state state)
-{
-	switch (state)
-	{
-		case cli_thread_state::not_started: return "not_started";
-		case cli_thread_state::running: return "running";
-		case cli_thread_state::cli_paused: return "cli_paused";
-		case cli_thread_state::wait_handle: return "wait_handle";
-		case cli_thread_state::wait_barrier: return "wait_barrier";
-		case cli_thread_state::terminated: return "terminated";
-		default: return "unknown";
-	}
-}
-
-static std::string cli_thread_wait_description(lava_file_reader& reader, cli_thread_state state)
-{
-	if (state != cli_thread_state::wait_barrier && state != cli_thread_state::wait_handle) return "";
-
-	const int wait_thread = reader.cli_wait_thread.load(std::memory_order_relaxed);
-	const uint32_t wait_packet = reader.cli_wait_packet.load(std::memory_order_relaxed);
-	if (wait_thread < 0 || wait_thread >= (int)replayer.threads.size() || wait_packet == UINT32_MAX) return "";
-
-	const char* wait_type = state == cli_thread_state::wait_barrier ? "barrier" : "handle";
-	return std::string(wait_type) + ": thread " + std::to_string(wait_thread) + ", packet " + std::to_string(wait_packet);
-}
-
 static bool cli_thread_quiescent(lava_file_reader& reader)
 {
 	if (reader.terminated.load(std::memory_order_acquire)) return true;
@@ -227,6 +202,9 @@ static bool cli_thread_quiescent(lava_file_reader& reader)
 	       || state == cli_thread_state::cli_paused
 	       || state == cli_thread_state::wait_handle
 	       || state == cli_thread_state::wait_barrier
+	       || state == cli_thread_state::wait_fence
+	       || state == cli_thread_state::wait_queue_idle
+	       || state == cli_thread_state::wait_device_idle
 	       || state == cli_thread_state::terminated;
 }
 
@@ -461,6 +439,7 @@ static bool cli_command_bypasses_active(const std::vector<std::string>& command)
 {
 	if (command.size() == 1 && command[0] == "status") return true;
 	if (command.size() == 1 && command[0] == "stop") return true;
+	if (command.size() == 2 && command[0] == "diagnose" && command[1] == "deadlock") return true;
 	if (command.size() == 2 && command[0] == "info" && command[1] == "threads") return true;
 	return false;
 }
@@ -511,6 +490,10 @@ static std::string service_command_response(const std::vector<std::string>& comm
 		done_var.store(true, std::memory_order_release);
 		done_var.notify_all();
 		response = "OK\n";
+	}
+	else if (command.size() == 2 && command[0] == "diagnose" && command[1] == "deadlock")
+	{
+		response = replay_diagnostics_deadlock_response(replayer);
 	}
 	else if (command.size() == 2 && command[0] == "thread")
 	{
@@ -695,24 +678,7 @@ static std::string service_command_response(const std::vector<std::string>& comm
 	}
 	else if (command.size() == 2 && command[0] == "info" && command[1] == "threads") // list thread info
 	{
-		data_table out;
-		const int current_thread = replayer.cli_thread.load(std::memory_order_acquire);
-		out.set_headers({"Thread", "Current", "Name", "State", "Packet", "Waiting On"});
-		for (unsigned i = 0; i < replayer.threads.size(); i++)
-		{
-			lava_file_reader& reader = replayer.file_reader(i);
-			const char* thread_name = reader.get_trace_thread_name();
-			const cli_thread_state state = reader.cli_state.load(std::memory_order_acquire);
-			out.add_row({
-				std::to_string(i),
-				current_thread >= 0 && i == (unsigned)current_thread ? "*" : "",
-				thread_name,
-				cli_thread_state_name(state),
-				std::to_string(reader.cli_packet.load(std::memory_order_relaxed)),
-				cli_thread_wait_description(reader, state)
-			});
-		}
-		response = out.to_markdown();
+		response = replay_diagnostics_threads_response(replayer);
 	}
 	else if (command.size() == 2 && command[0] == "info" && command[1] == "memory")
 	{

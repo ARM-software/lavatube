@@ -554,7 +554,7 @@ add_lavatube_test(write_test_5 COMMAND write5)
 
 # --- lava-replay ---
 
-add_executable(lava-replay src/replay.cpp src/trace_metadata.cpp src/trace_metadata.h)
+add_executable(lava-replay src/replay.cpp src/replay_diagnostics.cpp src/replay_diagnostics.h src/trace_metadata.cpp src/trace_metadata.h)
 target_include_directories(lava-replay ${COMMON_INCLUDE})
 target_link_libraries(lava-replay ${COMMON_LIBRARIES} lavatube)
 target_compile_options(lava-replay PRIVATE ${COMMON_FLAGS})
