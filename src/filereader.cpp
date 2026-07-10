@@ -206,7 +206,7 @@ void file_reader::decompressor()
 	{
 		// Throttle unless the replayer is blocked waiting for data (needed_write_position > write_position),
 		// which can happen when a packet spans more than one chunk in one-chunk-ahead mode.
-		while (true)
+		while (!done_decompressing)
 		{
 			const size_t active_preload = preload_activated.load(std::memory_order_relaxed) ? fixed_preload : 0;
 			const size_t preload_size = active_preload > 0 ? active_preload : last_chunk_uncompressed_size;
@@ -218,6 +218,7 @@ void file_reader::decompressor()
 			}
 			usleep(1000); // we're too far ahead and replayer is not blocked
 		}
+		if (done_decompressing) break;
 		decompress_chunk();
 	}
 
