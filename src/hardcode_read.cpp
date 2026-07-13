@@ -2232,6 +2232,27 @@ static void replay_pre_vkDestroySurfaceKHR(lava_file_reader& reader, VkInstance 
 	}
 }
 
+static void destroy_virtual_present_semaphores(VkDevice device, trackedswapchain_replay& data)
+{
+	for (VkSemaphore semaphore : data.virtual_semaphores)
+	{
+		if (semaphore != VK_NULL_HANDLE) wrap_vkDestroySemaphore(device, semaphore, nullptr);
+	}
+	data.virtual_semaphores.clear();
+}
+
+static void create_virtual_present_semaphores(VkDevice device, trackedswapchain_replay& data, uint32_t count)
+{
+	assert(data.virtual_semaphores.empty());
+	VkSemaphoreCreateInfo info = { VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO, nullptr, 0 };
+	data.virtual_semaphores.resize(count);
+	for (uint32_t i = 0; i < count; i++)
+	{
+		const VkResult result = wrap_vkCreateSemaphore(device, &info, nullptr, &data.virtual_semaphores[i]);
+		assert(result == VK_SUCCESS);
+	}
+}
+
 static void replay_pre_vkDestroySwapchainKHR(lava_file_reader& reader, VkDevice device, VkSwapchainKHR swapchain, const VkAllocationCallbacks* pAllocator)
 {
 	trackedswapchain_replay& t = VkSwapchainKHR_index.at(index_to_VkSwapchainKHR.index(swapchain));
@@ -2260,7 +2281,7 @@ static void replay_pre_vkDestroySwapchainKHR(lava_file_reader& reader, VkDevice 
 	if (t.virtual_cmdpool != VK_NULL_HANDLE) wrap_vkResetCommandPool(device, t.virtual_cmdpool, VK_COMMAND_POOL_RESET_RELEASE_RESOURCES_BIT);
 	if (t.virtual_cmdpool != VK_NULL_HANDLE) wrap_vkFreeCommandBuffers(device, t.virtual_cmdpool, t.virtual_cmdbuffers.size(), t.virtual_cmdbuffers.data());
 	wrap_vkDestroyCommandPool(device, t.virtual_cmdpool, nullptr);
-	wrap_vkDestroySemaphore(device, t.virtual_semaphore, nullptr);
+	destroy_virtual_present_semaphores(device, t);
 }
 
 void replay_callback_vkSubmitDebugUtilsMessageEXT(callback_context& cb,
@@ -2715,10 +2736,14 @@ void replay_callback_vkAcquireNextImageKHR(callback_context& cb, VkDevice device
 	(void)timeout;
 	(void)semaphore;
 	(void)fence;
-	if (cb.result.vkresult == VK_INCOMPLETE || !pImageIndex) return;
+	if ((cb.result.vkresult != VK_SUCCESS && cb.result.vkresult != VK_SUBOPTIMAL_KHR) || !pImageIndex) return;
+	if (!is_virtualswapchain()) return;
 	const uint32_t swapchainkhr_index = index_to_VkSwapchainKHR.index(swapchain);
 	if (swapchainkhr_index == CONTAINER_INVALID_INDEX) return;
-	const uint32_t next_image = VkSwapchainKHR_index.at(swapchainkhr_index).next_swapchain_image;
+	auto& data = VkSwapchainKHR_index.at(swapchainkhr_index);
+	const uint32_t next_image = data.next_swapchain_image;
+	assert(data.next_stored_image < data.acquired_real_image_indices.size());
+	data.acquired_real_image_indices[data.next_stored_image] = next_image;
 	DLOG("Acquired next swapchain image index=%u (stored next image was %u), returned %s", next_image, *pImageIndex, errorString(cb.result.vkresult));
 	assert(is_virtualswapchain() || next_image == *pImageIndex);
 }
@@ -2726,10 +2751,14 @@ void replay_callback_vkAcquireNextImageKHR(callback_context& cb, VkDevice device
 void replay_callback_vkAcquireNextImage2KHR(callback_context& cb, VkDevice device, const VkAcquireNextImageInfoKHR* pAcquireInfo, uint32_t* pImageIndex)
 {
 	(void)device;
-	if (cb.result.vkresult == VK_INCOMPLETE || !pAcquireInfo || !pImageIndex) return;
+	if ((cb.result.vkresult != VK_SUCCESS && cb.result.vkresult != VK_SUBOPTIMAL_KHR) || !pAcquireInfo || !pImageIndex) return;
+	if (!is_virtualswapchain()) return;
 	const uint32_t swapchainkhr_index = index_to_VkSwapchainKHR.index(pAcquireInfo->swapchain);
 	if (swapchainkhr_index == CONTAINER_INVALID_INDEX) return;
-	const uint32_t next_image = VkSwapchainKHR_index.at(swapchainkhr_index).next_swapchain_image;
+	auto& data = VkSwapchainKHR_index.at(swapchainkhr_index);
+	const uint32_t next_image = data.next_swapchain_image;
+	assert(data.next_stored_image < data.acquired_real_image_indices.size());
+	data.acquired_real_image_indices[data.next_stored_image] = next_image;
 	DLOG("Acquired next swapchain image index=%u (stored next image was %u), returned %s", next_image, *pImageIndex, errorString(cb.result.vkresult));
 	assert(is_virtualswapchain() || next_image == *pImageIndex);
 }
@@ -2762,6 +2791,8 @@ static VkSwapchainKHR remake_swapchain(lava_file_reader& reader, VkQueue queue, 
 	VkSwapchainKHR swapchain;
 	VkResult r = wrap_vkCreateSwapchainKHR(data->device, &s, nullptr, &swapchain);
 	assert(r == VK_SUCCESS);
+	r = wrap_vkQueueWaitIdle(queue);
+	assert(r == VK_SUCCESS);
 	// delete old one
 	const uint32_t old_swapchainkhr_index = index_to_VkSwapchainKHR.index(old_swapchain);
 	wrap_vkDestroySwapchainKHR(data->device, old_swapchain, nullptr);
@@ -2773,6 +2804,8 @@ static VkSwapchainKHR remake_swapchain(lava_file_reader& reader, VkQueue queue, 
 	data->pSwapchainImages.resize(swapchainImageCount);
 	r = wrap_vkGetSwapchainImagesKHR(data->device, swapchain, &swapchainImageCount, data->pSwapchainImages.data());
 	assert(r == VK_SUCCESS);
+	destroy_virtual_present_semaphores(data->device, *data);
+	create_virtual_present_semaphores(data->device, *data, swapchainImageCount);
 	(void)r;
 	return swapchain;
 }
@@ -2790,33 +2823,37 @@ void replay_pre_vkQueuePresentKHR(lava_file_reader& reader, VkQueue queue, VkPre
 	if (is_virtualswapchain())
 	{
 		VkResult result;
-		VkSemaphore* semaphores = reader.pool.allocate<VkSemaphore>(pPresentInfo->waitSemaphoreCount + pPresentInfo->swapchainCount);
-		for (uint32_t i = 0; i < pPresentInfo->waitSemaphoreCount; i++) semaphores[i] = pPresentInfo->pWaitSemaphores[i];
-		uint32_t extra_waits = 0;
+		const uint32_t present_wait_count = pPresentInfo->waitSemaphoreCount;
+		const VkSemaphore* present_wait_semaphores = pPresentInfo->pWaitSemaphores;
+		VkPipelineStageFlags* copy_wait_stages = reader.pool.allocate<VkPipelineStageFlags>(present_wait_count);
+		for (uint32_t i = 0; i < present_wait_count; i++) copy_wait_stages[i] = VK_PIPELINE_STAGE_TRANSFER_BIT;
+		VkSemaphore* copy_complete_semaphore = reader.pool.allocate<VkSemaphore>(1);
 		for (uint32_t i = 0; i < pPresentInfo->swapchainCount; i++)
 		{
 			const uint32_t swapchainkhr_index = index_to_VkSwapchainKHR.index(pPresentInfo->pSwapchains[i]);
 			auto& data = VkSwapchainKHR_index.at(swapchainkhr_index);
+			const uint32_t stored_image_index = pPresentInfo->pImageIndices[i];
+			assert(stored_image_index < data.acquired_real_image_indices.size());
+			const uint32_t swapchain_image_index = data.acquired_real_image_indices[stored_image_index];
+			assert(swapchain_image_index != CONTAINER_INVALID_INDEX);
 			// check that commandbuffer is actually available (this SHOULD be a noop!)
-			if (data.inflight.at(data.next_stored_image))
+			if (data.inflight.at(stored_image_index))
 			{
-				result = wrap_vkWaitForFences(data.device, 1, &data.virtual_fences[data.next_stored_image], VK_TRUE, 0);
+				result = wrap_vkWaitForFences(data.device, 1, &data.virtual_fences[stored_image_index], VK_TRUE, 0);
 				if (result != VK_SUCCESS)
 				{
-					ELOG("Fence was not ready for commandbuffer %u", data.next_stored_image);
-					result = wrap_vkWaitForFences(data.device, 1, &data.virtual_fences[data.next_stored_image], VK_TRUE, UINT64_MAX);
+					ELOG("Fence was not ready for commandbuffer %u", stored_image_index);
+					result = wrap_vkWaitForFences(data.device, 1, &data.virtual_fences[stored_image_index], VK_TRUE, UINT64_MAX);
 					assert(result == VK_SUCCESS);
 				}
-				result = wrap_vkResetFences(data.device, 1, &data.virtual_fences[data.next_stored_image]);
+				result = wrap_vkResetFences(data.device, 1, &data.virtual_fences[stored_image_index]);
 				assert(result == VK_SUCCESS);
 			}
-			data.inflight[data.next_stored_image] = true; // now using it, if we weren't already
+			data.inflight[stored_image_index] = true; // now using it, if we weren't already
 			// copy virtual -> real
-			semaphores[pPresentInfo->waitSemaphoreCount + extra_waits] = data.virtual_semaphore;
-			extra_waits++;
 			VkCommandBufferBeginInfo command_buffer_begin_info = {};
 			command_buffer_begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-			result = wrap_vkBeginCommandBuffer(data.virtual_cmdbuffers[data.next_stored_image], &command_buffer_begin_info);
+			result = wrap_vkBeginCommandBuffer(data.virtual_cmdbuffers[stored_image_index], &command_buffer_begin_info);
 			assert(result == VK_SUCCESS);
 			std::vector<VkImageMemoryBarrier> image_barriers(2);
 			VkImageMemoryBarrier& image_barrier_src = image_barriers.at(0);
@@ -2837,11 +2874,11 @@ void replay_pre_vkQueuePresentKHR(lava_file_reader& reader, VkQueue queue, VkPre
 			image_barrier_src.dstQueueFamilyIndex = selected_queue_family_index;
 			image_barrier_dst.srcQueueFamilyIndex = selected_queue_family_index;
 			image_barrier_dst.dstQueueFamilyIndex = selected_queue_family_index;
-			image_barrier_src.image = data.virtual_images[data.next_stored_image];
-			image_barrier_dst.image = data.pSwapchainImages[data.next_swapchain_image];
+			image_barrier_src.image = data.virtual_images[stored_image_index];
+			image_barrier_dst.image = data.pSwapchainImages[swapchain_image_index];
 			image_barrier_src.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, VK_REMAINING_MIP_LEVELS, 0, VK_REMAINING_ARRAY_LAYERS };
 			image_barrier_dst.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, VK_REMAINING_MIP_LEVELS, 0, VK_REMAINING_ARRAY_LAYERS };
-			wrap_vkCmdPipelineBarrier(data.virtual_cmdbuffers[data.next_stored_image], VK_PIPELINE_STAGE_TRANSFER_BIT,
+			wrap_vkCmdPipelineBarrier(data.virtual_cmdbuffers[stored_image_index], VK_PIPELINE_STAGE_TRANSFER_BIT,
 				VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, 0, 0, NULL, 0, NULL, image_barriers.size(), image_barriers.data());
 			if (!p__virtualperfmode) // actually do the copy if not in performance mode
 			{
@@ -2849,35 +2886,45 @@ void replay_pre_vkQueuePresentKHR(lava_file_reader& reader, VkQueue queue, VkPre
 				memory_barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
 				memory_barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
 				memory_barrier.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-				wrap_vkCmdCopyImage(data.virtual_cmdbuffers[data.next_stored_image], data.virtual_images[data.next_stored_image], VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-					data.pSwapchainImages[data.next_swapchain_image], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &data.virtual_image_copy_region);
+				wrap_vkCmdCopyImage(data.virtual_cmdbuffers[stored_image_index], data.virtual_images[stored_image_index], VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+					data.pSwapchainImages[swapchain_image_index], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &data.virtual_image_copy_region);
 			}
 			image_barrier_dst.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
 			image_barrier_src.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
 			image_barrier_src.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR; // TBD could also be VK_IMAGE_LAYOUT_SHARED_PRESENT_KHR
 			image_barrier_dst.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
 			image_barrier_dst.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR; // TBD could also be VK_IMAGE_LAYOUT_SHARED_PRESENT_KHR
-			wrap_vkCmdPipelineBarrier(data.virtual_cmdbuffers[data.next_stored_image], VK_PIPELINE_STAGE_TRANSFER_BIT,
+			wrap_vkCmdPipelineBarrier(data.virtual_cmdbuffers[stored_image_index], VK_PIPELINE_STAGE_TRANSFER_BIT,
 				VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, 0, 0, NULL, 0, NULL, image_barriers.size(), image_barriers.data());
-			result = wrap_vkEndCommandBuffer(data.virtual_cmdbuffers[data.next_stored_image]);
+			result = wrap_vkEndCommandBuffer(data.virtual_cmdbuffers[stored_image_index]);
 			assert(result == VK_SUCCESS);
-			DLOG("Presenting with virtual swapchain image index %u(0x%lx) instead of real swapchain image %u(0x%lx) on swapchain %lx", data.next_swapchain_image,
-				(unsigned long)data.virtual_images[data.next_stored_image], pPresentInfo->pImageIndices[i], (unsigned long)data.pSwapchainImages[data.next_swapchain_image],
+			DLOG("Presenting with virtual swapchain image index %u(0x%lx) instead of real swapchain image %u(0x%lx) on swapchain %lx", stored_image_index,
+				(unsigned long)data.virtual_images[stored_image_index], swapchain_image_index, (unsigned long)data.pSwapchainImages[swapchain_image_index],
 				(unsigned long)pPresentInfo->pSwapchains[i]);
 			// replace with virtual swapchain image
-			const_cast<uint32_t*>(pPresentInfo->pImageIndices)[i] = data.next_swapchain_image;
+			const_cast<uint32_t*>(pPresentInfo->pImageIndices)[i] = swapchain_image_index;
 
 			VkSubmitInfo submit = {};
 			submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+			if (i == 0)
+			{
+				submit.waitSemaphoreCount = present_wait_count;
+				submit.pWaitSemaphores = present_wait_semaphores;
+				submit.pWaitDstStageMask = copy_wait_stages;
+			}
 			submit.commandBufferCount = 1;
-			submit.pCommandBuffers = &data.virtual_cmdbuffers[data.next_stored_image];
-			submit.signalSemaphoreCount = 1;
-			submit.pSignalSemaphores = &data.virtual_semaphore;
-			result = wrap_vkQueueSubmit(queue, 1, &submit, data.virtual_fences[data.next_stored_image]);
+			submit.pCommandBuffers = &data.virtual_cmdbuffers[stored_image_index];
+			if (i == pPresentInfo->swapchainCount - 1)
+			{
+				copy_complete_semaphore[0] = data.virtual_semaphores[stored_image_index];
+				submit.signalSemaphoreCount = 1;
+				submit.pSignalSemaphores = copy_complete_semaphore;
+			}
+			result = wrap_vkQueueSubmit(queue, 1, &submit, data.virtual_fences[stored_image_index]);
 			assert(result == VK_SUCCESS);
 		}
-		pPresentInfo->waitSemaphoreCount = pPresentInfo->waitSemaphoreCount + extra_waits;
-		pPresentInfo->pWaitSemaphores = semaphores;
+		pPresentInfo->waitSemaphoreCount = 1;
+		pPresentInfo->pWaitSemaphores = copy_complete_semaphore;
 	}
 	else
 	{
@@ -4400,6 +4447,7 @@ void retrace_vkGetSwapchainImagesKHR(lava_file_reader& reader)
 		pinfo.queueFamilyIndexCount = selected_queue_family_index;
 		pinfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 		data.virtual_images.resize(stored_image_count);
+		data.acquired_real_image_indices.resize(stored_image_count, CONTAINER_INVALID_INDEX);
 		for (unsigned i = 0; i < stored_image_count; i++)
 		{
 			result = wrap_vkCreateImage(device, &pinfo, nullptr, &data.virtual_images[i]);
@@ -4436,10 +4484,8 @@ void retrace_vkGetSwapchainImagesKHR(lava_file_reader& reader)
 			result = wrap_vkCreateFence(device, &fenceinfo, nullptr, &data.virtual_fences[i]);
 			assert(result == VK_SUCCESS);
 		}
-		// Make shared semaphore
-		VkSemaphoreCreateInfo semainfo = { VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO, nullptr, 0 };
-		result = wrap_vkCreateSemaphore(device, &semainfo, nullptr, &data.virtual_semaphore);
-		assert(result == VK_SUCCESS);
+		// Reacquiring a real image guarantees that presentation consumed its previous wait semaphore.
+		create_virtual_present_semaphores(device, data, data.pSwapchainImages.size());
 		// Make virtual image commandbuffers
 		VkCommandPoolCreateInfo command_pool_create_info = {};
 		command_pool_create_info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;

@@ -25,8 +25,7 @@ Remaining todo list:
 
 ## Implementation
 
-We interface directly with chatgpt using `libcurl` using a JSON format with the OpenAI
-response interface.
+We interface directly with models using `libcurl` and the OpenAI response JSON format.
 
 We need to efficiently describe the actions that the agent can take and respond with, and
 even more efficiently trim down any information provided to avoid overwhelming the agent
@@ -64,7 +63,9 @@ The routing question should provide a JSON response that gives `routing` recomme
 vs `cloud`), floating-point `confidence`, and a `reason` very brief free text. Then `lava-tui`
 can use this to decide where to send the request using a confidence threshold that overrides to
 cloud model by default for now (until we get more confidence with the local model). We should
-print in the transcript which model did respond along with the confidence and reason.
+print this as metadata (ie not part of chat history) in the transcript view which model did
+respond along with the confidence and reason. The router should also check if the user
+explicitly requests either a local or cloud response.
 
 New user settings (with defaults):
 ```
@@ -73,7 +74,37 @@ LAVATUI_LOCAL_MODEL=gemma4:latest
 LAVATUI_CLOUD_BASE_URL=https://api.openai.com/v1
 LAVATUI_CLOUD_MODEL=gpt-5.5
 LAVATUI_CLOUD_REASONING=low
+LAVATUI_LLM_MODE=routed
 ```
 
+New user settings with no defaults:
+```
+LAVATUI_LOCAL_API_KEY=...
+LAVATUI_CLOUD_API_KEY=...
+```
+
+If `LAVATUI_LLM_MODE` is set to `routed` we route between local and cloud models. Otherwise
+it is set to either `local` or `cloud`. If mode is not set, but we have settings for both models,
+we assume `routed`. If we only have settings for one model, we use that one. The user should be
+able to switch on-the-fly between the three settings by typing `/local`, `/cloud` or `/routed`.
+
+`LAVATUI_LOCAL_API_KEY` must be set to `ollama` for local models for now.
+
 Since this is still just an experiment, we do not need to care about backwards compatibility
-for users, nor support setups that do not have both local and cloud models.
+for users. We want to abort on errors with clear error messages so we can fix them rather than
+try to work around them.
+
+### Architecture
+
+```
+tui_component -> tui_llm_router -> tui_llm_client
+                                -> local responses client
+                                -> cloud responses client
+```
+
+### Implementation steps
+
+A first step could be to change the environment variables and implement an on-the-fly user switch
+between cloud and local.
+
+Then as a later second step we can implement the routing option.

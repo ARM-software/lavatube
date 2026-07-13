@@ -587,10 +587,11 @@ struct trackedswapchain_replay : trackedswapchain
 	VkSwapchainKHR swapchain = VK_NULL_HANDLE;
 	uint32_t next_swapchain_image = 0;
 	uint32_t next_stored_image = 0;
+	std::vector<uint32_t> acquired_real_image_indices;
 	std::vector<VkImage> virtual_images;
 	std::vector<VkCommandBuffer> virtual_cmdbuffers;
 	VkCommandPool virtual_cmdpool = VK_NULL_HANDLE;
-	VkSemaphore virtual_semaphore = VK_NULL_HANDLE;
+	std::vector<VkSemaphore> virtual_semaphores;
 	VkImageCopy virtual_image_copy_region = {};
 	std::vector<VkFence> virtual_fences;
 	std::vector<bool> inflight; // is this entry in use already
@@ -605,7 +606,8 @@ struct trackedswapchain_replay : trackedswapchain
 		if (p__virtualswap)
 		{
 			assert(virtual_cmdpool != VK_NULL_HANDLE);
-			assert(virtual_semaphore != VK_NULL_HANDLE);
+			assert(virtual_semaphores.size() == pSwapchainImages.size());
+			for (const auto& v : virtual_semaphores) { assert(v != VK_NULL_HANDLE); (void)v; }
 			for (const auto& v : virtual_cmdbuffers) { assert(v != VK_NULL_HANDLE); (void)v; }
 			for (const auto& v : virtual_images) { assert(v != VK_NULL_HANDLE); (void)v; }
 			for (const auto& v : virtual_fences) { assert(v != VK_NULL_HANDLE); (void)v; }
@@ -994,6 +996,7 @@ struct trackedqueue : trackable
 	bool explicit_host_updates = false;
 	bool internally_synchronized_queues = false;
 	std::vector<replay_frame_boundary> replay_frame_boundaries;
+	std::vector<uint32_t> replay_unfenced_pending_commandbuffers;
 
 	void self_test() const
 	{
