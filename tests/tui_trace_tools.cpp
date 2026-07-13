@@ -16,6 +16,9 @@
 #include "tui_trace_tools.h"
 #include "util.h"
 
+#pragma GCC diagnostic ignored "-Wunused-variable"
+#pragma GCC diagnostic ignored "-Wunused-function"
+
 struct fake_service_state
 {
 	int listen_fd = -1;

@@ -16,6 +16,9 @@
 #include "markings.h"
 #include "suballocator.h"
 
+#pragma GCC diagnostic ignored "-Wunused-variable"
+#pragma GCC diagnostic ignored "-Wunused-function"
+
 struct simulator_buffer_range
 {
 	const void* base_ptr = nullptr;
