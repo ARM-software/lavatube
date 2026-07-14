@@ -43,6 +43,13 @@ enum class cli_thread_state : uint8_t
 	wait_device_idle = 7,
 	terminated = 8,
 };
+
+enum class cli_instrument_mode : uint8_t
+{
+	none = 0,
+	whole = 1,
+	detailed = 2,
+};
 using lava_markings_observer = void (*)(const change_source&, const VkMarkedOffsetsARM*, void*);
 
 extern lava::mutex sync_mutex;
@@ -238,6 +245,10 @@ public:
 	std::atomic_bool cli_pipeline_executable_stats_enabled{ false };
 	bool cli_memory_budget_requested = false;
 	std::atomic_bool cli_memory_budget_enabled{ false };
+	bool cli_shader_instrumentation_requested = false;
+	std::atomic_bool cli_shader_instrumentation_enabled{ false };
+	std::atomic<cli_instrument_mode> cli_instrument_requested{ cli_instrument_mode::none };
+	std::atomic_bool cli_instrument_ready{ false };
 
 private:
 	/// Start time of frame range

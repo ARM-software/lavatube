@@ -33,6 +33,7 @@
 #include "trace_metadata.h"
 #include "suballocator.h"
 #include "replay_diagnostics.h"
+#include "replay_instrumentation.h"
 
 static lava_reader replayer;
 static std::atomic<bool> done_var { false };
@@ -527,6 +528,40 @@ static std::string service_command_response(const std::vector<std::string>& comm
 			response = "ERROR\n";
 		}
 	}
+	else if (command[0] == "instrument")
+	{
+		cli_instrument_mode mode = cli_instrument_mode::whole;
+		if (command.size() == 2 && command[1] == "detailed") mode = cli_instrument_mode::detailed;
+		else if (command.size() != 1)
+		{
+			response = "ERROR expected 'instrument' or 'instrument detailed'\n";
+		}
+		if (response.empty() && (!cli_thread_ready() || replayer.cli_running.load(std::memory_order_acquire)))
+		{
+			response = "ERROR replay is not paused on a selected thread\n";
+		}
+		if (response.empty())
+		{
+			lava_file_reader& reader = replayer.file_reader(replayer.cli_thread.load(std::memory_order_acquire));
+			if (!cli_has_paused_command(reader) || reader.current.packet_type != PACKET_VULKAN_API_CALL || reader.current.call_id != VKBEGINCOMMANDBUFFER)
+			{
+				response = "ERROR instrument requires a pause on vkBeginCommandBuffer\n";
+			}
+			else
+			{
+				const std::string idle_response = cli_wait_for_quiescence_and_idle();
+				if (idle_response != "OK\n") response = idle_response;
+				else
+				{
+					replayer.cli_response.clear();
+					replayer.cli_instrument_ready.store(false, std::memory_order_release);
+					replayer.cli_instrument_requested.store(mode, std::memory_order_release);
+					replayer.cli_instrument_ready.wait(false);
+					response = replayer.cli_response.empty() ? "ERROR instrumentation request failed\n" : replayer.cli_response;
+				}
+			}
+		}
+	}
 	else if (command[0] == "step")
 	{
 		uint32_t count = 1;
@@ -656,6 +691,17 @@ static std::string service_command_response(const std::vector<std::string>& comm
 				replayer.cli_params_ready.wait(false);
 				response = replayer.cli_response.empty() ? "ERROR\n" : replayer.cli_response;
 			}
+		}
+	}
+	else if (command.size() == 3 && command[0] == "show" && command[1] == "instrumentation")
+	{
+		uint32_t index = 0;
+		if (replayer.cli_running.load(std::memory_order_acquire)) response = "ERROR replay is running\n";
+		else if (!parse_u32(command[2], index)) response = "ERROR invalid command buffer index\n";
+		else
+		{
+			const std::string idle_response = cli_wait_for_quiescence_and_idle();
+			response = idle_response == "OK\n" ? replay_instrumentation_show(index) : idle_response;
 		}
 	}
 	else if (command.size() == 3 && command[0] == "show")
@@ -1158,6 +1204,7 @@ int main(int argc, char **argv)
 		replayer.cli_service.store(true, std::memory_order_release);
 		replayer.cli_pipeline_executable_stats_requested = true;
 		replayer.cli_memory_budget_requested = true;
+		replayer.cli_shader_instrumentation_requested = true;
 	}
 
 	if (service)
@@ -1194,6 +1241,7 @@ int main(int argc, char **argv)
 	}
 
 	run_multithreaded();
+	replay_instrumentation_cleanup_all();
 	if (service)
 	{
 		replay_done.store(true, std::memory_order_release);

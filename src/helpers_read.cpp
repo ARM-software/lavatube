@@ -455,6 +455,8 @@ const char* const* device_extensions(VkDeviceCreateInfo* sptr, lava_file_reader&
 	bool host_has_pipeline_executable_properties = false;
 	bool host_has_pipeline_executable_info = false;
 	bool host_has_memory_budget = false;
+	bool host_has_shader_instrumentation = false;
+	bool host_has_maintenance5 = false;
 	static std::vector<const char *> dst;
 	static std::vector<std::string> backing;
 	const char* const* stored = reader.read_string_array(len); // all extensions used in original
@@ -463,6 +465,7 @@ const char* const* device_extensions(VkDeviceCreateInfo* sptr, lava_file_reader&
 	const bool use_stored_metadata = reader.run && !p__skip_remove_unused && reader.parent->has_stored_device_requested_extensions;
 	reader.parent->cli_pipeline_executable_stats_enabled.store(false, std::memory_order_release);
 	reader.parent->cli_memory_budget_enabled.store(false, std::memory_order_release);
+	reader.parent->cli_shader_instrumentation_enabled.store(false, std::memory_order_release);
 	if (reader.write_output && reader.parent->has_stored_device_requested_extensions)
 	{
 		return requested_extensions_for_output(reader.parent->stored_device_requested_extensions, len);
@@ -539,6 +542,8 @@ const char* const* device_extensions(VkDeviceCreateInfo* sptr, lava_file_reader&
 		if (strcmp(s.extensionName, VK_EXT_FRAME_BOUNDARY_EXTENSION_NAME) == 0) host_has_frame_boundary = true;
 		if (strcmp(s.extensionName, VK_KHR_PIPELINE_EXECUTABLE_PROPERTIES_EXTENSION_NAME) == 0) host_has_pipeline_executable_properties = true;
 		if (strcmp(s.extensionName, VK_EXT_MEMORY_BUDGET_EXTENSION_NAME) == 0) host_has_memory_budget = true;
+		if (strcmp(s.extensionName, VK_ARM_SHADER_INSTRUMENTATION_EXTENSION_NAME) == 0) host_has_shader_instrumentation = true;
+		if (strcmp(s.extensionName, VK_KHR_MAINTENANCE_5_EXTENSION_NAME) == 0) host_has_maintenance5 = true;
 	}
 	if (trace_has_swapchain && !has_swapchain) ABORT("No swapchain extension found - cannot proceed!");
 
@@ -638,6 +643,52 @@ const char* const* device_extensions(VkDeviceCreateInfo* sptr, lava_file_reader&
 	}
 
 	reader.parent->cli_memory_budget_enabled.store(has_memory_budget && host_has_memory_budget, std::memory_order_release);
+
+	bool has_shader_instrumentation = false;
+	bool has_maintenance5 = false;
+	for (const std::string& extension_name : backing)
+	{
+		if (extension_name == VK_ARM_SHADER_INSTRUMENTATION_EXTENSION_NAME) has_shader_instrumentation = true;
+		if (extension_name == VK_KHR_MAINTENANCE_5_EXTENSION_NAME) has_maintenance5 = true;
+	}
+	if (reader.parent->cli_shader_instrumentation_requested && host_has_shader_instrumentation && host_has_maintenance5)
+	{
+		VkPhysicalDeviceMaintenance5FeaturesKHR maintenance5_features = {
+			VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_5_FEATURES_KHR,
+			nullptr,
+			VK_FALSE
+		};
+		VkPhysicalDeviceShaderInstrumentationFeaturesARM instrumentation_features = {
+			VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_INSTRUMENTATION_FEATURES_ARM,
+			&maintenance5_features,
+			VK_FALSE
+		};
+		VkPhysicalDeviceFeatures2 features = {
+			VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
+			&instrumentation_features
+		};
+		wrap_vkGetPhysicalDeviceFeatures2(selected_physical_device, &features);
+		if (instrumentation_features.shaderInstrumentation == VK_TRUE && maintenance5_features.maintenance5 == VK_TRUE)
+		{
+			if (!has_shader_instrumentation) backing.push_back(VK_ARM_SHADER_INSTRUMENTATION_EXTENSION_NAME);
+			if (!has_maintenance5) backing.push_back(VK_KHR_MAINTENANCE_5_EXTENSION_NAME);
+			has_shader_instrumentation = true;
+			has_maintenance5 = true;
+			DLOG("Enabling shader instrumentation extension for lava-cli");
+		}
+		else
+		{
+			DLOG("Shader instrumentation feature is not supported for lava-cli");
+		}
+	}
+	else if (reader.parent->cli_shader_instrumentation_requested)
+	{
+		DLOG("Shader instrumentation extension is not supported for lava-cli");
+	}
+	reader.parent->cli_shader_instrumentation_enabled.store(
+		reader.parent->cli_shader_instrumentation_requested && has_shader_instrumentation && has_maintenance5
+		&& host_has_shader_instrumentation && host_has_maintenance5,
+		std::memory_order_release);
 
 	dst.resize(backing.size());
 	for (uint32_t i = 0; i < backing.size(); i++)

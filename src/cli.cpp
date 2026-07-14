@@ -42,6 +42,8 @@ void usage()
 	printf("\n");
 	printf("Call inspection:\n");
 	printf("    parameters               Print JSON parameters for the currently paused Vulkan call.\n");
+	printf("    instrument [detailed]    Instrument the command buffer after a paused vkBeginCommandBuffer.\n");
+	printf("    show instrumentation N   Print cached VK_ARM_shader_instrumentation data for command buffer N.\n");
 	printf("\n");
 	printf("Trace metadata:\n");
 	printf("    show TYPE INDEX          Print JSON metadata for replay object TYPE with INDEX.\n");
@@ -118,7 +120,7 @@ int main(int argc, char **argv)
 	close(fd);
 
 	printf("%s", response.c_str());
-	if (response.empty() || response == "ERROR\n" || response == "ERROR" || response == "DEVICE_LOST\n" || response == "DEVICE_LOST") return 1;
+	if (response.empty() || response.rfind("ERROR", 0) == 0 || response == "DEVICE_LOST\n" || response == "DEVICE_LOST") return 1;
 
 	return 0;
 }

@@ -242,6 +242,8 @@ struct trackeddevice : trackable
 
 	std::unordered_set<std::string> requested_device_extensions; // from app to tool
 	std::unordered_set<std::string> enabled_device_extensions; // from replay tool to driver
+	bool shader_instrumentation_enabled = false;
+	std::vector<VkShaderInstrumentationMetricDescriptionARM> shader_instrumentation_metrics;
 };
 
 /// Anything that is bound to device memory should inherit from this structure.
@@ -836,6 +838,27 @@ struct trackedcmdbuffer : trackable
 		uint32_t primitive_count = 0;
 	};
 	std::vector<raytracing_instance_use> raytracing_instance_uses;
+	struct shader_instrumentation_block
+	{
+		VkShaderInstrumentationMetricDataHeaderARM header = {};
+		std::vector<uint64_t> values;
+	};
+	struct shader_instrumentation_probe
+	{
+		VkShaderInstrumentationARM handle = VK_NULL_HANDLE;
+		change_source source;
+		bool cached = false;
+		std::vector<shader_instrumentation_block> blocks;
+	};
+	struct shader_instrumentation_session
+	{
+		bool detailed = false;
+		bool recording = false;
+		bool submitted = false;
+		bool live = true;
+		std::vector<shader_instrumentation_probe> probes;
+	};
+	std::vector<shader_instrumentation_session> shader_instrumentation_sessions;
 
 	void self_test() const
 	{

@@ -22,8 +22,6 @@ More instructions to implement - in prioritized order:
 * `lava-cli list <object type>` - list all objects of given type tracked globally and their status
 * `lava-cli save buffer|image|tensor <index> <filename>` - write exact contents of object given by index to the given filename (if bound; possibly using staging)
 * `lava-cli convert image <index> <filename.png>` - transform to linear format and write contents of image data given by index to the given filename (if bound; possibly using staging; as PNG)
-* `lava-cli instrument [detailed]` - only when on `vkBeginCommandBuffer` to instrument the commandbuffer, returns the index of the cmdbuffer
-* `lava-cli show instrumentation <cmdbuf index>` - attempt to fetch all `VK_ARM_shader_instrumentation` data from the given cmdbuffer by index (we try vkDeviceWaitIdle first to make sure data is ready)
 * `lava-cli split-cmdbuf-by-renderpass` - only when on `vkBeginCommandBuffer` to split commandbuffers by renderpasses
 * `lava-cli split-cmdbuf-by-shader` - only when on `vkBeginCommandBuffer` to split commandbuffers by shader calls
 
@@ -38,22 +36,6 @@ Guarantees that we should give:
 * Upon resumption of a command, all threads are back in pause mode.
 * We run vkDeviceWaitIdle to ensure all issued GPU work has completed.
 * Either we return DEVICE_LOST or device is intact (we check return value of vkDeviceWaitIdle before returning).
-
-## shader instrumentation
-
-Make use of [VK_ARM_shader_instrumentation](https://docs.vulkan.org/features/latest/features/proposals/VK_ARM_shader_instrumentation.html),
-there is some documentation [here](https://docs.vulkan.org/refpages/latest/refpages/source/VK_ARM_shader_instrumentation.html).
-Can test with GPU model.
-
-Inject instrumentation probe into the commandbuffer under construction, requires currently constructing a commandbuffer.
-Once the commandbuffer has been submitted, we will also inject a wait for execution to finish then print the results.
-
-We don't need to create one in advance, just create one just as we need it, unless we can reuse one from a pool. Biggest
-problem is that when we are the command we want to instrument, it is too late, we need to do it on the command _before_,
-hence we just instrument every draw or dispatch in the entire commandbuffer.
-
-By default entire commandbuffer is instrumented in one measurement, but if 'detailed' is added then each dispatch or draw
-is instrumented separately; references to instrumentations are stored in the commandbuffer meta object.
 
 ## Binaries
 

@@ -2,6 +2,7 @@
 // and not compiled as a separate unit.
 
 #include "markings.h"
+#include "replay_instrumentation.h"
 
 #ifndef VK_ANDROID_FRAME_BOUNDARY_EXTENSION_NAME
 #define VK_ANDROID_FRAME_BOUNDARY_EXTENSION_NAME "VK_ANDROID_frame_boundary"
@@ -350,6 +351,36 @@ static void replay_enable_pipeline_executable_info_feature(lava_file_reader& rea
 	features = reader.pool.allocate<VkPhysicalDevicePipelineExecutablePropertiesFeaturesKHR>(1);
 	*features = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PIPELINE_EXECUTABLE_PROPERTIES_FEATURES_KHR, const_cast<void*>(pCreateInfo->pNext), VK_TRUE };
 	pCreateInfo->pNext = features;
+}
+
+static void replay_enable_shader_instrumentation_feature(lava_file_reader& reader, VkDeviceCreateInfo* pCreateInfo)
+{
+	if (!reader.parent->cli_shader_instrumentation_enabled.load(std::memory_order_acquire)) return;
+	if (!replay_device_extension_enabled(pCreateInfo, VK_ARM_SHADER_INSTRUMENTATION_EXTENSION_NAME)) return;
+
+	VkPhysicalDeviceShaderInstrumentationFeaturesARM* features = (VkPhysicalDeviceShaderInstrumentationFeaturesARM*)find_extension(
+		pCreateInfo, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_INSTRUMENTATION_FEATURES_ARM);
+	if (features)
+	{
+		features->shaderInstrumentation = VK_TRUE;
+	}
+	else
+	{
+		features = reader.pool.allocate<VkPhysicalDeviceShaderInstrumentationFeaturesARM>(1);
+		*features = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_INSTRUMENTATION_FEATURES_ARM, const_cast<void*>(pCreateInfo->pNext), VK_TRUE };
+		pCreateInfo->pNext = features;
+	}
+
+	VkPhysicalDeviceMaintenance5FeaturesKHR* maintenance5 = (VkPhysicalDeviceMaintenance5FeaturesKHR*)find_extension(
+		pCreateInfo, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_5_FEATURES_KHR);
+	if (maintenance5)
+	{
+		maintenance5->maintenance5 = VK_TRUE;
+		return;
+	}
+	maintenance5 = reader.pool.allocate<VkPhysicalDeviceMaintenance5FeaturesKHR>(1);
+	*maintenance5 = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_5_FEATURES_KHR, const_cast<void*>(pCreateInfo->pNext), VK_TRUE };
+	pCreateInfo->pNext = maintenance5;
 }
 
 static trackedsemaphore& replay_get_tracked_semaphore(VkSemaphore semaphore, const char* call_name)
@@ -978,6 +1009,7 @@ static void replay_mark_pending_commandbuffer(lava_file_reader& reader, uint32_t
 	commandbuffer_data.replay_submit_fence_index = (fence == VK_NULL_HANDLE) ? CONTAINER_INVALID_INDEX : index_to_VkFence.index(fence);
 	commandbuffer_data.replay_last_submit_source = reader.current;
 	commandbuffer_data.replay_last_submit_source_valid = true;
+	replay_instrumentation_mark_submitted(commandbuffer_data);
 	if (commandbuffer_data.replay_submit_fence_index != CONTAINER_INVALID_INDEX)
 	{
 		trackedfence& fence_data = VkFence_index.at(commandbuffer_data.replay_submit_fence_index);
@@ -1118,6 +1150,7 @@ static void replay_destroy_commandbuffer_scratch_buffers(VkDevice device, tracke
 static void replay_cleanup_commandbuffer_for_rerecord(lava_file_reader& reader, uint32_t commandbuffer_index, trackedcmdbuffer& commandbuffer_data)
 {
 	replay_wait_for_pending_commandbuffer(reader, commandbuffer_index, commandbuffer_data, false);
+	replay_instrumentation_cleanup_command_buffer(commandbuffer_data);
 	commandbuffer_data.raytracing_sbt_uses.clear();
 	commandbuffer_data.raytracing_instance_uses.clear();
 	commandbuffer_data.bound_raytracing_pipeline_index = CONTAINER_INVALID_INDEX;
@@ -1231,6 +1264,11 @@ void replay_pre_vkBeginCommandBuffer(lava_file_reader& reader, VkCommandBuffer c
 	trackedcmdbuffer& commandbuffer_data = VkCommandBuffer_index.at(commandbuffer_index);
 	replay_cleanup_commandbuffer_for_rerecord(reader, commandbuffer_index, commandbuffer_data);
 	commandbuffer_data.replay_begin_flags = pBeginInfo ? pBeginInfo->flags : 0;
+}
+
+void replay_pre_vkEndCommandBuffer(lava_file_reader& reader, VkCommandBuffer commandBuffer)
+{
+	replay_instrumentation_end_command_buffer(reader, commandBuffer);
 }
 
 void replay_pre_vkResetCommandBuffer(lava_file_reader& reader, VkCommandBuffer commandBuffer, VkCommandBufferResetFlags flags)
@@ -3234,6 +3272,7 @@ void replay_pre_vkCreateDevice(lava_file_reader& reader, VkPhysicalDevice physic
 	}
 	replay_enable_frame_boundary_feature(reader, pCreateInfo);
 	replay_enable_pipeline_executable_info_feature(reader, pCreateInfo);
+	replay_enable_shader_instrumentation_feature(reader, pCreateInfo);
 
 	if (no_anisotropy())
 	{
@@ -3342,11 +3381,10 @@ void replay_pre_vkDestroyDevice(lava_file_reader& reader, VkDevice device, const
 
 			for (auto& cb : VkCommandBuffer_index)
 			{
-				if (cb.device_index == device_index &&
-					(cb.scratch_buffer.buffer != VK_NULL_HANDLE || !cb.replay_scratch_buffers.empty()))
-				{
+				if (cb.device_index != device_index) continue;
+				replay_instrumentation_cleanup_command_buffer(cb);
+				if (cb.scratch_buffer.buffer != VK_NULL_HANDLE || !cb.replay_scratch_buffers.empty())
 					replay_destroy_commandbuffer_scratch_buffers(device, cb);
-				}
 			}
 		}
 		selected_physical_device = VK_NULL_HANDLE;
@@ -4177,6 +4215,21 @@ static void replay_enable_pipeline_capture_statistics(lava_file_reader& reader, 
 	}
 }
 
+static void replay_enable_shader_instrumentation_pipeline(lava_file_reader& reader, const void*& pNext)
+{
+	if (!reader.parent->cli_shader_instrumentation_enabled.load(std::memory_order_acquire)) return;
+	VkPipelineCreateFlags2CreateInfo* flags2 = (VkPipelineCreateFlags2CreateInfo*)find_extension(
+		pNext, VK_STRUCTURE_TYPE_PIPELINE_CREATE_FLAGS_2_CREATE_INFO);
+	if (flags2)
+	{
+		flags2->flags |= VK_PIPELINE_CREATE_2_INSTRUMENT_SHADERS_BIT_ARM;
+		return;
+	}
+	flags2 = reader.pool.allocate<VkPipelineCreateFlags2CreateInfo>(1);
+	*flags2 = { VK_STRUCTURE_TYPE_PIPELINE_CREATE_FLAGS_2_CREATE_INFO, pNext, VK_PIPELINE_CREATE_2_INSTRUMENT_SHADERS_BIT_ARM };
+	pNext = flags2;
+}
+
 void replay_pre_vkCreateComputePipelines(lava_file_reader& reader, VkDevice device, VkPipelineCache pipelineCache, uint32_t createInfoCount,
 	const VkComputePipelineCreateInfo* pCreateInfos, const VkAllocationCallbacks* pAllocator, VkPipeline* pPipelines)
 {
@@ -4184,6 +4237,7 @@ void replay_pre_vkCreateComputePipelines(lava_file_reader& reader, VkDevice devi
 	{
 		const_cast<VkComputePipelineCreateInfo&>(pCreateInfos[i]).flags &= ~VK_PIPELINE_CREATE_FAIL_ON_PIPELINE_COMPILE_REQUIRED_BIT;
 		replay_enable_pipeline_capture_statistics(reader, pCreateInfos[i].pNext, const_cast<VkComputePipelineCreateInfo&>(pCreateInfos[i]).flags);
+		replay_enable_shader_instrumentation_pipeline(reader, const_cast<VkComputePipelineCreateInfo&>(pCreateInfos[i]).pNext);
 
 		const VkMarkedOffsetsARM* remap = (const VkMarkedOffsetsARM*)find_extension(&pCreateInfos[i].stage, VK_STRUCTURE_TYPE_MARKED_OFFSETS_ARM);
 		if (!remap) continue; // nothing to do here
@@ -4205,6 +4259,7 @@ void replay_pre_vkCreateGraphicsPipelines(lava_file_reader& reader, VkDevice dev
 	{
 		const_cast<VkGraphicsPipelineCreateInfo&>(pCreateInfos[i]).flags &= ~VK_PIPELINE_CREATE_FAIL_ON_PIPELINE_COMPILE_REQUIRED_BIT;
 		replay_enable_pipeline_capture_statistics(reader, pCreateInfos[i].pNext, const_cast<VkGraphicsPipelineCreateInfo&>(pCreateInfos[i]).flags);
+		replay_enable_shader_instrumentation_pipeline(reader, const_cast<VkGraphicsPipelineCreateInfo&>(pCreateInfos[i]).pNext);
 
 		for (uint32_t stage = 0; stage < pCreateInfos[i].stageCount; stage++)
 		{
@@ -4229,6 +4284,7 @@ void replay_pre_vkCreateRayTracingPipelinesKHR(lava_file_reader& reader, VkDevic
 	{
 		const_cast<VkRayTracingPipelineCreateInfoKHR&>(pCreateInfos[i]).flags &= ~VK_PIPELINE_CREATE_FAIL_ON_PIPELINE_COMPILE_REQUIRED_BIT;
 		replay_enable_pipeline_capture_statistics(reader, pCreateInfos[i].pNext, const_cast<VkRayTracingPipelineCreateInfoKHR&>(pCreateInfos[i]).flags);
+		replay_enable_shader_instrumentation_pipeline(reader, const_cast<VkRayTracingPipelineCreateInfoKHR&>(pCreateInfos[i]).pNext);
 
 		for (uint32_t stage = 0; stage < pCreateInfos[i].stageCount; stage++)
 		{
@@ -4250,6 +4306,10 @@ void replay_pre_vkCreateShadersEXT(lava_file_reader& reader, VkDevice device, ui
 {
 	for (uint32_t i = 0; i < createInfoCount; i++)
 	{
+		if (reader.parent->cli_shader_instrumentation_enabled.load(std::memory_order_acquire))
+		{
+			const_cast<VkShaderCreateInfoEXT&>(pCreateInfos[i]).flags |= VK_SHADER_CREATE_INSTRUMENT_SHADER_BIT_ARM;
+		}
 		const VkMarkedOffsetsARM* remap = (const VkMarkedOffsetsARM*)find_extension(&pCreateInfos[i], VK_STRUCTURE_TYPE_MARKED_OFFSETS_ARM);
 		if (!remap) continue; // nothing to do here
 

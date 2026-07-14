@@ -1672,6 +1672,7 @@ def load_add_tracking(name):
 				z.do('data.device = device;')
 			elif type == 'VkDevice':
 				z.do('data.physicalDevice = physicalDevice; // track parentage')
+				z.do('data.shader_instrumentation_enabled = reader.parent->cli_shader_instrumentation_enabled.load(std::memory_order_acquire);')
 				z.do('const VkPhysicalDeviceInternallySynchronizedQueuesFeaturesKHR* pdisqf = (const VkPhysicalDeviceInternallySynchronizedQueuesFeaturesKHR*)find_extension(pCreateInfo, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_INTERNALLY_SYNCHRONIZED_QUEUES_FEATURES_KHR);')
 				z.do('data.internally_synchronized_queues = (pdisqf && pdisqf->internallySynchronizedQueues == VK_TRUE);')
 				z.do('data.allocator = new suballocator();')
@@ -1895,6 +1896,8 @@ def loadfunc(name, node, target, header):
 	call_list = [ x.retrace_exec_param(name) for x in params ]
 	if name in vk.replay_pre_calls and name not in ['vkCreateInstance', 'vkCreateDevice']:
 		z.do('if (reader.run) replay_pre_%s(reader, %s);' % (name, ', '.join(call_list)))
+	if name in spec.pipeline_execute_commands:
+		z.do('if (reader.run) replay_instrumentation_pre_shader_command(reader, commandBuffer, commandbuffer_data);')
 
 	if name in spec.special_count_funcs:
 		if retval == 'VkResult':
@@ -2121,6 +2124,8 @@ def loadfunc(name, node, target, header):
 
 	if name in vk.extra_sync or name in ['vkQueuePresentKHR', 'vkQueueBeginDebugUtilsLabelEXT', 'vkQueueEndDebugUtilsLabelEXT', 'vkQueueInsertDebugUtilsLabelEXT']:
 		z.do('sync_lock.unlock();')
+	if name in spec.pipeline_execute_commands:
+		z.do('if (reader.run) replay_instrumentation_post_shader_command(reader, commandBuffer, commandbuffer_data);')
 	z.do('// -- Post --')
 	if not name in spec.special_count_funcs and not name in vk.skip_post_calls:
 		for param in params:
@@ -2157,7 +2162,14 @@ def loadfunc(name, node, target, header):
 		z.do('if (!reader.run) postprocess_compute_command(cb_context, commandbuffer_index, commandbuffer_data);')
 	if name in spec.raytracing_commands:
 		z.do('if (!reader.run) postprocess_raytracing_command(cb_context, commandbuffer_index, commandbuffer_data);')
-	z.do('while (check_cli(cb_context)) cli_params_%s(%s);' % (name, 'cb_context, ' + ', '.join(call_list) if call_list else 'cb_context'))
+	if name == 'vkBeginCommandBuffer':
+		z.do('while (check_cli(cb_context))')
+		z.brace_begin()
+		z.do('cli_process_instrument_request(cb_context, commandBuffer);')
+		z.do('cli_params_%s(%s);' % (name, 'cb_context, ' + ', '.join(call_list)))
+		z.brace_end()
+	else:
+		z.do('while (check_cli(cb_context)) cli_params_%s(%s);' % (name, 'cb_context, ' + ', '.join(call_list) if call_list else 'cb_context'))
 	z.dump()
 	print('}', file=target)
 	func_common_end(name, target=target, header=header, add_dummy=True)
