@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <cctype>
 #include <fstream>
 #include <cstring>
 #include <errno.h>
@@ -33,6 +34,51 @@ static void append_sorted_strings(Json::Value& array, const std::unordered_set<s
 	std::vector<std::string> sorted(values.begin(), values.end());
 	std::sort(sorted.begin(), sorted.end());
 	for (const std::string& value : sorted) array.append(value);
+}
+
+static std::string trim_extension_name(const std::string& value)
+{
+	size_t first = 0;
+	while (first < value.size() && std::isspace(static_cast<unsigned char>(value[first]))) first++;
+	size_t last = value.size();
+	while (last > first && std::isspace(static_cast<unsigned char>(value[last - 1]))) last--;
+	return value.substr(first, last - first);
+}
+
+static bool valid_extension_name(const std::string& name)
+{
+	if (name.size() < 6 || name.compare(0, 3, "VK_") != 0) return false;
+	const size_t vendor_end = name.find('_', 3);
+	if (vendor_end == std::string::npos || vendor_end == 3 || vendor_end + 1 == name.size()) return false;
+	for (size_t i = 3; i < vendor_end; i++)
+	{
+		const unsigned char c = static_cast<unsigned char>(name[i]);
+		if (!std::isupper(c) && !std::isdigit(c)) return false;
+	}
+	for (size_t i = vendor_end + 1; i < name.size(); i++)
+	{
+		const unsigned char c = static_cast<unsigned char>(name[i]);
+		if (!std::isalnum(c) && c != '_') return false;
+	}
+	return true;
+}
+
+static void parse_blacklisted_extensions(trace_metadata& meta) REQUIRES(frame_mutex)
+{
+	const char* value = getenv("LAVATUBE_BLACKLIST_EXTENSIONS");
+	if (!value) return;
+
+	const std::string list(value);
+	size_t start = 0;
+	while (start <= list.size())
+	{
+		const size_t comma = list.find(',', start);
+		const std::string name = trim_extension_name(list.substr(start, comma == std::string::npos ? std::string::npos : comma - start));
+		if (!valid_extension_name(name)) DIE("Invalid Vulkan extension name in LAVATUBE_BLACKLIST_EXTENSIONS: '%s'", name.c_str());
+		meta.blacklisted_extensions.insert(name);
+		if (comma == std::string::npos) break;
+		start = comma + 1;
+	}
 }
 
 static void write_removed_strings(Json::Value& parent, const char* key, const std::unordered_set<std::string>& values)
@@ -362,6 +408,7 @@ void lava_writer::set_output(const std::string& packed_path)
 lava_writer::lava_writer() : global_frame(0)
 {
 	frame_mutex.lock();
+	parse_blacklisted_extensions(meta);
 
 	(void)vulkan_feature_detection_get();
 
@@ -378,6 +425,8 @@ lava_writer::lava_writer() : global_frame(0)
 	mJson["lavatube_version_minor"] = LAVATUBE_VERSION_MINOR;
 	mJson["lavatube_version_patch"] = LAVATUBE_VERSION_PATCH;
 	mJson["vulkan_header_version"] = version_to_string(VK_HEADER_VERSION);
+	mJson["blacklistedExtensions"] = Json::arrayValue;
+	append_sorted_strings(mJson["blacklistedExtensions"], meta.blacklisted_extensions);
 
 	frame_mutex.unlock();
 }

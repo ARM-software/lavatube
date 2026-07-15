@@ -1893,7 +1893,7 @@ def loadfunc(name, node, target, header):
 		z.do('else pDescriptor = nullptr;')
 	load_add_pre(name)
 	call_list = [ x.retrace_exec_param(name) for x in params ]
-	if name in vk.replay_pre_calls:
+	if name in vk.replay_pre_calls and name not in ['vkCreateInstance', 'vkCreateDevice']:
 		z.do('if (reader.run) replay_pre_%s(reader, %s);' % (name, ', '.join(call_list)))
 
 	if name in spec.special_count_funcs:
@@ -1943,8 +1943,9 @@ def loadfunc(name, node, target, header):
 	elif name == "vkCreateInstance":
 		z.do('VkResult stored_retval = static_cast<VkResult>(reader.read_uint32_t());')
 		z.do('%s retval = stored_retval;' % retval)
-		z.do('if (reader.run)')
+		z.do('if (reader.run && stored_retval == VK_SUCCESS)')
 		z.brace_begin()
+		z.do('replay_pre_vkCreateInstance(reader, %s);' % (', '.join(call_list)))
 		z.do('retval = vkuSetupInstance(%s);' % (', '.join(call_list)))
 		z.do('if (retval == VK_ERROR_FEATURE_NOT_PRESENT || retval == VK_ERROR_EXTENSION_NOT_PRESENT)')
 		z.brace_begin()
@@ -1957,8 +1958,9 @@ def loadfunc(name, node, target, header):
 	elif name == "vkCreateDevice":
 		z.do('VkResult stored_retval = static_cast<VkResult>(reader.read_uint32_t());')
 		z.do('%s retval = stored_retval;' % retval)
-		z.do('if (reader.run)')
+		z.do('if (reader.run && stored_retval == VK_SUCCESS)')
 		z.brace_begin()
+		z.do('replay_pre_vkCreateDevice(reader, %s);' % (', '.join(call_list)))
 		z.do('retval = vkuSetupDevice(%s);' % (', '.join(call_list)))
 		z.do('if (retval == VK_ERROR_FEATURE_NOT_PRESENT || retval == VK_ERROR_EXTENSION_NOT_PRESENT)')
 		z.brace_begin()
@@ -2192,7 +2194,10 @@ def savefunc(name, node, target, header):
 	call_list = [ x.trace_exec_param(name) for x in params ]
 	z.declarations.insert(0, 'lava_file_writer& writer = write_header(\"%s\", %s%s);' % (name, name.upper(), ', true' if name in spec.functions_destroy or name in vk.thread_barrier_funcs else ''))
 	if name in vk.trace_pre_calls: # this must be called before we start serializing our packet, as ...
-		z.declarations.insert(0, 'trace_pre_%s(%s);' % (name, ', '.join(call_list))) # ... we may generate our own packets here
+		if name in ['vkCreateInstance', 'vkCreateDevice']:
+			z.declarations.insert(0, 'const bool reject_blacklisted_extension = trace_pre_%s(%s);' % (name, ', '.join(call_list)))
+		else:
+			z.declarations.insert(0, 'trace_pre_%s(%s);' % (name, ', '.join(call_list))) # ... we may generate our own packets here
 	add_multi_draw_stride_check(name)
 	for param in params:
 		if param.inparam:
@@ -2214,19 +2219,21 @@ def savefunc(name, node, target, header):
 	if name == "vkCreateInstance":
 		assert retval == 'VkResult'
 		z.do('%s retval = VK_SUCCESS;' % retval)
+		z.do('if (writer.run && reject_blacklisted_extension) retval = VK_ERROR_EXTENSION_NOT_PRESENT;')
 		z.do('#ifdef COMPILE_LAYER')
-		z.do('if (writer.run) retval = vkuSetupInstanceLayer(%s);' % (', '.join(call_list)))
+		z.do('else if (writer.run) retval = vkuSetupInstanceLayer(%s);' % (', '.join(call_list)))
 		z.do('#else');
-		z.do('if (writer.run) retval = vkuSetupInstance(%s);' % (', '.join(call_list)))
+		z.do('else if (writer.run) retval = vkuSetupInstance(%s);' % (', '.join(call_list)))
 		z.do('#endif')
 		z.do('else retval = writer.use_result.result;')
 	elif name == "vkCreateDevice":
 		assert retval == 'VkResult'
 		z.do('%s retval = VK_SUCCESS;' % retval)
+		z.do('if (writer.run && reject_blacklisted_extension) retval = VK_ERROR_EXTENSION_NOT_PRESENT;')
 		z.do('#ifdef COMPILE_LAYER')
-		z.do('if (writer.run) retval = vkuSetupDeviceLayer(%s);' % (', '.join(call_list)))
+		z.do('else if (writer.run) retval = vkuSetupDeviceLayer(%s);' % (', '.join(call_list)))
 		z.do('#else');
-		z.do('if (writer.run) retval = vkuSetupDevice(%s);' % (', '.join(call_list)))
+		z.do('else if (writer.run) retval = vkuSetupDevice(%s);' % (', '.join(call_list)))
 		z.do('#endif')
 		z.do('else retval = writer.use_result.result;')
 	elif name == 'vkFlushMappedMemoryRanges':
@@ -2289,6 +2296,8 @@ def savefunc(name, node, target, header):
 		if retval != 'void':
 			if name in vk.trace_post_tool_calls:
 				z.do('trace_post_%s(writer, retval, %s);' % (name, ', '.join(call_list)))
+			elif name == 'vkCreateInstance':
+				z.do('if (writer.run && retval == VK_SUCCESS) trace_post_%s(writer, retval, %s);' % (name, ', '.join(call_list)))
 			else:
 				z.do('if (writer.run) trace_post_%s(writer, retval, %s);' % (name, ', '.join(call_list)))
 		else:
@@ -2298,7 +2307,10 @@ def savefunc(name, node, target, header):
 				z.do('if (writer.run) trace_post_%s(writer, %s);' % (name, ', '.join(call_list)))
 
 	if name in spec.feature_detection_funcs:
-		z.do('check_%s(%s);' % (name, ', '.join(call_list)))
+		if name in ['vkCreateInstance', 'vkCreateDevice']:
+			z.do('if (retval == VK_SUCCESS) check_%s(%s);' % (name, ', '.join(call_list)))
+		else:
+			z.do('check_%s(%s);' % (name, ', '.join(call_list)))
 	elif name == 'vkBeginCommandBuffer': # special case for above, need to add the level param
 		z.do('special_vkBeginCommandBuffer(commandBuffer, pBeginInfo, commandbuffer_data->level);')
 

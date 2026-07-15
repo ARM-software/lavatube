@@ -8,6 +8,7 @@ import sys
 import argparse
 import subprocess
 import json
+import re
 
 compression_type_choices = ('LZ4', 'DENSITY', 'NONE')
 
@@ -16,6 +17,20 @@ compression_types = {
 	'DENSITY': '1',
 	'LZ4': '2',
 }
+
+extension_name_pattern = re.compile(r'^VK_[A-Z0-9]+_[A-Za-z0-9_]+$')
+
+def normalize_blacklisted_extensions(value):
+	names = []
+	seen = set()
+	for item in value.split(','):
+		name = item.strip()
+		if not extension_name_pattern.fullmatch(name):
+			raise ValueError("invalid Vulkan extension name: '%s'" % name)
+		if name not in seen:
+			seen.add(name)
+			names.append(name)
+	return ','.join(names)
 
 def args():
 	parser = argparse.ArgumentParser(prog=os.path.basename(sys.argv[0]), description='Trace a Vulkan application', allow_abbrev=False)
@@ -34,6 +49,7 @@ def args():
 	parser.add_argument('--automate', dest='automate', action='store_true', help='Try to automate the run as much as possible if app supports CBS')
 	parser.add_argument('--no-multithread', dest='nomp', action='store_true', help='Turn off multi-threaded compression and disk writeout (saves memory)')
 	parser.add_argument('--trust-flushing', dest='explicit', action='store_true', help='Trust app to flush modified host memory instead of tracking usage')
+	parser.add_argument('--blacklist-extensions', dest='blacklist_extensions', metavar='<LIST>', help='Comma-separated Vulkan extensions to hide during capture')
 	parser.add_argument('programAndArgs', metavar='<program> [<program args>]', nargs=argparse.REMAINDER, help='Application to capture and any program arguments')
 	return parser
 
@@ -94,6 +110,12 @@ if __name__ == '__main__':
 	if args.log: os.environ['LAVATUBE_DEBUG_FILE'] = args.log
 	if args.compression_type: os.environ['LAVATUBE_COMPRESSION_TYPE'] = compression_types[args.compression_type]
 	if args.explicit: os.environ['LAVATUBE_TRUST_HOST_FLUSHING'] = '1'
+	if args.blacklist_extensions is not None: os.environ['LAVATUBE_BLACKLIST_EXTENSIONS'] = args.blacklist_extensions
+	if 'LAVATUBE_BLACKLIST_EXTENSIONS' in os.environ:
+		try:
+			os.environ['LAVATUBE_BLACKLIST_EXTENSIONS'] = normalize_blacklisted_extensions(os.environ['LAVATUBE_BLACKLIST_EXTENSIONS'])
+		except ValueError as error:
+			parser.error(str(error))
 	if args.layer: os.environ['VK_LAYER_PATH'] = args.layer
 	else: os.environ['VK_LAYER_PATH'] = '/opt/lavatube'
 	if args.nomp:
@@ -116,6 +138,7 @@ if __name__ == '__main__':
 	PrintEnvVar('LAVATUBE_DEDICATED_BUFFER')
 	PrintEnvVar('LAVATUBE_DEDICATED_IMAGE')
 	PrintEnvVar('LAVATUBE_DELAY_FENCE_SUCCESS_FRAMES')
+	PrintEnvVar('LAVATUBE_BLACKLIST_EXTENSIONS')
 	PrintEnvVar('BENCHMARKING_ENABLE_JSON')
 
 	if args.gdb:

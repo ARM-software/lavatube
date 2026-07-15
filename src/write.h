@@ -95,6 +95,9 @@ struct trace_capabilities
 
 struct trace_metadata
 {
+	/// Capture policy: extension names hidden from the application.
+	std::unordered_set<std::string> blacklisted_extensions GUARDED_BY(frame_mutex);
+
 	/// What the device told the app it is capable of, modified by us
 	trace_capabilities device GUARDED_BY(frame_mutex);
 	VkPhysicalDeviceExternalMemoryHostPropertiesEXT external_memory = {};

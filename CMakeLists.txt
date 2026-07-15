@@ -483,6 +483,19 @@ set_tests_properties(trace_test_alignment_replay_cpu PROPERTIES FIXTURES_REQUIRE
 
 internal_test(tracing_unused tracing_unused.api)
 
+add_executable(tracing_blacklist tests/tracing_blacklist.cpp tests/common.cpp)
+target_include_directories(tracing_blacklist ${COMMON_INCLUDE})
+target_link_libraries(tracing_blacklist ${COMMON_LIBRARIES} lavatube)
+target_compile_options(tracing_blacklist PRIVATE ${COMMON_FLAGS})
+add_dependencies(tracing_blacklist sync_generated)
+add_lavatube_test(trace_test_tracing_blacklist COMMAND tracing_blacklist)
+set_tests_properties(trace_test_tracing_blacklist PROPERTIES ENVIRONMENT "LAVATUBE_BLACKLIST_EXTENSIONS=VK_EXT_debug_utils,VK_ARM_trace_helpers")
+set_property(TEST trace_test_tracing_blacklist APPEND PROPERTY FIXTURES_SETUP tracing_blacklist)
+add_lavatube_test(trace_test_tracing_blacklist_replay COMMAND lava-replay --skip-missing-input -V tracing_blacklist.api)
+set_property(TEST trace_test_tracing_blacklist_replay APPEND PROPERTY FIXTURES_REQUIRED tracing_blacklist)
+
+add_lavatube_test(lava_capture_blacklist_test COMMAND ${PYTHON_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tests/lava_capture_blacklist.py)
+
 add_executable(write1 tests/write1.cpp)
 target_include_directories(write1 ${COMMON_INCLUDE})
 target_link_libraries(write1 ${COMMON_LIBRARIES} lavatube)

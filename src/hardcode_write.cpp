@@ -1879,6 +1879,11 @@ static VkExtensionProperties extension_property_from_name(const std::string& nam
 	return property;
 }
 
+static bool extension_is_blacklisted(const char* name) REQUIRES(frame_mutex)
+{
+	return lava_writer::instance().meta.blacklisted_extensions.count(name) != 0;
+}
+
 static bool driver_supports_instance_extension(const char* name)
 {
 	uint32_t propertyCount = 0;
@@ -1946,11 +1951,16 @@ static void modify_instance_extensions() REQUIRES(frame_mutex)
 
 	for (const auto &ext : tmp_instance_extension_properties)
 	{
+		if (extension_is_blacklisted(ext.extensionName))
+		{
+			DLOG("Hiding blacklisted instance extension %s", ext.extensionName);
+			continue;
+		}
 		r["instancePresented"]["extensions"].append(ext.extensionName);
 		instance.meta.device.instance_extensions.insert(ext.extensionName);
 	}
 
-	if (!driver_supports_instance_extension(VK_EXT_DEBUG_UTILS_EXTENSION_NAME))
+	if (!driver_supports_instance_extension(VK_EXT_DEBUG_UTILS_EXTENSION_NAME) && !extension_is_blacklisted(VK_EXT_DEBUG_UTILS_EXTENSION_NAME))
 	{
 		VkExtensionProperties property = extension_property_from_name(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
 		property.specVersion = VK_EXT_DEBUG_UTILS_SPEC_VERSION;
@@ -1964,7 +1974,7 @@ static void modify_instance_extensions() REQUIRES(frame_mutex)
 	{
 		// Filter out extensions we don't want presented
 		std::string name = ext.extensionName;
-		if (name.find("_NV") == std::string::npos && name.find("_AMD") == std::string::npos
+		if (!extension_is_blacklisted(ext.extensionName) && name.find("_NV") == std::string::npos && name.find("_AMD") == std::string::npos
 		    && name.find("_INTEL") == std::string::npos)
 		{
 			instance_extension_properties.push_back(ext); // add to list of extensions presented to app
@@ -1992,18 +2002,23 @@ static void modify_device_extensions(VkPhysicalDevice physicalDevice) REQUIRES(f
 
 	// Present extensions we provide
 	std::vector<VkExtensionProperties> presented_extensions;
-	presented_extensions.push_back({VK_TRACETOOLTEST_OBJECT_PROPERTY_EXTENSION_NAME, 1});
-	presented_extensions.push_back({VK_EXT_TOOLING_INFO_EXTENSION_NAME, 1});
-	presented_extensions.push_back({VK_ANDROID_FRAME_BOUNDARY_EXTENSION_NAME, 1});
-	presented_extensions.push_back({VK_EXT_FRAME_BOUNDARY_EXTENSION_NAME, 1});
-	presented_extensions.push_back({VK_ARM_TRACE_HELPERS_EXTENSION_NAME, 1});
-	presented_extensions.push_back({VK_ARM_EXPLICIT_HOST_UPDATES_EXTENSION_NAME, 1});
+	if (!extension_is_blacklisted(VK_TRACETOOLTEST_OBJECT_PROPERTY_EXTENSION_NAME)) presented_extensions.push_back({VK_TRACETOOLTEST_OBJECT_PROPERTY_EXTENSION_NAME, 1});
+	if (!extension_is_blacklisted(VK_EXT_TOOLING_INFO_EXTENSION_NAME)) presented_extensions.push_back({VK_EXT_TOOLING_INFO_EXTENSION_NAME, 1});
+	if (!extension_is_blacklisted(VK_ANDROID_FRAME_BOUNDARY_EXTENSION_NAME)) presented_extensions.push_back({VK_ANDROID_FRAME_BOUNDARY_EXTENSION_NAME, 1});
+	if (!extension_is_blacklisted(VK_EXT_FRAME_BOUNDARY_EXTENSION_NAME)) presented_extensions.push_back({VK_EXT_FRAME_BOUNDARY_EXTENSION_NAME, 1});
+	if (!extension_is_blacklisted(VK_ARM_TRACE_HELPERS_EXTENSION_NAME)) presented_extensions.push_back({VK_ARM_TRACE_HELPERS_EXTENSION_NAME, 1});
+	if (!extension_is_blacklisted(VK_ARM_EXPLICIT_HOST_UPDATES_EXTENSION_NAME)) presented_extensions.push_back({VK_ARM_EXPLICIT_HOST_UPDATES_EXTENSION_NAME, 1});
 
 	for (const auto &ext : tmp_device_extension_properties)
 	{
 		std::string name = ext.extensionName;
 
 		physicaldevice_data->supported_device_extensions.insert(name);
+		if (extension_is_blacklisted(ext.extensionName))
+		{
+			DLOG("Hiding blacklisted device extension %s", ext.extensionName);
+			continue;
+		}
 
 		// Filter out extensions we don't want presented
 		instance.meta.device.device_extensions.insert(name);
@@ -2038,7 +2053,7 @@ static uint32_t find_virtual_graphics_queue_family(const std::vector<VkQueueFami
 	return UINT32_MAX;
 }
 
-static void trace_pre_vkCreateDevice(VkPhysicalDevice physicalDevice, VkDeviceCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkDevice* pDevice)
+static bool trace_pre_vkCreateDevice(VkPhysicalDevice physicalDevice, VkDeviceCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkDevice* pDevice)
 {
 	lava_writer& instance = lava_writer::instance();
 	lava_file_writer& writer = instance.file_writer();
@@ -2052,6 +2067,18 @@ static void trace_pre_vkCreateDevice(VkPhysicalDevice physicalDevice, VkDeviceCr
 	{
 		if (writer.run) modify_device_extensions(physicalDevice); // in case empty
 		else bootstrap_device_extensions_from_metadata(physicalDevice);
+	}
+	if (writer.run)
+	{
+		for (unsigned i = 0; i < pCreateInfo->enabledExtensionCount; i++)
+		{
+			if (extension_is_blacklisted(pCreateInfo->ppEnabledExtensionNames[i]))
+			{
+				DLOG("Rejecting blacklisted device extension %s", pCreateInfo->ppEnabledExtensionNames[i]);
+				frame_mutex.unlock();
+				return true;
+			}
+		}
 	}
 
 	// Logging
@@ -2115,7 +2142,7 @@ static void trace_pre_vkCreateDevice(VkPhysicalDevice physicalDevice, VkDeviceCr
 	if (!writer.run)
 	{
 		frame_mutex.unlock();
-		return;
+		return false;
 	}
 
 	// -- Modify app request --
@@ -2215,6 +2242,7 @@ static void trace_pre_vkCreateDevice(VkPhysicalDevice physicalDevice, VkDeviceCr
 		}
 		pCreateInfo->pQueueCreateInfos = queueinfo;
 	}
+	return false;
 }
 
 static void trace_post_vkCreateDevice(lava_file_writer& writer, VkResult result, VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkDevice* pDevice)
@@ -2322,13 +2350,25 @@ static void trace_post_vkCreateDevice(lava_file_writer& writer, VkResult result,
 	frame_mutex.unlock();
 }
 
-static void trace_pre_vkCreateInstance(VkInstanceCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkInstance* pInstance)
+static bool trace_pre_vkCreateInstance(VkInstanceCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkInstance* pInstance)
 {
 	lava_writer& instance = lava_writer::instance();
 	lava_file_writer& writer = instance.file_writer();
 
 	frame_mutex.lock();
 	if (instance_extension_properties.size() == 0) modify_instance_extensions(); // in case empty
+	if (writer.run)
+	{
+		for (unsigned i = 0; i < pCreateInfo->enabledExtensionCount; i++)
+		{
+			if (extension_is_blacklisted(pCreateInfo->ppEnabledExtensionNames[i]))
+			{
+				DLOG("Rejecting blacklisted instance extension %s", pCreateInfo->ppEnabledExtensionNames[i]);
+				frame_mutex.unlock();
+				return true;
+			}
+		}
+	}
 
 	// Upgrade Vulkan version used to at least 1.3 to support our tracing functionality
 	if (pCreateInfo->pApplicationInfo == nullptr)
@@ -2397,6 +2437,7 @@ static void trace_pre_vkCreateInstance(VkInstanceCreateInfo* pCreateInfo, const 
 	frame_mutex.unlock();
 	pCreateInfo->ppEnabledExtensionNames = nameptrs;
 	pCreateInfo->enabledExtensionCount = newcount;
+	return false;
 }
 
 static void trace_post_vkCreateInstance(lava_file_writer& writer, VkResult result, const VkInstanceCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkInstance* pInstance)

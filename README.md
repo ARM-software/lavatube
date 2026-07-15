@@ -252,6 +252,16 @@ content assets.
 `LAVATUBE_GPU` lets you pick which GPU to use, by index. See vulkaninfo to see which
 index value to use.
 
+`LAVATUBE_BLACKLIST_EXTENSIONS` accepts a comma-separated list of Vulkan extension
+names to hide during capture. Blacklisted instance and device extensions are omitted
+from enumeration, and attempts to enable them return `VK_ERROR_EXTENSION_NOT_PRESENT`.
+The `scripts/lava-capture.py` helper exposes the same functionality through
+`--blacklist-extensions <LIST>`, for example:
+
+```
+scripts/lava-capture.py --blacklist-extensions VK_KHR_ray_tracing_pipeline,VK_EXT_mesh_shader <program>
+```
+
 `LAVATUBE_CHUNK_SIZE` lets you choose the compression chunk size, by default it is 64mb.
 
 `LAVATUBE_EXTERNAL_MEMORY` set it to 1 to experiment with replacing your GPU host memory

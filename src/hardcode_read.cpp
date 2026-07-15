@@ -3280,6 +3280,7 @@ void replay_callback_vkCreateInstance(callback_context& cb, const VkInstanceCrea
 	VkResult result = cb.result.vkresult;
 	lava_file_reader& reader = cb.reader;
 	(void)pCreateInfo;
+	if (result != VK_SUCCESS) return;
 	if (!pInstance || !*pInstance || *pInstance == VK_NULL_HANDLE)
 	{
 		ABORT("Failed to create a Vulkan instance: %s", errorString(result));
