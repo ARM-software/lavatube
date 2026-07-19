@@ -13,8 +13,18 @@ background thread that listens on a TCP port, then waits for further instruction
 on this port. These instructions are sent from a new tool `lava-cli`.
 
 More instructions to implement - in prioritized order:
+* `lava-cli log update` - receive logfile delta since previous call to this command, which is stored in a temporary file that can be searched with `logtail`
+	- ideally we would output to both stdout/android log at the same time as saving to file that we can send here, but easier implementation if we just pick one output target
+	- `lava-cli` should receive the logs, append it to our copy of the logfile, and just output 'DONE' to stdout
+* `lava-cli log tail REGEX [M=10] [N=0]` - gives the last M log lines matching REGEX at end-relative offset zero, equivalent of `cat $logfile | tail -${M+N} | head -$M
+	- apparently the PCRE syntax is the most LLM friendly, RE2 is likely the best regex engine for it, but requires abseil
+	- re2: can support through apt on linux, FetchContent for android? as git submodule is _not_ recommended as requires abseil which is hard to build (esp for android)
+* `lava-cli callprint CALL THREAD` - print call parameters _as stored on disk_ for any call and its chained pnext structs; safest to invoke `lava-print` as a command because of our globals,
+  but would be good to maintain some cache
+	- we need to ensure we have a local copy of the trace file; easiest to pass in as a parameter
+	- this is only for TUI, a separate tool can just invoke `lava-print`
 * `lava-cli step frames X` - step the given number of frames ahead in the current thread, then pause again
-- `lava-cli goto frame X` - replay until we get to the given frame
+* `lava-cli goto frame X` - replay until we get to the given frame
 * `lava-cli info <topic>` - show input parameters and important state
 	- 'objects' - show table of all non-zero-sized object types, with pending, created, bound (if applicable) and destroyed columns
 	- 'swapchains' - show image index numbers of real and fake swapchains and their status
@@ -22,6 +32,8 @@ More instructions to implement - in prioritized order:
 * `lava-cli list <object type>` - list all objects of given type tracked globally and their status
 * `lava-cli save buffer|image|tensor <index> <filename>` - write exact contents of object given by index to the given filename (if bound; possibly using staging)
 * `lava-cli convert image <index> <filename.png>` - transform to linear format and write contents of image data given by index to the given filename (if bound; possibly using staging; as PNG)
+* `lava-cli writeout buffer|image <index> <filename>` - inject a scheduled write-out at the current position in the current commandbuffer, it will be written after queue submit;
+  push a callback on the queue submit so we can queuewaitidle -> write -> clear writeout queue
 * `lava-cli split-cmdbuf-by-renderpass` - only when on `vkBeginCommandBuffer` to split commandbuffers by renderpasses
 * `lava-cli split-cmdbuf-by-shader` - only when on `vkBeginCommandBuffer` to split commandbuffers by shader calls
 
