@@ -445,6 +445,16 @@ static bool cli_command_bypasses_active(const std::vector<std::string>& command)
 	return false;
 }
 
+static void cli_cancel_pending_requests()
+{
+	replayer.cli_instrument_requested.store(cli_instrument_mode::none, std::memory_order_release);
+	replayer.cli_instrument_ready.store(true, std::memory_order_release);
+	replayer.cli_instrument_ready.notify_all();
+	replayer.cli_params_requested.store(false, std::memory_order_release);
+	replayer.cli_params_ready.store(true, std::memory_order_release);
+	replayer.cli_params_ready.notify_all();
+}
+
 static std::string service_command_response(const std::vector<std::string>& command)
 {
 	std::string response;
@@ -485,6 +495,7 @@ static std::string service_command_response(const std::vector<std::string>& comm
 	else if (command.size() == 1 && command[0] == "stop")
 	{
 		service_stop_requested.store(true, std::memory_order_release);
+		cli_cancel_pending_requests();
 		replayer.cli_running.store(true, std::memory_order_release);
 		replayer.cli_running.notify_all();
 		replayer.request_stop();
@@ -555,9 +566,25 @@ static std::string service_command_response(const std::vector<std::string>& comm
 				{
 					replayer.cli_response.clear();
 					replayer.cli_instrument_ready.store(false, std::memory_order_release);
-					replayer.cli_instrument_requested.store(mode, std::memory_order_release);
-					replayer.cli_instrument_ready.wait(false);
-					response = replayer.cli_response.empty() ? "ERROR instrumentation request failed\n" : replayer.cli_response;
+					if (service_stop_requested.load(std::memory_order_acquire))
+					{
+						response = "ERROR replay stopped\n";
+					}
+					else
+					{
+						replayer.cli_instrument_requested.store(mode, std::memory_order_release);
+						if (service_stop_requested.load(std::memory_order_acquire))
+						{
+							replayer.cli_instrument_requested.store(cli_instrument_mode::none, std::memory_order_release);
+							response = "ERROR replay stopped\n";
+						}
+						else
+						{
+							replayer.cli_instrument_ready.wait(false);
+							if (service_stop_requested.load(std::memory_order_acquire)) response = "ERROR replay stopped\n";
+							else response = replayer.cli_response.empty() ? "ERROR instrumentation request failed\n" : replayer.cli_response;
+						}
+					}
 				}
 			}
 		}
@@ -687,21 +714,39 @@ static std::string service_command_response(const std::vector<std::string>& comm
 			{
 				replayer.cli_response.clear();
 				replayer.cli_params_ready.store(false, std::memory_order_release);
-				replayer.cli_params_requested.store(true, std::memory_order_release);
-				replayer.cli_params_ready.wait(false);
-				response = replayer.cli_response.empty() ? "ERROR\n" : replayer.cli_response;
+				if (service_stop_requested.load(std::memory_order_acquire))
+				{
+					response = "ERROR replay stopped\n";
+				}
+				else
+				{
+					replayer.cli_params_requested.store(true, std::memory_order_release);
+					if (service_stop_requested.load(std::memory_order_acquire))
+					{
+						replayer.cli_params_requested.store(false, std::memory_order_release);
+						response = "ERROR replay stopped\n";
+					}
+					else
+					{
+						replayer.cli_params_ready.wait(false);
+						if (service_stop_requested.load(std::memory_order_acquire)) response = "ERROR replay stopped\n";
+						else response = replayer.cli_response.empty() ? "ERROR\n" : replayer.cli_response;
+					}
+				}
 			}
 		}
 	}
 	else if (command.size() == 3 && command[0] == "show" && command[1] == "instrumentation")
 	{
 		uint32_t index = 0;
-		if (replayer.cli_running.load(std::memory_order_acquire)) response = "ERROR replay is running\n";
+		if (service_stop_requested.load(std::memory_order_acquire)) response = "ERROR replay stopped\n";
+		else if (replayer.cli_running.load(std::memory_order_acquire)) response = "ERROR replay is running\n";
 		else if (!parse_u32(command[2], index)) response = "ERROR invalid command buffer index\n";
 		else
 		{
 			const std::string idle_response = cli_wait_for_quiescence_and_idle();
-			response = idle_response == "OK\n" ? replay_instrumentation_show(index) : idle_response;
+			if (service_stop_requested.load(std::memory_order_acquire)) response = "ERROR replay stopped\n";
+			else response = idle_response == "OK\n" ? replay_instrumentation_show(index) : idle_response;
 		}
 	}
 	else if (command.size() == 3 && command[0] == "show")
@@ -1241,7 +1286,7 @@ int main(int argc, char **argv)
 	}
 
 	run_multithreaded();
-	replay_instrumentation_cleanup_all();
+	if (!service_stop_requested.load(std::memory_order_acquire)) replay_instrumentation_cleanup_all();
 	if (service)
 	{
 		replay_done.store(true, std::memory_order_release);

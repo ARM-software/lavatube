@@ -231,6 +231,11 @@ struct internal_buffer
 struct trackeddevice : trackable
 {
 	using trackable::trackable; // inherit constructor
+	struct command_pool_info
+	{
+		VkCommandPoolCreateFlags flags = 0;
+		VkQueueFlags queue_flags = 0;
+	};
 	VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
 
 	/// capture only: Trust host to notify us about memory updates?
@@ -244,6 +249,7 @@ struct trackeddevice : trackable
 	std::unordered_set<std::string> enabled_device_extensions; // from replay tool to driver
 	bool shader_instrumentation_enabled = false;
 	std::vector<VkShaderInstrumentationMetricDescriptionARM> shader_instrumentation_metrics;
+	std::unordered_map<uint32_t, command_pool_info> replay_command_pools;
 };
 
 /// Anything that is bound to device memory should inherit from this structure.
@@ -816,6 +822,7 @@ struct trackedcmdbuffer : trackable
 	VkQueue replay_submit_queue = VK_NULL_HANDLE;
 	uint32_t replay_submit_fence_index = CONTAINER_INVALID_INDEX;
 	bool replay_pending = false;
+	std::vector<uint32_t> replay_secondary_commandbuffers;
 	change_source replay_last_submit_source;
 	bool replay_last_submit_source_valid = false;
 	uint32_t bound_raytracing_pipeline_index = CONTAINER_INVALID_INDEX;

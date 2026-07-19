@@ -15,6 +15,34 @@ static trackedcmdbuffer::shader_instrumentation_session* active_instrumentation_
 	return session.recording ? &session : nullptr;
 }
 
+static bool command_buffer_supports_instrumentation(const trackedcmdbuffer& commandbuffer_data, std::string& error)
+{
+	if (commandbuffer_data.device_index >= VkDevice_index.size())
+	{
+		error = "command buffer device metadata is unavailable";
+		return false;
+	}
+	const trackeddevice& device_data = VkDevice_index.at(commandbuffer_data.device_index);
+	const auto pool = device_data.replay_command_pools.find(commandbuffer_data.pool_index);
+	if (pool == device_data.replay_command_pools.end())
+	{
+		error = "command pool metadata is unavailable";
+		return false;
+	}
+	if (pool->second.flags & VK_COMMAND_POOL_CREATE_PROTECTED_BIT)
+	{
+		error = "shader instrumentation is unavailable for protected command buffers";
+		return false;
+	}
+	const VkQueueFlags supported = VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT | VK_QUEUE_DATA_GRAPH_BIT_ARM;
+	if ((pool->second.queue_flags & supported) == 0)
+	{
+		error = "command pool does not support graphics, compute, or data graph operations";
+		return false;
+	}
+	return true;
+}
+
 static bool enumerate_instrumentation_metrics(trackeddevice& device_data, std::string& error)
 {
 	if (!device_data.shader_instrumentation_metrics.empty()) return true;
@@ -167,7 +195,12 @@ void cli_process_instrument_request(callback_context& cb, VkCommandBuffer comman
 	else
 	{
 		trackedcmdbuffer& commandbuffer_data = VkCommandBuffer_index.at(commandbuffer_index);
-		if (active_instrumentation_session(commandbuffer_data))
+		std::string error;
+		if (!command_buffer_supports_instrumentation(commandbuffer_data, error))
+		{
+			response = "ERROR " + error + "\n";
+		}
+		else if (active_instrumentation_session(commandbuffer_data))
 		{
 			response = "ERROR command buffer is already instrumented\n";
 		}
@@ -178,7 +211,6 @@ void cli_process_instrument_request(callback_context& cb, VkCommandBuffer comman
 			session.recording = true;
 			commandbuffer_data.shader_instrumentation_sessions.push_back(std::move(session));
 			trackedcmdbuffer::shader_instrumentation_session& active = commandbuffer_data.shader_instrumentation_sessions.back();
-			std::string error;
 			if (!active.detailed && !create_instrumentation_probe(cb.reader, command_buffer, commandbuffer_data, active, error))
 			{
 				commandbuffer_data.shader_instrumentation_sessions.pop_back();
@@ -227,11 +259,26 @@ void replay_instrumentation_end_command_buffer(lava_file_reader& reader, VkComma
 	session->recording = false;
 }
 
+static void replay_instrumentation_mark_submitted_recursive(trackedcmdbuffer& commandbuffer_data,
+	std::unordered_set<trackedcmdbuffer*>& visited)
+{
+	if (!visited.insert(&commandbuffer_data).second) return;
+	if (!commandbuffer_data.shader_instrumentation_sessions.empty())
+	{
+		trackedcmdbuffer::shader_instrumentation_session& session = commandbuffer_data.shader_instrumentation_sessions.back();
+		if (session.live && !session.recording) session.submitted = true;
+	}
+	for (uint32_t secondary_index : commandbuffer_data.replay_secondary_commandbuffers)
+	{
+		if (secondary_index >= VkCommandBuffer_index.size()) continue;
+		replay_instrumentation_mark_submitted_recursive(VkCommandBuffer_index.at(secondary_index), visited);
+	}
+}
+
 void replay_instrumentation_mark_submitted(trackedcmdbuffer& commandbuffer_data)
 {
-	if (commandbuffer_data.shader_instrumentation_sessions.empty()) return;
-	trackedcmdbuffer::shader_instrumentation_session& session = commandbuffer_data.shader_instrumentation_sessions.back();
-	if (session.live && !session.recording) session.submitted = true;
+	std::unordered_set<trackedcmdbuffer*> visited;
+	replay_instrumentation_mark_submitted_recursive(commandbuffer_data, visited);
 }
 
 void replay_instrumentation_cleanup_command_buffer(trackedcmdbuffer& commandbuffer_data)

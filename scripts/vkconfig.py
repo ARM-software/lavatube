@@ -152,7 +152,7 @@ replay_pre_calls = [ 'vkDestroyInstance', 'vkDestroyDevice', 'vkCreateDevice', '
 	'vkCreateSharedSwapchainsKHR', 'vkCreateGraphicsPipelines', 'vkCreateComputePipelines', 'vkCreateRayTracingPipelinesKHR', 'vkCreateShadersEXT', 'vkCmdPushConstants2KHR',
 	'vkCmdPushConstants2', 'vkQueueSubmit', 'vkQueueSubmit2', 'vkQueueSubmit2KHR', 'vkQueueWaitIdle', 'vkDeviceWaitIdle', 'vkWaitForFences',
 	'vkDestroyPipelineCache', 'vkDestroySwapchainKHR', 'vkDestroyBuffer',
-	'vkBeginCommandBuffer', 'vkEndCommandBuffer', 'vkResetCommandBuffer', 'vkResetCommandPool', 'vkDestroyCommandPool', 'vkFreeCommandBuffers', 'vkDestroySurfaceKHR',
+	'vkBeginCommandBuffer', 'vkEndCommandBuffer', 'vkResetCommandBuffer', 'vkResetCommandPool', 'vkDestroyCommandPool', 'vkFreeCommandBuffers', 'vkCmdExecuteCommands', 'vkDestroySurfaceKHR',
 	'vkDestroyAccelerationStructureKHR', 'vkCreateInstance', 'vkCreateAccelerationStructureKHR', 'vkCmdBuildAccelerationStructuresKHR',
 	'vkCmdBuildAccelerationStructuresIndirectKHR',
 	'vkUpdateDescriptorSetWithTemplate', 'vkUpdateDescriptorSetWithTemplateKHR', 'vkCmdPushDescriptorSetWithTemplate', 'vkCmdPushDescriptorSetWithTemplateKHR',

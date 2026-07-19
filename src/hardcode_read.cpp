@@ -1151,6 +1151,7 @@ static void replay_cleanup_commandbuffer_for_rerecord(lava_file_reader& reader, 
 {
 	replay_wait_for_pending_commandbuffer(reader, commandbuffer_index, commandbuffer_data, false);
 	replay_instrumentation_cleanup_command_buffer(commandbuffer_data);
+	commandbuffer_data.replay_secondary_commandbuffers.clear();
 	commandbuffer_data.raytracing_sbt_uses.clear();
 	commandbuffer_data.raytracing_instance_uses.clear();
 	commandbuffer_data.bound_raytracing_pipeline_index = CONTAINER_INVALID_INDEX;
@@ -1269,6 +1270,25 @@ void replay_pre_vkBeginCommandBuffer(lava_file_reader& reader, VkCommandBuffer c
 void replay_pre_vkEndCommandBuffer(lava_file_reader& reader, VkCommandBuffer commandBuffer)
 {
 	replay_instrumentation_end_command_buffer(reader, commandBuffer);
+}
+
+void replay_pre_vkCmdExecuteCommands(lava_file_reader& reader, VkCommandBuffer commandBuffer, uint32_t commandBufferCount,
+	const VkCommandBuffer* pCommandBuffers)
+{
+	(void)reader;
+	const uint32_t primary_index = index_to_VkCommandBuffer.index_or_invalid(commandBuffer);
+	if (primary_index == CONTAINER_INVALID_INDEX || primary_index >= VkCommandBuffer_index.size() || !pCommandBuffers) return;
+	trackedcmdbuffer& primary_data = VkCommandBuffer_index.at(primary_index);
+	for (uint32_t i = 0; i < commandBufferCount; i++)
+	{
+		const uint32_t secondary_index = index_to_VkCommandBuffer.index_or_invalid(pCommandBuffers[i]);
+		if (secondary_index == CONTAINER_INVALID_INDEX || secondary_index >= VkCommandBuffer_index.size()) continue;
+		if (std::find(primary_data.replay_secondary_commandbuffers.begin(), primary_data.replay_secondary_commandbuffers.end(), secondary_index)
+			== primary_data.replay_secondary_commandbuffers.end())
+		{
+			primary_data.replay_secondary_commandbuffers.push_back(secondary_index);
+		}
+	}
 }
 
 void replay_pre_vkResetCommandBuffer(lava_file_reader& reader, VkCommandBuffer commandBuffer, VkCommandBufferResetFlags flags)
@@ -4215,7 +4235,7 @@ static void replay_enable_pipeline_capture_statistics(lava_file_reader& reader, 
 	}
 }
 
-static void replay_enable_shader_instrumentation_pipeline(lava_file_reader& reader, const void*& pNext)
+static void replay_enable_shader_instrumentation_pipeline(lava_file_reader& reader, const void*& pNext, VkPipelineCreateFlags flags)
 {
 	if (!reader.parent->cli_shader_instrumentation_enabled.load(std::memory_order_acquire)) return;
 	VkPipelineCreateFlags2CreateInfo* flags2 = (VkPipelineCreateFlags2CreateInfo*)find_extension(
@@ -4226,7 +4246,8 @@ static void replay_enable_shader_instrumentation_pipeline(lava_file_reader& read
 		return;
 	}
 	flags2 = reader.pool.allocate<VkPipelineCreateFlags2CreateInfo>(1);
-	*flags2 = { VK_STRUCTURE_TYPE_PIPELINE_CREATE_FLAGS_2_CREATE_INFO, pNext, VK_PIPELINE_CREATE_2_INSTRUMENT_SHADERS_BIT_ARM };
+	*flags2 = { VK_STRUCTURE_TYPE_PIPELINE_CREATE_FLAGS_2_CREATE_INFO, pNext,
+		(VkPipelineCreateFlags2)flags | VK_PIPELINE_CREATE_2_INSTRUMENT_SHADERS_BIT_ARM };
 	pNext = flags2;
 }
 
@@ -4237,7 +4258,8 @@ void replay_pre_vkCreateComputePipelines(lava_file_reader& reader, VkDevice devi
 	{
 		const_cast<VkComputePipelineCreateInfo&>(pCreateInfos[i]).flags &= ~VK_PIPELINE_CREATE_FAIL_ON_PIPELINE_COMPILE_REQUIRED_BIT;
 		replay_enable_pipeline_capture_statistics(reader, pCreateInfos[i].pNext, const_cast<VkComputePipelineCreateInfo&>(pCreateInfos[i]).flags);
-		replay_enable_shader_instrumentation_pipeline(reader, const_cast<VkComputePipelineCreateInfo&>(pCreateInfos[i]).pNext);
+		replay_enable_shader_instrumentation_pipeline(reader, const_cast<VkComputePipelineCreateInfo&>(pCreateInfos[i]).pNext,
+			pCreateInfos[i].flags);
 
 		const VkMarkedOffsetsARM* remap = (const VkMarkedOffsetsARM*)find_extension(&pCreateInfos[i].stage, VK_STRUCTURE_TYPE_MARKED_OFFSETS_ARM);
 		if (!remap) continue; // nothing to do here
@@ -4259,7 +4281,8 @@ void replay_pre_vkCreateGraphicsPipelines(lava_file_reader& reader, VkDevice dev
 	{
 		const_cast<VkGraphicsPipelineCreateInfo&>(pCreateInfos[i]).flags &= ~VK_PIPELINE_CREATE_FAIL_ON_PIPELINE_COMPILE_REQUIRED_BIT;
 		replay_enable_pipeline_capture_statistics(reader, pCreateInfos[i].pNext, const_cast<VkGraphicsPipelineCreateInfo&>(pCreateInfos[i]).flags);
-		replay_enable_shader_instrumentation_pipeline(reader, const_cast<VkGraphicsPipelineCreateInfo&>(pCreateInfos[i]).pNext);
+		replay_enable_shader_instrumentation_pipeline(reader, const_cast<VkGraphicsPipelineCreateInfo&>(pCreateInfos[i]).pNext,
+			pCreateInfos[i].flags);
 
 		for (uint32_t stage = 0; stage < pCreateInfos[i].stageCount; stage++)
 		{
@@ -4284,7 +4307,8 @@ void replay_pre_vkCreateRayTracingPipelinesKHR(lava_file_reader& reader, VkDevic
 	{
 		const_cast<VkRayTracingPipelineCreateInfoKHR&>(pCreateInfos[i]).flags &= ~VK_PIPELINE_CREATE_FAIL_ON_PIPELINE_COMPILE_REQUIRED_BIT;
 		replay_enable_pipeline_capture_statistics(reader, pCreateInfos[i].pNext, const_cast<VkRayTracingPipelineCreateInfoKHR&>(pCreateInfos[i]).flags);
-		replay_enable_shader_instrumentation_pipeline(reader, const_cast<VkRayTracingPipelineCreateInfoKHR&>(pCreateInfos[i]).pNext);
+		replay_enable_shader_instrumentation_pipeline(reader, const_cast<VkRayTracingPipelineCreateInfoKHR&>(pCreateInfos[i]).pNext,
+			pCreateInfos[i].flags);
 
 		for (uint32_t stage = 0; stage < pCreateInfos[i].stageCount; stage++)
 		{

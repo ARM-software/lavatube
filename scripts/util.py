@@ -1677,6 +1677,11 @@ def load_add_tracking(name):
 				z.do('data.internally_synchronized_queues = (pdisqf && pdisqf->internallySynchronizedQueues == VK_TRUE);')
 				z.do('data.allocator = new suballocator();')
 				z.do('data.allocator->create(physicalDevice, pDevice, VkImage_index, VkBuffer_index, VkTensorARM_index, VkDataGraphPipelineSessionARM_index, reader.parent->threads.size(), reader.run);')
+			elif type == 'VkCommandPool':
+				z.do('trackeddevice::command_pool_info info;')
+				z.do('info.flags = pCreateInfo->flags;')
+				z.do('if (pCreateInfo->queueFamilyIndex < device_VkQueueFamilyProperties.size()) info.queue_flags = device_VkQueueFamilyProperties.at(pCreateInfo->queueFamilyIndex).queueFlags;')
+				z.do('VkDevice_index.at(device_index).replay_command_pools[%s] = info;' % toindex(type))
 			elif type == 'VkBuffer':
 				z.do('data.size = pCreateInfo->size;')
 				z.do('data.flags = pCreateInfo->flags;')
