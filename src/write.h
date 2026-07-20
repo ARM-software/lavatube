@@ -115,7 +115,7 @@ class lava_file_writer : public file_writer
 	lava_file_writer& operator=(const lava_file_writer&)= delete;
 
 public:
-	lava_file_writer(uint16_t _tid, lava_writer* _parent);
+	lava_file_writer(uint16_t _tid, lava_writer* _parent, bool _thread_barriers_active = true);
 	~lava_file_writer();
 
 	void new_frame(int global_frame) REQUIRES(frame_mutex);
@@ -167,8 +167,11 @@ public:
 
 	/// Make other threads wait for us
 	void push_thread_barriers();
+	void activate_thread_barriers() { thread_barriers_active.store(true, std::memory_order_release); }
 
 	std::atomic_bool pending_barrier { false };
+	/// Pre-created post-processing writers stay inactive until their input thread emits output.
+	std::atomic_bool thread_barriers_active { true };
 
 	void self_test()
 	{
@@ -236,7 +239,7 @@ public:
 	}
 
 private:
-	void make_writer(unsigned index = UINT32_MAX);
+	void make_writer(unsigned index = UINT32_MAX, bool thread_barriers_active = true);
 
 	std::string mPath;
 	std::string mPack;

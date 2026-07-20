@@ -160,12 +160,13 @@ static std::string trace_pack_path(const std::string& path, bool explicit_output
 
 // --- trace file writer
 
-lava_file_writer::lava_file_writer(uint16_t _tid, lava_writer* _parent) : file_writer(_tid), parent(_parent)
+lava_file_writer::lava_file_writer(uint16_t _tid, lava_writer* _parent, bool _thread_barriers_active) : file_writer(_tid), parent(_parent)
 {
 	current.thread = _tid;
 	current.packet = 0;
 	run = parent->run;
 	write_output = parent->write_output;
+	thread_barriers_active.store(_thread_barriers_active, std::memory_order_relaxed);
 	get_thread_name(thread_name);
 	if (p__disable_multithread_compress) disable_multithreaded_compress();
 	if (p__disable_multithread_writeout) disable_multithreaded_writeout();
@@ -186,6 +187,7 @@ void lava_file_writer::push_thread_barriers()
 	for (int i = 0; i < size; i++)
 	{
 		if (i == thread_index()) continue;
+		if (!parent->thread_streams.at(i)->thread_barriers_active.load(std::memory_order_acquire)) continue;
 		DLOG2("Pushing thread barrier to thread %d", i);
 		parent->thread_streams.at(i)->pending_barrier = true;
 	}
@@ -587,7 +589,7 @@ void lava_writer::finish()
 	vulkan_feature_detection_reset();
 }
 
-void lava_writer::make_writer(unsigned index)
+void lava_writer::make_writer(unsigned index, bool thread_barriers_active)
 {
 	lava::lock_guard lock(frame_mutex);
 	if (index == UINT32_MAX)
@@ -596,7 +598,7 @@ void lava_writer::make_writer(unsigned index)
 	}
 	assert(index == thread_streams.size());
 	tid = index;
-	lava_file_writer* f = new lava_file_writer(index, this);
+	lava_file_writer* f = new lava_file_writer(index, this, thread_barriers_active);
 	if (!mPath.empty())
 	{
 		f->set(mPath);
@@ -617,7 +619,7 @@ void lava_writer::prepare_threads(unsigned count)
 {
 	while (thread_streams.size() < count)
 	{
-		make_writer(thread_streams.size());
+		make_writer(thread_streams.size(), false);
 	}
 }
 

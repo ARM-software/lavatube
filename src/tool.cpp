@@ -1223,6 +1223,7 @@ static void replay_thread(lava_reader* replayer, int thread_id)
 			{
 				t.current_update_packet.clear();
 				packet_start = t.packet_start();
+				if (instrtype == PACKET_VULKAN_API_CALL || is_update_packet(instrtype)) output_writer->activate_thread_barriers();
 				if (instrtype != PACKET_VULKAN_API_CALL && instrtype != PACKET_THREAD_BARRIER && !is_update_packet(instrtype))
 				{
 					ABORT("Output mode does not yet support packet type %u on thread %u packet %u", (unsigned)instrtype, (unsigned)t.thread_index(), (unsigned)t.current.packet);
