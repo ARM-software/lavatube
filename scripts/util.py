@@ -1335,6 +1335,26 @@ def save_add_pre(name): # need to include the resource-creating or resource-dest
 		z.declarations.insert(5, 'bool internally_synchronized_queues = false;')
 		z.declarations.insert(6, 'VkPhysicalDeviceInternallySynchronizedQueuesFeaturesKHR* pdisqf = (VkPhysicalDeviceInternallySynchronizedQueuesFeaturesKHR*)find_extension(pCreateInfo, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_INTERNALLY_SYNCHRONIZED_QUEUES_FEATURES_KHR);')
 		z.declarations.insert(7, 'if (pdisqf && pdisqf->internallySynchronizedQueues == VK_TRUE) internally_synchronized_queues = true;')
+	elif name in ['vkDebugMarkerSetObjectNameEXT', 'vkDebugMarkerSetObjectTagEXT']:
+		info_type = 'VkDebugMarkerObjectNameInfoEXT' if name == 'vkDebugMarkerSetObjectNameEXT' else 'VkDebugMarkerObjectTagInfoEXT'
+		info = 'pNameInfo' if name == 'vkDebugMarkerSetObjectNameEXT' else 'pTagInfo'
+		z.do('%s unwrapped_info = {};' % info_type)
+		z.do('if (%s)' % info)
+		z.brace_begin()
+		z.do('unwrapped_info = *%s;' % info)
+		z.do('if (p__virtualqueues && unwrapped_info.objectType == VK_DEBUG_REPORT_OBJECT_TYPE_QUEUE_EXT && unwrapped_info.object != 0) unwrapped_info.object = (uint64_t)((trackedqueue*)unwrapped_info.object)->realQueue;')
+		z.do('%s = &unwrapped_info;' % info)
+		z.brace_end()
+	elif name in ['vkSetDebugUtilsObjectNameEXT', 'vkSetDebugUtilsObjectTagEXT']:
+		info_type = 'VkDebugUtilsObjectNameInfoEXT' if name == 'vkSetDebugUtilsObjectNameEXT' else 'VkDebugUtilsObjectTagInfoEXT'
+		info = 'pNameInfo' if name == 'vkSetDebugUtilsObjectNameEXT' else 'pTagInfo'
+		z.do('%s unwrapped_info = {};' % info_type)
+		z.do('if (%s)' % info)
+		z.brace_begin()
+		z.do('unwrapped_info = *%s;' % info)
+		z.do('if (p__virtualqueues && unwrapped_info.objectType == VK_OBJECT_TYPE_QUEUE && unwrapped_info.objectHandle != 0) unwrapped_info.objectHandle = (uint64_t)((trackedqueue*)unwrapped_info.objectHandle)->realQueue;')
+		z.do('%s = &unwrapped_info;' % info)
+		z.brace_end()
 
 def save_add_tracking(name):
 	z = getspool()
@@ -2044,10 +2064,15 @@ def loadfunc(name, node, target, header):
 		if name in vk.blackhole_ignore:
 			prefix = 'if (reader.run && !is_blackhole_mode())'
 		if name in vk.layer_implemented:
-			if name == 'vkSetDebugUtilsObjectNameEXT':
-				prefix = 'if (wrap_%s && reader.run && pNameInfo->objectType != VK_OBJECT_TYPE_PHYSICAL_DEVICE && pNameInfo->objectType != VK_OBJECT_TYPE_DEVICE_MEMORY) ' % name
-			elif name == 'vkDebugMarkerSetObjectNameEXT':
-				prefix = 'if (wrap_%s && reader.run && pNameInfo->objectType != VK_DEBUG_REPORT_OBJECT_TYPE_PHYSICAL_DEVICE_EXT && pNameInfo->objectType != VK_DEBUG_REPORT_OBJECT_TYPE_DEVICE_MEMORY_EXT) ' % name
+			if name in ['vkSetDebugUtilsObjectNameEXT', 'vkSetDebugUtilsObjectTagEXT']:
+				info = 'pNameInfo' if name == 'vkSetDebugUtilsObjectNameEXT' else 'pTagInfo'
+				prefix = 'if (wrap_%s && reader.run && %s->objectType != VK_OBJECT_TYPE_PHYSICAL_DEVICE && %s->objectType != VK_OBJECT_TYPE_DEVICE_MEMORY) ' % (name, info, info)
+			elif name in ['vkDebugMarkerSetObjectNameEXT', 'vkDebugMarkerSetObjectTagEXT']:
+				info = 'pNameInfo' if name == 'vkDebugMarkerSetObjectNameEXT' else 'pTagInfo'
+				prefix = ('if (wrap_%s && reader.run && %s->objectType != VK_DEBUG_REPORT_OBJECT_TYPE_PHYSICAL_DEVICE_EXT '
+					'&& %s->objectType != VK_DEBUG_REPORT_OBJECT_TYPE_DEVICE_MEMORY_EXT '
+					'&& (!is_validation() || (%s->objectType != VK_DEBUG_REPORT_OBJECT_TYPE_INSTANCE_EXT '
+					'&& %s->objectType != VK_DEBUG_REPORT_OBJECT_TYPE_DEVICE_EXT))) ' % (name, info, info, info, info))
 			else:
 				prefix = 'if (wrap_%s && reader.run) ' % name
 		elif name in vk.noscreen_calls:
