@@ -1,4 +1,4 @@
-#include "tui_openai.h"
+#include "tui_llm_client.h"
 
 #include <curl/curl.h>
 #include <errno.h>
@@ -7,8 +7,8 @@
 
 #include "jsoncpp/json/reader.h"
 
-static const long DEFAULT_OPENAI_CONNECT_TIMEOUT_SECONDS = 10;
-static const long DEFAULT_OPENAI_REQUEST_TIMEOUT_SECONDS = 60;
+static const long DEFAULT_LLM_CONNECT_TIMEOUT_SECONDS = 10;
+static const long DEFAULT_LLM_REQUEST_TIMEOUT_SECONDS = 60;
 
 static size_t curl_write_string(char* ptr, size_t size, size_t nmemb, void* userdata)
 {
@@ -18,7 +18,7 @@ static size_t curl_write_string(char* ptr, size_t size, size_t nmemb, void* user
 	return total;
 }
 
-static std::string openai_instructions()
+static std::string llm_instructions()
 {
 	return "You are a lavatube trace investigator. Answer questions about the loaded Vulkan trace or replay service. "
 	       "Use the provided tools for trace and replay facts instead of guessing. Some tools can control the replay service; "
@@ -87,26 +87,20 @@ static long timeout_seconds_from_env(const char* name, long fallback)
 	return value;
 }
 
-tui_openai_client::tui_openai_client(const std::string& api_key, const std::string& model, const std::string& base_url, const std::string& reasoning_effort)
+tui_llm_client::tui_llm_client(const std::string& api_key, const std::string& model, const std::string& base_url, const std::string& reasoning_effort)
 	: mApiKey(api_key)
 	, mModel(model)
 	, mBaseUrl(normalize_base_url(base_url))
 	, mReasoningEffort(reasoning_effort)
 {
-	curl_global_init(CURL_GLOBAL_DEFAULT);
 }
 
-tui_openai_client::~tui_openai_client()
-{
-	curl_global_cleanup();
-}
-
-tui_assistant_result tui_openai_client::ask(const std::vector<tui_chat_message>& history, const tui_trace_tools& tools) const
+tui_assistant_result tui_llm_client::ask(const std::vector<tui_chat_message>& history, const tui_trace_tools& tools) const
 {
 	tui_assistant_result result;
 	if (!configured())
 	{
-		result.error = "LAVATUI_OPENAI_API_KEY or OPENAI_API_KEY is not set";
+		result.error = "The selected LLM API key is not set";
 		return result;
 	}
 
@@ -153,7 +147,7 @@ tui_assistant_result tui_openai_client::ask(const std::vector<tui_chat_message>&
 	return result;
 }
 
-tui_openai_client::response_data tui_openai_client::post_json(const Json::Value& request) const
+tui_llm_client::response_data tui_llm_client::post_json(const Json::Value& request) const
 {
 	response_data out;
 	CURL* curl = curl_easy_init();
@@ -181,15 +175,15 @@ tui_openai_client::response_data tui_openai_client::post_json(const Json::Value&
 	curl_easy_setopt(curl, CURLOPT_USERAGENT, "lava-tui/0.1");
 	curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
 
-	const long connect_timeout = timeout_seconds_from_env("LAVATUI_OPENAI_CONNECT_TIMEOUT", DEFAULT_OPENAI_CONNECT_TIMEOUT_SECONDS);
-	const long request_timeout = timeout_seconds_from_env("LAVATUI_OPENAI_TIMEOUT", DEFAULT_OPENAI_REQUEST_TIMEOUT_SECONDS);
+	const long connect_timeout = timeout_seconds_from_env("LAVATUI_LLM_CONNECT_TIMEOUT", DEFAULT_LLM_CONNECT_TIMEOUT_SECONDS);
+	const long request_timeout = timeout_seconds_from_env("LAVATUI_LLM_TIMEOUT", DEFAULT_LLM_REQUEST_TIMEOUT_SECONDS);
 	curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, connect_timeout);
 	curl_easy_setopt(curl, CURLOPT_TIMEOUT, request_timeout);
 
 	const CURLcode code = curl_easy_perform(curl);
 	if (code != CURLE_OK)
 	{
-		if (code == CURLE_OPERATION_TIMEDOUT) out.error = "OpenAI request timed out after " + std::to_string(request_timeout) + " seconds";
+		if (code == CURLE_OPERATION_TIMEDOUT) out.error = "LLM request timed out after " + std::to_string(request_timeout) + " seconds";
 		else out.error = curl_easy_strerror(code);
 	}
 	curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &out.http_code);
@@ -201,12 +195,12 @@ tui_openai_client::response_data tui_openai_client::post_json(const Json::Value&
 	return out;
 }
 
-Json::Value tui_openai_client::build_initial_request(const std::vector<tui_chat_message>& history, const Json::Value& tool_definitions) const
+Json::Value tui_llm_client::build_initial_request(const std::vector<tui_chat_message>& history, const Json::Value& tool_definitions) const
 {
 	Json::Value request;
 	request["model"] = mModel;
 	if (!mReasoningEffort.empty()) request["reasoning"]["effort"] = mReasoningEffort;
-	request["instructions"] = openai_instructions();
+	request["instructions"] = llm_instructions();
 	request["tools"] = tool_definitions;
 	request["tool_choice"] = "auto";
 	request["store"] = false;
@@ -222,12 +216,12 @@ Json::Value tui_openai_client::build_initial_request(const std::vector<tui_chat_
 	return request;
 }
 
-Json::Value tui_openai_client::build_tool_result_request(const Json::Value& input, const Json::Value& tool_definitions) const
+Json::Value tui_llm_client::build_tool_result_request(const Json::Value& input, const Json::Value& tool_definitions) const
 {
 	Json::Value request;
 	request["model"] = mModel;
 	if (!mReasoningEffort.empty()) request["reasoning"]["effort"] = mReasoningEffort;
-	request["instructions"] = openai_instructions();
+	request["instructions"] = llm_instructions();
 	request["tools"] = tool_definitions;
 	request["tool_choice"] = "auto";
 	request["store"] = false;
@@ -236,7 +230,7 @@ Json::Value tui_openai_client::build_tool_result_request(const Json::Value& inpu
 	return request;
 }
 
-bool tui_openai_client::parse_response_json(const response_data& response, Json::Value& root, tui_assistant_result& result) const
+bool tui_llm_client::parse_response_json(const response_data& response, Json::Value& root, tui_assistant_result& result) const
 {
 	if (!response.error.empty())
 	{
@@ -247,7 +241,7 @@ bool tui_openai_client::parse_response_json(const response_data& response, Json:
 	Json::Reader reader;
 	if (!reader.parse(response.body, root, false))
 	{
-		result.error = "Failed to parse OpenAI response JSON: " + reader.getFormattedErrorMessages();
+		result.error = "Failed to parse LLM response JSON: " + reader.getFormattedErrorMessages();
 		return false;
 	}
 
@@ -255,14 +249,14 @@ bool tui_openai_client::parse_response_json(const response_data& response, Json:
 	{
 		const std::string api_error = response_error_message(root);
 		if (!api_error.empty()) result.error = api_error;
-		else result.error = "OpenAI HTTP error " + std::to_string(response.http_code);
+		else result.error = "LLM HTTP error " + std::to_string(response.http_code);
 		return false;
 	}
 
 	return true;
 }
 
-std::string tui_openai_client::collect_output_text(const Json::Value& root) const
+std::string tui_llm_client::collect_output_text(const Json::Value& root) const
 {
 	std::string text;
 	const Json::Value& output = root["output"];
@@ -287,7 +281,7 @@ std::string tui_openai_client::collect_output_text(const Json::Value& root) cons
 	return text;
 }
 
-std::string tui_openai_client::collect_usage(const Json::Value& root) const
+std::string tui_llm_client::collect_usage(const Json::Value& root) const
 {
 	if (!root.isMember("usage") || !root["usage"].isObject()) return "";
 	const Json::Value& usage = root["usage"];
@@ -306,7 +300,7 @@ std::string tui_openai_client::collect_usage(const Json::Value& root) const
 	return out;
 }
 
-bool tui_openai_client::collect_tool_calls(const Json::Value& root, std::vector<tui_tool_notice>& calls) const
+bool tui_llm_client::collect_tool_calls(const Json::Value& root, std::vector<tui_tool_notice>& calls) const
 {
 	const Json::Value& output = root["output"];
 	if (!output.isArray()) return true;
@@ -326,7 +320,7 @@ bool tui_openai_client::collect_tool_calls(const Json::Value& root, std::vector<
 	return true;
 }
 
-void tui_openai_client::append_response_output(Json::Value& input, const Json::Value& root) const
+void tui_llm_client::append_response_output(Json::Value& input, const Json::Value& root) const
 {
 	const Json::Value& output = root["output"];
 	if (!output.isArray()) return;
@@ -336,7 +330,7 @@ void tui_openai_client::append_response_output(Json::Value& input, const Json::V
 	}
 }
 
-void tui_openai_client::append_tool_outputs(Json::Value& input, const std::vector<tui_tool_notice>& notices) const
+void tui_llm_client::append_tool_outputs(Json::Value& input, const std::vector<tui_tool_notice>& notices) const
 {
 	for (const tui_tool_notice& notice : notices)
 	{

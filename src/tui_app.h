@@ -7,17 +7,14 @@
 
 #include "ftxui/component/app.hpp"
 #include "ftxui/component/component.hpp"
-#include "tui_openai.h"
+#include "tui_llm_router.h"
 #include "tui_trace_tools.h"
 
 struct tui_options
 {
 	std::string trace_file;
 	std::string hostname = "localhost";
-	std::string api_key;
-	std::string model;
-	std::string base_url;
-	std::string reasoning_effort;
+	tui_llm_options llm;
 	int port = 11901;
 	bool replay_service = false;
 	bool verbose = false;

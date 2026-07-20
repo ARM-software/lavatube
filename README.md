@@ -149,9 +149,15 @@ while dumping out stored meta-information and replay state. See `lava-cli --help
 information.
 
 You can also use the highly experimental `lava-tui` instead of `lava-cli` to have your own
-natural language interface to traces. It can use any OpenAI compatible interface, such as
-chatgpt with an API key, or Ollama. Example of how to run with Ollama and Gemma 4:
-`LAVATUI_OPENAI_API_KEY=ollama LAVATUI_OPENAI_BASE_URL=http://localhost:11434/v1 LAVATUI_MODEL=gemma4:latest ./build/lava-tui`
+natural language interface to traces. It supports OpenAI-compatible cloud and local interfaces.
+For Ollama and Gemma 4, run:
+`LAVATUI_LOCAL_API_KEY=ollama LAVATUI_LLM_MODE=local ./build/lava-tui`
+
+Cloud configuration uses `LAVATUI_CLOUD_API_KEY`, with optional `LAVATUI_CLOUD_MODEL`,
+`LAVATUI_CLOUD_BASE_URL`, and `LAVATUI_CLOUD_REASONING`. Local configuration can override
+`LAVATUI_LOCAL_MODEL` and `LAVATUI_LOCAL_BASE_URL`. When both API keys are configured, cloud is
+selected initially. Type `/local` or `/cloud` in the TUI to switch without clearing the chat.
+Routed mode is planned but not implemented yet.
 
 Testing
 =======

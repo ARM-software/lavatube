@@ -74,7 +74,7 @@ LAVATUI_LOCAL_MODEL=gemma4:latest
 LAVATUI_CLOUD_BASE_URL=https://api.openai.com/v1
 LAVATUI_CLOUD_MODEL=gpt-5.5
 LAVATUI_CLOUD_REASONING=low
-LAVATUI_LLM_MODE=routed
+LAVATUI_LLM_MODE=routed (after the routing step is implemented)
 ```
 
 New user settings with no defaults:
@@ -89,6 +89,14 @@ we assume `routed`. If we only have settings for one model, we use that one. The
 able to switch on-the-fly between the three settings by typing `/local`, `/cloud` or `/routed`.
 
 `LAVATUI_LOCAL_API_KEY` must be set to `ollama` for local models for now.
+
+The first implementation step supports `local` and `cloud` modes only. If the mode is unset, it
+selects the only configured model, or cloud when both are configured. Setting the mode to `routed`
+currently exits with a clear not-implemented error. `/local` and `/cloud` switch immediately while
+preserving shared chat history; `/routed` reports the same limitation in the transcript.
+
+Request timeouts shared by both clients can be changed with `LAVATUI_LLM_CONNECT_TIMEOUT` and
+`LAVATUI_LLM_TIMEOUT`.
 
 Since this is still just an experiment, we do not need to care about backwards compatibility
 for users. We want to abort on errors with clear error messages so we can fix them rather than
@@ -108,3 +116,10 @@ A first step could be to change the environment variables and implement an on-th
 between cloud and local.
 
 Then as a later second step we can implement the routing option.
+
+## Alternative TUI ideas
+
+- We could add the whole TUI as an option to `lava-cli`, eg as `lava-cli agent <free text>` or
+  `lava-cli :<free text>` or `lava-cli agent-file <filename>`.
+	- A bit like subagents, which is apparently all the rage now.
+	- Could have subagent interface to other tools as well, eg `lava-print`

@@ -191,10 +191,7 @@ public:
 	tui_component(App* screen, const tui_options& options)
 		: mScreen(screen)
 		, mTools(tool_options(options))
-		, mClient(options.api_key, options.model, options.base_url, options.reasoning_effort)
-		, mModel(options.model)
-		, mBaseUrl(options.base_url)
-		, mReasoningEffort(options.reasoning_effort)
+		, mRouter(options.llm)
 		, mSource(mTools.source_label())
 	{
 		mInputComponent = Input(&mInput, options.replay_service ? "Ask about the replay service" : "Ask about the trace");
@@ -204,11 +201,6 @@ public:
 		if (!mTools.validate(error))
 		{
 			mStatus = error;
-			mReady = false;
-		}
-		else if (!mClient.configured())
-		{
-			mStatus = "LAVATUI_OPENAI_API_KEY or OPENAI_API_KEY is not set";
 			mReady = false;
 		}
 		else
@@ -355,6 +347,13 @@ private:
 	{
 		const std::string prompt = mInput;
 		if (prompt.empty()) return;
+		const tui_llm_command command = tui_llm_parse_command(prompt);
+		if (command != tui_llm_command::none)
+		{
+			handle_llm_command(command);
+			mInput.clear();
+			return;
+		}
 
 		{
 			std::lock_guard<std::mutex> lock(mMutex);
@@ -380,6 +379,39 @@ private:
 		mWorker = std::thread(&tui_component::worker_main, this, prompt);
 	}
 
+	void handle_llm_command(tui_llm_command command)
+	{
+		std::lock_guard<std::mutex> lock(mMutex);
+		scroll_to_bottom_locked();
+		if (mBusy)
+		{
+			add_transcript_locked("status", "Cannot switch models while a request is running");
+			return;
+		}
+		if (!mReady)
+		{
+			add_transcript_locked("status", "Cannot switch models: " + mStatus);
+			return;
+		}
+		if (command == tui_llm_command::routed)
+		{
+			mStatus = "Routed mode is not implemented yet";
+			add_transcript_locked("status", mStatus);
+			return;
+		}
+
+		const tui_llm_mode mode = command == tui_llm_command::local_model ? tui_llm_mode::local_model : tui_llm_mode::cloud_model;
+		std::string error;
+		if (!mRouter.set_mode(mode, error))
+		{
+			mStatus = error;
+			add_transcript_locked("status", mStatus);
+			return;
+		}
+		mStatus = std::string("Using ") + tui_llm_mode_name(mode) + " model";
+		add_transcript_locked("status", mStatus);
+	}
+
 	void run_prompt(const std::string& prompt)
 	{
 		(void)prompt;
@@ -389,7 +421,7 @@ private:
 			history = mHistory;
 		}
 
-		tui_assistant_result result = mClient.ask(history, mTools);
+		tui_assistant_result result = mRouter.ask(history, mTools);
 
 		{
 			std::lock_guard<std::mutex> lock(mMutex);
@@ -467,9 +499,10 @@ private:
 
 	std::string status_bar(const std::string& status, bool busy) const
 	{
-		std::string out = mSource + " model=" + mModel;
-		if (!mReasoningEffort.empty()) out += " reasoning=" + mReasoningEffort;
-		if (!mBaseUrl.empty()) out += " base_url=" + mBaseUrl;
+		const tui_llm_client_options& active = mRouter.active_options();
+		std::string out = mSource + " mode=" + tui_llm_mode_name(mRouter.mode()) + " model=" + active.model;
+		if (!active.reasoning_effort.empty()) out += " reasoning=" + active.reasoning_effort;
+		if (!active.base_url.empty()) out += " base_url=" + active.base_url;
 		out += busy ? " busy " : " ";
 		out += status;
 		out += "  PageUp/PageDown scroll Ctrl-Down bottom Ctrl-D/Esc quit";
@@ -480,10 +513,7 @@ private:
 	Component mInputComponent;
 	std::string mInput;
 	tui_trace_tools mTools;
-	tui_openai_client mClient;
-	std::string mModel;
-	std::string mBaseUrl;
-	std::string mReasoningEffort;
+	tui_llm_router mRouter;
 	std::string mSource;
 	bool mReady = false;
 	bool mBusy = false;

@@ -29,11 +29,10 @@ struct tui_assistant_result
 	std::vector<tui_tool_notice> tools;
 };
 
-class tui_openai_client
+class tui_llm_client
 {
 public:
-	tui_openai_client(const std::string& api_key, const std::string& model, const std::string& base_url, const std::string& reasoning_effort);
-	~tui_openai_client();
+	tui_llm_client(const std::string& api_key, const std::string& model, const std::string& base_url, const std::string& reasoning_effort);
 
 	bool configured() const { return !mApiKey.empty(); }
 	const std::string& model() const { return mModel; }

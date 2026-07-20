@@ -729,8 +729,10 @@ add_executable(lava-tui
 	src/tui.cpp
 	src/tui_app.cpp
 	src/tui_app.h
-	src/tui_openai.cpp
-	src/tui_openai.h
+	src/tui_llm_client.cpp
+	src/tui_llm_client.h
+	src/tui_llm_router.cpp
+	src/tui_llm_router.h
 	src/tui_trace_tools.cpp
 	src/tui_trace_tools.h
 	src/trace_metadata.cpp
@@ -748,6 +750,23 @@ target_link_libraries(tui_trace_tools_test ${COMMON_LIBRARIES} lavatube)
 target_compile_options(tui_trace_tools_test PRIVATE ${COMMON_FLAGS})
 add_dependencies(tui_trace_tools_test sync_generated)
 add_lavatube_test(tui_trace_tools_test COMMAND tui_trace_tools_test)
+
+add_executable(tui_llm_router_test
+	tests/tui_llm_router.cpp
+	src/tui_llm_client.cpp
+	src/tui_llm_client.h
+	src/tui_llm_router.cpp
+	src/tui_llm_router.h
+	src/tui_trace_tools.cpp
+	src/tui_trace_tools.h
+	src/trace_metadata.cpp
+	src/trace_metadata.h
+)
+target_include_directories(tui_llm_router_test ${COMMON_INCLUDE})
+target_link_libraries(tui_llm_router_test ${COMMON_LIBRARIES} lavatube CURL::libcurl)
+target_compile_options(tui_llm_router_test PRIVATE ${COMMON_FLAGS})
+add_dependencies(tui_llm_router_test sync_generated)
+add_lavatube_test(tui_llm_router_test COMMAND tui_llm_router_test)
 endif()
 
 # --- traces ---
