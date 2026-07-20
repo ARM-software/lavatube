@@ -259,6 +259,7 @@ struct trackedobject : trackable
 	using trackable::trackable; // inherit constructor
 	uint32_t parent_device_index = UINT32_MAX;
 	VkDeviceMemory backing = VK_NULL_HANDLE;
+	uint32_t backing_index = UINT32_MAX; // capture memory index, persisted for replay alias planning
 	VkDeviceSize size = 0;
 	VkDeviceSize offset = 0; // our offset into our backing memory
 	VkMemoryRequirements req = {};
@@ -1126,6 +1127,7 @@ struct trackeddescriptorupdatetemplate : trackable
 /// Only called for capture, for replay we read this info off the metadata
 inline void trackedmemory::bind(trackedobject* obj)
 {
+	obj->backing_index = index;
 	// only 1-to-1 aliasing for now
 	auto it = usage.find(obj->offset);
 	if (it != usage.end()) // we are aliasing some other object

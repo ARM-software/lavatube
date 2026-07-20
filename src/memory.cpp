@@ -94,6 +94,7 @@ memory_requirements merge_memory_requirements(const memory_requirements& req1, c
 	reqs.dedicated.prefersDedicatedAllocation = req1.dedicated.prefersDedicatedAllocation | req2.dedicated.prefersDedicatedAllocation;
 	reqs.dedicated.requiresDedicatedAllocation = req1.dedicated.requiresDedicatedAllocation | req2.dedicated.requiresDedicatedAllocation;
 	reqs.memory_flags = req1.memory_flags | req2.memory_flags;
+	reqs.allocate_flags = req1.allocate_flags | req2.allocate_flags;
 	return reqs;
 }
 

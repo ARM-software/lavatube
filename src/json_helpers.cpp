@@ -94,8 +94,13 @@ static Json::Value trackedobject_json(const trackedobject *t)
 		v["alias_index"] = t->alias_index;
 		v["alias_type"] = (unsigned)t->alias_type;
 	}
-	v["req_size"] = (Json::Value::UInt64)t->req.size; // info only, do not read
-	v["req_alignment"] = (unsigned)t->req.alignment; // info only, do not read
+	if (t->backing_index != UINT32_MAX)
+	{
+		v["backing_memory_index"] = t->backing_index;
+		v["memory_offset"] = (Json::Value::UInt64)t->offset;
+	}
+	v["req_size"] = (Json::Value::UInt64)t->req.size;
+	v["req_alignment"] = (unsigned)t->req.alignment;
 	v["memory_flags"] = (unsigned)t->memory_flags;
 	v["tiling"] = (unsigned)t->tiling;
 	return v;
@@ -500,6 +505,13 @@ trackedbuffer trackedbuffer_json(const Json::Value& v)
 		t.alias_type = (VkObjectType)v["alias_type"].asUInt();
 	}
 	if (v.isMember("memory_flags")) t.memory_flags = (VkMemoryPropertyFlags)v["memory_flags"].asUInt();
+	if (v.isMember("backing_memory_index"))
+	{
+		t.backing_index = v["backing_memory_index"].asUInt();
+		t.offset = v["memory_offset"].asUInt64();
+		t.req.size = v["req_size"].asUInt64();
+		t.req.alignment = v["req_alignment"].asUInt64();
+	}
 
 	if (v.isMember("parent_device_index")) t.parent_device_index = v["parent_device_index"].asUInt();
 	else t.parent_device_index = 0; // use a default for old trace files, and pray we only have one VkDevice
@@ -537,6 +549,13 @@ trackedimage trackedimage_json(const Json::Value& v)
 		t.alias_type = (VkObjectType)v["alias_type"].asUInt();
 	}
 	if (v.isMember("memory_flags")) t.memory_flags = (VkMemoryPropertyFlags)v["memory_flags"].asUInt();
+	if (v.isMember("backing_memory_index"))
+	{
+		t.backing_index = v["backing_memory_index"].asUInt();
+		t.offset = v["memory_offset"].asUInt64();
+		t.req.size = v["req_size"].asUInt64();
+		t.req.alignment = v["req_alignment"].asUInt64();
+	}
 	if (v.isMember("swapchain_image")) t.is_swapchain_image = v["swapchain_image"].asBool();
 	t.object_type = VK_OBJECT_TYPE_IMAGE;
 
@@ -570,6 +589,13 @@ trackedtensor trackedtensor_json(const Json::Value& v)
 		t.alias_type = (VkObjectType)v["alias_type"].asUInt();
 	}
 	if (v.isMember("memory_flags")) t.memory_flags = (VkMemoryPropertyFlags)v["memory_flags"].asUInt();
+	if (v.isMember("backing_memory_index"))
+	{
+		t.backing_index = v["backing_memory_index"].asUInt();
+		t.offset = v["memory_offset"].asUInt64();
+		t.req.size = v["req_size"].asUInt64();
+		t.req.alignment = v["req_alignment"].asUInt64();
+	}
 
 	if (v.isMember("parent_device_index")) t.parent_device_index = v["parent_device_index"].asUInt();
 	else t.parent_device_index = 0; // use a default for old trace files, and pray we only have one VkDevice

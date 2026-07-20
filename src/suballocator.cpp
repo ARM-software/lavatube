@@ -1,6 +1,7 @@
 #include "suballocator.h"
 
 #include <algorithm>
+#include <map>
 #include <memory>
 #include <string.h>
 #include <vector>
@@ -41,6 +42,7 @@ struct suballocation
 	uint32_t index = 0;
 	VkDataGraphPipelineSessionBindPointARM bind_point = VK_DATA_GRAPH_PIPELINE_SESSION_BIND_POINT_MAX_ENUM_ARM;
 	uint32_t object_index = CONTAINER_INVALID_INDEX;
+	bool alias_member = false;
 };
 
 struct heap
@@ -53,6 +55,7 @@ struct heap
 	VkMemoryPropertyFlags flags;
 	VkMemoryAllocateFlags allocflags;
 	bool dedicated = false;
+	bool alias_group = false;
 	/// This one does not need to be concurrent safe, since each thread owns its own heap
 	/// and only it may iterate over and modify the allocations list.
 	std::list<suballocation> subs;
@@ -75,8 +78,27 @@ struct lookup
 	VkDeviceSize offset = 0;
 	VkDeviceSize size = 0;
 	bool initialized = false;
-	lookup(heap* h, VkDeviceSize o, VkDeviceSize s) : home(h), offset(o), size(s) {}
+	bool alias_member = false;
+	lookup(heap* h, VkDeviceSize o, VkDeviceSize s, bool a = false) : home(h), offset(o), size(s), alias_member(a) {}
 	lookup() {}
+};
+
+struct alias_group
+{
+	uint32_t capture_memory_index = UINT32_MAX;
+	VkDeviceSize capture_offset = 0;
+	VkDeviceSize size = 0;
+	VkDeviceSize alignment = 0;
+	memory_requirements reqs;
+	lava_tiling tiling = TILING_LINEAR;
+	heap* home = nullptr;
+	lava::mutex mutex;
+};
+
+struct alias_lookup
+{
+	alias_group* group = nullptr;
+	VkDeviceSize offset = 0;
 };
 
 struct datagraph_lookup
@@ -97,6 +119,10 @@ struct suballocator_private
 	std::vector<lookup> image_lookup;
 	std::vector<lookup> buffer_lookup;
 	std::vector<lookup> tensor_lookup;
+	std::vector<alias_lookup> image_alias_lookup;
+	std::vector<alias_lookup> buffer_alias_lookup;
+	std::vector<alias_lookup> tensor_alias_lookup;
+	std::vector<std::unique_ptr<alias_group>> alias_groups;
 	std::vector<std::vector<datagraph_lookup>> datagraphpipelinesession_lookup;
 	/// Does this device have the an annoying optimal-to-linear padding requirement? If so, put optimal and linear objects in different memory heaps
 	bool allow_mixed_tiling = true;
@@ -108,12 +134,16 @@ struct suballocator_private
 
 	void print_memory_usage();
 	uint32_t get_device_memory_type(uint32_t type_filter, VkMemoryPropertyFlags properties);
-	suballoc_location allocate(uint16_t tid, uint32_t memoryTypeIndex, suballocation &s, VkMemoryPropertyFlags flags, lava_tiling tiling, bool dedicated, VkMemoryAllocateFlags allocflags);
+	suballoc_location allocate(uint16_t tid, uint32_t memoryTypeIndex, suballocation &s, VkMemoryPropertyFlags flags, lava_tiling tiling, bool dedicated,
+		VkMemoryAllocateFlags allocflags, bool alias_group = false);
 	void suballoc_print(FILE* fp) const;
 	std::string info_markdown(uint32_t device_index) const;
 	suballoc_location suballocate(uint16_t tid, uint32_t memoryTypeIndex, suballocation &s, VkMemoryPropertyFlags flags, lava_tiling tiling, VkMemoryAllocateFlags allocflags);
 	void self_test() const;
 	void bind(heap& h, const suballocation& s);
+	void prepare_alias_groups(uint32_t device_index, std::vector<trackedimage>& images, std::vector<trackedbuffer>& buffers,
+		std::vector<trackedtensor>& tensors);
+	alias_lookup* get_alias_lookup(VkObjectType type, uint32_t index);
 	suballoc_metrics performance() const;
 	std::vector<std::unique_ptr<heap>>& thread_heaps(uint16_t tid);
 	const std::vector<std::unique_ptr<heap>>& thread_heaps(uint16_t tid) const;
@@ -225,6 +255,119 @@ static VkMemoryPropertyFlags prune_memory_flags(VkMemoryPropertyFlags flags)
 		flags &= ~VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT; // do not require this bit in these cases
 	}
 	return flags;
+}
+
+static bool capture_offset_less(const trackedobject* left, const trackedobject* right)
+{
+	if (left->offset != right->offset) return left->offset < right->offset;
+	if (left->object_type != right->object_type) return left->object_type < right->object_type;
+	return left->index < right->index;
+}
+
+alias_lookup* suballocator_private::get_alias_lookup(VkObjectType type, uint32_t index)
+{
+	if (type == VK_OBJECT_TYPE_IMAGE)
+	{
+		if (index >= image_alias_lookup.size()) SUBALLOC_ABORT(this, "Image alias index %u out of range", index);
+		return &image_alias_lookup.at(index);
+	}
+	if (type == VK_OBJECT_TYPE_TENSOR_ARM)
+	{
+		if (index >= tensor_alias_lookup.size()) SUBALLOC_ABORT(this, "Tensor alias index %u out of range", index);
+		return &tensor_alias_lookup.at(index);
+	}
+	if (type == VK_OBJECT_TYPE_BUFFER)
+	{
+		if (index >= buffer_alias_lookup.size()) SUBALLOC_ABORT(this, "Buffer alias index %u out of range", index);
+		return &buffer_alias_lookup.at(index);
+	}
+	return nullptr;
+}
+
+void suballocator_private::prepare_alias_groups(uint32_t device_index, std::vector<trackedimage>& images, std::vector<trackedbuffer>& buffers,
+	std::vector<trackedtensor>& tensors)
+{
+	std::map<uint32_t, std::vector<trackedobject*>> memory_objects;
+	for (auto& obj : images)
+	{
+		if (obj.parent_device_index == device_index && obj.backing_index != UINT32_MAX && obj.req.size > 0)
+			memory_objects[obj.backing_index].push_back(&obj);
+	}
+	for (auto& obj : buffers)
+	{
+		if (obj.parent_device_index == device_index && obj.backing_index != UINT32_MAX && obj.req.size > 0)
+			memory_objects[obj.backing_index].push_back(&obj);
+	}
+	for (auto& obj : tensors)
+	{
+		if (obj.parent_device_index == device_index && obj.backing_index != UINT32_MAX && obj.req.size > 0)
+			memory_objects[obj.backing_index].push_back(&obj);
+	}
+
+	for (auto& allocation : memory_objects)
+	{
+		auto& objects = allocation.second;
+		std::sort(objects.begin(), objects.end(), capture_offset_less);
+		size_t first = 0;
+		while (first < objects.size())
+		{
+			trackedobject* first_obj = objects.at(first);
+			if (first_obj->offset > UINT64_MAX - first_obj->req.size)
+				SUBALLOC_ABORT(this, "Captured memory range overflow for %s %u", pretty_print_VkObjectType(first_obj->object_type), first_obj->index);
+			VkDeviceSize capture_end = first_obj->offset + first_obj->req.size;
+			size_t last = first + 1;
+			while (last < objects.size() && objects.at(last)->offset < capture_end)
+			{
+				trackedobject* obj = objects.at(last);
+				if (obj->offset > UINT64_MAX - obj->req.size)
+					SUBALLOC_ABORT(this, "Captured memory range overflow for %s %u", pretty_print_VkObjectType(obj->object_type), obj->index);
+				capture_end = std::max(capture_end, obj->offset + obj->req.size);
+				last++;
+			}
+
+			if (last - first > 1)
+			{
+				auto group = std::make_unique<alias_group>();
+				group->capture_memory_index = allocation.first;
+				group->capture_offset = first_obj->offset;
+				group->alignment = 1;
+				group->tiling = first_obj->tiling;
+				bool have_requirements = false;
+				for (size_t i = first; i < last; i++)
+				{
+					trackedobject* obj = objects.at(i);
+					const VkDeviceSize relative_offset = obj->offset - group->capture_offset;
+					const VkDeviceSize alignment = obj->reqs.requirements.alignment;
+					if (alignment == 0 || relative_offset % alignment != 0)
+					{
+						SUBALLOC_ABORT(this, "Cannot preserve captured alias offset %lu for %s %u with replay alignment %lu",
+							(unsigned long)relative_offset, pretty_print_VkObjectType(obj->object_type), obj->index, (unsigned long)alignment);
+					}
+					if (relative_offset > UINT64_MAX - obj->reqs.requirements.size)
+						SUBALLOC_ABORT(this, "Replay alias range overflow for %s %u", pretty_print_VkObjectType(obj->object_type), obj->index);
+					group->size = std::max(group->size, relative_offset + obj->reqs.requirements.size);
+					group->alignment = std::max(group->alignment, alignment);
+					if (have_requirements) group->reqs = merge_memory_requirements(group->reqs, obj->reqs);
+					else group->reqs = obj->reqs;
+					have_requirements = true;
+					alias_lookup* alias = get_alias_lookup(obj->object_type, obj->index);
+					assert(alias && !alias->group);
+					alias->group = group.get();
+					alias->offset = relative_offset;
+				}
+				group->reqs.requirements.size = group->size;
+				group->reqs.requirements.alignment = group->alignment;
+				if (group->reqs.requirements.memoryTypeBits == 0)
+					SUBALLOC_ABORT(this, "No compatible replay memory type for alias group from captured memory %u", allocation.first);
+				if (group->reqs.dedicated.requiresDedicatedAllocation == VK_TRUE)
+					SUBALLOC_ABORT(this, "Alias group from captured memory %u contains an object requiring dedicated allocation", allocation.first);
+				ILOG("Prepared alias group from captured memory %u with %zu objects and replay size %lu", allocation.first,
+					last - first, (unsigned long)group->size);
+				alias_groups.push_back(std::move(group));
+			}
+			first = last;
+		}
+	}
 }
 
 suballoc_metrics suballocator::performance() const
@@ -402,6 +545,12 @@ suballocator::~suballocator()
 void suballocator::create(VkPhysicalDevice physicaldevice, VkDevice device, std::vector<trackedimage>& images, std::vector<trackedbuffer>& buffers,
 	std::vector<trackedtensor>& tensors, std::vector<trackeddatagraphpipelinesession>& sessions, size_t thread_count, bool run)
 {
+	create(physicaldevice, device, 0, images, buffers, tensors, sessions, thread_count, run);
+}
+
+void suballocator::create(VkPhysicalDevice physicaldevice, VkDevice device, uint32_t device_index, std::vector<trackedimage>& images, std::vector<trackedbuffer>& buffers,
+	std::vector<trackedtensor>& tensors, std::vector<trackeddatagraphpipelinesession>& sessions, size_t thread_count, bool run)
+{
 	// Step 1 - Initialize internal state
 
 	priv = new suballocator_private;
@@ -410,6 +559,9 @@ void suballocator::create(VkPhysicalDevice physicaldevice, VkDevice device, std:
 	priv->image_lookup.resize(images.size());
 	priv->buffer_lookup.resize(buffers.size());
 	priv->tensor_lookup.resize(tensors.size());
+	priv->image_alias_lookup.resize(images.size());
+	priv->buffer_alias_lookup.resize(buffers.size());
+	priv->tensor_alias_lookup.resize(tensors.size());
 	priv->datagraphpipelinesession_lookup.resize(sessions.size());
 	memset(&priv->memory_properties, 0, sizeof(priv->memory_properties));
 	if (p__suballocator_heap_size != -1) priv->min_heap_size = p__suballocator_heap_size;
@@ -436,44 +588,67 @@ void suballocator::create(VkPhysicalDevice physicaldevice, VkDevice device, std:
 	}
 	assert(priv->memory_properties.memoryTypeCount > 0);
 
-	// Step 2 - Query memory requirements for each passed in object and find their new memory type. Assign
-	// some to dedicated allocation.
+	// Step 2 - Query replay memory requirements for every object owned by this device.
 
 	if (priv->run)
 	{
 		// First consume allocations on those that require dedicated allocation
 		for (auto& obj : images)
 		{
-			if (obj.is_swapchain_image) continue;
+			if (obj.parent_device_index != device_index || obj.is_swapchain_image) continue;
 			obj.reqs = get_trackedimage_memory_requirements(device, obj);
-			if (obj.reqs.dedicated.requiresDedicatedAllocation == VK_TRUE && priv->max_allocations)
-			{
-				obj.dedicated_allocation = true;
-				priv->max_allocations--;
-			}
 		}
 		for (auto& obj : buffers)
 		{
+			if (obj.parent_device_index != device_index) continue;
 			obj.reqs = get_trackedbuffer_memory_requirements(device, obj);
-			if (obj.reqs.dedicated.requiresDedicatedAllocation == VK_TRUE && priv->max_allocations)
-			{
-				obj.dedicated_allocation = true;
-				priv->max_allocations--;
-			}
 		}
 		for (auto& obj : tensors)
 		{
+			if (obj.parent_device_index != device_index) continue;
 			obj.reqs = get_trackedtensor_memory_requirements(device, obj);
-			if (obj.reqs.dedicated.requiresDedicatedAllocation == VK_TRUE && priv->max_allocations)
-			{
-				obj.dedicated_allocation = true;
-				priv->max_allocations--;
-			}
 		}
-		// Second consume allocations on those that prefer dedicated allocation
+		priv->prepare_alias_groups(device_index, images, buffers, tensors);
+
+		// Alias groups each retain one allocation until device teardown. Reserve those allocations before assigning
+		// optional dedicated allocations to other objects.
+		if (priv->alias_groups.size() >= priv->max_allocations) priv->max_allocations = 0;
+		else priv->max_allocations -= static_cast<uint32_t>(priv->alias_groups.size());
+
+		// Alias groups cannot use VkMemoryDedicatedAllocateInfo. First assign all required dedicated allocations to
+		// the remaining objects. Required allocations stay dedicated even if they consume our reserved heap margin.
 		for (auto& obj : images)
 		{
-			if (obj.is_swapchain_image) continue;
+			if (obj.parent_device_index != device_index || obj.is_swapchain_image || priv->image_alias_lookup.at(obj.index).group) continue;
+			if (obj.reqs.dedicated.requiresDedicatedAllocation == VK_TRUE)
+			{
+				obj.dedicated_allocation = true;
+				if (priv->max_allocations) priv->max_allocations--;
+			}
+		}
+		for (auto& obj : buffers)
+		{
+			if (obj.parent_device_index != device_index || priv->buffer_alias_lookup.at(obj.index).group) continue;
+			if (obj.reqs.dedicated.requiresDedicatedAllocation == VK_TRUE)
+			{
+				obj.dedicated_allocation = true;
+				if (priv->max_allocations) priv->max_allocations--;
+			}
+		}
+		for (auto& obj : tensors)
+		{
+			if (obj.parent_device_index != device_index || priv->tensor_alias_lookup.at(obj.index).group) continue;
+			if (obj.reqs.dedicated.requiresDedicatedAllocation == VK_TRUE)
+			{
+				obj.dedicated_allocation = true;
+				if (priv->max_allocations) priv->max_allocations--;
+			}
+		}
+
+		// Only preferred dedicated allocations may consume the remaining optional allocation budget.
+		for (auto& obj : images)
+		{
+			if (obj.parent_device_index != device_index || obj.is_swapchain_image || priv->image_alias_lookup.at(obj.index).group) continue;
 			if (!obj.dedicated_allocation && obj.reqs.dedicated.prefersDedicatedAllocation == VK_TRUE && priv->max_allocations)
 			{
 				obj.dedicated_allocation = true;
@@ -482,6 +657,7 @@ void suballocator::create(VkPhysicalDevice physicaldevice, VkDevice device, std:
 		}
 		for (auto& obj : buffers)
 		{
+			if (obj.parent_device_index != device_index || priv->buffer_alias_lookup.at(obj.index).group) continue;
 			if (!obj.dedicated_allocation && obj.reqs.dedicated.prefersDedicatedAllocation == VK_TRUE && priv->max_allocations)
 			{
 				obj.dedicated_allocation = true;
@@ -490,6 +666,7 @@ void suballocator::create(VkPhysicalDevice physicaldevice, VkDevice device, std:
 		}
 		for (auto& obj : tensors)
 		{
+			if (obj.parent_device_index != device_index || priv->tensor_alias_lookup.at(obj.index).group) continue;
 			if (!obj.dedicated_allocation && obj.reqs.dedicated.prefersDedicatedAllocation == VK_TRUE && priv->max_allocations)
 			{
 				obj.dedicated_allocation = true;
@@ -499,18 +676,23 @@ void suballocator::create(VkPhysicalDevice physicaldevice, VkDevice device, std:
 	}
 	else // for post-processing, allocate everything to dedicated allocation, unless it uses aliasing (TBD)
 	{
-		for (auto& obj : images) { obj.reqs = get_fake_memory_requirements(device, obj); obj.dedicated_allocation = true; }
-		for (auto& obj : buffers) { obj.reqs = get_fake_memory_requirements(device, obj); obj.dedicated_allocation = true; }
-		for (auto& obj : tensors) { obj.reqs = get_fake_memory_requirements(device, obj); obj.dedicated_allocation = true; }
+		for (auto& obj : images) { if (obj.parent_device_index == device_index) obj.reqs = get_fake_memory_requirements(device, obj); }
+		for (auto& obj : buffers) { if (obj.parent_device_index == device_index) obj.reqs = get_fake_memory_requirements(device, obj); }
+		for (auto& obj : tensors) { if (obj.parent_device_index == device_index) obj.reqs = get_fake_memory_requirements(device, obj); }
+		priv->prepare_alias_groups(device_index, images, buffers, tensors);
+		for (auto& obj : images) { if (obj.parent_device_index == device_index && !priv->image_alias_lookup.at(obj.index).group) obj.dedicated_allocation = true; }
+		for (auto& obj : buffers) { if (obj.parent_device_index == device_index && !priv->buffer_alias_lookup.at(obj.index).group) obj.dedicated_allocation = true; }
+		for (auto& obj : tensors) { if (obj.parent_device_index == device_index && !priv->tensor_alias_lookup.at(obj.index).group) obj.dedicated_allocation = true; }
 	}
 }
 
 suballoc_location suballocator_private::allocate(uint16_t tid, uint32_t memoryTypeIndex, suballocation &s, VkMemoryPropertyFlags flags,
-        lava_tiling tiling, bool dedicated, VkMemoryAllocateFlags allocflags)
+	        lava_tiling tiling, bool dedicated, VkMemoryAllocateFlags allocflags, bool alias_group)
 {
 	auto h = std::make_unique<heap>();
 	h->tid = tid;
 	h->dedicated = dedicated;
+	h->alias_group = alias_group;
 	VkMemoryDedicatedAllocateInfoTensorARM tensorded = { VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO_TENSOR_ARM, nullptr };
 	VkMemoryDedicatedAllocateInfoKHR dedinfo = { VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO, nullptr };
 	VkMemoryAllocateFlagsInfo flaginfo = { VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_FLAGS_INFO, nullptr };
@@ -539,6 +721,10 @@ suballoc_location suballocator_private::allocate(uint16_t tid, uint32_t memoryTy
 			flaginfo.pNext = &dedinfo;
 			dedinfo.image = s.handle.image;
 		}
+		info.allocationSize = s.size;
+	}
+	else if (alias_group)
+	{
 		info.allocationSize = s.size;
 	}
 	else
@@ -586,7 +772,7 @@ suballoc_location suballocator_private::allocate(uint16_t tid, uint32_t memoryTy
 	heap* heap_ptr = h.get();
 	thread_heaps(tid).push_back(std::move(h));
 	s.offset = 0;
-	bind(*heap_ptr, s);
+	if (!alias_group) bind(*heap_ptr, s);
 	return { heap_ptr->mem, 0, s.size, true, needs_flush(memoryTypeIndex), heap_ptr->mapped };
 }
 
@@ -640,7 +826,7 @@ suballoc_location suballocator_private::suballocate(uint16_t tid, uint32_t memor
 		// find suballocation
 		const bool requires_device_address = (allocflags & VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT_KHR) != 0;
 		const bool heap_has_device_address = (h.allocflags & VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT_KHR) != 0;
-		if (h.mem != VK_NULL_HANDLE && !h.dedicated &&
+		if (h.mem != VK_NULL_HANDLE && !h.dedicated && !h.alias_group &&
 		    h.tid == tid && (flags & h.flags) == flags &&
 		    (!requires_device_address || heap_has_device_address) &&
 		    h.free >= s.size && h.memoryTypeIndex == memoryTypeIndex && (h.tiling == tiling || allow_mixed_tiling))
@@ -704,7 +890,8 @@ void suballocator_private::bind(heap& h, const suballocation& s)
 		{
 			SUBALLOC_ABORT(this, "Image index %u out of range (image_lookup size=%zu)", s.index, image_lookup.size());
 		}
-		image_lookup.at(s.index) = lookup(&h, s.offset, s.size);
+		image_lookup.at(s.index) = lookup(&h, s.offset, s.size, s.alias_member);
+		image_lookup.at(s.index).initialized = s.alias_member;
 		DLOG3("adding image=%p|%u heap=%p size=%lu off=%lu mem=%p alignment=%lu", (void*)s.handle.image, s.index, &h, (unsigned long)s.size,
 		      (unsigned long)s.offset, (void*)h.mem, (unsigned long)s.alignment);
 	}
@@ -714,7 +901,8 @@ void suballocator_private::bind(heap& h, const suballocation& s)
 		{
 			SUBALLOC_ABORT(this, "Tensor index %u out of range (tensor_lookup size=%zu)", s.index, tensor_lookup.size());
 		}
-		tensor_lookup.at(s.index) = lookup(&h, s.offset, s.size);
+		tensor_lookup.at(s.index) = lookup(&h, s.offset, s.size, s.alias_member);
+		tensor_lookup.at(s.index).initialized = s.alias_member;
 		DLOG3("adding tensor=%p|%u heap=%p size=%lu off=%lu mem=%p alignment=%lu", (void*)s.handle.tensor, s.index, &h, (unsigned long)s.size,
 		      (unsigned long)s.offset, (void*)h.mem, (unsigned long)s.alignment);
 	}
@@ -749,7 +937,8 @@ void suballocator_private::bind(heap& h, const suballocation& s)
 		{
 			SUBALLOC_ABORT(this, "Buffer index %u out of range (buffer_lookup size=%zu)", s.index, buffer_lookup.size());
 		}
-		buffer_lookup[s.index] = lookup(&h, s.offset, s.size);
+		buffer_lookup[s.index] = lookup(&h, s.offset, s.size, s.alias_member);
+		buffer_lookup[s.index].initialized = s.alias_member;
 		DLOG3("adding buffer=%p|%u heap=%p size=%lu off=%lu mem=%p alignment=%lu", (void*)s.handle.buffer, s.index, &h, (unsigned long)s.size,
 		      (unsigned long)s.offset, (void*)h.mem, (unsigned long)s.alignment);
 	}
@@ -759,6 +948,41 @@ void suballocator_private::bind(heap& h, const suballocation& s)
 suballoc_location suballocator::add_trackedobject(uint16_t tid, uint64_t native, const trackedobject& data)
 {
 	assert(data.reqs.requirements.alignment != 0); // not properly initialized!
+	alias_lookup* alias = priv->get_alias_lookup(data.object_type, data.index);
+	if (alias && alias->group)
+	{
+		alias_group& group = *alias->group;
+		lava::lock_guard lock(group.mutex);
+		if (!group.home)
+		{
+			const VkMemoryPropertyFlags group_flags = prune_memory_flags(group.reqs.memory_flags);
+			const uint32_t group_memory_type = priv->get_device_memory_type(group.reqs.requirements.memoryTypeBits, group_flags);
+			suballocation reservation;
+			reservation.size = group.size;
+			reservation.alignment = group.alignment;
+			reservation.index = group.capture_memory_index;
+			priv->used_count++;
+			priv->used_bytes += group.size;
+			priv->allocate(tid, group_memory_type, reservation, group_flags, group.tiling, false, group.reqs.allocate_flags, true);
+			group.home = priv->thread_heaps(tid).back().get();
+			assert(group.home && group.home->alias_group);
+			if (group.home->mapped) memset(group.home->mapped, 0, group.size);
+		}
+
+		suballocation member;
+		member.type = data.object_type;
+		member.handle.native = native;
+		member.size = data.reqs.requirements.size;
+		member.offset = alias->offset;
+		member.index = data.index;
+		member.alignment = data.reqs.requirements.alignment;
+		member.alias_member = true;
+		priv->bind(*group.home, member);
+		DLOG2("binding aliased %s %u at replay offset %lu in captured memory group %u", pretty_print_VkObjectType(data.object_type),
+			data.index, (unsigned long)member.offset, group.capture_memory_index);
+		return { group.home->mem, member.offset, member.size, true, priv->needs_flush(group.home->memoryTypeIndex),
+			group.home->mapped ? group.home->mapped + member.offset : nullptr };
+	}
 	const VkMemoryPropertyFlags memory_flags = prune_memory_flags(data.memory_flags);
 	const uint32_t memoryTypeIndex = priv->get_device_memory_type(data.reqs.requirements.memoryTypeBits, memory_flags);
 	suballocation s;
@@ -791,11 +1015,8 @@ suballoc_location suballocator::add_datagraphpipelinesession(uint16_t tid, uint6
 	{
 		binding.dedicated_allocation = true;
 	}
-	else if (!binding.dedicated_allocation && binding.reqs.dedicated.prefersDedicatedAllocation == VK_TRUE && priv->max_allocations)
-	{
-		binding.dedicated_allocation = true;
-		priv->max_allocations--;
-	}
+	// Data graph requirements arrive on demand, so a preferred dedicated allocation could consume
+	// allocation budget needed by a later binding that requires one. Only honor required allocations here.
 
 	const VkMemoryPropertyFlags memory_flags = prune_memory_flags(binding.memory_flags);
 	binding.reqs.memory_flags = binding.memory_flags;
@@ -859,7 +1080,7 @@ void suballocator::free_image(uint32_t image_index)
 	lookup& l = priv->image_lookup.at(image_index);
 	if (l.home) // it is possible to delete something that has not been bound yet
 	{
-		queue_delete(*l.home, l.offset);
+		if (!l.alias_member) queue_delete(*l.home, l.offset);
 		l.home = nullptr;
 	}
 }
@@ -871,7 +1092,7 @@ void suballocator::free_buffer(uint32_t buffer_index)
 	lookup& l = priv->buffer_lookup.at(buffer_index);
 	if (l.home) // it is possible to delete something that has not been bound yet
 	{
-		queue_delete(*l.home, l.offset);
+		if (!l.alias_member) queue_delete(*l.home, l.offset);
 		l.home = nullptr;
 	}
 }
@@ -883,7 +1104,7 @@ void suballocator::free_tensor(uint32_t tensor_index)
 	lookup& l = priv->tensor_lookup.at(tensor_index);
 	if (l.home) // it is possible to delete something that has not been bound yet
 	{
-		queue_delete(*l.home, l.offset);
+		if (!l.alias_member) queue_delete(*l.home, l.offset);
 		l.home = nullptr;
 	}
 }
@@ -970,6 +1191,10 @@ void suballocator::destroy()
 	priv->image_lookup.clear();
 	priv->buffer_lookup.clear();
 	priv->tensor_lookup.clear();
+	priv->image_alias_lookup.clear();
+	priv->buffer_alias_lookup.clear();
+	priv->tensor_alias_lookup.clear();
+	priv->alias_groups.clear();
 	priv->datagraphpipelinesession_lookup.clear();
 	for (auto v : priv->virtualswapmemory)
 	{
@@ -1030,6 +1255,15 @@ int suballocator::self_test() const
 		{
 			const heap& h = *heap_ptr;
 			h.self_test();
+			if (h.alias_group)
+			{
+				assert(h.subs.size() == 1);
+				assert(h.subs.front().offset == 0);
+				assert(h.subs.front().size == h.total);
+				assert(h.free == 0);
+				retval++;
+				continue;
+			}
 			uint64_t freed = 0;
 			if (h.subs.size() > 0) freed = h.subs.front().offset;
 			uint64_t used = 0;
@@ -1100,6 +1334,12 @@ void suballocator_private::self_test() const
 	{
 		if (!l.home) continue;
 		assert(l.size != 0);
+		if (l.alias_member)
+		{
+			assert(l.home->alias_group);
+			assert(l.offset + l.size <= l.home->total);
+			continue;
+		}
 		bool found = false;
 		for (auto it = l.home->subs.cbegin(); it != l.home->subs.cend(); ++it)
 		{
@@ -1112,6 +1352,12 @@ void suballocator_private::self_test() const
 	{
 		if (!l.home) continue;
 		assert(l.size != 0);
+		if (l.alias_member)
+		{
+			assert(l.home->alias_group);
+			assert(l.offset + l.size <= l.home->total);
+			continue;
+		}
 		bool found = false;
 		for (auto it = l.home->subs.cbegin(); it != l.home->subs.cend(); ++it)
 		{
@@ -1124,6 +1370,12 @@ void suballocator_private::self_test() const
 	{
 		if (!l.home) continue;
 		assert(l.size != 0);
+		if (l.alias_member)
+		{
+			assert(l.home->alias_group);
+			assert(l.offset + l.size <= l.home->total);
+			continue;
+		}
 		bool found = false;
 		for (auto it = l.home->subs.cbegin(); it != l.home->subs.cend(); ++it)
 		{

@@ -1676,7 +1676,7 @@ def load_add_tracking(name):
 				z.do('const VkPhysicalDeviceInternallySynchronizedQueuesFeaturesKHR* pdisqf = (const VkPhysicalDeviceInternallySynchronizedQueuesFeaturesKHR*)find_extension(pCreateInfo, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_INTERNALLY_SYNCHRONIZED_QUEUES_FEATURES_KHR);')
 				z.do('data.internally_synchronized_queues = (pdisqf && pdisqf->internallySynchronizedQueues == VK_TRUE);')
 				z.do('data.allocator = new suballocator();')
-				z.do('data.allocator->create(physicalDevice, pDevice, VkImage_index, VkBuffer_index, VkTensorARM_index, VkDataGraphPipelineSessionARM_index, reader.parent->threads.size(), reader.run);')
+				z.do('data.allocator->create(physicalDevice, pDevice, device_index, VkImage_index, VkBuffer_index, VkTensorARM_index, VkDataGraphPipelineSessionARM_index, reader.parent->threads.size(), reader.run);')
 			elif type == 'VkCommandPool':
 				z.do('trackeddevice::command_pool_info info;')
 				z.do('info.flags = pCreateInfo->flags;')
@@ -2144,7 +2144,11 @@ def loadfunc(name, node, target, header):
 	# Flexible post-handling
 	z.do('callback_context cb_context{ reader };')
 	if retval == 'void': pass
-	elif retval == 'VkResult': z.do('cb_context.result.vkresult = retval;')
+	elif retval == 'VkResult':
+		if name in ['vkAcquireNextImageKHR', 'vkAcquireNextImage2KHR']:
+			z.do('cb_context.result.vkresult = restore_acquired_image ? stored_retval : retval;')
+		else:
+			z.do('cb_context.result.vkresult = retval;')
 	elif retval == 'VkBool32': z.do('cb_context.result.vkbool = retval;')
 	elif retval == 'uint64_t': z.do('cb_context.result.u64 = retval;')
 	elif retval == 'uint32_t': z.do('cb_context.result.u32 = retval;')

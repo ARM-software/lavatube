@@ -96,27 +96,38 @@ static VkObjectType update_packet_object_type(uint8_t instrtype)
 	}
 }
 
-static void sync_output_buffer_memory_flags(VkBuffer buffer)
+static void sync_output_buffer_memory_metadata(VkBuffer buffer)
 {
 	auto* writer_buffer = lava_writer::instance().records.VkBuffer_index.at(buffer);
 	assert(writer_buffer);
-	writer_buffer->memory_flags = VkBuffer_index.at(fake_index<VkBuffer>(buffer)).memory_flags;
+	const trackedbuffer& reader_buffer = VkBuffer_index.at(fake_index<VkBuffer>(buffer));
+	writer_buffer->memory_flags = reader_buffer.memory_flags;
+	writer_buffer->backing_index = reader_buffer.backing_index;
+	writer_buffer->offset = reader_buffer.offset;
+	writer_buffer->req = reader_buffer.req;
 }
 
-static void sync_output_image_memory_flags(VkImage image)
+static void sync_output_image_memory_metadata(VkImage image)
 {
 	auto* writer_image = lava_writer::instance().records.VkImage_index.at(image);
 	assert(writer_image);
 	const trackedimage& reader_image = VkImage_index.at(fake_index<VkImage>(image));
 	writer_image->memory_flags = reader_image.memory_flags;
 	writer_image->size = reader_image.size;
+	writer_image->backing_index = reader_image.backing_index;
+	writer_image->offset = reader_image.offset;
+	writer_image->req = reader_image.req;
 }
 
-static void sync_output_tensor_memory_flags(VkTensorARM tensor)
+static void sync_output_tensor_memory_metadata(VkTensorARM tensor)
 {
 	auto* writer_tensor = lava_writer::instance().records.VkTensorARM_index.at(tensor);
 	assert(writer_tensor);
-	writer_tensor->memory_flags = VkTensorARM_index.at(fake_index<VkTensorARM>(tensor)).memory_flags;
+	const trackedtensor& reader_tensor = VkTensorARM_index.at(fake_index<VkTensorARM>(tensor));
+	writer_tensor->memory_flags = reader_tensor.memory_flags;
+	writer_tensor->backing_index = reader_tensor.backing_index;
+	writer_tensor->offset = reader_tensor.offset;
+	writer_tensor->req = reader_tensor.req;
 }
 
 static void sync_output_datagraph_session_memory_flags(const VkBindDataGraphPipelineSessionMemoryInfoARM& bind_info)
@@ -145,30 +156,30 @@ static void sync_output_queue_metadata(VkQueue queue)
 
 static void sync_output_vkBindBufferMemory(callback_context&, VkDevice, VkBuffer buffer, VkDeviceMemory, VkDeviceSize)
 {
-	sync_output_buffer_memory_flags(buffer);
+	sync_output_buffer_memory_metadata(buffer);
 }
 
 static void sync_output_vkBindImageMemory(callback_context&, VkDevice, VkImage image, VkDeviceMemory, VkDeviceSize)
 {
-	sync_output_image_memory_flags(image);
+	sync_output_image_memory_metadata(image);
 }
 
 static void sync_output_vkBindBufferMemory2(callback_context&, VkDevice, uint32_t bindInfoCount, const VkBindBufferMemoryInfo* pBindInfos)
 {
 	if (!pBindInfos) return;
-	for (uint32_t i = 0; i < bindInfoCount; i++) sync_output_buffer_memory_flags(pBindInfos[i].buffer);
+	for (uint32_t i = 0; i < bindInfoCount; i++) sync_output_buffer_memory_metadata(pBindInfos[i].buffer);
 }
 
 static void sync_output_vkBindImageMemory2(callback_context&, VkDevice, uint32_t bindInfoCount, const VkBindImageMemoryInfo* pBindInfos)
 {
 	if (!pBindInfos) return;
-	for (uint32_t i = 0; i < bindInfoCount; i++) sync_output_image_memory_flags(pBindInfos[i].image);
+	for (uint32_t i = 0; i < bindInfoCount; i++) sync_output_image_memory_metadata(pBindInfos[i].image);
 }
 
 static void sync_output_vkBindTensorMemoryARM(callback_context&, VkDevice, uint32_t bindInfoCount, const VkBindTensorMemoryInfoARM* pBindInfos)
 {
 	if (!pBindInfos) return;
-	for (uint32_t i = 0; i < bindInfoCount; i++) sync_output_tensor_memory_flags(pBindInfos[i].tensor);
+	for (uint32_t i = 0; i < bindInfoCount; i++) sync_output_tensor_memory_metadata(pBindInfos[i].tensor);
 }
 
 static void sync_output_vkBindDataGraphPipelineSessionMemoryARM(callback_context&, VkDevice, uint32_t bindInfoCount, const VkBindDataGraphPipelineSessionMemoryInfoARM* pBindInfos)

@@ -40,6 +40,8 @@ struct suballocator
 {
 	/// Call this when our parent device object is created, and before calling any other suballoc function. Set `run` to false if we are not actually running the API, but instead
 	/// doing some post-processing.
+	void create(VkPhysicalDevice physicaldevice, VkDevice device, uint32_t device_index, std::vector<trackedimage>& images, std::vector<trackedbuffer>& buffers,
+		std::vector<trackedtensor>& tensors, std::vector<trackeddatagraphpipelinesession>& sessions, size_t thread_count, bool run);
 	void create(VkPhysicalDevice physicaldevice, VkDevice device, std::vector<trackedimage>& images, std::vector<trackedbuffer>& buffers,
 		std::vector<trackedtensor>& tensors, std::vector<trackeddatagraphpipelinesession>& sessions, size_t thread_count, bool run);
 
