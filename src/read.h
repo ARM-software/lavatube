@@ -309,6 +309,7 @@ public:
 	inline void read_handle_array(uint32_t* dest, uint32_t length) { for (uint32_t i = 0; i < length; i++) dest[i] = read_handle(); }
 #endif
 	inline void read_barrier();
+	const std::vector<unsigned>& barrier_packet_indices() const { return current_barrier_packet_indices; }
 	uint16_t read_apicall();
 
 	bool start_measurement_on_thread_entry() const
@@ -444,21 +445,22 @@ private:
 	uint64_t current_packet_start = 0;
 	uint64_t current_packet_end = 0;
 	uint32_t current_packet_size = 0;
+	std::vector<unsigned> current_barrier_packet_indices;
 };
 
 inline void lava_file_reader::read_barrier()
 {
 	const unsigned size = read_uint8_t();
-	std::vector<unsigned> packet_indices(size);
+	current_barrier_packet_indices.resize(size);
 	for (int i = 0; i < (int)size; i++)
 	{
-		packet_indices[i] = read_uint32_t();
-		assert(packet_indices[i] != UINT32_MAX);
+		current_barrier_packet_indices[i] = read_uint32_t();
+		assert(current_barrier_packet_indices[i] != UINT32_MAX);
 	}
 	complete_packet();
 	for (int i = 0; i < (int)size; i++)
 	{
-		const unsigned packet_index = packet_indices[i];
+		const unsigned packet_index = current_barrier_packet_indices[i];
 		DLOG3("Thread barrier on thread %d, waiting for packet %u on thread %d / %u", current.thread, packet_index, i, size - 1);
 		const bool publish_wait = i != current.thread && packet_index > parent->thread_packet_numbers->at(i).load(std::memory_order_relaxed) && parent->cli_service.load(std::memory_order_acquire);
 		if (publish_wait)

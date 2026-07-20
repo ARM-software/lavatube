@@ -1920,7 +1920,8 @@ def loadfunc(name, node, target, header):
 	load_add_pre(name)
 	call_list = [ x.retrace_exec_param(name) for x in params ]
 	if name in vk.replay_pre_calls and name not in ['vkCreateInstance', 'vkCreateDevice']:
-		z.do('if (reader.run) replay_pre_%s(reader, %s);' % (name, ', '.join(call_list)))
+		condition = 'reader.run || reader.write_output' if name in vk.replay_pre_tool_calls else 'reader.run'
+		z.do('if (%s) replay_pre_%s(reader, %s);' % (condition, name, ', '.join(call_list)))
 	if name in spec.pipeline_execute_commands:
 		z.do('if (reader.run) replay_instrumentation_pre_shader_command(reader, commandBuffer, commandbuffer_data);')
 
@@ -2006,14 +2007,14 @@ def loadfunc(name, node, target, header):
 	elif name == "vkWaitForFences": # as above
 		z.do('VkResult stored_retval = static_cast<VkResult>(reader.read_uint32_t());')
 		z.do('VkResult retval = stored_retval;')
-		z.do('if (stored_retval == VK_SUCCESS) { timeout = UINT64_MAX; }')
-		z.do('else if (stored_retval == VK_TIMEOUT) { timeout = 0; }')
+		z.do('if (reader.run && stored_retval == VK_SUCCESS) { timeout = UINT64_MAX; }')
+		z.do('else if (reader.run && stored_retval == VK_TIMEOUT) { timeout = 0; }')
 		z.do('if (reader.run) retval = wrap_vkWaitForFences(device, fenceCount, pFences, waitAll, timeout);')
 	elif name == "vkWaitSemaphores": # as above
 		z.do('VkResult stored_retval = static_cast<VkResult>(reader.read_uint32_t());')
 		z.do('VkResult retval = stored_retval;')
-		z.do('if (stored_retval == VK_SUCCESS) { timeout = UINT64_MAX; }')
-		z.do('else if (stored_retval == VK_TIMEOUT) { timeout = 0; }')
+		z.do('if (reader.run && stored_retval == VK_SUCCESS) { timeout = UINT64_MAX; }')
+		z.do('else if (reader.run && stored_retval == VK_TIMEOUT) { timeout = 0; }')
 		z.do('if (reader.run) retval = wrap_vkWaitSemaphores(device, pWaitInfo, timeout);')
 	elif name == "vkGetEventStatus": # loop until same result achieved
 		z.do('VkResult stored_retval = static_cast<VkResult>(reader.read_uint32_t());')

@@ -914,6 +914,8 @@ function(layer_test test_name test_exe)
 	set_tests_properties(layer_test_${ARGV0}_write_out PROPERTIES FIXTURES_REQUIRED "${ARGV0};cleanup_tmp" FIXTURES_SETUP "layer_tmp_${ARGV0}" SKIP_RETURN_CODE 77)
 	add_test(NAME layer_test_${ARGV0}_write_out_replay COMMAND ${RUN_IF_EXISTS} tmp_${ARGV0}.api ${CMAKE_CURRENT_BINARY_DIR}/lava-replay --skip-missing-input -V tmp_${ARGV0}.api)
 	set_tests_properties(layer_test_${ARGV0}_write_out_replay PROPERTIES FIXTURES_REQUIRED "layer_tmp_${ARGV0};cleanup_tmp" SKIP_RETURN_CODE 77)
+	add_lavatube_test(layer_test_${ARGV0}_write_out_semantic COMMAND ${RUN_IF_EXISTS} ${TRACE_FILE} $<TARGET_FILE:packtool> diff --semantic --assert-sane vulkan_${ARGV0}.api tmp_${ARGV0}.api)
+	set_tests_properties(layer_test_${ARGV0}_write_out_semantic PROPERTIES FIXTURES_REQUIRED "layer_tmp_${ARGV0};cleanup_tmp" SKIP_RETURN_CODE 77)
 
 	if (NOT GPU_MODEL STREQUAL "")
 		set(MODEL_CAPTURE_EXTRA_ARGS)

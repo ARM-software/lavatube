@@ -182,6 +182,7 @@ void lava_file_writer::set(const std::string& path)
 
 void lava_file_writer::push_thread_barriers()
 {
+	if (write_output) return;
 	frame_mutex.lock();
 	int size = parent->thread_streams.size();
 	for (int i = 0; i < size; i++)
@@ -196,16 +197,26 @@ void lava_file_writer::push_thread_barriers()
 
 void lava_file_writer::inject_thread_barrier()
 {
-	begin_packet(PACKET_THREAD_BARRIER);
 	int size = parent->thread_streams.size();
-	write_uint8_t(size); // threads to sync
+	std::vector<uint32_t> packet_indices(size);
 	for (int i = 0; i < size; i++)
 	{
-		const uint32_t packet_index = parent->thread_streams.at(i)->current.packet;
+		packet_indices[i] = parent->thread_streams.at(i)->current.packet;
+	}
+	write_thread_barrier(packet_indices);
+	DLOG2("Injected thread barrier on thread %d with %d targets", thread_index(), size);
+}
+
+void lava_file_writer::write_thread_barrier(const std::vector<uint32_t>& packet_indices)
+{
+	assert(packet_indices.size() <= UINT8_MAX);
+	begin_packet(PACKET_THREAD_BARRIER);
+	write_uint8_t(packet_indices.size());
+	for (uint32_t packet_index : packet_indices)
+	{
 		assert(packet_index != UINT32_MAX);
 		write_uint32_t(packet_index);
 	}
-	DLOG2("Injected thread barrier on thread %d with %d targets", thread_index(), size);
 	end_packet();
 }
 
@@ -603,7 +614,7 @@ void lava_writer::make_writer(unsigned index, bool thread_barriers_active)
 	{
 		f->set(mPath);
 	}
-	f->inject_thread_barrier();
+	if (!write_output) f->inject_thread_barrier();
 	thread_streams.emplace_back(std::move(f));
 	DLOG("Created thread %d, currently %d threads", (int)index, (int)thread_streams.size());
 }

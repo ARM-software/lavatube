@@ -102,6 +102,8 @@ static void sync_output_buffer_memory_metadata(VkBuffer buffer)
 	assert(writer_buffer);
 	const trackedbuffer& reader_buffer = VkBuffer_index.at(fake_index<VkBuffer>(buffer));
 	writer_buffer->memory_flags = reader_buffer.memory_flags;
+	writer_buffer->alias_type = reader_buffer.alias_type;
+	writer_buffer->alias_index = reader_buffer.alias_index;
 	writer_buffer->backing_index = reader_buffer.backing_index;
 	writer_buffer->offset = reader_buffer.offset;
 	writer_buffer->req = reader_buffer.req;
@@ -113,10 +115,19 @@ static void sync_output_image_memory_metadata(VkImage image)
 	assert(writer_image);
 	const trackedimage& reader_image = VkImage_index.at(fake_index<VkImage>(image));
 	writer_image->memory_flags = reader_image.memory_flags;
-	writer_image->size = reader_image.size;
+	writer_image->alias_type = reader_image.alias_type;
+	writer_image->alias_index = reader_image.alias_index;
 	writer_image->backing_index = reader_image.backing_index;
 	writer_image->offset = reader_image.offset;
 	writer_image->req = reader_image.req;
+}
+
+static void finish_output_image_memory_metadata(VkImage image) // TBD remove
+{
+	auto* writer_image = lava_writer::instance().records.VkImage_index.at(image);
+	assert(writer_image);
+	const trackedimage& reader_image = VkImage_index.at(fake_index<VkImage>(image));
+	writer_image->size = reader_image.size;
 }
 
 static void sync_output_tensor_memory_metadata(VkTensorARM tensor)
@@ -125,6 +136,8 @@ static void sync_output_tensor_memory_metadata(VkTensorARM tensor)
 	assert(writer_tensor);
 	const trackedtensor& reader_tensor = VkTensorARM_index.at(fake_index<VkTensorARM>(tensor));
 	writer_tensor->memory_flags = reader_tensor.memory_flags;
+	writer_tensor->alias_type = reader_tensor.alias_type;
+	writer_tensor->alias_index = reader_tensor.alias_index;
 	writer_tensor->backing_index = reader_tensor.backing_index;
 	writer_tensor->offset = reader_tensor.offset;
 	writer_tensor->req = reader_tensor.req;
@@ -164,6 +177,11 @@ static void sync_output_vkBindImageMemory(callback_context&, VkDevice, VkImage i
 	sync_output_image_memory_metadata(image);
 }
 
+static void finish_output_vkBindImageMemory(callback_context&, VkDevice, VkImage image, VkDeviceMemory, VkDeviceSize) // TBD remove
+{
+	finish_output_image_memory_metadata(image);
+}
+
 static void sync_output_vkBindBufferMemory2(callback_context&, VkDevice, uint32_t bindInfoCount, const VkBindBufferMemoryInfo* pBindInfos)
 {
 	if (!pBindInfos) return;
@@ -174,6 +192,12 @@ static void sync_output_vkBindImageMemory2(callback_context&, VkDevice, uint32_t
 {
 	if (!pBindInfos) return;
 	for (uint32_t i = 0; i < bindInfoCount; i++) sync_output_image_memory_metadata(pBindInfos[i].image);
+}
+
+static void finish_output_vkBindImageMemory2(callback_context&, VkDevice, uint32_t bindInfoCount, const VkBindImageMemoryInfo* pBindInfos) // TBD remove
+{
+	if (!pBindInfos) return;
+	for (uint32_t i = 0; i < bindInfoCount; i++) finish_output_image_memory_metadata(pBindInfos[i].image);
 }
 
 static void sync_output_vkBindTensorMemoryARM(callback_context&, VkDevice, uint32_t bindInfoCount, const VkBindTensorMemoryInfoARM* pBindInfos)
@@ -1181,7 +1205,41 @@ static void bootstrap_write_side_state(const std::string& input)
 	}
 }
 
-static void replay_thread(lava_reader* replayer, int thread_id)
+/// Translate captured packet boundaries to their positions in the rewritten output streams.
+class output_packet_mapping
+{
+public:
+	explicit output_packet_mapping(unsigned thread_count) : packets(thread_count)
+	{
+		for (std::vector<uint32_t>& thread_packets : packets) thread_packets.push_back(0);
+	}
+
+	void record(unsigned thread, uint32_t input_packet, uint32_t output_packet)
+	{
+		bool invalid = false;
+		frame_mutex.lock();
+		std::vector<uint32_t>& thread_packets = packets.at(thread);
+		if (thread_packets.size() == input_packet) thread_packets.push_back(output_packet);
+		else if (thread_packets.size() <= input_packet || thread_packets.at(input_packet) != output_packet) invalid = true;
+		frame_mutex.unlock();
+		if (invalid) ABORT("Invalid output packet mapping for input thread %u packet %u", thread, input_packet);
+	}
+
+	uint32_t translate(unsigned thread, uint32_t input_packet)
+	{
+		uint32_t output_packet = UINT32_MAX;
+		frame_mutex.lock();
+		if (thread < packets.size() && input_packet < packets.at(thread).size()) output_packet = packets.at(thread).at(input_packet);
+		frame_mutex.unlock();
+		if (output_packet == UINT32_MAX) ABORT("Missing output packet mapping for input thread %u packet %u", thread, input_packet);
+		return output_packet;
+	}
+
+private:
+	std::vector<std::vector<uint32_t>> packets;
+};
+
+static void replay_thread(lava_reader* replayer, int thread_id, output_packet_mapping* packet_mapping)
 {
 	if (p__sandbox_level >= 2) sandbox_level_three();
 	lava_file_reader& t = replayer->file_reader(thread_id);
@@ -1217,13 +1275,16 @@ static void replay_thread(lava_reader* replayer, int thread_id)
 		}
 		while ((instrtype = t.step()))
 		{
+			const uint32_t input_packet = t.current.packet;
 			uint64_t packet_start = 0;
 			uint32_t output_packet = 0;
 			if (write_output)
 			{
+				assert(packet_mapping);
 				t.current_update_packet.clear();
 				packet_start = t.packet_start();
 				if (instrtype == PACKET_VULKAN_API_CALL || is_update_packet(instrtype)) output_writer->activate_thread_barriers();
+				if (instrtype == PACKET_THREAD_BARRIER) packet_mapping->record(t.thread_index(), input_packet + 1, output_writer->current.packet + 1);
 				if (instrtype != PACKET_VULKAN_API_CALL && instrtype != PACKET_THREAD_BARRIER && !is_update_packet(instrtype))
 				{
 					ABORT("Output mode does not yet support packet type %u on thread %u packet %u", (unsigned)instrtype, (unsigned)t.thread_index(), (unsigned)t.current.packet);
@@ -1234,6 +1295,14 @@ static void replay_thread(lava_reader* replayer, int thread_id)
 				}
 			}
 			switchboard_packet(instrtype, t);
+			if (write_output && instrtype == PACKET_THREAD_BARRIER)
+			{
+				const std::vector<unsigned>& input_indices = t.barrier_packet_indices();
+				std::vector<uint32_t> output_indices(input_indices.size());
+				for (unsigned i = 0; i < input_indices.size(); i++) output_indices[i] = packet_mapping->translate(i, input_indices[i]);
+				output_writer->write_thread_barrier(output_indices);
+				packet_mapping->record(t.thread_index(), input_packet + 1, output_writer->current.packet);
+			}
 			if (write_output && is_update_packet(instrtype))
 			{
 				if (output_writer->pending_barrier.load(std::memory_order_relaxed))
@@ -1253,6 +1322,7 @@ static void replay_thread(lava_reader* replayer, int thread_id)
 			{
 				write_output_update_packet(t, *output_writer, packet_start, t.packet_end());
 			}
+			if (write_output && instrtype != PACKET_THREAD_BARRIER) packet_mapping->record(t.thread_index(), input_packet + 1, output_writer->current.packet);
 			t.self_test();
 		}
 	}
@@ -1521,7 +1591,7 @@ int main(int argc, char **argv)
 				printf("\t%u : [%s] with %u local frames, %d highest global frame, %u uncompressed size\n", i, frameinfo.get("thread_name", "unknown").asString().c_str(),
 					(unsigned)frameinfo["frames"].size(), frameinfo["highest_global_frame"].asInt(), frameinfo["uncompressed_size"].asUInt());
 			}
-			replayer.threads[i] = std::thread(&replay_thread, &replayer, i);
+			replayer.threads[i] = std::thread(&replay_thread, &replayer, i, nullptr);
 		}
 		for (unsigned i = 0; i < replayer.threads.size(); i++)
 		{
@@ -1567,6 +1637,8 @@ int main(int argc, char **argv)
 		writer.prepare_threads(replayer.threads.size());
 		bootstrap_write_side_state(filename_input);
 		add_callbacks_for_output();
+		vkCreateDescriptorUpdateTemplate_callbacks.push_back(replay_callback_vkCreateDescriptorUpdateTemplate);
+		vkCreateDescriptorUpdateTemplateKHR_callbacks.push_back(replay_callback_vkCreateDescriptorUpdateTemplateKHR);
 		vkCreateDescriptorSetLayout_callbacks.push_back(postprocess_vkCreateDescriptorSetLayout);
 		vkCreatePipelineLayout_callbacks.push_back(postprocess_vkCreatePipelineLayout);
 		vkGetDescriptorSetLayoutBindingOffsetEXT_callbacks.push_back(postprocess_vkGetDescriptorSetLayoutBindingOffsetEXT);
@@ -1577,6 +1649,7 @@ int main(int argc, char **argv)
 		vkBindBufferMemory_callbacks.push_back(replay_trace_callback_with_pre<trace_vkBindBufferMemory, sync_output_vkBindBufferMemory>::call);
 		vkBindImageMemory_callbacks.clear();
 		vkBindImageMemory_callbacks.push_back(replay_trace_callback_with_pre<trace_vkBindImageMemory, sync_output_vkBindImageMemory>::call);
+		vkBindImageMemory_callbacks.push_back(finish_output_vkBindImageMemory);
 		vkGetDeviceQueue_callbacks.clear();
 		vkGetDeviceQueue_callbacks.push_back(replay_trace_callback_with_pre<trace_vkGetDeviceQueue, sync_output_vkGetDeviceQueue>::call);
 		vkGetDeviceQueue2_callbacks.clear();
@@ -1587,8 +1660,10 @@ int main(int argc, char **argv)
 		vkBindBufferMemory2KHR_callbacks.push_back(replay_trace_callback_with_pre<trace_vkBindBufferMemory2KHR, sync_output_vkBindBufferMemory2>::call);
 		vkBindImageMemory2_callbacks.clear();
 		vkBindImageMemory2_callbacks.push_back(replay_trace_callback_with_pre<trace_vkBindImageMemory2, sync_output_vkBindImageMemory2>::call);
+		vkBindImageMemory2_callbacks.push_back(finish_output_vkBindImageMemory2);
 		vkBindImageMemory2KHR_callbacks.clear();
 		vkBindImageMemory2KHR_callbacks.push_back(replay_trace_callback_with_pre<trace_vkBindImageMemory2KHR, sync_output_vkBindImageMemory2>::call);
+		vkBindImageMemory2KHR_callbacks.push_back(finish_output_vkBindImageMemory2);
 		vkBindTensorMemoryARM_callbacks.clear();
 		vkBindTensorMemoryARM_callbacks.push_back(replay_trace_callback_with_pre<trace_vkBindTensorMemoryARM, sync_output_vkBindTensorMemoryARM>::call);
 		vkBindDataGraphPipelineSessionMemoryARM_callbacks.clear();
@@ -1624,10 +1699,11 @@ int main(int argc, char **argv)
 			vkQueueSubmit2KHR_callbacks.push_back(output_vkQueueSubmit2KHR);
 		}
 		write_output = true;
+		output_packet_mapping packet_mapping(replayer.threads.size());
 
 		for (unsigned i = 0; i < replayer.threads.size(); i++)
 		{
-			replayer.threads[i] = std::thread(&replay_thread, &replayer, i);
+			replayer.threads[i] = std::thread(&replay_thread, &replayer, i, &packet_mapping);
 		}
 		for (unsigned i = 0; i < replayer.threads.size(); i++)
 		{

@@ -2914,6 +2914,7 @@ VKAPI_ATTR void trace_vkCmdUpdateBuffer2ARM(VkCommandBuffer commandBuffer, const
 	writer.physicalDevice = commandbuffer_data->physicalDevice;
 	write_VkUpdateBufferInfoARM(writer, pInfo);
 	if (writer.run) wrap_vkCmdUpdateBuffer(commandBuffer, pInfo->dstBuffer, pInfo->dstOffset, pInfo->dataSize, pInfo->pData);
+	writer.end_packet();
 }
 
 VKAPI_ATTR void trace_vkCmdUpdateMemory2ARM(VkCommandBuffer commandBuffer, const VkUpdateMemoryInfoARM* pInfo)
@@ -2949,6 +2950,7 @@ VKAPI_ATTR void trace_vkCmdUpdateMemory2ARM(VkCommandBuffer commandBuffer, const
 	writer.physicalDevice = commandbuffer_data->physicalDevice;
 	write_VkUpdateMemoryInfoARM(writer, pInfo);
 	if (writer.run) wrap_vkCmdUpdateMemoryKHR(commandBuffer, pInfo->pDstRange, pInfo->dstFlags, pInfo->dataSize, pInfo->pData);
+	writer.end_packet();
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL trace_vkAssertBufferARM(VkDevice device, const VkUpdateBufferInfoARM* pInfo, uint32_t* checksum, const char* comment)
@@ -2970,6 +2972,7 @@ VKAPI_ATTR VkResult VKAPI_CALL trace_vkAssertBufferARM(VkDevice device, const Vk
 	}
 	writer.write_uint32_t(checksum_value);
 	if (checksum) *checksum = checksum_value;
+	writer.end_packet();
 	return VK_SUCCESS;
 }
 
@@ -3003,6 +3006,7 @@ VKAPI_ATTR VkResult VKAPI_CALL trace_vkAssertMemoryARM(VkDevice device, const Vk
 	}
 	writer.write_uint32_t(checksum_value);
 	if (checksum) *checksum = checksum_value;
+	writer.end_packet();
 	return VK_SUCCESS;
 }
 

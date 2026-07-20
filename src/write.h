@@ -164,6 +164,7 @@ public:
 	}
 
 	void inject_thread_barrier() REQUIRES(frame_mutex);
+	void write_thread_barrier(const std::vector<uint32_t>& packet_indices);
 
 	/// Make other threads wait for us
 	void push_thread_barriers();
@@ -260,7 +261,7 @@ inline void lava_file_writer::write_api_command(uint16_t id)
 	device = VK_NULL_HANDLE;
 	physicalDevice = VK_NULL_HANDLE;
 	commandBuffer = VK_NULL_HANDLE;
-	if (pending_barrier.load(std::memory_order_relaxed))
+	if (!write_output && pending_barrier.load(std::memory_order_relaxed))
 	{
 		frame_mutex.lock();
 		inject_thread_barrier();
@@ -276,7 +277,7 @@ inline lava_file_writer& write_header(const char* funcname, lava_function_id id,
 {
 	lava_writer& instance = lava_writer::instance();
 	lava_file_writer& writer = instance.file_writer();
-	if (thread_barrier) { frame_mutex.lock(); writer.inject_thread_barrier(); frame_mutex.unlock(); }
+	if (thread_barrier && !writer.write_output) { frame_mutex.lock(); writer.inject_thread_barrier(); frame_mutex.unlock(); }
 	writer.write_api_command(id);
 	writer.current.call_id = id;
 	writer.current.frame = instance.global_frame;
