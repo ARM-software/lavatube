@@ -2110,28 +2110,28 @@ static bool trace_pre_vkCreateDevice(VkPhysicalDevice physicalDevice, VkDeviceCr
 	{
 		instance.meta.app.stored_VkPhysicalDeviceVulkan11Features = new VkPhysicalDeviceVulkan11Features();
 		*instance.meta.app.stored_VkPhysicalDeviceVulkan11Features = *feat11; // struct copy
-		r["devicePresented"]["VkPhysicalDeviceVulkan11Features"] = writeVkPhysicalDeviceVulkan11Features(*feat11);
+		r["deviceRequested"]["VkPhysicalDeviceVulkan11Features"] = writeVkPhysicalDeviceVulkan11Features(*feat11);
 	}
 	VkPhysicalDeviceVulkan12Features* feat12 = (VkPhysicalDeviceVulkan12Features*)find_extension(pCreateInfo, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES);
 	if (feat12)
 	{
 		instance.meta.app.stored_VkPhysicalDeviceVulkan12Features = new VkPhysicalDeviceVulkan12Features();
 		*instance.meta.app.stored_VkPhysicalDeviceVulkan12Features = *feat12; // struct copy
-		r["devicePresented"]["VkPhysicalDeviceVulkan12Features"] = writeVkPhysicalDeviceVulkan12Features(*feat12);
+		r["deviceRequested"]["VkPhysicalDeviceVulkan12Features"] = writeVkPhysicalDeviceVulkan12Features(*feat12);
 	}
 	VkPhysicalDeviceVulkan13Features* feat13 = (VkPhysicalDeviceVulkan13Features*)find_extension(pCreateInfo, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES);
 	if (feat13)
 	{
 		instance.meta.app.stored_VkPhysicalDeviceVulkan13Features = new VkPhysicalDeviceVulkan13Features();
 		*instance.meta.app.stored_VkPhysicalDeviceVulkan13Features = *feat13; // struct copy
-		r["devicePresented"]["VkPhysicalDeviceVulkan13Features"] = writeVkPhysicalDeviceVulkan13Features(*feat13);
+		r["deviceRequested"]["VkPhysicalDeviceVulkan13Features"] = writeVkPhysicalDeviceVulkan13Features(*feat13);
 	}
 	VkPhysicalDeviceVulkan14Features* feat14 = (VkPhysicalDeviceVulkan14Features*)find_extension(pCreateInfo, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_4_FEATURES);
 	if (feat14)
 	{
 		instance.meta.app.stored_VkPhysicalDeviceVulkan14Features = new VkPhysicalDeviceVulkan14Features();
 		*instance.meta.app.stored_VkPhysicalDeviceVulkan14Features = *feat14; // struct copy
-		r["devicePresented"]["VkPhysicalDeviceVulkan14Features"] = writeVkPhysicalDeviceVulkan14Features(*feat14);
+		r["deviceRequested"]["VkPhysicalDeviceVulkan14Features"] = writeVkPhysicalDeviceVulkan14Features(*feat14);
 	}
 	r["deviceRequested"]["enabledExtensions"] = Json::arrayValue;
 	for (unsigned i = 0; i < pCreateInfo->enabledExtensionCount; i++)
