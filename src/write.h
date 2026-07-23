@@ -140,7 +140,6 @@ public:
 	inline void write_api_command(uint16_t id);
 	void begin_packet(uint8_t type);
 	void end_packet();
-	void write_raw_packet(const char* data, uint32_t size);
 
 	inline void write_VkAccelerationStructureNV(VkAccelerationStructureNV val) {} // TBD
 

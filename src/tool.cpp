@@ -254,19 +254,60 @@ static std::list<address_rewrite>::iterator find_stage_rewrite_entry(lava_file_r
 	});
 }
 
-static void write_output_update_packet_prefix(lava_file_reader& reader, lava_file_writer& writer, uint64_t packet_start, uint64_t header_start)
+class output_packet_mapping;
+static uint32_t translate_output_packet(output_packet_mapping& packet_mapping, unsigned thread, uint32_t input_packet);
+
+static void write_output_handle(lava_file_reader& reader, lava_file_writer& writer, output_packet_mapping& packet_mapping, const char* input)
 {
-	const uint64_t packet_payload_start = packet_start + sizeof(uint8_t) + sizeof(uint32_t);
-	assert(header_start >= packet_payload_start);
-	writer.write_array(reader.stream_data(packet_payload_start), header_start - packet_payload_start);
+	uint32_t index = CONTAINER_NULL_VALUE;
+	int8_t req_thread = -1;
+	uint32_t req_packet = 0;
+	memcpy(&index, input, sizeof(index));
+	input += sizeof(index);
+	memcpy(&req_thread, input, sizeof(req_thread));
+	input += sizeof(req_thread);
+	memcpy(&req_packet, input, sizeof(req_packet));
+
+	if (req_thread >= 0 && (int)req_thread != reader.thread_index())
+	{
+		if (req_packet == UINT32_MAX) ABORT("Invalid handle packet dependency on thread %d", (int)req_thread);
+		const uint32_t output_boundary = translate_output_packet(packet_mapping, (unsigned)req_thread, req_packet + 1);
+		if (output_boundary == 0) ABORT("Invalid translated handle packet dependency on thread %d", (int)req_thread);
+		req_packet = output_boundary - 1;
+	}
+
+	writer.write_uint32_t(index);
+	writer.write_int8_t(req_thread);
+	writer.write_uint32_t(req_packet);
 }
 
-static void write_output_update_packet(lava_file_reader& reader, lava_file_writer& writer, uint64_t packet_start, uint64_t packet_end)
+static void write_output_update_packet_prefix(lava_file_reader& reader, lava_file_writer& writer, output_packet_mapping& packet_mapping,
+	uint64_t packet_start, uint64_t header_start)
+{
+	constexpr uint64_t serialized_handle_size = sizeof(uint32_t) + sizeof(int8_t) + sizeof(uint32_t);
+	const uint64_t packet_payload_start = packet_start + sizeof(uint8_t) + sizeof(uint32_t);
+	assert(header_start >= packet_payload_start);
+	const uint64_t prefix_size = header_start - packet_payload_start;
+	if (prefix_size != serialized_handle_size * 2)
+	{
+		ABORT("Unexpected update packet prefix size %lu on thread %u packet %u", (unsigned long)prefix_size,
+			(unsigned)reader.thread_index(), (unsigned)reader.current.packet);
+	}
+	const char* input = reader.stream_data(packet_payload_start);
+	write_output_handle(reader, writer, packet_mapping, input);
+	write_output_handle(reader, writer, packet_mapping, input + serialized_handle_size);
+}
+
+static void write_output_update_packet(lava_file_reader& reader, lava_file_writer& writer, output_packet_mapping& packet_mapping,
+	uint64_t packet_start, uint64_t packet_end)
 {
 	assert(packet_end >= packet_start);
-	const uint64_t packet_size = packet_end - packet_start;
-	if (packet_size > UINT32_MAX) ABORT("Packet too large to copy: %lu bytes", (unsigned long)packet_size);
-	writer.write_raw_packet(reader.stream_data(packet_start), (uint32_t)packet_size);
+	const output_update_packet& update = reader.current_update_packet;
+	if (!update.valid) ABORT("Missing update packet metadata on thread %u packet %u", (unsigned)reader.thread_index(), (unsigned)reader.current.packet);
+	writer.begin_packet(update.instrtype);
+	write_output_update_packet_prefix(reader, writer, packet_mapping, packet_start, update.header_start);
+	writer.write_array(reader.stream_data(update.header_start), packet_end - update.header_start);
+	writer.end_packet();
 }
 
 static bool is_flush_markings_source(const change_source& source)
@@ -311,7 +352,8 @@ static uint64_t marked_offsets_extension_size(const VkMarkedOffsetsARM* sptr)
 	return bytes;
 }
 
-static bool maybe_write_rewritten_update_packet(lava_file_reader& reader, lava_file_writer& writer, uint64_t packet_start, uint64_t packet_end)
+static bool maybe_write_rewritten_update_packet(lava_file_reader& reader, lava_file_writer& writer, output_packet_mapping& packet_mapping,
+	uint64_t packet_start, uint64_t packet_end)
 {
 	auto it = find_output_rewrite_entry(reader);
 	if (it == reader.rewrite_queue.end()) return false;
@@ -352,7 +394,7 @@ static bool maybe_write_rewritten_update_packet(lava_file_reader& reader, lava_f
 	}
 
 	writer.begin_packet(update.instrtype);
-	write_output_update_packet_prefix(reader, writer, packet_start, update.header_start);
+	write_output_update_packet_prefix(reader, writer, packet_mapping, packet_start, update.header_start);
 	const uint64_t payload_bytes = packet_end - update.payload_start;
 	const uint64_t new_header_bytes = sizeof(uint16_t) + marked_offsets_extension_size(desired);
 	writer.write_uint64_t(payload_bytes + new_header_bytes);
@@ -1239,6 +1281,11 @@ private:
 	std::vector<std::vector<uint32_t>> packets;
 };
 
+static uint32_t translate_output_packet(output_packet_mapping& packet_mapping, unsigned thread, uint32_t input_packet)
+{
+	return packet_mapping.translate(thread, input_packet);
+}
+
 static void replay_thread(lava_reader* replayer, int thread_id, output_packet_mapping* packet_mapping)
 {
 	if (p__sandbox_level >= 2) sandbox_level_three();
@@ -1313,14 +1360,15 @@ static void replay_thread(lava_reader* replayer, int thread_id, output_packet_ma
 					frame_mutex.unlock();
 				}
 				const uint64_t packet_end = t.packet_end();
-				if (!simulate || !maybe_write_rewritten_update_packet(t, *output_writer, packet_start, packet_end))
+				if (!simulate || !maybe_write_rewritten_update_packet(t, *output_writer, *packet_mapping, packet_start, packet_end))
 				{
-					write_output_update_packet(t, *output_writer, packet_start, packet_end);
+					write_output_update_packet(t, *output_writer, *packet_mapping, packet_start, packet_end);
 				}
 			}
 			if (write_output && instrtype == PACKET_VULKAN_API_CALL && output_writer->current.packet == output_packet)
 			{
-				write_output_update_packet(t, *output_writer, packet_start, t.packet_end());
+				ABORT("Output callback for %s did not write a packet on thread %u packet %u", get_function_name(t.current.call_id),
+					(unsigned)t.thread_index(), (unsigned)t.current.packet);
 			}
 			if (write_output && instrtype != PACKET_THREAD_BARRIER) packet_mapping->record(t.thread_index(), input_packet + 1, output_writer->current.packet);
 			t.self_test();

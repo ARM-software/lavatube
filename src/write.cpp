@@ -292,15 +292,6 @@ void lava_file_writer::end_packet()
 	current.packet++;
 }
 
-void lava_file_writer::write_raw_packet(const char* data, uint32_t size)
-{
-	assert(data);
-	assert(size >= sizeof(uint8_t) + sizeof(uint32_t));
-	end_packet();
-	write_array(data, size);
-	current.packet++;
-}
-
 // --- trace writer
 
 static lava_writer _instance;
