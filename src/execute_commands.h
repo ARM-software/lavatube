@@ -6,12 +6,19 @@
 
 struct command_execution_data
 {
+	struct simulator_binding
+	{
+		VkDescriptorType descriptor_type = VK_DESCRIPTOR_TYPE_MAX_ENUM;
+		bool descriptor_buffer_backed = false;
+		std::vector<buffer_access> buffers;
+		std::vector<image_access> images;
+		std::vector<uint64_t> opaques;
+	};
+
 	const trackeddevice& device_data;
 	const trackedcmdbuffer& cmdbuffer_data;
 	const address_remapper<trackedobject>& device_address_remapping;
-	std::unordered_map<uint32_t, std::unordered_map<uint32_t, buffer_access>> descriptorsets; // descriptorset binding : set internal binding point : buffer
-	std::unordered_map<uint32_t, std::unordered_map<uint32_t, image_access>> imagesets; // descriptorset binding : set internal binding point : image
-	std::unordered_map<uint32_t, std::unordered_map<uint32_t, uint64_t>> opaquesets; // descriptorset binding : set internal binding point : opaque descriptor payload
+	std::unordered_map<uint32_t, std::unordered_map<uint32_t, simulator_binding>> descriptor_sets; // set -> binding -> logical binding contents
 	std::vector<std::byte> push_constants; // current state of the push constants
 	host_write_regions push_constant_sources;
 	std::list<address_rewrite>& global_output_rewrite_queue;
