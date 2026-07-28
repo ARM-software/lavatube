@@ -645,6 +645,12 @@ static void normalize_metadata_json(Json::Value& value)
 	value.removeMember("vulkan_header_version");
 }
 
+static void normalize_frames_json(Json::Value& value)
+{
+	value.removeMember("compressed_sizes");
+	value.removeMember("uncompressed_sizes");
+}
+
 static void normalize_tracking_json(Json::Value& value, const std::map<unsigned, std::string>& dict)
 {
 	if (value.isArray())
@@ -798,7 +804,15 @@ static semantic_compare_result compare_packed_file_semantic(const std::string& p
 			normalize_tracking_json(b, reverse_b);
 			compare_json_file(result, name, a, b);
 		}
-		else if (name == "limits.json" || is_frames_json(name) || ends_with(name, ".json"))
+		else if (is_frames_json(name))
+		{
+			Json::Value a = packed_json(name, pack_a);
+			Json::Value b = packed_json(name, pack_b);
+			normalize_frames_json(a);
+			normalize_frames_json(b);
+			compare_json_file(result, name, a, b);
+		}
+		else if (name == "limits.json" || ends_with(name, ".json"))
 		{
 			compare_json_file(result, name, packed_json(name, pack_a), packed_json(name, pack_b));
 		}
