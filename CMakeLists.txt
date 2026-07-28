@@ -605,7 +605,7 @@ add_lavatube_test(replayer_samples_screenshot0_validate COMMAND check_png screen
 set_tests_properties(replayer_samples_screenshot0_validate PROPERTIES FIXTURES_REQUIRED ReplayScreenshot0 WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
 add_lavatube_test(replayer_samples_screenshot7 COMMAND lava-replay -C -w none -f 4 6 --screenshots 5 ${PROJECT_SOURCE_DIR}/traces/sample_descriptor_indexing.api)
 set_tests_properties(replayer_samples_screenshot7 PROPERTIES FIXTURES_SETUP ReplayScreenshot7 WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
-add_lavatube_test(replayer_samples_screenshot7_validate COMMAND check_png screenshot_frame_7.png)
+add_lavatube_test(replayer_samples_screenshot7_validate COMMAND check_png screenshot_frame_5.png)
 set_tests_properties(replayer_samples_screenshot7_validate PROPERTIES FIXTURES_REQUIRED ReplayScreenshot7 WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
 add_lavatube_test(replayer_samples_screenshot_prefix COMMAND lava-replay -C -w none --screenshots 0 --screenshot-prefix capture_ ${PROJECT_SOURCE_DIR}/traces/sample_descriptor_indexing.api)
 set_tests_properties(replayer_samples_screenshot_prefix PROPERTIES FIXTURES_SETUP ReplayScreenshotPrefix WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
