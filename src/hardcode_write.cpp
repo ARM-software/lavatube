@@ -1629,6 +1629,12 @@ static void queue_update(lava_file_writer& writer, trackedqueue* t, VkCommandBuf
 /// as the memory might not have been mapped.
 static uint64_t write_out_object(lava_file_writer& writer, const auto* device_data, trackedobject* object_data, char* cloneptr, char* changedptr, uint64_t offset, uint64_t size, VkMarkedOffsetsARM* ar)
 {
+	if (writer.write_output && ar && size > 0) changedptr = reverse_translate_marked_payload(writer, object_data, changedptr, offset, size, ar);
+	const uint64_t patch_start = file_writer::find_patch_start(cloneptr, changedptr, offset, size);
+	if (patch_start == size) return 0;
+	offset += patch_start;
+	size -= patch_start;
+
 	switch (object_data->object_type)
 	{
 	case VK_OBJECT_TYPE_IMAGE: writer.begin_packet(PACKET_IMAGE_UPDATE2); break;
@@ -1644,7 +1650,6 @@ static uint64_t write_out_object(lava_file_writer& writer, const auto* device_da
 	if (ar) flags |= PACKET_FLAG_HAS_PNEXT;
 	writer.write_uint16_t(flags);
 	if (ar) write_extension(writer, (VkBaseOutStructure*)ar);
-	if (writer.write_output && ar && size > 0) changedptr = reverse_translate_marked_payload(writer, object_data, changedptr, offset, size, ar);
 	uint64_t written = writer.write_patch(cloneptr, changedptr, offset, size);
 	object_data->updates++;
 	object_data->written += written;

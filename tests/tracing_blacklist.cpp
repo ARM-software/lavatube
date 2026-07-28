@@ -3,6 +3,9 @@
 
 #define TEST_NAME "tracing_blacklist"
 
+#pragma GCC diagnostic ignored "-Wunused-variable"
+#pragma GCC diagnostic ignored "-Wunused-function"
+
 static bool has_extension(const std::vector<VkExtensionProperties>& properties, const char* name)
 {
 	for (const VkExtensionProperties& property : properties)

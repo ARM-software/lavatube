@@ -162,6 +162,8 @@ public:
 
 	/// Write out diff of memory area. Returns number of bytes written out.
 	uint64_t write_patch(char* __restrict__ orig, const char* __restrict__ chng, uint32_t offset, uint64_t size); // returns bytes changed
+	/// Return the first 8-byte block containing a change, relative to offset, or size when unchanged.
+	static uint64_t find_patch_start(const char* orig, const char* chng, uint64_t offset, uint64_t size);
 	void write_memory(const char* const ptr, uint64_t offset, uint64_t size);
 
 	void set(const std::string& path);

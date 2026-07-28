@@ -14,6 +14,20 @@ static int patch(lava_file_writer& file, char* orig, char* change, uint64_t offs
 	return file.write_patch(orig, change, offset, size);
 }
 
+static void test_find_patch_start()
+{
+	std::vector<char> original(32, 0);
+	std::vector<char> changed(32, 0);
+	assert(file_writer::find_patch_start(original.data(), changed.data(), 0, original.size()) == original.size());
+	changed[17] = 1;
+	assert(file_writer::find_patch_start(original.data(), changed.data(), 0, original.size()) == 16);
+	assert(file_writer::find_patch_start(original.data(), changed.data(), 8, 16) == 8);
+	changed[17] = 0;
+	changed[31] = 1;
+	assert(file_writer::find_patch_start(original.data(), changed.data(), 0, original.size()) == 24);
+	assert(file_writer::find_patch_start(original.data(), changed.data(), 31, 1) == 0);
+}
+
 static void write_test_1_2()
 {
 	std::vector<char> big1(65535, 0);
@@ -88,6 +102,7 @@ void read_test_1_2()
 
 static void write_test_1()
 {
+	test_find_patch_start();
 	std::vector<uint64_t> val64s = { 0,1,2,3,4,5,6,7,8,9 };
 	char* clone; // copy of original
 	int changed = 0;

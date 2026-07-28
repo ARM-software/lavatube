@@ -23,6 +23,31 @@ void file_writer::write_memory(const char* const ptr, uint64_t offset, uint64_t 
 
 // memory areas should be 64bit aligned
 // size is number of bytes to scan for changes
+uint64_t file_writer::find_patch_start(const char* orig, const char* chng, uint64_t offset, uint64_t size)
+{
+	static constexpr uint64_t chunk_size = 256;
+	orig += offset;
+	chng += offset;
+	uint64_t pos = 0;
+	if (size >= sizeof(uint64_t))
+	{
+		if (memcmp(orig, chng, sizeof(uint64_t)) != 0) return 0;
+		pos = sizeof(uint64_t);
+	}
+	while (size - pos >= chunk_size)
+	{
+		if (memcmp(orig + pos, chng + pos, chunk_size) != 0) break;
+		pos += chunk_size;
+	}
+	while (size - pos >= sizeof(uint64_t))
+	{
+		if (memcmp(orig + pos, chng + pos, sizeof(uint64_t)) != 0) return pos;
+		pos += sizeof(uint64_t);
+	}
+	if (pos < size && memcmp(orig + pos, chng + pos, size - pos) != 0) return pos;
+	return size;
+}
+
 uint64_t file_writer::write_patch(char* __restrict__ orig, const char* __restrict__ chng, uint32_t offset, uint64_t size)
 {
 	uint64_t total_left = size;
@@ -34,7 +59,11 @@ uint64_t file_writer::write_patch(char* __restrict__ orig, const char* __restric
 	while (total_left)
 	{
 		// Skip identical sequence
-		for (; total_left >= 8 && *((uint64_t*)orig) == *((uint64_t*)chng); orig += 8, offset += 8, chng += 8, total_left -= 8) {}
+		const uint64_t identical = find_patch_start(orig, chng, 0, total_left);
+		orig += identical;
+		chng += identical;
+		offset += identical;
+		total_left -= identical;
 
 		// Process difference sequence and update the clone
 		startchng = chng;

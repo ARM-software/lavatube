@@ -367,6 +367,18 @@ target_link_libraries(rangetrack_perf ${MOST_COMMON_LIBRARIES})
 target_compile_options(rangetrack_perf PRIVATE ${COMMON_FLAGS})
 add_dependencies(rangetrack_perf sync_generated)
 
+add_executable(patchscan_perf tests/patchscan_perf.cpp)
+target_include_directories(patchscan_perf ${COMMON_INCLUDE})
+target_link_libraries(patchscan_perf ${COMMON_LIBRARIES} lavatube)
+target_compile_options(patchscan_perf PRIVATE ${COMMON_FLAGS})
+add_dependencies(patchscan_perf sync_generated)
+
+add_executable(patchwrite_perf tests/patchwrite_perf.cpp)
+target_include_directories(patchwrite_perf ${COMMON_INCLUDE})
+target_link_libraries(patchwrite_perf ${MOST_COMMON_LIBRARIES})
+target_compile_options(patchwrite_perf PRIVATE ${COMMON_FLAGS})
+add_dependencies(patchwrite_perf sync_generated)
+
 add_executable(replay_screenshot_test tests/replay_screenshot.cpp)
 target_include_directories(replay_screenshot_test ${COMMON_INCLUDE})
 target_link_libraries(replay_screenshot_test ${COMMON_LIBRARIES} lavatube)
