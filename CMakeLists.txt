@@ -1274,7 +1274,7 @@ markings_test(compute_bda_copying_address_minimal ${CMAKE_BINARY_DIR}/vulkan_com
 set_tests_properties(markings_compare_compute_bda_copying_address_minimal_compare PROPERTIES WILL_FAIL TRUE)
 markings_test(address_remap_test_1 ${CMAKE_BINARY_DIR}/vulkan_address_remap_test_1)
 markings_test(demo_descriptor_buffer_minimal ${CMAKE_BINARY_DIR}/vulkan_demo_descriptor_buffer_minimal)
-markings_test(descriptor_buffer_double_copy ${CMAKE_BINARY_DIR}/vulkan_)
+markings_test(descriptor_buffer_double_copy ${CMAKE_BINARY_DIR}/vulkan_descriptor_buffer_double_copy)
 #markings_test(anki_simple ${CMAKE_CURRENT_SOURCE_DIR}/traces/anki_simple)
 
 # --- Android emulator tracing test ---
