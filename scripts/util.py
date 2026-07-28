@@ -1586,6 +1586,7 @@ def save_add_tracking(name):
 			if name == 'vkCreateGraphicsPipelines': z.do('add->type = VK_PIPELINE_BIND_POINT_GRAPHICS;')
 			elif name == 'vkCreateComputePipelines': z.do('add->type = VK_PIPELINE_BIND_POINT_COMPUTE;')
 			elif name == 'vkCreateRayTracingPipelinesKHR': z.do('add->type = VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR;')
+			elif name == 'vkCreateDataGraphPipelinesARM': z.do('add->type = VK_PIPELINE_BIND_POINT_DATA_GRAPH_ARM;')
 		elif type == 'VkSwapchainKHR':
 			z.do('add->info = pCreateInfos[i];')
 		z.do('DLOG2("insert %s into %s index %%u packet=%%d", (unsigned)add->index, (int)writer.current.packet);' % (type, name))

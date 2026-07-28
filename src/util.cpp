@@ -10,6 +10,7 @@
 #include <spirv/unified1/spirv.h>
 
 #include <algorithm>
+#include <limits>
 
 #ifdef VK_USE_PLATFORM_ANDROID_KHR
 #include <sys/system_properties.h>
@@ -111,6 +112,50 @@ uint64_t host_image_copy_size(VkFormat format, const VkImageSubresourceLayers* s
 	const uint64_t height_blocks = (image_height + block_height - 1) / block_height;
 	const uint64_t depth_blocks = (depth + block_depth - 1) / block_depth;
 	return row_blocks * height_blocks * depth_blocks * static_cast<uint64_t>(subresource->layerCount) * block_size;
+}
+
+uint64_t tensor_data_size(const VkTensorDescriptionARM* description)
+{
+	if (!description || description->dimensionCount == 0 || !description->pDimensions)
+	{
+		return 0;
+	}
+
+	if (description->pStrides)
+	{
+		if (description->pDimensions[0] <= 0 || description->pStrides[0] <= 0)
+		{
+			return 0;
+		}
+		const uint64_t dimension = static_cast<uint64_t>(description->pDimensions[0]);
+		const uint64_t stride = static_cast<uint64_t>(description->pStrides[0]);
+		if (dimension > std::numeric_limits<uint64_t>::max() / stride)
+		{
+			return 0;
+		}
+		return dimension * stride;
+	}
+
+	const uint64_t block_size = VULKAN_HPP_NAMESPACE::blockSize(static_cast<VULKAN_HPP_NAMESPACE::Format>(description->format));
+	if (block_size == 0)
+	{
+		return 0;
+	}
+	uint64_t size = block_size;
+	for (uint32_t i = 0; i < description->dimensionCount; i++)
+	{
+		if (description->pDimensions[i] <= 0)
+		{
+			return 0;
+		}
+		const uint64_t dimension = static_cast<uint64_t>(description->pDimensions[i]);
+		if (size > std::numeric_limits<uint64_t>::max() / dimension)
+		{
+			return 0;
+		}
+		size *= dimension;
+	}
+	return size;
 }
 
 int get_env_bool(const char* name, int v)

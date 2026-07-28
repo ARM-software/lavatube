@@ -16,7 +16,7 @@ More instructions to implement - in prioritized order:
 * `lava-cli log update` - receive logfile delta since previous call to this command, which is stored in a temporary file that can be searched with `logtail`
 	- ideally we would output to both stdout/android log at the same time as saving to file that we can send here, but easier implementation if we just pick one output target
 	- `lava-cli` should receive the logs, append it to our copy of the logfile, and just output 'DONE' to stdout
-* `lava-cli log tail REGEX [M=10] [N=0]` - gives the last M log lines matching REGEX at end-relative offset zero, equivalent of `cat $logfile | tail -${M+N} | head -$M
+* `lava-cli log tail [REGEX=*] [M=10] [N=0]` - gives the last M log lines matching REGEX at end-relative offset zero, equivalent of `cat $logfile | tail -${M+N} | head -$M
 	- apparently the PCRE syntax is the most LLM friendly, RE2 is likely the best regex engine for it, but requires abseil
 	- re2: can support through apt on linux, FetchContent for android? as git submodule is _not_ recommended as requires abseil which is hard to build (esp for android)
 * `lava-cli callprint CALL THREAD` - print call parameters _as stored on disk_ for any call and its chained pnext structs; safest to invoke `lava-print` as a command because of our globals,
@@ -36,6 +36,15 @@ More instructions to implement - in prioritized order:
   push a callback on the queue submit so we can queuewaitidle -> write -> clear writeout queue
 * `lava-cli split-cmdbuf-by-renderpass` - only when on `vkBeginCommandBuffer` to split commandbuffers by renderpasses
 * `lava-cli split-cmdbuf-by-shader` - only when on `vkBeginCommandBuffer` to split commandbuffers by shader calls
+* `lava-cli : <instruction>` - give an instruction in natural language form to be interpreted by an LLM with defined tools access to the replay
+	- perhaps '?' for investigation prompt (progress commands unavailable), and '!' for an action prompt (ie progress the replay), and ':' for a generic prompt
+	- should reuse TUI code and setup
+	- for '!' if cannot figure out the action to take, then escalate (eg local -> cloud model)
+* `lava-cli backtrace` - generate a backtrace from the current position, could invoke gdb, need to figure out what to do for Android
+* `lava-cli validation update` - similar to `log update`, just get the latest validation warnings; if no validation layer enabled, just return 'ERROR'
+* `lava-cli validation tail [REGEX=*] [M=10] [N=0]` - similar to `log tail` above
+* `lava-cli syslog update` - similar to `log update`, just get the latest system log entries; logcat on Android and syslog on Linux, we might want to pre-filter on some keywords ('lava', trace name, GPU names, etc.)
+* `lava-cli syslog tail [REGEX=*] [M=10] [N=0]` - similar to `log tail` above
 
 ## Notes
 

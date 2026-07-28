@@ -3917,7 +3917,25 @@ void retrace_vkAssertMemoryARM(lava_file_reader& reader)
 
 void read_VkDataGraphPipelineConstantARM(lava_file_reader& reader, VkDataGraphPipelineConstantARM* sptr)
 {
-	// TBD
+	sptr->sType = (VkStructureType)reader.read_uint32_t();
+	assert(sptr->sType == VK_STRUCTURE_TYPE_DATA_GRAPH_PIPELINE_CONSTANT_ARM);
+	read_extension(reader, (VkBaseOutStructure**)&sptr->pNext);
+	sptr->id = reader.read_uint32_t();
+	const uint64_t stored_data_size = reader.read_uint64_t();
+	const auto* description = (const VkTensorDescriptionARM*)find_extension(sptr->pNext, VK_STRUCTURE_TYPE_TENSOR_DESCRIPTION_ARM);
+	const uint64_t expected_data_size = tensor_data_size(description);
+	if (stored_data_size == 0 || stored_data_size != expected_data_size)
+	{
+		ABORT("Invalid data size for data graph pipeline constant %u: stored=%llu expected=%llu", sptr->id,
+			(unsigned long long)stored_data_size, (unsigned long long)expected_data_size);
+	}
+	uint8_t* backing = reader.pool.allocate<uint8_t>(stored_data_size);
+	if (!backing)
+	{
+		ABORT("Failed to allocate data for data graph pipeline constant %u", sptr->id);
+	}
+	reader.read_array(backing, stored_data_size);
+	sptr->pConstantData = backing;
 }
 
 void read_VkPhysicalDeviceExplicitHostUpdatesFeaturesARM(lava_file_reader& reader, VkPhysicalDeviceExplicitHostUpdatesFeaturesARM* sptr)

@@ -2759,6 +2759,18 @@ VKAPI_ATTR void VKAPI_CALL trace_vkFrameBoundaryANDROID(VkDevice device, VkSemap
 
 void write_VkDataGraphPipelineConstantARM(lava_file_writer& writer, const VkDataGraphPipelineConstantARM* sptr)
 {
+	writer.write_uint32_t(sptr->sType);
+	assert(sptr->sType == VK_STRUCTURE_TYPE_DATA_GRAPH_PIPELINE_CONSTANT_ARM);
+	write_extension(writer, (VkBaseOutStructure*)sptr->pNext);
+	writer.write_uint32_t(sptr->id);
+	const auto* description = (const VkTensorDescriptionARM*)find_extension(sptr->pNext, VK_STRUCTURE_TYPE_TENSOR_DESCRIPTION_ARM);
+	const uint64_t data_size = tensor_data_size(description);
+	if (data_size == 0 || !sptr->pConstantData)
+	{
+		ABORT("Cannot serialize data graph pipeline constant %u", sptr->id);
+	}
+	writer.write_uint64_t(data_size);
+	writer.write_array(reinterpret_cast<const char*>(sptr->pConstantData), data_size);
 }
 
 static void write_VkPhysicalDeviceExplicitHostUpdatesFeaturesARM(lava_file_writer& writer, const VkPhysicalDeviceExplicitHostUpdatesFeaturesARM* sptr)

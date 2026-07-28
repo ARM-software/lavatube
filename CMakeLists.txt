@@ -88,6 +88,9 @@ if(SANITIZE)
     endif()
 endif()
 
+set(RUN_IF_EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/cmake/run_if_exists.sh)
+set(REMOVE_THEN_RUN ${CMAKE_CURRENT_SOURCE_DIR}/cmake/remove_then_run.sh)
+
 # --- spirv-simulator ---
 
 message(STATUS "Configuring spirv-simulator")
@@ -859,6 +862,33 @@ add_lavatube_test(pack_test_7_markings_simulate_explicit
 set_tests_properties(pack_test_7_markings_simulate_explicit PROPERTIES FIXTURES_REQUIRED raytracing_indirect_noop)
 install(TARGETS packtool RUNTIME)
 
+# --- VulkanML tests using the emulation layers ---
+
+function(vulkanml_test test_name test_exe)
+	add_lavatube_test(vulkanml_test_${ARGV0} COMMAND vulkan_${ARGV1} --gpu ${ARGV2} ${ARGV3} ${ARGV4} ${ARGV5} ${ARGV6} ${ARGV7})
+	set_tests_properties(vulkanml_test_${ARGV0} PROPERTIES
+		FIXTURES_SETUP ${ARGV0}
+		ENVIRONMENT_MODIFICATION
+			"VK_INSTANCE_LAYERS=path_list_append:VK_LAYER_ML_Graph_Emulation;VK_INSTANCE_LAYERS=path_list_append:VK_LAYER_ML_Tensor_Emulation;VK_LAYER_PATH=path_list_prepend:${CMAKE_CURRENT_BINARY_DIR}/implicit_layer.d;LAVATUBE_VIRTUAL_QUEUES=set:1;LAVATUBE_DELETE_EMPTY_TRACE=set:1;LAVATUBE_DESTINATION=set:vulkan_${ARGV0};VK_INSTANCE_LAYERS=path_list_prepend:VK_LAYER_ARM_lavatube;LD_LIBRARY_PATH=set:${CMAKE_CURRENT_BINARY_DIR}/implicit_layer.d"
+		SKIP_RETURN_CODE 77
+	)
+
+	set(TRACE_FILE ${CMAKE_CURRENT_BINARY_DIR}/vulkan_${ARGV0}.api)
+	add_lavatube_test(vulkanml_test_${ARGV0}_replay COMMAND ${RUN_IF_EXISTS} ${TRACE_FILE} $<TARGET_FILE:lava-replay> -V vulkan_${ARGV0}.api)
+	set_tests_properties(vulkanml_test_${ARGV0}_replay PROPERTIES
+		FIXTURES_REQUIRED ${ARGV0}
+		ENVIRONMENT_MODIFICATION
+			"VK_INSTANCE_LAYERS=path_list_append:VK_LAYER_ML_Graph_Emulation;VK_INSTANCE_LAYERS=path_list_append:VK_LAYER_ML_Tensor_Emulation"
+		SKIP_RETURN_CODE 77
+	)
+endfunction()
+
+vulkanml_test(tensors_1 tensors_1)
+vulkanml_test(tensors_2 tensors_2)
+vulkanml_test(tensors_3 tensors_3)
+vulkanml_test(tensors_4 tensors_4)
+#vulkanml_test(data_graph_optical_flow data_graph_optical_flow)
+
 # --- layer tests ---
 
 function(layer_test test_name test_exe)
@@ -890,8 +920,6 @@ function(layer_test test_name test_exe)
 		SKIP_RETURN_CODE 77
 	)
 
-	set(RUN_IF_EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/cmake/run_if_exists.sh)
-	set(REMOVE_THEN_RUN ${CMAKE_CURRENT_SOURCE_DIR}/cmake/remove_then_run.sh)
 	set(TRACE_FILE ${CMAKE_CURRENT_BINARY_DIR}/vulkan_${ARGV0}.api)
 	set(SIM_TRACE_FILE ${CMAKE_CURRENT_BINARY_DIR}/vulkan_${ARGV0}_simulation.api)
 	set(RAW_TRACE_FILE ${CMAKE_CURRENT_BINARY_DIR}/vulkan_${ARGV0}_raw.api)
@@ -1109,6 +1137,7 @@ layer_test(graphics_1 graphics_1)
 #layer_test(pipeline_binary compute_2 -b)
 layer_test(pipeline_executable_properties pipeline_executable_properties)
 layer_test(cooperative_matrix cooperative_matrix)
+#layer_test(cooperative_matrix_math cooperative_matrix_math) # test bugged
 layer_test(extended_dynamic_state3 extended_dynamic_state3)
 #layer_test(push_descriptor)
 layer_test(host_image_copy host_image_copy)
@@ -1125,10 +1154,6 @@ layer_test(memory_2 memory_2)
 layer_test(memory_2_1 memory_2_1)
 layer_test(pipeline_creation_cache_control pipeline_creation_cache_control)
 layer_test(stress_1 stress_1 -c 2)
-layer_test(tensors_1 tensors_1)
-layer_test(tensors_2 tensors_2)
-layer_test(tensors_3 tensors_3)
-layer_test(tensors_4 tensors_4)
 layer_test(address_remap_test_1 address_remap_test_1)
 layer_test(timeline_semaphore_1 timeline_semaphore_1)
 layer_test(trace_helpers trace_helpers)
@@ -1205,7 +1230,6 @@ layer_test(transform_feedback transform_feedback)
 #layer_test(multithreaded_swapchain multithreaded_swapchain)
 layer_test(dynamic_rendering dynamic_rendering)
 layer_test(debug_utils debug_utils)
-#layer_test(data_graph_optical_flow data_graph_optical_flow)
 
 # These require the Mali GPU model for now:
 #layer_test(shader_core_properties shader_core_properties)
