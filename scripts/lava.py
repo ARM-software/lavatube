@@ -46,15 +46,13 @@ u = open('generated/util_auto.cpp', 'w')
 uh = open('generated/util_auto.h', 'w')
 wr = open('generated/write_resource_auto.cpp', 'w')
 wrh = open('generated/write_resource_auto.h', 'w')
-gh = open('generated/write_gfxr_consumer.h', 'w')
-g = open('generated/write_gfxr_consumer.cpp', 'w')
 
 def out(lst, str=''):
 	for n in lst: print(str, file=n)
 
 # Starts to write file output from here (w=trace, r=replay, wh=trace header, rh=replay header)
-targets_all = [w,r,wh,rh,u,uh,wr,wrh,gh,g]
-targets_headers = [wh,rh,uh,wrh,gh]
+targets_all = [w,r,wh,rh,u,uh,wr,wrh]
+targets_headers = [wh,rh,uh,wrh]
 targets_main = [r,w]
 targets_write_headers = [wh]
 targets_read_headers = [rh]
@@ -399,18 +397,6 @@ for v in spec.root.findall("commands/command"):
 		all_funcs[v.attrib.get('name')] = all_funcs[v.attrib.get('alias')]
 
 # Generate all functions
-out([gh], '#include "decode/api_decoder.h"')
-out([gh], '#include "decode/pointer_decoder.h"')
-out([gh], '#include "format/format.h"')
-out([gh], '#include "util/vulkan_modifier_base.h"')
-out([gh], '#include "write.h"')
-out([g], '#include "write_gfxr_consumer.h"')
-out([gh,g])
-out([gh,g], 'GFXRECON_BEGIN_NAMESPACE(gfxrecon)')
-out([gh,g], 'GFXRECON_BEGIN_NAMESPACE(decode)')
-out([gh,g])
-out([gh], 'class LavatubeConsumer : public util::VulkanModifierBase')
-out([gh], '{')
 for v in spec.root.findall("commands/command"):
 	name = None
 	api = v.attrib.get('api')
@@ -423,7 +409,6 @@ for v in spec.root.findall("commands/command"):
 	if not name in spec.functions: continue
 	util.loadfunc(name, all_funcs[name], r, rh)
 	util.savefunc(name, all_funcs[name], w, wh)
-	util.convertfunc(name, all_funcs[name], g, gh)
 for f in fake_extension_structs:
 	out(targets_read_headers, 'void read_%s(lava_file_reader& reader, %s* sptr);' % (f, f))
 for f in fake_functions:
@@ -461,23 +446,6 @@ for f in fake_functions:
 		out([wh], 'VKAPI_ATTR void VKAPI_CALL trace_vkFrameBoundaryANDROID(VkDevice device, VkSemaphore semaphore, VkImage image);')
 	else:
 		assert False, 'Missing fake function header implementation: %s' % f
-out([gh])
-out([gh], 'private:')
-out([gh], '\tlava_file_writer& start(const char* funcname, lava_function_id id, const ApiCallInfo& call_info, bool thread_barrier = false)')
-out([gh], '\t{')
-out([gh], '\t\tint tid = -1;')
-out([gh], '\t\tif (threads.contains(call_info.thread_id)) { tid = threads[call_info.thread_id]; }')
-out([gh], '\t\telse { tid = threads.size(); threads[call_info.thread_id] = tid; }')
-out([gh], '\t\treturn write_header(funcname, id, tid, thread_barrier);')
-out([gh], '\t}')
-out([gh], '\tinline void finish(lava_file_writer& writer) { writer.end_packet(); }')
-out([gh])
-out([gh], '\tstd::unordered_map<uint64_t, int> threads;')
-out([gh], '};')
-out([gh,g])
-out([gh,g], 'GFXRECON_END_NAMESPACE(decode)')
-out([gh,g], 'GFXRECON_END_NAMESPACE(gfxrecon)')
-
 out(targets_all)
 
 out(targets_read_headers, 'uint32_t update_image_packet(uint8_t instrtype, lava_file_reader& reader);')

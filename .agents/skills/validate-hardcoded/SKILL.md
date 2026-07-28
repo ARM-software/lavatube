@@ -5,8 +5,7 @@ metadata:
   short-description: Validate lavatube's hardcoded command implementations to see if we missed anything
 ---
 
-1. Ignore `src/hardcode_gfxr.cpp` for the purposes of this validation.
-2. The generated code is not version controlled. You can make a temporary copy of the generated code
+1. The generated code is not version controlled. You can make a temporary copy of the generated code
    to diff the new code against. It can be done like this:
 ```
   tmpdir=$(mktemp -d /tmp/validate_hardcoded.XXXXXX)

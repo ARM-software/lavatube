@@ -1625,6 +1625,53 @@ static void queue_update(lava_file_writer& writer, trackedqueue* t, VkCommandBuf
 	}
 }
 
+static void begin_object_update_packet(lava_file_writer& writer, const trackeddevice* device_data, trackedobject* object_data,
+	VkMarkedOffsetsARM* ar, uint64_t*& sizeptr, uint64_t& payload_start)
+{
+	switch (object_data->object_type)
+	{
+	case VK_OBJECT_TYPE_IMAGE: writer.begin_packet(PACKET_IMAGE_UPDATE2); break;
+	case VK_OBJECT_TYPE_BUFFER: writer.begin_packet(PACKET_BUFFER_UPDATE2); break;
+	case VK_OBJECT_TYPE_TENSOR_ARM: writer.begin_packet(PACKET_TENSOR_UPDATE); break;
+	default: assert(false); break;
+	}
+	writer.write_handle(device_data);
+	writer.write_handle(object_data);
+	sizeptr = writer.write_later_uint64_t(); // this locks the write chunks
+	payload_start = writer.uncompressed_bytes;
+	uint16_t flags = 0;
+	if (ar) flags |= PACKET_FLAG_HAS_PNEXT;
+	writer.write_uint16_t(flags);
+	if (ar) write_extension(writer, (VkBaseOutStructure*)ar);
+}
+
+static void end_object_update_packet(lava_file_writer& writer, trackedobject* object_data, uint64_t* sizeptr,
+	uint64_t payload_start, uint64_t written)
+{
+	object_data->updates++;
+	object_data->written += written;
+	*sizeptr = writer.uncompressed_bytes - payload_start; // includes size of flags and anything beyond until the end of our packet
+	writer.end_packet();
+}
+
+uint64_t write_object_update_packet(lava_file_writer& writer, const trackeddevice* device_data, trackedobject* object_data,
+	uint64_t offset, const char* data, uint64_t size)
+{
+	assert(device_data);
+	assert(object_data);
+	assert(data || size == 0);
+	assert(offset <= object_data->size);
+	assert(size <= object_data->size - offset);
+	if (size == 0) return 0;
+
+	uint64_t* sizeptr = nullptr;
+	uint64_t payload_start = 0;
+	begin_object_update_packet(writer, device_data, object_data, nullptr, sizeptr, payload_start);
+	writer.write_memory_span(data, offset, size);
+	end_object_update_packet(writer, object_data, sizeptr, payload_start, size);
+	return size;
+}
+
 /// cloneptr and changedptr shall point to start of object, reading or writing from this pointer before the first given offset may not be safe,
 /// as the memory might not have been mapped.
 static uint64_t write_out_object(lava_file_writer& writer, const auto* device_data, trackedobject* object_data, char* cloneptr, char* changedptr, uint64_t offset, uint64_t size, VkMarkedOffsetsARM* ar)
@@ -1635,26 +1682,11 @@ static uint64_t write_out_object(lava_file_writer& writer, const auto* device_da
 	offset += patch_start;
 	size -= patch_start;
 
-	switch (object_data->object_type)
-	{
-	case VK_OBJECT_TYPE_IMAGE: writer.begin_packet(PACKET_IMAGE_UPDATE2); break;
-	case VK_OBJECT_TYPE_BUFFER: writer.begin_packet(PACKET_BUFFER_UPDATE2); break;
-	case VK_OBJECT_TYPE_TENSOR_ARM: writer.begin_packet(PACKET_TENSOR_UPDATE); break;
-	default: assert(false); break;
-	}
-	writer.write_handle(device_data);
-	writer.write_handle(object_data);
-	uint64_t* sizeptr = writer.write_later_uint64_t(); // this locks the write chunks
-	uint64_t bytes = writer.uncompressed_bytes;
-	uint16_t flags = 0;
-	if (ar) flags |= PACKET_FLAG_HAS_PNEXT;
-	writer.write_uint16_t(flags);
-	if (ar) write_extension(writer, (VkBaseOutStructure*)ar);
-	uint64_t written = writer.write_patch(cloneptr, changedptr, offset, size);
-	object_data->updates++;
-	object_data->written += written;
-	*sizeptr = writer.uncompressed_bytes - bytes; // includes size of flags and anything beyond until the end of our packet
-	writer.end_packet();
+	uint64_t* sizeptr = nullptr;
+	uint64_t payload_start = 0;
+	begin_object_update_packet(writer, device_data, object_data, ar, sizeptr, payload_start);
+	const uint64_t written = writer.write_patch(cloneptr, changedptr, offset, size);
+	end_object_update_packet(writer, object_data, sizeptr, payload_start, written);
 	return written;
 }
 
@@ -2361,7 +2393,11 @@ static bool trace_pre_vkCreateInstance(VkInstanceCreateInfo* pCreateInfo, const 
 	lava_file_writer& writer = instance.file_writer();
 
 	frame_mutex.lock();
-	if (instance_extension_properties.size() == 0) modify_instance_extensions(); // in case empty
+	if (instance_extension_properties.size() == 0)
+	{
+		if (writer.run) modify_instance_extensions(); // in case empty
+		else bootstrap_instance_extensions_from_metadata();
+	}
 	if (writer.run)
 	{
 		for (unsigned i = 0; i < pCreateInfo->enabledExtensionCount; i++)
@@ -3316,7 +3352,7 @@ static void ensure_swapchain_image_records(lava_file_writer& writer, trackedswap
 	for (uint32_t i = 0; i < count; i++)
 	{
 		if (writer.parent->records.VkImage_index.contains(images[i])) continue;
-		auto* add = writer.parent->records.VkImage_index.add(images[i], writer.current, writer.write_output ? fake_index<VkImage>(images[i]) : CONTAINER_INVALID_INDEX);
+		auto* add = writer.parent->records.VkImage_index.add(images[i], writer.current, writer.parent->desired_output_handle_index(images[i]));
 		// These images were created by the swapchain creation call, even though
 		// the handles only become visible to us later through vkGetSwapchainImagesKHR.
 		add->creation = swapchain_data->creation;
@@ -3387,7 +3423,8 @@ void tool_write_vkCreateSurfaceKHR_packet(const surface_create_packet& packet, c
 	writer.write_uint32_t(static_cast<uint32_t>(packet.retval));
 	if (packet.retval == VK_SUCCESS && packet.surface_index != CONTAINER_NULL_VALUE)
 	{
-		auto* surface_data = writer.parent->records.VkSurfaceKHR_index.add(fake_handle<VkSurfaceKHR>(packet.surface_index), writer.current, packet.surface_index);
+		const VkSurfaceKHR surface = fake_handle<VkSurfaceKHR>(packet.surface_index);
+		auto* surface_data = writer.parent->records.VkSurfaceKHR_index.add(surface, writer.current, writer.parent->desired_output_handle_index(surface));
 		surface_data->width = packet.width;
 		surface_data->height = packet.height;
 		surface_data->x = packet.x;
@@ -3624,7 +3661,7 @@ VKAPI_ATTR void VKAPI_CALL trace_vkGetDeviceQueue2(VkDevice device, const VkDevi
 
 	if (!writer.parent->records.VkQueue_index.contains(*pQueue))
 	{
-		auto* queue_data = writer.parent->records.VkQueue_index.add(*pQueue, writer.current, writer.write_output ? fake_index<VkQueue>(*pQueue) : CONTAINER_INVALID_INDEX);
+		auto* queue_data = writer.parent->records.VkQueue_index.add(*pQueue, writer.current, writer.parent->desired_output_handle_index(*pQueue));
 		queue_data->queueIndex = pQueueInfo->queueIndex;
 		queue_data->queueFamily = pQueueInfo->queueFamilyIndex;
 		queue_data->queueFlags = pQueueInfo->flags;
@@ -3677,7 +3714,7 @@ VKAPI_ATTR void VKAPI_CALL trace_vkGetDeviceQueue(VkDevice device, uint32_t queu
 	// Post
 	if (!writer.parent->records.VkQueue_index.contains(*pQueue))
 	{
-		auto* queue_data = writer.parent->records.VkQueue_index.add(*pQueue, writer.current, writer.write_output ? fake_index<VkQueue>(*pQueue) : CONTAINER_INVALID_INDEX);
+		auto* queue_data = writer.parent->records.VkQueue_index.add(*pQueue, writer.current, writer.parent->desired_output_handle_index(*pQueue));
 		queue_data->queueIndex = queueIndex;
 		queue_data->queueFamily = queueFamilyIndex;
 		queue_data->queueFlags = (queueFamilyIndex < physicaldevice_data->queueFamilyProperties.size()) ? physicaldevice_data->queueFamilyProperties.at(queueFamilyIndex).queueFlags : 0;

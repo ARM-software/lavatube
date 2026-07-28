@@ -198,12 +198,16 @@ public:
 	static lava_writer& instance();
 	void set(const std::string& path);
 	void set_output(const std::string& packed_path);
+	void use_dense_output_handle_indices() { preserve_output_handle_indices = false; }
+	template<typename T> uint32_t desired_output_handle_index(T handle) const
+	{
+		return write_output && preserve_output_handle_indices ? fake_index<T>(handle) : CONTAINER_INVALID_INDEX;
+	}
 	void bind_thread(unsigned index);
 	void prepare_threads(unsigned count);
 	Json::Value& json() REQUIRES(frame_mutex) { return mJson; }
 	Json::Value& input_tracking() REQUIRES(frame_mutex) { return mInputTracking; }
 	lava_file_writer& file_writer();
-	lava_file_writer& file_writer(unsigned index); // not thread safe!
 	void serialize();
 	void finish();
 #ifdef VK_USE_PLATFORM_ANDROID_KHR
@@ -247,6 +251,7 @@ private:
 	Json::Value mJson GUARDED_BY(frame_mutex);
 	Json::Value mInputTracking GUARDED_BY(frame_mutex);
 	bool should_serialize = false;
+	bool preserve_output_handle_indices = true;
 #ifdef VK_USE_PLATFORM_ANDROID_KHR
 	std::atomic<bool> android_finish_monitor_running = false;
 	std::thread android_finish_monitor_thread;
@@ -254,6 +259,8 @@ private:
 };
 
 void tool_write_vkCreateSurfaceKHR_packet(const surface_create_packet& packet, const char* name, lava_function_id id);
+uint64_t write_object_update_packet(lava_file_writer& writer, const trackeddevice* device_data, trackedobject* object_data,
+	uint64_t offset, const char* data, uint64_t size);
 
 struct hardware_buffer_metadata
 {

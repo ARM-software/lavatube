@@ -12,39 +12,59 @@ start providing a remote controlled service. When called like this, it launches 
 background thread that listens on a TCP port, then waits for further instructions
 on this port. These instructions are sent from a new tool `lava-cli`.
 
-More instructions to implement - in prioritized order:
+More instructions to implement:
 * `lava-cli log update` - receive logfile delta since previous call to this command, which is stored in a temporary file that can be searched with `logtail`
 	- ideally we would output to both stdout/android log at the same time as saving to file that we can send here, but easier implementation if we just pick one output target
 	- `lava-cli` should receive the logs, append it to our copy of the logfile, and just output 'DONE' to stdout
-* `lava-cli log tail [REGEX=*] [M=10] [N=0]` - gives the last M log lines matching REGEX at end-relative offset zero, equivalent of `cat $logfile | tail -${M+N} | head -$M
+	- replayer on its end must clear the log file upon successfully sending off the update
+* `lava-cli log tail [REGEX=*] [limit=10] [since=LINE] [update=on|off]` - returns the last regex matches up to `limit` in the log, optionally starting search at `LINE`
 	- apparently the PCRE syntax is the most LLM friendly, RE2 is likely the best regex engine for it, but requires abseil
+	- `update on` (the default) automatically calls `log update` first
 	- re2: can support through apt on linux, FetchContent for android? as git submodule is _not_ recommended as requires abseil which is hard to build (esp for android)
+		- but only needed for`lava-cli` which we don't want to build for Android anyways
 * `lava-cli callprint CALL THREAD` - print call parameters _as stored on disk_ for any call and its chained pnext structs; safest to invoke `lava-print` as a command because of our globals,
   but would be good to maintain some cache
 	- we need to ensure we have a local copy of the trace file; easiest to pass in as a parameter
 	- this is only for TUI, a separate tool can just invoke `lava-print`
 * `lava-cli step frames X` - step the given number of frames ahead in the current thread, then pause again
 * `lava-cli goto frame X` - replay until we get to the given frame
+* `lava-cli repeat` - repeat the current call (without incrementing the packet count); not all calls are safe to repeat - use common sense
 * `lava-cli info <topic>` - show input parameters and important state
 	- 'objects' - show table of all non-zero-sized object types, with pending, created, bound (if applicable) and destroyed columns
 	- 'swapchains' - show image index numbers of real and fake swapchains and their status
 	- 'device-fault' - use `VK_KHR_device_fault` to print device-lost info (only works on nvidia for now)
-* `lava-cli list <object type>` - list all objects of given type tracked globally and their status
+* `lava-cli list <object type> [filter=all|created|bound|destroyed] [limit=20]` - list all objects of given type tracked globally and their status
 * `lava-cli save buffer|image|tensor <index> <filename>` - write exact contents of object given by index to the given filename (if bound; possibly using staging)
 * `lava-cli convert image <index> <filename.png>` - transform to linear format and write contents of image data given by index to the given filename (if bound; possibly using staging; as PNG)
 * `lava-cli writeout buffer|image <index> <filename>` - inject a scheduled write-out at the current position in the current commandbuffer, it will be written after queue submit;
   push a callback on the queue submit so we can queuewaitidle -> write -> clear writeout queue
 * `lava-cli split-cmdbuf-by-renderpass` - only when on `vkBeginCommandBuffer` to split commandbuffers by renderpasses
 * `lava-cli split-cmdbuf-by-shader` - only when on `vkBeginCommandBuffer` to split commandbuffers by shader calls
-* `lava-cli : <instruction>` - give an instruction in natural language form to be interpreted by an LLM with defined tools access to the replay
+* `lava-cli : <free text>` - give an instruction in natural language form to be interpreted by an LLM with defined tool access to the replay
 	- perhaps '?' for investigation prompt (progress commands unavailable), and '!' for an action prompt (ie progress the replay), and ':' for a generic prompt
 	- should reuse TUI code and setup
-	- for '!' if cannot figure out the action to take, then escalate (eg local -> cloud model)
+	- for '!' if cannot figure out the action to take, then escalate (eg local -> cloud model)?
+		- see TUI docs for better ways to do this with an evaluator
+	- much more limited than TUI as it has no history; if we want history, we could launch `lava-tui`; of use `--history <file>`
+* `lava-cli prompt-file <file>` - as above, but read prompt from file in current working directory
 * `lava-cli backtrace` - generate a backtrace from the current position, could invoke gdb, need to figure out what to do for Android
+	- on same host, llm model could just fire up gdb, which is far more powerful, so of limited usefulness
+	- could we annotate the backtrace with extra info to increase usefulness?
 * `lava-cli validation update` - similar to `log update`, just get the latest validation warnings; if no validation layer enabled, just return 'ERROR'
 * `lava-cli validation tail [REGEX=*] [M=10] [N=0]` - similar to `log tail` above
 * `lava-cli syslog update` - similar to `log update`, just get the latest system log entries; logcat on Android and syslog on Linux, we might want to pre-filter on some keywords ('lava', trace name, GPU names, etc.)
 * `lava-cli syslog tail [REGEX=*] [M=10] [N=0]` - similar to `log tail` above
+* `lava-cli inject <packet> <thread> device-wait <device index>` - inject a future wait for the given device before the given packet boundary; this only makes sense if we `continue` or `goto` past this point at full speed
+	- we should keep all inject operations in a sorted queue, one per thread, so we can quickly check the current packet against the top of the queue (we can have multiple injected packets pending on one packet)
+* `lava-cli inject <packet> <thread> fence-wait <device index> <fence index>` - similar to the above, inject a future wait for the given fence before the given packet boundary
+* `lava-cli inject <packet> <thread> queue-wait <queue index>` - similar to the above, inject a future wait for the given queue before the given packet boundary
+* `lava-cli inject <packet> <thread> host-wait <packet> <thread>` - similar to the above, inject a future barrier waiting for the given other thread and packet before the given packet boundary
+
+Command-line options:
+* `lava-cli --history <file>` - save history to given file, useful with `:` or `lava-tui`
+	- at this point it might be better to start and stop explicit sessions, then we don't need this
+		- `stop` and `reset` could nuke the session or move it aside; if no session found, start one and list the new session file
+		- means we can quickly jump into `lava-tui` for complex stuff and have full history of previous commands and their results
 
 ## Notes
 

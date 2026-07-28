@@ -647,6 +647,22 @@ add_lavatube_test(trace_test_tracing1_tool_rewrite
 		-P ${PROJECT_SOURCE_DIR}/tests/lava_tool_rewrite.cmake)
 install(TARGETS lava-tool RUNTIME)
 
+# --- lava-gfxr-import ---
+
+if(NOT ANDROID)
+	find_package(GFXReconstructVulkanApiReader CONFIG QUIET)
+	if(TARGET GFXReconstruct::vulkan_api_reader)
+		add_executable(lava-gfxr-import src/gfxreconstruct_import.cpp)
+		target_include_directories(lava-gfxr-import ${COMMON_INCLUDE})
+		target_link_libraries(lava-gfxr-import ${COMMON_LIBRARIES} lavatube GFXReconstruct::vulkan_api_reader)
+		target_compile_options(lava-gfxr-import PRIVATE ${COMMON_FLAGS})
+		add_dependencies(lava-gfxr-import sync_generated)
+		install(TARGETS lava-gfxr-import RUNTIME)
+	else()
+		message(STATUS "GFXReconstruct Vulkan API reader not found; lava-gfxr-import will not be built")
+	endif()
+endif()
+
 # --- lava-print ---
 
 add_executable(lava-print src/print.cpp)

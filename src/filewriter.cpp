@@ -7,18 +7,26 @@
 #include "filewriter.h"
 #include "density/src/density_api.h"
 
-void file_writer::write_memory(const char* const ptr, uint64_t offset, uint64_t size)
+void file_writer::write_memory_span(const char* ptr, uint64_t offset, uint64_t size)
 {
+	assert(ptr || size == 0);
+	assert(offset <= UINT32_MAX);
+	assert(size <= UINT32_MAX);
 	write_uint32_t(offset);
 	write_uint32_t(size);
 	check_space(size);
 	char* uptr = chunk.data() + uidx; // pointer into current uncompressed chunk
-	memcpy(uptr, ptr + offset, size);
+	memcpy(uptr, ptr, size);
 	uidx += size;
 	assert(uidx <= chunk.size());
 	uncompressed_bytes += size;
 	write_uint32_t(0);
 	write_uint32_t(0);
+}
+
+void file_writer::write_memory(const char* const ptr, uint64_t offset, uint64_t size)
+{
+	write_memory_span(ptr + offset, offset, size);
 }
 
 // memory areas should be 64bit aligned

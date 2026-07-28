@@ -588,6 +588,7 @@ void lava_writer::finish()
 	mInputTracking = Json::Value();
 	global_frame.exchange(0);
 	tid = -1;
+	preserve_output_handle_indices = true;
 	vulkan_feature_detection_reset();
 }
 
@@ -632,17 +633,6 @@ lava_file_writer& lava_writer::file_writer()
 		make_writer();
 	}
 	return *thread_streams.at(tid);
-}
-
-// This function is NOT thread-safe! Only use when threads have been serialized
-lava_file_writer& lava_writer::file_writer(unsigned index)
-{
-	assert(index <= thread_streams.size());
-	if (index == thread_streams.size()) // this thread does not yet have its own lava_file_writer, so create one
-	{
-		make_writer();
-	}
-	return *thread_streams.at(index);
 }
 
 void lava_writer::new_frame()
