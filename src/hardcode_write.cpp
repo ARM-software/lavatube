@@ -3777,6 +3777,51 @@ static void save_hw_buffer(const AHardwareBuffer* buffer)
 	writer.write_uint32_t(bpp);
 }
 
+#endif // VK_USE_PLATFORM_ANDROID_KHR
+
+static void write_hw_buffer_metadata(lava_file_writer& writer, const hardware_buffer_metadata& buffer)
+{
+	writer.write_uint32_t(buffer.width);
+	writer.write_uint32_t(buffer.height);
+	writer.write_uint32_t(buffer.layers);
+	writer.write_uint32_t(buffer.format);
+	writer.write_uint64_t(buffer.usage);
+	writer.write_uint32_t(buffer.stride);
+	writer.write_uint32_t(buffer.rfu0);
+	writer.write_uint64_t(buffer.rfu1);
+	writer.write_uint32_t(buffer.bytes_per_pixel);
+}
+
+void tool_write_vkGetAndroidHardwareBufferPropertiesANDROID_packet(uint32_t device_index, const hardware_buffer_metadata& buffer,
+	VkResult retval, VkStructureType properties_sType, const VkBaseOutStructure* properties_pNext, uint64_t allocation_size,
+	uint32_t memory_type_bits)
+{
+	lava_file_writer& writer = write_header("vkGetAndroidHardwareBufferPropertiesANDROID", VKGETANDROIDHARDWAREBUFFERPROPERTIESANDROID);
+	writer.write_handle(writer.parent->records.VkDevice_index.at(fake_handle<VkDevice>(device_index)));
+	write_hw_buffer_metadata(writer, buffer);
+	writer.write_uint32_t(retval);
+	writer.write_uint32_t(properties_sType);
+	write_extension(writer, const_cast<VkBaseOutStructure*>(properties_pNext));
+	writer.write_uint64_t(allocation_size);
+	writer.write_uint32_t(memory_type_bits);
+	writer.end_packet();
+}
+
+void tool_write_vkGetMemoryAndroidHardwareBufferANDROID_packet(uint32_t device_index, VkStructureType info_sType,
+	const VkBaseOutStructure* info_pNext, uint32_t memory_index, VkResult retval, const hardware_buffer_metadata& buffer)
+{
+	lava_file_writer& writer = write_header("vkGetMemoryAndroidHardwareBufferANDROID", VKGETMEMORYANDROIDHARDWAREBUFFERANDROID);
+	writer.write_handle(writer.parent->records.VkDevice_index.at(fake_handle<VkDevice>(device_index)));
+	writer.write_uint32_t(info_sType);
+	write_extension(writer, const_cast<VkBaseOutStructure*>(info_pNext));
+	writer.write_handle(writer.parent->records.VkDeviceMemory_index.at(fake_handle<VkDeviceMemory>(memory_index)));
+	writer.write_uint32_t(retval);
+	write_hw_buffer_metadata(writer, buffer);
+	writer.end_packet();
+}
+
+#ifdef VK_USE_PLATFORM_ANDROID_KHR
+
 VKAPI_ATTR VkResult VKAPI_CALL trace_vkGetAndroidHardwareBufferPropertiesANDROID(VkDevice device, const AHardwareBuffer* buffer, VkAndroidHardwareBufferPropertiesANDROID* pProperties)
 {
 	// Declarations

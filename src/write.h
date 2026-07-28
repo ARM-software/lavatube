@@ -255,6 +255,25 @@ private:
 
 void tool_write_vkCreateSurfaceKHR_packet(const surface_create_packet& packet, const char* name, lava_function_id id);
 
+struct hardware_buffer_metadata
+{
+	uint32_t width;
+	uint32_t height;
+	uint32_t layers;
+	uint32_t format;
+	uint64_t usage;
+	uint32_t stride;
+	uint32_t rfu0;
+	uint64_t rfu1;
+	uint32_t bytes_per_pixel;
+};
+
+void tool_write_vkGetAndroidHardwareBufferPropertiesANDROID_packet(uint32_t device_index, const hardware_buffer_metadata& buffer,
+	VkResult retval, VkStructureType properties_sType, const VkBaseOutStructure* properties_pNext, uint64_t allocation_size,
+	uint32_t memory_type_bits);
+void tool_write_vkGetMemoryAndroidHardwareBufferANDROID_packet(uint32_t device_index, VkStructureType info_sType,
+	const VkBaseOutStructure* info_pNext, uint32_t memory_index, VkResult retval, const hardware_buffer_metadata& buffer);
+
 inline void lava_file_writer::write_api_command(uint16_t id)
 {
 	device = VK_NULL_HANDLE;

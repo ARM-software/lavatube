@@ -4929,17 +4929,19 @@ void retrace_vkGetDeviceQueue(lava_file_reader& reader)
 	while (check_cli(cb_context)) cli_params_vkGetDeviceQueue(cb_context, device, queueFamilyIndex, queueIndex);
 }
 
-void read_hw_buffer(lava_file_reader& reader)
+hardware_buffer_metadata read_hw_buffer(lava_file_reader& reader)
 {
-	reader.read_uint32_t(); // hw_buffer_description.width
-	reader.read_uint32_t(); // hw_buffer_description.height
-	reader.read_uint32_t(); // hw_buffer_description.layers
-	reader.read_uint32_t(); // hw_buffer_description.format
-	reader.read_uint64_t(); // hw_buffer_description.usage
-	reader.read_uint32_t(); // hw_buffer_description.stride
-	reader.read_uint32_t(); // hw_buffer_description.rfu0
-	reader.read_uint64_t(); // hw_buffer_description.rfu1
-	reader.read_uint32_t(); // bpp
+	hardware_buffer_metadata buffer = {};
+	buffer.width = reader.read_uint32_t();
+	buffer.height = reader.read_uint32_t();
+	buffer.layers = reader.read_uint32_t();
+	buffer.format = reader.read_uint32_t();
+	buffer.usage = reader.read_uint64_t();
+	buffer.stride = reader.read_uint32_t();
+	buffer.rfu0 = reader.read_uint32_t();
+	buffer.rfu1 = reader.read_uint64_t();
+	buffer.bytes_per_pixel = reader.read_uint32_t();
+	return buffer;
 }
 
 void retrace_vkGetAndroidHardwareBufferPropertiesANDROID(lava_file_reader& reader)
@@ -4948,7 +4950,7 @@ void retrace_vkGetAndroidHardwareBufferPropertiesANDROID(lava_file_reader& reade
 	const uint32_t device_index = reader.read_handle(DEBUGPARAM("VkDevice"));
 
 	// Unused metadata
-	read_hw_buffer(reader);
+	const hardware_buffer_metadata buffer = read_hw_buffer(reader);
 
 	// Execute
 	VkResult retval = VK_SUCCESS;
@@ -4964,6 +4966,11 @@ void retrace_vkGetAndroidHardwareBufferPropertiesANDROID(lava_file_reader& reade
 
 	const uint64_t pProperties_allocationSize = reader.read_uint64_t();
 	const uint32_t memoryTypeBits = reader.read_uint32_t();
+	if (reader.write_output)
+	{
+		tool_write_vkGetAndroidHardwareBufferPropertiesANDROID_packet(device_index, buffer, stored_retval, pProperties_sType,
+			pNext, pProperties_allocationSize, memoryTypeBits);
+	}
 
 	// FIXME
 	//while (check_cli(cb_context)) /* here we can run any number of callbacks for lava-cli */;
@@ -4988,7 +4995,11 @@ void retrace_vkGetMemoryAndroidHardwareBufferANDROID(lava_file_reader& reader)
 	check_retval(stored_retval, retval);
 
 	// Unused metadata
-	read_hw_buffer(reader);
+	const hardware_buffer_metadata buffer = read_hw_buffer(reader);
+	if (reader.write_output)
+	{
+		tool_write_vkGetMemoryAndroidHardwareBufferANDROID_packet(device_index, sType, pNext, memory_index, stored_retval, buffer);
+	}
 
 	// FIXME
 	//while (check_cli(cb_context)) /* here we can run any number of callbacks for lava-cli */;
