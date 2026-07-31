@@ -2017,10 +2017,11 @@ def loadfunc(name, node, target, header):
 		z.do('if (reader.run && stored_retval == VK_SUCCESS) { timeout = UINT64_MAX; }')
 		z.do('else if (reader.run && stored_retval == VK_TIMEOUT) { timeout = 0; }')
 		z.do('if (reader.run) retval = wrap_vkWaitSemaphores(device, pWaitInfo, timeout);')
-	elif name == "vkGetEventStatus": # loop until same result achieved
+	elif name == "vkGetEventStatus": # wait for SET, but a replay event that is already SET cannot return to a recorded RESET
 		z.do('VkResult stored_retval = static_cast<VkResult>(reader.read_uint32_t());')
 		z.do('VkResult retval = stored_retval;')
-		z.do('if (reader.run && !is_blackhole_mode() && (stored_retval == VK_EVENT_SET || stored_retval == VK_EVENT_RESET)) do { retval = wrap_vkGetEventStatus(device, event); } while (retval != stored_retval && retval != VK_ERROR_DEVICE_LOST);')
+		z.do('if (reader.run && !is_blackhole_mode() && stored_retval == VK_EVENT_SET) do { retval = wrap_vkGetEventStatus(device, event); } while (retval != VK_EVENT_SET && retval != VK_ERROR_DEVICE_LOST);')
+		z.do('else if (reader.run && !is_blackhole_mode() && stored_retval == VK_EVENT_RESET) { VkResult actual_retval = wrap_vkGetEventStatus(device, event); if (actual_retval == VK_ERROR_DEVICE_LOST) retval = actual_retval; }')
 	elif name == 'vkAcquireNextImageKHR':
 		z.do('VkResult stored_retval = static_cast<VkResult>(reader.read_uint32_t());')
 		z.do('VkResult retval = stored_retval;')
