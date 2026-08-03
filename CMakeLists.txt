@@ -1286,6 +1286,10 @@ layer_test(transform_feedback transform_feedback)
 #layer_test(multithreaded_swapchain multithreaded_swapchain)
 layer_test(dynamic_rendering dynamic_rendering)
 layer_test(debug_utils debug_utils)
+layer_test(buffer_bind_lifetime buffer_bind_lifetime)
+layer_test(dedicated_memory dedicated_memory)
+layer_test(device_local_memory device_local_memory)
+#layer_test(memory_tracking_race memory_tracking_race) # TBD add support - and make it run faster
 
 # These require the Mali GPU model for now:
 #layer_test(shader_core_properties shader_core_properties)

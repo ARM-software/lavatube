@@ -3008,8 +3008,19 @@ VKAPI_ATTR void trace_vkCmdUpdateMemory2ARM(VkCommandBuffer commandBuffer, const
 
 VKAPI_ATTR VkResult VKAPI_CALL trace_vkAssertBufferARM(VkDevice device, const VkUpdateBufferInfoARM* pInfo, uint32_t* checksum, const char* comment)
 {
-	lava_file_writer& writer = write_header("vkAssertBufferARM", VKASSERTBUFFERARM);
 	assert(pInfo);
+	lava_file_writer& preflight_writer = lava_writer::instance().file_writer();
+	if (preflight_writer.run && pInfo->dstBuffer != VK_NULL_HANDLE)
+	{
+		auto* buffer_data = preflight_writer.parent->records.VkBuffer_index.at(pInfo->dstBuffer);
+		auto* memory_data = preflight_writer.parent->records.VkDeviceMemory_index.at(buffer_data->backing);
+		if (!(memory_data->propertyFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT))
+		{
+			DLOG("Cannot assert buffer %u: backing memory is not host visible", buffer_data->index);
+			return VK_INCOMPLETE;
+		}
+	}
+	lava_file_writer& writer = write_header("vkAssertBufferARM", VKASSERTBUFFERARM);
 	writer.write_handle(writer.parent->records.VkDevice_index.at(device));
 	write_VkUpdateBufferInfoARM(writer, pInfo);
 	writer.write_string(comment);
