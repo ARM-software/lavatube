@@ -6,6 +6,7 @@
 set(NO_XCB FALSE CACHE BOOL "Do not compile support for XCB and Xlib")
 set(NO_TRACETOOLTESTS FALSE CACHE BOOL "Do not compile tracetooltests")
 set(GPU_MODEL CACHE STRING "environment variables for your GPU model here") # if you have multiple, separate them with semi-colon
+set(GFXRECON_VULKAN_API_READER_LIBRARY CACHE FILEPATH "Path to the GFXReconstruct Vulkan API reader library")
 
 find_program(CCACHE_PROGRAM ccache)
 if(NOT CCACHE_PROGRAM)
@@ -650,7 +651,34 @@ install(TARGETS lava-tool RUNTIME)
 # --- lava-gfxr-import ---
 
 if(NOT ANDROID)
-	find_package(GFXReconstructVulkanApiReader CONFIG QUIET)
+	if(GFXRECON_VULKAN_API_READER_LIBRARY)
+		get_filename_component(GFXRECON_VULKAN_API_READER_LIBRARY
+			"${GFXRECON_VULKAN_API_READER_LIBRARY}" ABSOLUTE BASE_DIR "${CMAKE_BINARY_DIR}")
+		if(NOT EXISTS "${GFXRECON_VULKAN_API_READER_LIBRARY}")
+			message(FATAL_ERROR "GFXReconstruct Vulkan API reader library does not exist: ${GFXRECON_VULKAN_API_READER_LIBRARY}")
+		endif()
+
+		get_filename_component(GFXRECON_VULKAN_API_READER_LIBRARY_DIR
+			"${GFXRECON_VULKAN_API_READER_LIBRARY}" DIRECTORY)
+		find_path(GFXRECON_VULKAN_API_READER_INCLUDE_DIR
+			NAMES decode/vulkan_api_call_reader.h
+			HINTS
+				"${GFXRECON_VULKAN_API_READER_LIBRARY_DIR}/.."
+				"${GFXRECON_VULKAN_API_READER_LIBRARY_DIR}/../../.."
+			PATH_SUFFIXES include framework)
+		if(NOT GFXRECON_VULKAN_API_READER_INCLUDE_DIR)
+			message(FATAL_ERROR "Could not find decode/vulkan_api_call_reader.h for GFXReconstruct Vulkan API reader library: ${GFXRECON_VULKAN_API_READER_LIBRARY}")
+		endif()
+
+		add_library(GFXReconstruct::vulkan_api_reader SHARED IMPORTED)
+		set_target_properties(GFXReconstruct::vulkan_api_reader PROPERTIES
+			IMPORTED_LOCATION "${GFXRECON_VULKAN_API_READER_LIBRARY}"
+			INTERFACE_COMPILE_DEFINITIONS GFXRECON_VULKAN_API_READER_SHARED
+			INTERFACE_INCLUDE_DIRECTORIES "${GFXRECON_VULKAN_API_READER_INCLUDE_DIR}")
+		message(STATUS "Using GFXReconstruct Vulkan API reader: ${GFXRECON_VULKAN_API_READER_LIBRARY}")
+	else()
+		find_package(GFXReconstructVulkanApiReader CONFIG QUIET)
+	endif()
 	if(TARGET GFXReconstruct::vulkan_api_reader)
 		add_executable(lava-gfxr-import src/gfxreconstruct_import.cpp)
 		target_include_directories(lava-gfxr-import ${COMMON_INCLUDE})
