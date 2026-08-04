@@ -18,6 +18,7 @@ using gfxrecon::decode::VulkanNativeCallbackRegistrationError;
 using gfxrecon::decode::VulkanNativeCallError;
 using gfxrecon::decode::VulkanNativeMissingCallbackPolicy;
 using gfxrecon::decode::VulkanMemoryUpdate;
+using gfxrecon::decode::VulkanDeviceMemoryProperties;
 
 static void set_captured_return_value(void*, const VulkanNativeCallContext& call)
 {
@@ -60,22 +61,69 @@ static void VKAPI_CALL import_vkGetPhysicalDeviceProperties(VkPhysicalDevice phy
 	if (data) data->deviceType = pProperties->deviceType;
 }
 
+static VkResult import_vkCreateSurfaceKHR(VkInstance instance, VkStructureType sType, const void* pNext,
+	VkFlags flags, VkSurfaceKHR* pSurface, const char* name, lava_function_id id)
+{
+	assert(pSurface);
+	lava_file_writer& file = lava_writer::instance().file_writer();
+	surface_create_packet packet;
+	packet.instance = instance;
+	packet.stored_sType = sType;
+	packet.pNext = reinterpret_cast<VkBaseOutStructure*>(const_cast<void*>(pNext));
+	packet.flags = flags;
+	packet.retval = file.use_result.result;
+	if (packet.retval == VK_SUCCESS && *pSurface != VK_NULL_HANDLE) packet.surface_index = fake_index(*pSurface);
+	tool_write_vkCreateSurfaceKHR_packet(packet, name, id);
+	return packet.retval;
+}
+
 static VkResult VKAPI_CALL import_vkCreateHeadlessSurfaceEXT(VkInstance instance,
 	const VkHeadlessSurfaceCreateInfoEXT* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkSurfaceKHR* pSurface)
 {
 	(void)pAllocator;
 	assert(pCreateInfo);
-	assert(pSurface);
-	lava_file_writer& file = lava_writer::instance().file_writer();
-	surface_create_packet packet;
-	packet.instance = instance;
-	packet.stored_sType = pCreateInfo->sType;
-	packet.pNext = reinterpret_cast<VkBaseOutStructure*>(const_cast<void*>(pCreateInfo->pNext));
-	packet.flags = pCreateInfo->flags;
-	packet.retval = file.use_result.result;
-	if (packet.retval == VK_SUCCESS && *pSurface != VK_NULL_HANDLE) packet.surface_index = fake_index(*pSurface);
-	tool_write_vkCreateSurfaceKHR_packet(packet, "vkCreateHeadlessSurfaceEXT", VKCREATEHEADLESSSURFACEEXT);
-	return packet.retval;
+	return import_vkCreateSurfaceKHR(instance, pCreateInfo->sType, pCreateInfo->pNext, pCreateInfo->flags, pSurface,
+		"vkCreateHeadlessSurfaceEXT", VKCREATEHEADLESSSURFACEEXT);
+}
+
+#ifdef VK_USE_PLATFORM_XLIB_KHR
+static VkResult VKAPI_CALL import_vkCreateXlibSurfaceKHR(VkInstance instance,
+	const VkXlibSurfaceCreateInfoKHR* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkSurfaceKHR* pSurface)
+{
+	(void)pAllocator;
+	assert(pCreateInfo);
+	return import_vkCreateSurfaceKHR(instance, pCreateInfo->sType, pCreateInfo->pNext, pCreateInfo->flags, pSurface,
+		"vkCreateXlibSurfaceKHR", VKCREATEXLIBSURFACEKHR);
+}
+#endif
+
+#ifdef VK_USE_PLATFORM_XCB_KHR
+static VkResult VKAPI_CALL import_vkCreateXcbSurfaceKHR(VkInstance instance,
+	const VkXcbSurfaceCreateInfoKHR* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkSurfaceKHR* pSurface)
+{
+	(void)pAllocator;
+	assert(pCreateInfo);
+	return import_vkCreateSurfaceKHR(instance, pCreateInfo->sType, pCreateInfo->pNext, pCreateInfo->flags, pSurface,
+		"vkCreateXcbSurfaceKHR", VKCREATEXCBSURFACEKHR);
+}
+#endif
+
+static VkResult VKAPI_CALL import_vkCreateSwapchainKHR(VkDevice device, const VkSwapchainCreateInfoKHR* pCreateInfo,
+	const VkAllocationCallbacks* pAllocator, VkSwapchainKHR* pSwapchain)
+{
+	assert(pCreateInfo);
+	assert(pSwapchain);
+	const VkResult result = trace_vkCreateSwapchainKHR(device, pCreateInfo, pAllocator, pSwapchain);
+	if (result == VK_SUCCESS)
+	{
+		auto* surface_data = lava_writer::instance().records.VkSurfaceKHR_index.at(pCreateInfo->surface);
+		if (surface_data->width == 0)
+		{
+			surface_data->width = pCreateInfo->imageExtent.width;
+			surface_data->height = pCreateInfo->imageExtent.height;
+		}
+	}
+	return result;
 }
 
 static void prepare_import_binding(trackedobject* object_data, trackedmemory* memory_data, VkDeviceSize memory_offset)
@@ -298,6 +346,12 @@ static void import_memory_update(void*, const VulkanMemoryUpdate& update)
 	}
 }
 
+static void import_device_memory_properties(void*, const VulkanDeviceMemoryProperties& properties)
+{
+	VkPhysicalDeviceMemoryProperties memory_properties = properties.memory_properties;
+	trace_vkGetPhysicalDeviceMemoryProperties(properties.physical_device, &memory_properties);
+}
+
 static PFN_vkVoidFunction import_callback(const std::string& name, void* callback)
 {
 	if (name == "vkEnumeratePhysicalDevices")
@@ -306,6 +360,16 @@ static PFN_vkVoidFunction import_callback(const std::string& name, void* callbac
 		return reinterpret_cast<PFN_vkVoidFunction>(import_vkGetPhysicalDeviceProperties);
 	if (name == "vkCreateHeadlessSurfaceEXT")
 		return reinterpret_cast<PFN_vkVoidFunction>(import_vkCreateHeadlessSurfaceEXT);
+#ifdef VK_USE_PLATFORM_XLIB_KHR
+	if (name == "vkCreateXlibSurfaceKHR")
+		return reinterpret_cast<PFN_vkVoidFunction>(import_vkCreateXlibSurfaceKHR);
+#endif
+#ifdef VK_USE_PLATFORM_XCB_KHR
+	if (name == "vkCreateXcbSurfaceKHR")
+		return reinterpret_cast<PFN_vkVoidFunction>(import_vkCreateXcbSurfaceKHR);
+#endif
+	if (name == "vkCreateSwapchainKHR")
+		return reinterpret_cast<PFN_vkVoidFunction>(import_vkCreateSwapchainKHR);
 	if (name == "vkBindBufferMemory")
 		return reinterpret_cast<PFN_vkVoidFunction>(import_vkBindBufferMemory);
 	if (name == "vkBindBufferMemory2")
@@ -378,6 +442,11 @@ int main(int argc, char** argv)
 	if (!reader.SetMemoryUpdateCallback(import_memory_update, nullptr))
 	{
 		ELOG("Failed to install the gfxreconstruct memory-update callback");
+		return 1;
+	}
+	if (!reader.SetDeviceMemoryPropertiesCallback(import_device_memory_properties, nullptr))
+	{
+		ELOG("Failed to install the gfxreconstruct device-memory-properties callback");
 		return 1;
 	}
 	if (!reader.SetMissingCallbackPolicy(VulkanNativeMissingCallbackPolicy::kFail))

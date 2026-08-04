@@ -22,10 +22,10 @@ extra_optionals = {
 	# stageFlags, isDynamicViewports and isDynamicScissors are all our inventions
 	'VkGraphicsPipelineCreateInfo': {
 		'pTessellationState': '((stageFlags & VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT) && (stageFlags & VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT))',
-		'pViewportState': '(!sptr->pRasterizationState->rasterizerDiscardEnable)',
-		'pMultisampleState': '(!sptr->pRasterizationState->rasterizerDiscardEnable)',
-		'pDepthStencilState' : '(!sptr->pRasterizationState->rasterizerDiscardEnable)', # "or if the subpass of the render pass the pipeline is created against does not use a depth/stencil attachment"
-		'pColorBlendState': '(!sptr->pRasterizationState->rasterizerDiscardEnable)', # "or if the subpass of the render pass the pipeline is created against does not use any color attachments"
+		'pViewportState': '(!sptr->pRasterizationState || !sptr->pRasterizationState->rasterizerDiscardEnable)',
+		'pMultisampleState': '(!sptr->pRasterizationState || !sptr->pRasterizationState->rasterizerDiscardEnable)',
+		'pDepthStencilState' : '(!sptr->pRasterizationState || !sptr->pRasterizationState->rasterizerDiscardEnable)', # "or if the subpass of the render pass the pipeline is created against does not use a depth/stencil attachment"
+		'pColorBlendState': '(!sptr->pRasterizationState || !sptr->pRasterizationState->rasterizerDiscardEnable)', # "or if the subpass of the render pass the pipeline is created against does not use any color attachments"
 	},
 	'VkPipelineViewportStateCreateInfo': {
 		'pViewports': '(!isDynamicViewports)',
