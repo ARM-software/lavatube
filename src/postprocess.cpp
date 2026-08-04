@@ -58,8 +58,14 @@ static void handle_VkWriteDescriptorSets(uint32_t descriptorWriteCount, const Vk
 		case VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT:
 			for (unsigned j = 0; j < pDescriptorWrites[i].descriptorCount; j++)
 			{
+				const uint64_t slot = descriptor_binding_slot(binding, pDescriptorWrites[i].dstArrayElement + j);
 				const VkDescriptorImageInfo& info = pDescriptorWrites[i].pImageInfo[j];
-				if (info.imageView == VK_NULL_HANDLE && info.sampler == VK_NULL_HANDLE) continue;
+				if (info.imageView == VK_NULL_HANDLE && info.sampler == VK_NULL_HANDLE)
+				{
+					tds.bound_images.erase(slot);
+					tds.bound_opaque_descriptors.erase(slot);
+					continue;
+				}
 				image_access access { nullptr, info.imageLayout };
 				if (info.imageView != VK_NULL_HANDLE)
 				{
@@ -68,39 +74,52 @@ static void handle_VkWriteDescriptorSets(uint32_t descriptorWriteCount, const Vk
 					auto& image_data = VkImage_index.at(view_data.image_index);
 					access.image_data = &image_data;
 				}
-				tds.bound_images[binding] = access;
+				tds.bound_images[slot] = access;
+				tds.bound_opaque_descriptors.erase(slot);
 			}
 			break;
 		case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
 		case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
 			for (unsigned j = 0; j < pDescriptorWrites[i].descriptorCount; j++)
 			{
-				if (pDescriptorWrites[i].pBufferInfo[j].buffer == VK_NULL_HANDLE) continue;
+				const uint64_t slot = descriptor_binding_slot(binding, pDescriptorWrites[i].dstArrayElement + j);
+				if (pDescriptorWrites[i].pBufferInfo[j].buffer == VK_NULL_HANDLE)
+				{
+					tds.bound_buffers.erase(slot);
+					continue;
+				}
 				const uint32_t buffer_index = index_to_VkBuffer.index(pDescriptorWrites[i].pBufferInfo[j].buffer);
 				auto& buffer_data = VkBuffer_index.at(buffer_index);
 				VkDeviceSize size = pDescriptorWrites[i].pBufferInfo[j].range;
 				if (size == VK_WHOLE_SIZE) size = buffer_data.size - pDescriptorWrites[i].pBufferInfo[j].offset;
-				tds.bound_buffers[binding] = buffer_access { &buffer_data, pDescriptorWrites[i].pBufferInfo[j].offset, size };
+				tds.bound_buffers[slot] = buffer_access { &buffer_data, pDescriptorWrites[i].pBufferInfo[j].offset, size };
 			}
 			break;
 		case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC:
 		case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC:
 			for (unsigned j = 0; j < pDescriptorWrites[i].descriptorCount; j++)
 			{
-				tds.dynamic_buffers[binding] = pDescriptorWrites[i].pBufferInfo[j];
+				const uint64_t slot = descriptor_binding_slot(binding, pDescriptorWrites[i].dstArrayElement + j);
+				if (pDescriptorWrites[i].pBufferInfo[j].buffer == VK_NULL_HANDLE) tds.dynamic_buffers.erase(slot);
+				else tds.dynamic_buffers[slot] = pDescriptorWrites[i].pBufferInfo[j];
 			}
 			break;
 		case VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER:
 		case VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER:
 			for (unsigned j = 0; j < pDescriptorWrites[i].descriptorCount; j++)
 			{
-				if (pDescriptorWrites[i].pTexelBufferView[j] == VK_NULL_HANDLE) continue;
+				const uint64_t slot = descriptor_binding_slot(binding, pDescriptorWrites[i].dstArrayElement + j);
+				if (pDescriptorWrites[i].pTexelBufferView[j] == VK_NULL_HANDLE)
+				{
+					tds.bound_buffers.erase(slot);
+					continue;
+				}
 				const uint32_t bufferview_index = index_to_VkBufferView.index(pDescriptorWrites[i].pTexelBufferView[j]);
 				auto& bufferview_data = VkBufferView_index.at(bufferview_index);
 				auto& buffer_data = VkBuffer_index.at(bufferview_data.buffer_index);
 				VkDeviceSize size = bufferview_data.range;
 				if (size == VK_WHOLE_SIZE) size = buffer_data.size - bufferview_data.offset;
-				tds.bound_buffers[binding] = buffer_access { &buffer_data, bufferview_data.offset, size };
+				tds.bound_buffers[slot] = buffer_access { &buffer_data, bufferview_data.offset, size };
 			}
 			break;
 		case VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK: // Provided by VK_VERSION_1_3
@@ -119,12 +138,17 @@ static void handle_VkWriteDescriptorSets(uint32_t descriptorWriteCount, const Vk
 				assert(ptr->accelerationStructureCount == pDescriptorWrites[i].descriptorCount);
 				for (unsigned j = 0; j < ptr->accelerationStructureCount; j++)
 				{
-					if (ptr->pAccelerationStructures[j] == VK_NULL_HANDLE) continue;
+					const uint64_t slot = descriptor_binding_slot(binding, pDescriptorWrites[i].dstArrayElement + j);
+					if (ptr->pAccelerationStructures[j] == VK_NULL_HANDLE)
+					{
+						tds.bound_opaque_descriptors.erase(slot);
+						continue;
+					}
 					const uint32_t as_index = index_to_VkAccelerationStructureKHR.index(ptr->pAccelerationStructures[j]);
 					auto& as_data = VkAccelerationStructureKHR_index.at(as_index);
 					uint64_t opaque_value = as_data.capture_device_address;
 					if (opaque_value == 0) opaque_value = (uint64_t)ptr->pAccelerationStructures[j];
-					tds.bound_opaque_descriptors[binding] = opaque_value;
+					tds.bound_opaque_descriptors[slot] = opaque_value;
 				}
 			}
 			break;
@@ -157,10 +181,27 @@ static void handle_VkCopyDescriptorSets(uint32_t descriptorCopyCount, const VkCo
 		auto& src = VkDescriptorSet_index.at(src_index);
 		const uint32_t dst_index = index_to_VkDescriptorSet.index(pDescriptorCopies[i].dstSet);
 		auto& dst = VkDescriptorSet_index.at(dst_index);
-		for (const auto& pair : src.bound_buffers) dst.bound_buffers[pair.first] = pair.second;
-		for (const auto& pair : src.bound_images) dst.bound_images[pair.first] = pair.second;
-		for (const auto& pair : src.bound_opaque_descriptors) dst.bound_opaque_descriptors[pair.first] = pair.second;
-		for (const auto& pair : src.dynamic_buffers) dst.dynamic_buffers[pair.first] = pair.second;
+		for (uint32_t j = 0; j < pDescriptorCopies[i].descriptorCount; j++)
+		{
+			const uint64_t src_slot = descriptor_binding_slot(pDescriptorCopies[i].srcBinding, pDescriptorCopies[i].srcArrayElement + j);
+			const uint64_t dst_slot = descriptor_binding_slot(pDescriptorCopies[i].dstBinding, pDescriptorCopies[i].dstArrayElement + j);
+
+			auto src_buffer = src.bound_buffers.find(src_slot);
+			if (src_buffer != src.bound_buffers.end()) dst.bound_buffers[dst_slot] = src_buffer->second;
+			else dst.bound_buffers.erase(dst_slot);
+
+			auto src_image = src.bound_images.find(src_slot);
+			if (src_image != src.bound_images.end()) dst.bound_images[dst_slot] = src_image->second;
+			else dst.bound_images.erase(dst_slot);
+
+			auto src_opaque = src.bound_opaque_descriptors.find(src_slot);
+			if (src_opaque != src.bound_opaque_descriptors.end()) dst.bound_opaque_descriptors[dst_slot] = src_opaque->second;
+			else dst.bound_opaque_descriptors.erase(dst_slot);
+
+			auto src_dynamic = src.dynamic_buffers.find(src_slot);
+			if (src_dynamic != src.dynamic_buffers.end()) dst.dynamic_buffers[dst_slot] = src_dynamic->second;
+			else dst.dynamic_buffers.erase(dst_slot);
+		}
 	}
 }
 
@@ -240,6 +281,7 @@ void postprocess_vkCreateDescriptorSetLayout(callback_context& cb, VkDevice devi
 	{
 		const VkDescriptorSetLayoutBinding& binding = pCreateInfo->pBindings[i];
 		layout_data.binding_types[binding.binding] = binding.descriptorType;
+		layout_data.binding_counts[binding.binding] = binding.descriptorCount;
 	}
 }
 

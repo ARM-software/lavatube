@@ -495,6 +495,7 @@ static bool run_spirv(command_execution_data& data, const shader_stage& stage, c
 	SPIRVSimulator::SimulationData inputs;
 	SPIRVSimulator::SimulationResults results;
 	std::deque<uint64_t> opaque_storage;
+	std::deque<std::vector<uint64_t>> pointer_array_storage;
 	std::vector<simulator_buffer_range> simulator_ranges;
 	std::unordered_map<const void*, simulator_buffer_range> range_lookup;
 	inputs.push_constants = data.push_constants.empty() ? nullptr : data.push_constants.data();
@@ -515,63 +516,157 @@ static bool run_spirv(command_execution_data& data, const shader_stage& stage, c
 	{
 		inputs.specialization_constant_offsets[v.constantID] = v.offset;
 	}
-	for (const auto& set_pair : data.descriptorsets)
+	for (const auto& set_pair : data.descriptor_sets)
 	{
 		auto& set_bindings = inputs.bindings[set_pair.first];
 		for (const auto& binding_pair : set_pair.second)
 		{
-			const buffer_access& access = binding_pair.second;
-			if (!access.buffer_data) continue;
-			const uint32_t buffer_index = access.buffer_data->index;
-			suballoc_location loc = data.device_data.allocator->find_buffer_memory(buffer_index);
-			assert(loc.mapped);
-			std::byte* base = (std::byte*)loc.mapped;
-			std::byte* binding_ptr = base + access.offset;
-			set_bindings[binding_pair.first] = binding_ptr;
-			const VkDeviceSize binding_size = (access.size != 0) ? access.size : (access.buffer_data->size - access.offset);
-			register_simulator_buffer_range(simulator_ranges, binding_ptr, binding_size, access.buffer_data, access.offset, set_pair.first, binding_pair.first);
-			// Provide real runtime-array length information to the SPIR-V simulator
-			if (binding_size > 0)
+			const command_execution_data::simulator_binding& binding = binding_pair.second;
+			VkDescriptorType descriptor_type = binding.descriptor_type;
+			if (descriptor_type == VK_DESCRIPTOR_TYPE_MAX_ENUM)
 			{
-				inputs.rt_array_lengths[simulator_pointer_bits(binding_ptr)][0] = static_cast<size_t>(binding_size);
+				if (!binding.buffers.empty() && binding.images.empty() && binding.opaques.empty()) descriptor_type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+				else if (binding.buffers.empty() && !binding.images.empty() && binding.opaques.empty()) descriptor_type = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+				else if (binding.buffers.empty() && binding.images.empty() && !binding.opaques.empty()) descriptor_type = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
 			}
-			if ((access.buffer_data->usage2 & VK_BUFFER_USAGE_2_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT) != 0)
+			if (binding.descriptor_buffer_backed)
 			{
-				inputs.descriptor_candidates[binding_ptr];
-			}
-		}
-	}
-	for (const auto& set_pair : data.imagesets)
-	{
-		auto& set_bindings = inputs.bindings[set_pair.first];
-		for (const auto& binding_pair : set_pair.second)
-		{
-			if (set_bindings.count(binding_pair.first) > 0) continue;
-			const image_access& access = binding_pair.second;
-			void* binding_ptr = nullptr;
-			if (access.image_data)
-			{
-				suballoc_location loc = data.device_data.allocator->find_image_memory(access.image_data->index);
+				if (binding.buffers.empty() || !binding.buffers[0].buffer_data) continue;
+				const buffer_access& access = binding.buffers[0];
+				const uint32_t buffer_index = access.buffer_data->index;
+				suballoc_location loc = data.device_data.allocator->find_buffer_memory(buffer_index);
 				assert(loc.mapped);
 				std::byte* base = (std::byte*)loc.mapped;
-				binding_ptr = base;
+				std::byte* binding_ptr = base + access.offset;
+				set_bindings[binding_pair.first] = binding_ptr;
+				const VkDeviceSize binding_size = (access.size != 0) ? access.size : (access.buffer_data->size - access.offset);
+				register_simulator_buffer_range(simulator_ranges, binding_ptr, binding_size, access.buffer_data, access.offset, set_pair.first, binding_pair.first);
+				if (binding_size > 0)
+				{
+					inputs.rt_array_lengths[simulator_pointer_bits(binding_ptr)][0] = static_cast<size_t>(binding_size);
+				}
+				if ((access.buffer_data->usage2 & VK_BUFFER_USAGE_2_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT) != 0)
+				{
+					inputs.descriptor_candidates[binding_ptr];
+				}
+				continue;
 			}
-			else
+
+			switch (descriptor_type)
 			{
-				static uint64_t dummy_descriptor = 0;
-				binding_ptr = &dummy_descriptor;
+			case VK_DESCRIPTOR_TYPE_SAMPLER:
+			case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
+			case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:
+			case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:
+			case VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT:
+				{
+					void* binding_ptr = nullptr;
+					for (auto it = binding.images.rbegin(); it != binding.images.rend(); ++it)
+					{
+						if (!it->image_data) continue;
+						suballoc_location loc = data.device_data.allocator->find_image_memory(it->image_data->index);
+						assert(loc.mapped);
+						binding_ptr = loc.mapped;
+						break;
+					}
+					if (!binding_ptr && !binding.images.empty())
+					{
+						static uint64_t dummy_descriptor = 0;
+						binding_ptr = &dummy_descriptor;
+					}
+					if (binding_ptr) set_bindings[binding_pair.first] = binding_ptr;
+				}
+				break;
+			case VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER:
+			case VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER:
+				{
+					for (auto it = binding.buffers.rbegin(); it != binding.buffers.rend(); ++it)
+					{
+						if (!it->buffer_data) continue;
+						suballoc_location loc = data.device_data.allocator->find_buffer_memory(it->buffer_data->index);
+						assert(loc.mapped);
+						std::byte* binding_ptr = (std::byte*)loc.mapped + it->offset;
+						const VkDeviceSize binding_size = (it->size != 0) ? it->size : (it->buffer_data->size - it->offset);
+						set_bindings[binding_pair.first] = binding_ptr;
+						register_simulator_buffer_range(simulator_ranges, binding_ptr, binding_size, it->buffer_data, it->offset, set_pair.first, binding_pair.first);
+						if (binding_size > 0)
+						{
+							inputs.rt_array_lengths[simulator_pointer_bits(binding_ptr)][0] = static_cast<size_t>(binding_size);
+						}
+						if ((it->buffer_data->usage2 & VK_BUFFER_USAGE_2_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT) != 0)
+						{
+							inputs.descriptor_candidates[binding_ptr];
+						}
+						break;
+					}
+				}
+				break;
+			case VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR:
+			case VK_DESCRIPTOR_TYPE_TENSOR_ARM:
+				for (auto it = binding.opaques.rbegin(); it != binding.opaques.rend(); ++it)
+				{
+					if (*it == 0) continue;
+					opaque_storage.push_back(*it);
+					set_bindings[binding_pair.first] = &opaque_storage.back();
+					break;
+				}
+				break;
+			case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
+			case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
+			case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC:
+			case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC:
+				{
+					if (binding.buffers.empty()) continue;
+					if (binding.buffers.size() == 1 && binding.buffers[0].buffer_data)
+					{
+						const buffer_access& access = binding.buffers[0];
+						const uint32_t buffer_index = access.buffer_data->index;
+						suballoc_location loc = data.device_data.allocator->find_buffer_memory(buffer_index);
+						assert(loc.mapped);
+						std::byte* base = (std::byte*)loc.mapped;
+						std::byte* binding_ptr = base + access.offset;
+						const VkDeviceSize binding_size = (access.size != 0) ? access.size : (access.buffer_data->size - access.offset);
+						set_bindings[binding_pair.first] = binding_ptr;
+						register_simulator_buffer_range(simulator_ranges, binding_ptr, binding_size, access.buffer_data, access.offset, set_pair.first, binding_pair.first);
+						if (binding_size > 0)
+						{
+							inputs.rt_array_lengths[simulator_pointer_bits(binding_ptr)][0] = static_cast<size_t>(binding_size);
+						}
+						if ((access.buffer_data->usage2 & VK_BUFFER_USAGE_2_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT) != 0)
+						{
+							inputs.descriptor_candidates[binding_ptr];
+						}
+						break;
+					}
+
+					pointer_array_storage.emplace_back(binding.buffers.size(), 0);
+					std::vector<uint64_t>& pointer_array = pointer_array_storage.back();
+					for (size_t i = 0; i < binding.buffers.size(); i++)
+					{
+						const buffer_access& access = binding.buffers[i];
+						if (!access.buffer_data) continue;
+						suballoc_location loc = data.device_data.allocator->find_buffer_memory(access.buffer_data->index);
+						assert(loc.mapped);
+						std::byte* binding_ptr = (std::byte*)loc.mapped + access.offset;
+						const VkDeviceSize binding_size = (access.size != 0) ? access.size : (access.buffer_data->size - access.offset);
+						pointer_array[i] = simulator_pointer_bits(binding_ptr);
+						register_simulator_buffer_range(simulator_ranges, binding_ptr, binding_size, access.buffer_data, access.offset, set_pair.first, binding_pair.first);
+						if (binding_size > 0)
+						{
+							inputs.rt_array_lengths[simulator_pointer_bits(binding_ptr)][0] = static_cast<size_t>(binding_size);
+						}
+						if ((access.buffer_data->usage2 & VK_BUFFER_USAGE_2_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT) != 0)
+						{
+							inputs.descriptor_candidates[binding_ptr];
+						}
+					}
+					inputs.rt_array_lengths[simulator_pointer_bits(pointer_array.data())][0] = pointer_array.size();
+					set_bindings[binding_pair.first] = pointer_array.data();
+				}
+				break;
+			default:
+				break;
 			}
-			set_bindings[binding_pair.first] = binding_ptr;
-		}
-	}
-	for (const auto& set_pair : data.opaquesets)
-	{
-		auto& set_bindings = inputs.bindings[set_pair.first];
-		for (const auto& binding_pair : set_pair.second)
-		{
-			if (set_bindings.count(binding_pair.first) > 0) continue;
-			opaque_storage.push_back(binding_pair.second ? binding_pair.second : 1);
-			set_bindings[binding_pair.first] = &opaque_storage.back();
 		}
 	}
 
@@ -1039,40 +1134,102 @@ bool execute_commands(command_execution_data& data)
 		switch (c.id)
 		{
 		case VKCMDBINDDESCRIPTORSETS:
+			{
+			const trackedpipelinelayout* layout_data = nullptr;
+			if (c.data.bind_descriptorsets.layout != VK_NULL_HANDLE)
+			{
+				const uint32_t pipeline_layout_index = index_to_VkPipelineLayout.index(c.data.bind_descriptorsets.layout);
+				if (pipeline_layout_index != CONTAINER_INVALID_INDEX) layout_data = &VkPipelineLayout_index.at(pipeline_layout_index);
+			}
+			uint32_t dynamic_offset_index = 0;
 			for (uint32_t i = 0; i < c.data.bind_descriptorsets.descriptorSetCount; i++)
 			{
 				uint32_t set = c.data.bind_descriptorsets.firstSet + i;
 				auto& tds = VkDescriptorSet_index.at(c.data.bind_descriptorsets.pDescriptorSets[i]); // is index now
+				data.descriptor_sets[set].clear();
+				const trackeddescriptorsetlayout* set_layout_data = nullptr;
+				if (layout_data && set < layout_data->layout_indices.size())
+				{
+					const uint32_t set_layout_index = layout_data->layout_indices[set];
+					if (set_layout_index != CONTAINER_INVALID_INDEX) set_layout_data = &VkDescriptorSetLayout_index.at(set_layout_index);
+				}
 				for (const auto& pair : tds.bound_buffers)
 				{
-					data.descriptorsets[set][pair.first] = pair.second;
+					const uint32_t binding = descriptor_binding_slot_binding(pair.first);
+					const uint32_t array_index = descriptor_binding_slot_array_index(pair.first);
+					command_execution_data::simulator_binding& dst = data.descriptor_sets[set][binding];
+					if (set_layout_data)
+					{
+						auto type_it = set_layout_data->binding_types.find(binding);
+						if (type_it != set_layout_data->binding_types.end()) dst.descriptor_type = type_it->second;
+						auto count_it = set_layout_data->binding_counts.find(binding);
+						if (count_it != set_layout_data->binding_counts.end() && dst.buffers.size() < count_it->second) dst.buffers.resize(count_it->second);
+					}
+					if (dst.buffers.size() <= array_index) dst.buffers.resize(array_index + 1);
+					dst.buffers[array_index] = pair.second;
 				}
 				for (const auto& pair : tds.bound_images)
 				{
-					data.imagesets[set][pair.first] = pair.second;
+					const uint32_t binding = descriptor_binding_slot_binding(pair.first);
+					const uint32_t array_index = descriptor_binding_slot_array_index(pair.first);
+					command_execution_data::simulator_binding& dst = data.descriptor_sets[set][binding];
+					if (set_layout_data)
+					{
+						auto type_it = set_layout_data->binding_types.find(binding);
+						if (type_it != set_layout_data->binding_types.end()) dst.descriptor_type = type_it->second;
+						auto count_it = set_layout_data->binding_counts.find(binding);
+						if (count_it != set_layout_data->binding_counts.end() && dst.images.size() < count_it->second) dst.images.resize(count_it->second);
+					}
+					if (dst.images.size() <= array_index) dst.images.resize(array_index + 1);
+					dst.images[array_index] = pair.second;
 				}
 				for (const auto& pair : tds.bound_opaque_descriptors)
 				{
-					data.opaquesets[set][pair.first] = pair.second;
+					const uint32_t binding = descriptor_binding_slot_binding(pair.first);
+					const uint32_t array_index = descriptor_binding_slot_array_index(pair.first);
+					command_execution_data::simulator_binding& dst = data.descriptor_sets[set][binding];
+					if (set_layout_data)
+					{
+						auto type_it = set_layout_data->binding_types.find(binding);
+						if (type_it != set_layout_data->binding_types.end()) dst.descriptor_type = type_it->second;
+						auto count_it = set_layout_data->binding_counts.find(binding);
+						if (count_it != set_layout_data->binding_counts.end() && dst.opaques.size() < count_it->second) dst.opaques.resize(count_it->second);
+					}
+					if (dst.opaques.size() <= array_index) dst.opaques.resize(array_index + 1);
+					dst.opaques[array_index] = pair.second;
 				}
-				uint32_t binding = 0;
 				for (const auto& pair : tds.dynamic_buffers)
 				{
 					buffer_access access;
+					const uint32_t binding = descriptor_binding_slot_binding(pair.first);
+					const uint32_t array_index = descriptor_binding_slot_array_index(pair.first);
+					if (pair.second.buffer == VK_NULL_HANDLE) continue;
 					const uint32_t buffer_index = index_to_VkBuffer.index(pair.second.buffer);
 					auto& buffer_data = VkBuffer_index.at(buffer_index);
 					access.buffer_data = &buffer_data;
 					access.offset = pair.second.offset;
-					if (c.data.bind_descriptorsets.pDynamicOffsets) access.offset += c.data.bind_descriptorsets.pDynamicOffsets[binding];
+					if (c.data.bind_descriptorsets.pDynamicOffsets)
+					{
+						assert(c.data.bind_descriptorsets.dynamicOffsetCount > dynamic_offset_index);
+						access.offset += c.data.bind_descriptorsets.pDynamicOffsets[dynamic_offset_index];
+					}
 					access.size = pair.second.range;
 					if (access.size == VK_WHOLE_SIZE) access.size = buffer_data.size - access.offset;
-					data.descriptorsets[set][pair.first] = access;
-					binding++;
-					assert(!c.data.bind_descriptorsets.pDynamicOffsets || c.data.bind_descriptorsets.dynamicOffsetCount >= binding);
+					command_execution_data::simulator_binding& dst = data.descriptor_sets[set][binding];
+					dst.descriptor_type = set_layout_data ? set_layout_data->binding_types.at(binding) : VK_DESCRIPTOR_TYPE_MAX_ENUM;
+					if (set_layout_data)
+					{
+						auto count_it = set_layout_data->binding_counts.find(binding);
+						if (count_it != set_layout_data->binding_counts.end() && dst.buffers.size() < count_it->second) dst.buffers.resize(count_it->second);
+					}
+					if (dst.buffers.size() <= array_index) dst.buffers.resize(array_index + 1);
+					dst.buffers[array_index] = access;
+					dynamic_offset_index++;
 				}
 			}
 			free((void*)c.data.bind_descriptorsets.pDescriptorSets);
 			free((void*)c.data.bind_descriptorsets.pDynamicOffsets);
+			}
 			break;
 		case VKCMDBINDDESCRIPTORBUFFERSEXT:
 			descriptor_buffers.clear();
@@ -1120,11 +1277,17 @@ bool execute_commands(command_execution_data& data)
 						const VkDeviceSize binding_offset = offset_it != set_layout_data.offsets.end() ? offset_it->second : 0;
 						const VkDeviceSize descriptor_offset = descriptor_buffer.offset + set_offset + binding_offset;
 						if (descriptor_offset >= descriptor_buffer.buffer_data->size) continue;
-						data.descriptorsets[set][binding] = {
+						command_execution_data::simulator_binding& dst = data.descriptor_sets[set][binding];
+						dst.descriptor_type = binding_pair.second;
+						dst.descriptor_buffer_backed = true;
+						dst.buffers.clear();
+						dst.images.clear();
+						dst.opaques.clear();
+						dst.buffers.push_back({
 							.buffer_data = descriptor_buffer.buffer_data,
 							.offset = descriptor_offset,
 							.size = descriptor_buffer.buffer_data->size - descriptor_offset,
-						};
+						});
 						VkMarkingSubTypeARM subtype{};
 						subtype.descriptorType = binding_pair.second;
 						std::vector<discovered_buffer_marking> discovered_markings;

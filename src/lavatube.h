@@ -942,16 +942,31 @@ struct trackedcmdbuffer_trace : trackedcmdbuffer
 
 struct buffer_access
 {
-	trackedbuffer* buffer_data;
-	VkDeviceSize offset;
-	VkDeviceSize size; // not sure if we need this
+	trackedbuffer* buffer_data = nullptr;
+	VkDeviceSize offset = 0;
+	VkDeviceSize size = 0; // not sure if we need this
 };
 
 struct image_access
 {
-	trackedimage* image_data;
-	VkImageLayout layout;
+	trackedimage* image_data = nullptr;
+	VkImageLayout layout = VK_IMAGE_LAYOUT_UNDEFINED;
 };
+
+static inline uint64_t descriptor_binding_slot(uint32_t binding, uint32_t array_index)
+{
+	return (uint64_t(binding) << 32) | array_index;
+}
+
+static inline uint32_t descriptor_binding_slot_binding(uint64_t slot)
+{
+	return uint32_t(slot >> 32);
+}
+
+static inline uint32_t descriptor_binding_slot_array_index(uint64_t slot)
+{
+	return uint32_t(slot);
+}
 
 struct trackeddescriptorsetlayout : trackable
 {
@@ -959,6 +974,7 @@ struct trackeddescriptorsetlayout : trackable
 	VkDeviceSize size = 0;
 	std::unordered_map<int, VkDeviceSize> offsets;
 	std::unordered_map<uint32_t, VkDescriptorType> binding_types;
+	std::unordered_map<uint32_t, uint32_t> binding_counts;
 };
 
 struct trackeddescriptorset : trackable
@@ -968,10 +984,10 @@ struct trackeddescriptorset : trackable
 	VkDescriptorPool pool = VK_NULL_HANDLE;
 
 	// postprocess only
-	std::unordered_map<uint32_t, buffer_access> bound_buffers; // binding point to buffer access
-	std::unordered_map<uint32_t, image_access> bound_images; // binding point to image access
-	std::unordered_map<uint32_t, uint64_t> bound_opaque_descriptors; // binding point to opaque descriptor payload
-	std::unordered_map<uint32_t, VkDescriptorBufferInfo> dynamic_buffers; // must be resolved on bind
+	std::map<uint64_t, buffer_access> bound_buffers; // binding<<32 | array index to buffer access
+	std::map<uint64_t, image_access> bound_images; // binding<<32 | array index to image access
+	std::map<uint64_t, uint64_t> bound_opaque_descriptors; // binding<<32 | array index to opaque descriptor payload
+	std::map<uint64_t, VkDescriptorBufferInfo> dynamic_buffers; // binding<<32 | array index, resolved on bind
 
 	void self_test() const
 	{

@@ -9,6 +9,7 @@
 #include <cstdlib>
 #include <cstdint>
 #include <deque>
+#include <initializer_list>
 #include <list>
 #include <vector>
 
@@ -192,6 +193,15 @@ static change_source make_source(uint32_t packet)
 static bool same_source(const change_source& a, const change_source& b)
 {
 	return a.packet == b.packet && a.frame == b.frame && a.thread == b.thread && a.call_id == b.call_id;
+}
+
+static void set_storage_buffer_binding(command_execution_data& data, uint32_t set, uint32_t binding, trackedbuffer* buffer_data,
+	VkDeviceSize offset, VkDeviceSize size)
+{
+	command_execution_data::simulator_binding& dst = data.descriptor_sets[set][binding];
+	dst.descriptor_type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+	dst.buffers.resize(1);
+	dst.buffers[0] = { buffer_data, offset, size };
 }
 
 static void init_buffer(uint32_t index, VkDeviceSize size)
@@ -406,8 +416,8 @@ struct compute_shader_fixture
 		device_data.index = 0;
 		device_data.allocator = &allocator;
 
-		data.descriptorsets[0][0] = { &VkBuffer_index[0], 0, compute_shader_buffer_size };
-		data.descriptorsets[0][1] = { &VkBuffer_index[1], 0, compute_shader_buffer_size };
+		set_storage_buffer_binding(data, 0, 0, &VkBuffer_index[0], 0, compute_shader_buffer_size);
+		set_storage_buffer_binding(data, 0, 1, &VkBuffer_index[1], 0, compute_shader_buffer_size);
 	}
 
 	~compute_shader_fixture()
@@ -492,8 +502,8 @@ static void execute_compute_shader_copy_provenance()
 		.pending_descriptor_rewrites = pending_descriptor_rewrites,
 		.descriptor_buffer_payloads = descriptor_buffer_payloads,
 	};
-	data.descriptorsets[0][0] = { &VkBuffer_index[0], 0, buffer_size };
-	data.descriptorsets[0][1] = { &VkBuffer_index[1], 0, buffer_size };
+	set_storage_buffer_binding(data, 0, 0, &VkBuffer_index[0], 0, buffer_size);
+	set_storage_buffer_binding(data, 0, 1, &VkBuffer_index[1], 0, buffer_size);
 
 	assert(execute_commands(data));
 	assert(load_u32(output, 0) == first_value);
@@ -576,7 +586,7 @@ static void execute_compute_shader_bda_unbound_input()
 		.pending_descriptor_rewrites = pending_descriptor_rewrites,
 		.descriptor_buffer_payloads = descriptor_buffer_payloads,
 	};
-	data.descriptorsets[0][0] = { &VkBuffer_index[1], 0, output_buffer_size };
+	set_storage_buffer_binding(data, 0, 0, &VkBuffer_index[1], 0, output_buffer_size);
 
 	assert(!VkBuffer_index[0].is_state(trackedobject::states::bound));
 	assert(execute_commands(data));
@@ -646,10 +656,10 @@ static void execute_compute_shader_bda_copied_address_chain()
 
 	VkDescriptorSet_index.clear();
 	VkDescriptorSet_index.resize(2);
-	VkDescriptorSet_index[0].bound_buffers[0] = { &VkBuffer_index[0], 0, address_buffer_size };
-	VkDescriptorSet_index[0].bound_buffers[1] = { &VkBuffer_index[1], 0, address_buffer_size };
-	VkDescriptorSet_index[1].bound_buffers[0] = { &VkBuffer_index[1], 0, address_buffer_size };
-	VkDescriptorSet_index[1].bound_buffers[1] = { &VkBuffer_index[2], 0, output_buffer_size };
+	VkDescriptorSet_index[0].bound_buffers[descriptor_binding_slot(0, 0)] = { &VkBuffer_index[0], 0, address_buffer_size };
+	VkDescriptorSet_index[0].bound_buffers[descriptor_binding_slot(1, 0)] = { &VkBuffer_index[1], 0, address_buffer_size };
+	VkDescriptorSet_index[1].bound_buffers[descriptor_binding_slot(0, 0)] = { &VkBuffer_index[1], 0, address_buffer_size };
+	VkDescriptorSet_index[1].bound_buffers[descriptor_binding_slot(1, 0)] = { &VkBuffer_index[2], 0, output_buffer_size };
 
 	VkPipeline_index.clear();
 	const uint32_t copy_pipeline_index = add_compute_pipeline(4, plain_copy_shader_code());
@@ -780,8 +790,8 @@ static void execute_compute_shader_bda_two_lane_output_provenance()
 
 	VkDescriptorSet_index.clear();
 	VkDescriptorSet_index.resize(1);
-	VkDescriptorSet_index[0].bound_buffers[0] = { &VkBuffer_index[0], 0, address_buffer_size };
-	VkDescriptorSet_index[0].bound_buffers[1] = { &VkBuffer_index[1], 0, color_buffer_size };
+	VkDescriptorSet_index[0].bound_buffers[descriptor_binding_slot(0, 0)] = { &VkBuffer_index[0], 0, address_buffer_size };
+	VkDescriptorSet_index[0].bound_buffers[descriptor_binding_slot(1, 0)] = { &VkBuffer_index[1], 0, color_buffer_size };
 
 	init_compute_pipeline(6, bda_two_store_shader_code());
 
@@ -933,9 +943,9 @@ static void execute_compute_shader_bda_interleave_copied_address_provenance()
 		.pending_descriptor_rewrites = pending_descriptor_rewrites,
 		.descriptor_buffer_payloads = descriptor_buffer_payloads,
 	};
-	interleave_data.descriptorsets[0][0] = { &VkBuffer_index[0], 0, address_buffer_size };
-	interleave_data.descriptorsets[0][1] = { &VkBuffer_index[1], 0, color_buffer_size };
-	interleave_data.descriptorsets[0][2] = { &VkBuffer_index[2], 0, interleave_buffer_size };
+	set_storage_buffer_binding(interleave_data, 0, 0, &VkBuffer_index[0], 0, address_buffer_size);
+	set_storage_buffer_binding(interleave_data, 0, 1, &VkBuffer_index[1], 0, color_buffer_size);
+	set_storage_buffer_binding(interleave_data, 0, 2, &VkBuffer_index[2], 0, interleave_buffer_size);
 
 	assert(execute_commands(interleave_data));
 	assert(load_u32(interleave_buffer, 0) == color0_lo);
@@ -977,7 +987,7 @@ static void execute_compute_shader_bda_interleave_copied_address_provenance()
 		.pending_descriptor_rewrites = pending_descriptor_rewrites,
 		.descriptor_buffer_payloads = descriptor_buffer_payloads,
 	};
-	output_data.descriptorsets[0][0] = { &VkBuffer_index[2], 0, interleave_buffer_size };
+	set_storage_buffer_binding(output_data, 0, 0, &VkBuffer_index[2], 0, interleave_buffer_size);
 
 	assert(execute_commands(output_data));
 	assert(load_u32(output_buffer, 0) == color0_lo);
