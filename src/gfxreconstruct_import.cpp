@@ -19,6 +19,10 @@ using gfxrecon::decode::VulkanNativeCallError;
 using gfxrecon::decode::VulkanNativeMissingCallbackPolicy;
 using gfxrecon::decode::VulkanMemoryUpdate;
 using gfxrecon::decode::VulkanDeviceMemoryProperties;
+using gfxrecon::decode::VulkanResourceInitializationBegin;
+using gfxrecon::decode::VulkanBufferInitialization;
+using gfxrecon::decode::VulkanImageInitialization;
+using gfxrecon::decode::VulkanResourceInitializationEnd;
 
 static void set_captured_return_value(void*, const VulkanNativeCallContext& call)
 {
@@ -348,8 +352,82 @@ static void import_memory_update(void*, const VulkanMemoryUpdate& update)
 
 static void import_device_memory_properties(void*, const VulkanDeviceMemoryProperties& properties)
 {
+	lava_file_writer& file = lava_writer::instance().file_writer();
+	if (!file.parent->records.VkPhysicalDevice_index.contains(properties.physical_device))
+	{
+		auto* data = file.parent->records.VkPhysicalDevice_index.add(properties.physical_device, file.current,
+			file.parent->desired_output_handle_index(properties.physical_device));
+		data->enter_initialized();
+	}
 	VkPhysicalDeviceMemoryProperties memory_properties = properties.memory_properties;
 	trace_vkGetPhysicalDeviceMemoryProperties(properties.physical_device, &memory_properties);
+}
+
+static void import_resource_initialization_begin(void*, const VulkanResourceInitializationBegin& initialization)
+{
+	(void)initialization;
+}
+
+static VkResult VKAPI_CALL import_vkCreateBuffer(VkDevice device, const VkBufferCreateInfo* pCreateInfo,
+	const VkAllocationCallbacks* pAllocator, VkBuffer* pBuffer)
+{
+	VkBufferCreateInfo create_info = *pCreateInfo;
+	create_info.usage |= VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+	return trace_vkCreateBuffer(device, &create_info, pAllocator, pBuffer);
+}
+
+static void import_buffer_initialization(void*, const VulkanBufferInitialization& initialization)
+{
+	if (initialization.buffer == VK_NULL_HANDLE || !initialization.data || initialization.data_size == 0)
+	{
+		DIE("Invalid gfxreconstruct buffer initialization at block %lu", (unsigned long)initialization.block_index);
+	}
+	lava_writer& writer = lava_writer::instance();
+	trackedbuffer* buffer_data = writer.records.VkBuffer_index.at(initialization.buffer);
+	trackeddevice* device_data = writer.records.VkDevice_index.at(initialization.device);
+	if (initialization.data_size > buffer_data->size)
+	{
+		DIE("Out-of-range gfxreconstruct initialization for buffer[%u]: buffer size %lu, update size %lu",
+			buffer_data->index, (unsigned long)buffer_data->size, (unsigned long)initialization.data_size);
+	}
+	lava_file_writer& file = writer.file_writer();
+	file.begin_packet(PACKET_BUFFER_INITIALIZATION);
+	file.write_handle(device_data);
+	file.write_handle(buffer_data);
+	file.write_uint64_t(initialization.data_size);
+	file.write_array(initialization.data, initialization.data_size);
+	buffer_data->updates++;
+	buffer_data->written += initialization.data_size;
+	file.end_packet();
+}
+
+static void import_image_initialization(void*, const VulkanImageInitialization& initialization)
+{
+	if (initialization.image == VK_NULL_HANDLE || !initialization.data || initialization.data_size == 0)
+	{
+		DIE("Invalid gfxreconstruct image initialization at block %lu", (unsigned long)initialization.block_index);
+	}
+	lava_writer& writer = lava_writer::instance();
+	trackedimage* image_data = writer.records.VkImage_index.at(initialization.image);
+	trackeddevice* device_data = writer.records.VkDevice_index.at(initialization.device);
+	lava_file_writer& file = writer.file_writer();
+	file.begin_packet(PACKET_IMAGE_INITIALIZATION);
+	file.write_handle(device_data);
+	file.write_handle(image_data);
+	file.write_uint32_t(initialization.aspect_mask);
+	file.write_uint32_t(initialization.layout);
+	file.write_uint32_t(initialization.level_count);
+	file.write_array(initialization.level_sizes, initialization.level_count);
+	file.write_uint64_t(initialization.data_size);
+	file.write_array(initialization.data, initialization.data_size);
+	image_data->updates++;
+	image_data->written += initialization.data_size;
+	file.end_packet();
+}
+
+static void import_resource_initialization_end(void*, const VulkanResourceInitializationEnd& initialization)
+{
+	(void)initialization;
 }
 
 static PFN_vkVoidFunction import_callback(const std::string& name, void* callback)
@@ -370,6 +448,8 @@ static PFN_vkVoidFunction import_callback(const std::string& name, void* callbac
 #endif
 	if (name == "vkCreateSwapchainKHR")
 		return reinterpret_cast<PFN_vkVoidFunction>(import_vkCreateSwapchainKHR);
+	if (name == "vkCreateBuffer")
+		return reinterpret_cast<PFN_vkVoidFunction>(import_vkCreateBuffer);
 	if (name == "vkBindBufferMemory")
 		return reinterpret_cast<PFN_vkVoidFunction>(import_vkBindBufferMemory);
 	if (name == "vkBindBufferMemory2")
@@ -447,6 +527,14 @@ int main(int argc, char** argv)
 	if (!reader.SetDeviceMemoryPropertiesCallback(import_device_memory_properties, nullptr))
 	{
 		ELOG("Failed to install the gfxreconstruct device-memory-properties callback");
+		return 1;
+	}
+	if (!reader.SetResourceInitializationBeginCallback(import_resource_initialization_begin, nullptr) ||
+		!reader.SetBufferInitializationCallback(import_buffer_initialization, nullptr) ||
+		!reader.SetImageInitializationCallback(import_image_initialization, nullptr) ||
+		!reader.SetResourceInitializationEndCallback(import_resource_initialization_end, nullptr))
+	{
+		ELOG("Failed to install the gfxreconstruct resource-initialization callbacks");
 		return 1;
 	}
 	if (!reader.SetMissingCallbackPolicy(VulkanNativeMissingCallbackPolicy::kFail))

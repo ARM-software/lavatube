@@ -55,6 +55,8 @@ enum packet_type
 	PACKET_IMAGE_UPDATE2 = 8,
 	PACKET_BUFFER_UPDATE2 = 9,
 	PACKET_JUMP = 10, // an instruction to jump to another trace file at given uncompressed offset
+	PACKET_IMAGE_INITIALIZATION = 11,
+	PACKET_BUFFER_INITIALIZATION = 12,
 };
 
 enum lava_tiling // generalize memory tiling
@@ -1194,6 +1196,8 @@ inline const char* get_packet_name(packet_type type, uint16_t call_id)
 	case PACKET_TENSOR_UPDATE: return "tensor_update";
 	case PACKET_IMAGE_UPDATE2: return "image_update";
 	case PACKET_BUFFER_UPDATE2: return "buffer_update";
+	case PACKET_IMAGE_INITIALIZATION: return "image_initialization";
+	case PACKET_BUFFER_INITIALIZATION: return "buffer_initialization";
 	case PACKET_JUMP: return "jump_point";
 	}
 	assert(false);

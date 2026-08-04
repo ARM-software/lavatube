@@ -5369,6 +5369,162 @@ uint32_t update_buffer_packet(uint8_t instrtype, lava_file_reader& reader)
 	return buffer_index;
 }
 
+static void initialize_buffer_packet(lava_file_reader& reader)
+{
+	const uint32_t device_index = reader.read_handle(DEBUGPARAM("VkDevice"));
+	const uint32_t buffer_index = reader.read_handle(DEBUGPARAM("VkBuffer"));
+	const uint64_t data_size = reader.read_uint64_t();
+	std::vector<uint8_t> data(data_size);
+	reader.read_array(data.data(), data_size);
+	if (!reader.run) return;
+
+	VkDevice device = index_to_VkDevice.at(device_index);
+	const trackeddevice& device_data = VkDevice_index.at(device_index);
+	VkBuffer buffer = index_to_VkBuffer.at(buffer_index);
+	internal_buffer staging;
+	if (!create_internal_buffer(device, device_data.physicalDevice, data_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, staging))
+	{
+		ABORT("Failed to create staging buffer for imported buffer[%u] initialization", buffer_index);
+	}
+	void* mapped = nullptr;
+	VkResult result = wrap_vkMapMemory(device, staging.memory, 0, data_size, 0, &mapped);
+	assert(result == VK_SUCCESS && mapped);
+	memcpy(mapped, data.data(), data_size);
+	wrap_vkUnmapMemory(device, staging.memory);
+
+	VkCommandPoolCreateInfo pool_info = { VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO, nullptr };
+	pool_info.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
+	pool_info.queueFamilyIndex = selected_queue_family_index;
+	VkCommandPool pool = VK_NULL_HANDLE;
+	result = wrap_vkCreateCommandPool(device, &pool_info, nullptr, &pool);
+	assert(result == VK_SUCCESS);
+	VkCommandBufferAllocateInfo alloc_info = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO, nullptr };
+	alloc_info.commandPool = pool;
+	alloc_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+	alloc_info.commandBufferCount = 1;
+	VkCommandBuffer command_buffer = VK_NULL_HANDLE;
+	result = wrap_vkAllocateCommandBuffers(device, &alloc_info, &command_buffer);
+	assert(result == VK_SUCCESS);
+	VkCommandBufferBeginInfo begin_info = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO, nullptr };
+	begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+	result = wrap_vkBeginCommandBuffer(command_buffer, &begin_info);
+	assert(result == VK_SUCCESS);
+	VkBufferCopy region = {};
+	region.size = data_size;
+	wrap_vkCmdCopyBuffer(command_buffer, staging.buffer, buffer, 1, &region);
+	result = wrap_vkEndCommandBuffer(command_buffer);
+	assert(result == VK_SUCCESS);
+	VkSubmitInfo submit = { VK_STRUCTURE_TYPE_SUBMIT_INFO, nullptr };
+	submit.commandBufferCount = 1;
+	submit.pCommandBuffers = &command_buffer;
+	VkQueue queue = index_to_VkQueue.at(0);
+	result = wrap_vkQueueSubmit(queue, 1, &submit, VK_NULL_HANDLE);
+	assert(result == VK_SUCCESS);
+	result = wrap_vkQueueWaitIdle(queue);
+	assert(result == VK_SUCCESS);
+	wrap_vkDestroyCommandPool(device, pool, nullptr);
+	destroy_internal_buffer(device, staging);
+}
+
+static void initialize_image_packet(lava_file_reader& reader)
+{
+	const uint32_t device_index = reader.read_handle(DEBUGPARAM("VkDevice"));
+	const uint32_t image_index = reader.read_handle(DEBUGPARAM("VkImage"));
+	const VkImageAspectFlags aspect = reader.read_uint32_t();
+	const VkImageLayout final_layout = static_cast<VkImageLayout>(reader.read_uint32_t());
+	const uint32_t level_count = reader.read_uint32_t();
+	std::vector<uint64_t> level_sizes(level_count);
+	reader.read_array(level_sizes.data(), level_count);
+	const uint64_t data_size = reader.read_uint64_t();
+	std::vector<uint8_t> data(data_size);
+	reader.read_array(data.data(), data_size);
+	if (!reader.run) return;
+
+	VkDevice device = index_to_VkDevice.at(device_index);
+	const trackeddevice& device_data = VkDevice_index.at(device_index);
+	const trackedimage& image_data = VkImage_index.at(image_index);
+	VkImage image = index_to_VkImage.at(image_index);
+	internal_buffer staging;
+	if (!create_internal_buffer(device, device_data.physicalDevice, data_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, staging))
+	{
+		ABORT("Failed to create staging buffer for imported image[%u] initialization", image_index);
+	}
+	void* mapped = nullptr;
+	VkResult result = wrap_vkMapMemory(device, staging.memory, 0, data_size, 0, &mapped);
+	assert(result == VK_SUCCESS && mapped);
+	memcpy(mapped, data.data(), data_size);
+	wrap_vkUnmapMemory(device, staging.memory);
+
+	VkCommandPoolCreateInfo pool_info = { VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO, nullptr };
+	pool_info.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
+	pool_info.queueFamilyIndex = selected_queue_family_index;
+	VkCommandPool pool = VK_NULL_HANDLE;
+	result = wrap_vkCreateCommandPool(device, &pool_info, nullptr, &pool);
+	assert(result == VK_SUCCESS);
+	VkCommandBufferAllocateInfo alloc_info = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO, nullptr };
+	alloc_info.commandPool = pool;
+	alloc_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+	alloc_info.commandBufferCount = 1;
+	VkCommandBuffer command_buffer = VK_NULL_HANDLE;
+	result = wrap_vkAllocateCommandBuffers(device, &alloc_info, &command_buffer);
+	assert(result == VK_SUCCESS);
+	VkCommandBufferBeginInfo begin_info = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO, nullptr };
+	begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+	result = wrap_vkBeginCommandBuffer(command_buffer, &begin_info);
+	assert(result == VK_SUCCESS);
+
+	VkImageMemoryBarrier barrier = { VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER, nullptr };
+	barrier.srcAccessMask = 0;
+	barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+	barrier.oldLayout = image_data.initialLayout;
+	barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+	barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	barrier.image = image;
+	barrier.subresourceRange.aspectMask = aspect;
+	barrier.subresourceRange.levelCount = level_count;
+	barrier.subresourceRange.layerCount = image_data.arrayLayers;
+	wrap_vkCmdPipelineBarrier(command_buffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0,
+		0, nullptr, 0, nullptr, 1, &barrier);
+
+	std::vector<VkBufferImageCopy> regions(level_count);
+	VkDeviceSize offset = 0;
+	for (uint32_t i = 0; i < level_count; i++)
+	{
+		regions[i].bufferOffset = offset;
+		regions[i].imageSubresource.aspectMask = aspect;
+		regions[i].imageSubresource.mipLevel = i;
+		regions[i].imageSubresource.layerCount = image_data.arrayLayers;
+		regions[i].imageExtent.width = std::max(1u, image_data.extent.width >> i);
+		regions[i].imageExtent.height = std::max(1u, image_data.extent.height >> i);
+		regions[i].imageExtent.depth = std::max(1u, image_data.extent.depth >> i);
+		offset += level_sizes[i];
+	}
+	assert(offset <= data_size);
+	wrap_vkCmdCopyBufferToImage(command_buffer, staging.buffer, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+		level_count, regions.data());
+	barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+	barrier.dstAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT;
+	barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+	barrier.newLayout = final_layout;
+	wrap_vkCmdPipelineBarrier(command_buffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0,
+		0, nullptr, 0, nullptr, 1, &barrier);
+	result = wrap_vkEndCommandBuffer(command_buffer);
+	assert(result == VK_SUCCESS);
+	VkSubmitInfo submit = { VK_STRUCTURE_TYPE_SUBMIT_INFO, nullptr };
+	submit.commandBufferCount = 1;
+	submit.pCommandBuffers = &command_buffer;
+	VkQueue queue = index_to_VkQueue.at(0);
+	result = wrap_vkQueueSubmit(queue, 1, &submit, VK_NULL_HANDLE);
+	assert(result == VK_SUCCESS);
+	result = wrap_vkQueueWaitIdle(queue);
+	assert(result == VK_SUCCESS);
+	wrap_vkDestroyCommandPool(device, pool, nullptr);
+	destroy_internal_buffer(device, staging);
+}
+
 uint32_t update_tensor_packet(uint8_t instrtype, lava_file_reader& reader)
 {
 	DLOG2("Update tensor packet (%d) on thread %d", (int)instrtype, reader.thread_index());
@@ -5407,6 +5563,14 @@ void switchboard_packet(uint8_t instrtype, lava_file_reader& reader)
 	else if (instrtype == PACKET_BUFFER_UPDATE || instrtype == PACKET_BUFFER_UPDATE2)
 	{
 		update_buffer_packet(instrtype, reader);
+	}
+	else if (instrtype == PACKET_IMAGE_INITIALIZATION)
+	{
+		initialize_image_packet(reader);
+	}
+	else if (instrtype == PACKET_BUFFER_INITIALIZATION)
+	{
+		initialize_buffer_packet(reader);
 	}
 	else if (instrtype == PACKET_TENSOR_UPDATE)
 	{
