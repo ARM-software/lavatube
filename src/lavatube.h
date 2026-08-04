@@ -214,6 +214,8 @@ struct trackedphysicaldevice : trackable
 	using trackable::trackable; // inherit constructor
 	VkPhysicalDeviceType deviceType = VK_PHYSICAL_DEVICE_TYPE_MAX_ENUM;
 	std::vector<VkQueueFamilyProperties> queueFamilyProperties;
+	VkPhysicalDeviceMemoryProperties imported_memory_properties = {};
+	bool has_imported_memory_properties = false;
 
 	std::unordered_set<std::string> presented_device_extensions; // from tool to app
 	std::unordered_set<std::string> supported_device_extensions; // supported in driver

@@ -5598,6 +5598,7 @@ void terminate_all(lava_file_reader& reader, VkDevice stored_device)
 {
 	for (unsigned i = 0; i < index_to_VkCommandPool.size(); i++)
 	{
+		if (!index_to_VkCommandPool.contains(i)) continue;
 		VkCommandPool pool = index_to_VkCommandPool.at(i);
 		wrap_vkResetCommandPool(stored_device, pool, VK_COMMAND_POOL_RESET_RELEASE_RESOURCES_BIT);
 	}

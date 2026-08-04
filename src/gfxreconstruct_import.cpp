@@ -4,6 +4,8 @@
 
 #include <algorithm>
 #include <string>
+#include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include "decode/vulkan_api_call_reader.h"
@@ -23,6 +25,19 @@ using gfxrecon::decode::VulkanResourceInitializationBegin;
 using gfxrecon::decode::VulkanBufferInitialization;
 using gfxrecon::decode::VulkanImageInitialization;
 using gfxrecon::decode::VulkanResourceInitializationEnd;
+using gfxrecon::decode::VulkanDeviceAddressFixup;
+using gfxrecon::decode::VulkanDeviceAddressFixups;
+using gfxrecon::decode::VulkanShaderGroupHandleFixup;
+using gfxrecon::decode::VulkanShaderGroupHandleFixups;
+using gfxrecon::decode::VulkanUnhandledMetaCommand;
+
+struct gfxreconstruct_import_context
+{
+	std::unordered_map<uint64_t, std::vector<VulkanDeviceAddressFixup>> device_address_fixups;
+	std::unordered_map<uint64_t, std::vector<VulkanShaderGroupHandleFixup>> shader_group_handle_fixups;
+	std::unordered_set<VkDeviceMemory> warned_non_host_visible_memory;
+	bool ignore_memory_marking_fixups = false;
+};
 
 static void set_captured_return_value(void*, const VulkanNativeCallContext& call)
 {
@@ -63,6 +78,19 @@ static void VKAPI_CALL import_vkGetPhysicalDeviceProperties(VkPhysicalDevice phy
 	if (!pProperties) return;
 	auto* data = lava_writer::instance().records.VkPhysicalDevice_index.at(physicalDevice);
 	if (data) data->deviceType = pProperties->deviceType;
+}
+
+static VkResult VKAPI_CALL import_vkCreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo* pCreateInfo,
+	const VkAllocationCallbacks* pAllocator, VkDevice* pDevice)
+{
+	trackedphysicaldevice* physical_device_data = lava_writer::instance().records.VkPhysicalDevice_index.at(physicalDevice);
+	if (!physical_device_data->has_imported_memory_properties)
+	{
+		DIE("Missing gfxreconstruct memory properties for imported physical device[%u]", physical_device_data->index);
+	}
+	VkPhysicalDeviceMemoryProperties memory_properties = physical_device_data->imported_memory_properties;
+	trace_vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memory_properties);
+	return trace_vkCreateDevice(physicalDevice, pCreateInfo, pAllocator, pDevice);
 }
 
 static VkResult import_vkCreateSurfaceKHR(VkInstance instance, VkStructureType sType, const void* pNext,
@@ -305,14 +333,26 @@ static VkResult VKAPI_CALL import_vkBindTensorMemoryARM(VkDevice device, uint32_
 	return result;
 }
 
-static void import_memory_update(void*, const VulkanMemoryUpdate& update)
+static void import_memory_update(void* user_data, const VulkanMemoryUpdate& update)
 {
+	auto* context = static_cast<gfxreconstruct_import_context*>(user_data);
 	if (update.memory == VK_NULL_HANDLE || !update.data || update.data_size == 0)
 	{
 		DIE("Invalid gfxreconstruct memory update at block %lu", (unsigned long)update.block_index);
 	}
 	lava_writer& writer = lava_writer::instance();
 	trackedmemory* memory_data = writer.records.VkDeviceMemory_index.at(update.memory);
+	const uint64_t relation_id = reinterpret_cast<uintptr_t>(update.memory);
+	if ((memory_data->propertyFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) == 0)
+	{
+		if (context->warned_non_host_visible_memory.insert(update.memory).second)
+		{
+			WLOG("Ignoring gfxreconstruct memory updates for non-host-visible VkDeviceMemory[%u]", memory_data->index);
+		}
+		context->device_address_fixups.erase(relation_id);
+		context->shader_group_handle_fixups.erase(relation_id);
+		return;
+	}
 	if (update.memory_offset > memory_data->allocationSize ||
 		update.data_size > memory_data->allocationSize - update.memory_offset)
 	{
@@ -339,15 +379,80 @@ static void import_memory_update(void*, const VulkanMemoryUpdate& update)
 			DIE("Missing device for imported %s[%u]", pretty_print_VkObjectType(object_data->object_type), object_data->index);
 		}
 		const char* data = reinterpret_cast<const char*>(update.data) + overlap_start - update_start;
+		std::vector<VkMarkingTypeARM> marking_types;
+		std::vector<VkMarkingSubTypeARM> marking_subtypes;
+		std::vector<VkDeviceSize> marking_offsets;
+		const auto address_it = context->device_address_fixups.find(relation_id);
+		if (address_it != context->device_address_fixups.end() && object_data->object_type == VK_OBJECT_TYPE_BUFFER)
+		{
+			for (const VulkanDeviceAddressFixup& fixup : address_it->second)
+			{
+				if (fixup.data_offset < overlap_start || fixup.data_offset + sizeof(VkDeviceAddress) > overlap_end) continue;
+				VkMarkingSubTypeARM subtype = {};
+				const VkAccelerationStructureKHR acceleration_structure =
+					reinterpret_cast<VkAccelerationStructureKHR>(static_cast<uintptr_t>(fixup.object_id));
+				subtype.deviceAddressType = writer.records.VkAccelerationStructureKHR_index.contains(acceleration_structure)
+					? VK_DEVICE_ADDRESS_TYPE_ACCELERATION_STRUCTURE_ARM : VK_DEVICE_ADDRESS_TYPE_BUFFER_ARM;
+				marking_types.push_back(VK_MARKING_TYPE_DEVICE_ADDRESS_ARM);
+				marking_subtypes.push_back(subtype);
+				marking_offsets.push_back(fixup.data_offset - object_start);
+			}
+		}
+		const auto shader_it = context->shader_group_handle_fixups.find(relation_id);
+		if (shader_it != context->shader_group_handle_fixups.end() && object_data->object_type == VK_OBJECT_TYPE_BUFFER)
+		{
+			for (const VulkanShaderGroupHandleFixup& fixup : shader_it->second)
+			{
+				if (fixup.group_size != gfxrecon::decode::kVulkanShaderGroupHandleSize)
+				{
+					WLOG("Ignoring gfxreconstruct shader group handle fixup with unsupported size %u", fixup.group_size);
+					continue;
+				}
+				if (fixup.data_offset < overlap_start || fixup.data_offset + fixup.group_size > overlap_end) continue;
+				VkMarkingSubTypeARM subtype = {};
+				marking_types.push_back(VK_MARKING_TYPE_SHADER_GROUP_HANDLE_ARM);
+				marking_subtypes.push_back(subtype);
+				marking_offsets.push_back(fixup.data_offset - object_start);
+			}
+		}
+		VkMarkedOffsetsARM markings = { VK_STRUCTURE_TYPE_MARKED_OFFSETS_ARM, nullptr };
+		markings.count = marking_offsets.size();
+		markings.pMarkingTypes = marking_types.data();
+		markings.pSubTypes = marking_subtypes.data();
+		markings.pOffsets = marking_offsets.data();
 		write_object_update_packet(writer.file_writer(), devices.at(object_data->parent_device_index), object_data,
-			overlap_start - object_start, data, overlap_end - overlap_start);
+			overlap_start - object_start, data, overlap_end - overlap_start, markings.count ? &markings : nullptr);
 		emitted++;
 	}
+	context->device_address_fixups.erase(relation_id);
+	context->shader_group_handle_fixups.erase(relation_id);
 	if (emitted == 0)
 	{
 		WLOG("gfxreconstruct memory update at block %lu did not overlap a bound buffer, image, or tensor",
 			(unsigned long)update.block_index);
 	}
+}
+
+static void import_device_address_fixups(void* user_data, const VulkanDeviceAddressFixups& fixups)
+{
+	auto* context = static_cast<gfxreconstruct_import_context*>(user_data);
+	if (context->ignore_memory_marking_fixups) return;
+	context->device_address_fixups[fixups.relation_id] =
+		std::vector<VulkanDeviceAddressFixup>(fixups.fixups, fixups.fixups + fixups.fixup_count);
+}
+
+static void import_shader_group_handle_fixups(void* user_data, const VulkanShaderGroupHandleFixups& fixups)
+{
+	auto* context = static_cast<gfxreconstruct_import_context*>(user_data);
+	if (context->ignore_memory_marking_fixups) return;
+	context->shader_group_handle_fixups[fixups.relation_id] =
+		std::vector<VulkanShaderGroupHandleFixup>(fixups.fixups, fixups.fixups + fixups.fixup_count);
+}
+
+static void warn_unhandled_metacommand(void*, const VulkanUnhandledMetaCommand& command)
+{
+	WLOG("Unhandled gfxreconstruct metacommand 0x%x at block %lu", command.metadata_id,
+		(unsigned long)command.block_index);
 }
 
 static void import_device_memory_properties(void*, const VulkanDeviceMemoryProperties& properties)
@@ -359,8 +464,9 @@ static void import_device_memory_properties(void*, const VulkanDeviceMemoryPrope
 			file.parent->desired_output_handle_index(properties.physical_device));
 		data->enter_initialized();
 	}
-	VkPhysicalDeviceMemoryProperties memory_properties = properties.memory_properties;
-	trace_vkGetPhysicalDeviceMemoryProperties(properties.physical_device, &memory_properties);
+	trackedphysicaldevice* physical_device_data = file.parent->records.VkPhysicalDevice_index.at(properties.physical_device);
+	physical_device_data->imported_memory_properties = properties.memory_properties;
+	physical_device_data->has_imported_memory_properties = true;
 }
 
 static void import_resource_initialization_begin(void*, const VulkanResourceInitializationBegin& initialization)
@@ -436,6 +542,8 @@ static PFN_vkVoidFunction import_callback(const std::string& name, void* callbac
 		return reinterpret_cast<PFN_vkVoidFunction>(import_vkEnumeratePhysicalDevices);
 	if (name == "vkGetPhysicalDeviceProperties")
 		return reinterpret_cast<PFN_vkVoidFunction>(import_vkGetPhysicalDeviceProperties);
+	if (name == "vkCreateDevice")
+		return reinterpret_cast<PFN_vkVoidFunction>(import_vkCreateDevice);
 	if (name == "vkCreateHeadlessSurfaceEXT")
 		return reinterpret_cast<PFN_vkVoidFunction>(import_vkCreateHeadlessSurfaceEXT);
 #ifdef VK_USE_PLATFORM_XLIB_KHR
@@ -501,12 +609,58 @@ static void print_native_error(const VulkanNativeCallError& error)
 
 static void print_usage(const char* program)
 {
-	fprintf(stderr, "Usage: %s input.gfxr output.api\n", program);
+	printf("Usage: %s [options] input.gfxr output.api\n", program);
+	printf("-h/--help                          This help\n");
+	printf("--ignore-memory-marking-fixups     Ignore device-address and shader-group-handle fixup metacommands\n");
+}
+
+void usage()
+{
+	print_usage("lava-gfxr-import");
+	exit(-1);
 }
 
 int main(int argc, char** argv)
 {
-	if (argc != 3)
+	int remaining = argc - 1;
+	std::string input_filename;
+	std::string output_filename;
+	gfxreconstruct_import_context import_context;
+	for (int i = 1; i < argc; i++)
+	{
+		if (match(argv[i], "-h", "--help", remaining))
+		{
+			print_usage(argv[0]);
+			return 0;
+		}
+		else if (match(argv[i], nullptr, "--ignore-memory-marking-fixups", remaining))
+		{
+			import_context.ignore_memory_marking_fixups = true;
+		}
+		else if (strcmp(argv[i], "--") == 0)
+		{
+			remaining--;
+			if (remaining > 0) input_filename = get_str(argv[++i], remaining);
+			if (remaining > 0) output_filename = get_str(argv[++i], remaining);
+			if (remaining > 0)
+			{
+				print_usage(argv[0]);
+				return 2;
+			}
+			break;
+		}
+		else
+		{
+			input_filename = get_str(argv[i], remaining);
+			if (remaining > 0) output_filename = get_str(argv[++i], remaining);
+			if (remaining > 0)
+			{
+				print_usage(argv[0]);
+				return 2;
+			}
+		}
+	}
+	if (input_filename.empty() || output_filename.empty())
 	{
 		print_usage(argv[0]);
 		return 2;
@@ -519,7 +673,7 @@ int main(int argc, char** argv)
 		ELOG("Failed to install the gfxreconstruct return-value hook");
 		return 1;
 	}
-	if (!reader.SetMemoryUpdateCallback(import_memory_update, nullptr))
+	if (!reader.SetMemoryUpdateCallback(import_memory_update, &import_context))
 	{
 		ELOG("Failed to install the gfxreconstruct memory-update callback");
 		return 1;
@@ -537,21 +691,28 @@ int main(int argc, char** argv)
 		ELOG("Failed to install the gfxreconstruct resource-initialization callbacks");
 		return 1;
 	}
+	if (!reader.SetDeviceAddressFixupCallback(import_device_address_fixups, &import_context) ||
+		!reader.SetShaderGroupHandleFixupCallback(import_shader_group_handle_fixups, &import_context) ||
+		!reader.SetUnhandledMetaCommandCallback(warn_unhandled_metacommand, nullptr))
+	{
+		ELOG("Failed to install the gfxreconstruct metacommand callbacks");
+		return 1;
+	}
 	if (!reader.SetMissingCallbackPolicy(VulkanNativeMissingCallbackPolicy::kFail))
 	{
 		ELOG("Failed to enable strict gfxreconstruct callback checking");
 		return 1;
 	}
-	if (!reader.Initialize(argv[1]))
+	if (!reader.Initialize(input_filename.c_str()))
 	{
-		ELOG("Failed to open gfxreconstruct capture %s", argv[1]);
+		ELOG("Failed to open gfxreconstruct capture %s", input_filename.c_str());
 		return 1;
 	}
 
 	lava_writer& writer = lava_writer::instance();
 	writer.run = false;
 	writer.use_dense_output_handle_indices();
-	writer.set_output(argv[2]);
+	writer.set_output(output_filename);
 	const bool processed = reader.ProcessAllFrames();
 	writer.serialize();
 	writer.finish();
@@ -559,10 +720,10 @@ int main(int argc, char** argv)
 	if (!processed)
 	{
 		if (reader.HasNativeCallError()) print_native_error(reader.GetLastNativeCallError());
-		else ELOG("Failed while reading gfxreconstruct capture %s", argv[1]);
+		else ELOG("Failed while reading gfxreconstruct capture %s", input_filename.c_str());
 		return 1;
 	}
 
-	printf("Converted %s to %s\n", argv[1], argv[2]);
+	printf("Converted %s to %s\n", input_filename.c_str(), output_filename.c_str());
 	return 0;
 }

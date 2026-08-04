@@ -260,7 +260,7 @@ private:
 
 void tool_write_vkCreateSurfaceKHR_packet(const surface_create_packet& packet, const char* name, lava_function_id id);
 uint64_t write_object_update_packet(lava_file_writer& writer, const trackeddevice* device_data, trackedobject* object_data,
-	uint64_t offset, const char* data, uint64_t size);
+	uint64_t offset, const char* data, uint64_t size, VkMarkedOffsetsARM* markings = nullptr);
 
 struct hardware_buffer_metadata
 {

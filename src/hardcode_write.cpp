@@ -1655,7 +1655,7 @@ static void end_object_update_packet(lava_file_writer& writer, trackedobject* ob
 }
 
 uint64_t write_object_update_packet(lava_file_writer& writer, const trackeddevice* device_data, trackedobject* object_data,
-	uint64_t offset, const char* data, uint64_t size)
+	uint64_t offset, const char* data, uint64_t size, VkMarkedOffsetsARM* markings)
 {
 	assert(device_data);
 	assert(object_data);
@@ -1666,7 +1666,7 @@ uint64_t write_object_update_packet(lava_file_writer& writer, const trackeddevic
 
 	uint64_t* sizeptr = nullptr;
 	uint64_t payload_start = 0;
-	begin_object_update_packet(writer, device_data, object_data, nullptr, sizeptr, payload_start);
+	begin_object_update_packet(writer, device_data, object_data, markings, sizeptr, payload_start);
 	writer.write_memory_span(data, offset, size);
 	end_object_update_packet(writer, object_data, sizeptr, payload_start, size);
 	return size;
