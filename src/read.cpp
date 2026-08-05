@@ -274,6 +274,8 @@ static Json::Value params_packet_json(const callback_context& cb)
 		params["device_index"] = update.device_index;
 		params["object_index"] = update.object_index;
 		params["size"] = (Json::UInt64)update.size;
+		params["changed_bytes"] = (Json::UInt64)update.changed_bytes;
+		if (cb.reader.parent->print_add_checksums && update.checksum_valid) params["checksum"] = update.checksum;
 		params["pNext"] = json_extension(cb, update.sptr);
 	}
 	else if (cb.reader.current.packet_type == PACKET_THREAD_BARRIER)

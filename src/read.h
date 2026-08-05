@@ -68,6 +68,9 @@ struct output_update_packet
 	uint64_t header_start = 0;
 	uint64_t payload_start = 0;
 	uint64_t size = 0;
+	uint64_t changed_bytes = 0;
+	uint32_t checksum = 0;
+	bool checksum_valid = false;
 	const VkBaseOutStructure* sptr = nullptr;
 
 	void clear()
@@ -79,6 +82,9 @@ struct output_update_packet
 		header_start = 0;
 		payload_start = 0;
 		size = 0;
+		changed_bytes = 0;
+		checksum = 0;
+		checksum_valid = false;
 		sptr = nullptr;
 	}
 };
@@ -199,6 +205,7 @@ public:
 
 	/// Whether this replay pass should print every packet as JSON.
 	bool print_packets = false;
+	bool print_add_checksums = false;
 	uint32_t print_thread_index = UINT32_MAX;
 	std::vector<print_packet_selector> print_selectors;
 	uint32_t print_selector_count = 0;

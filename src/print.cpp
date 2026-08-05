@@ -31,6 +31,7 @@ void usage()
 	printf("--select LIST          Print selected packets: INDEX or INDEX:THREAD, comma-separated. Set default thread with --thread\n");
 	printf("-m/--max NUM           Stop after printing this many entries\n");
 	printf("--skip-missing-input   Exit with code 77 if the input trace file does not exist\n");
+	printf("--add-checksums        Include resulting update checksums (may be expensive)\n");
 	printf("-s/--sandbox level     Set security sandbox level (from 1 to 3, with 3 the most strict, default %d)\n", (int)p__sandbox_level);
 	exit(-1);
 }
@@ -144,6 +145,7 @@ int main(int argc, char **argv)
 	std::string filename_input;
 	bool skip_missing_input = false;
 	bool have_select = false;
+	bool add_checksums = false;
 
 	if (p__debug_destination == stdout) p__debug_destination = stderr;
 	if (p__sandbox_level >= 1) sandbox_level_one();
@@ -204,6 +206,10 @@ int main(int argc, char **argv)
 		{
 			skip_missing_input = true;
 		}
+		else if (match(argv[i], nullptr, "--add-checksums", remaining))
+		{
+			add_checksums = true;
+		}
 		else if (strcmp(argv[i], "--") == 0) // eg in case you have a file named -f ...
 		{
 			remaining--;
@@ -262,6 +268,7 @@ int main(int argc, char **argv)
 	lava_reader replayer;
 	replayer.run = false;
 	replayer.print_packets = true;
+	replayer.print_add_checksums = add_checksums;
 	replayer.print_thread_index = print_thread_index;
 	replayer.print_selectors = print_selectors;
 	replayer.print_max_entries = print_max_entries;

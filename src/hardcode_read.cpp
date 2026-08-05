@@ -5256,12 +5256,19 @@ void image_update(lava_file_reader& reader, uint32_t device_index, uint32_t imag
 	assert(sptr == nullptr);
 	trackedimage& image_data = VkImage_index.at(image_index);
 	char* ptr = mem_map(reader, device, loc);
-	int32_t changed = 0;
+	uint32_t changed = 0;
 
 	if (!reader.run && loc.needs_init) image_data.source.register_source(0, loc.size, reader.current, 1, 0, image_data.object_type, image_data.index);
 
-	if (!reader.run) reader.read_patch_tracking(ptr, loc.size, image_data.source, image_data.object_type, image_data.index);
-	else reader.read_patch(ptr, loc.size);
+	if (!reader.run) changed = reader.read_patch_tracking(ptr, loc.size, image_data.source, image_data.object_type, image_data.index);
+	else changed = reader.read_patch(ptr, loc.size);
+
+	reader.current_update_packet.changed_bytes = changed;
+	if (reader.parent->print_add_checksums)
+	{
+		reader.current_update_packet.checksum = adler32((unsigned char*)ptr, loc.size);
+		reader.current_update_packet.checksum_valid = true;
+	}
 
 	mem_unmap(reader, device, loc, ptr);
 }
@@ -5281,13 +5288,19 @@ void buffer_update(lava_file_reader& reader, uint32_t device_index, uint32_t buf
 	VkDevice device = index_to_VkDevice.at(device_index);
 	trackedbuffer& buffer_data = VkBuffer_index.at(buffer_index);
 	char* ptr = mem_map(reader, device, loc);
-	int32_t changed = 0;
+	uint32_t changed = 0;
 
 	if (!reader.run && loc.needs_init) buffer_data.source.register_source(0, loc.size, reader.current, 1, 0, buffer_data.object_type, buffer_data.index);
 
-	if (!reader.run) reader.read_patch_tracking(ptr, loc.size, buffer_data.source, buffer_data.object_type, buffer_data.index);
-	else reader.read_patch(ptr, loc.size);
+	if (!reader.run) changed = reader.read_patch_tracking(ptr, loc.size, buffer_data.source, buffer_data.object_type, buffer_data.index);
+	else changed = reader.read_patch(ptr, loc.size);
 
+	reader.current_update_packet.changed_bytes = changed;
+	if (reader.parent->print_add_checksums)
+	{
+		reader.current_update_packet.checksum = adler32((unsigned char*)ptr, loc.size);
+		reader.current_update_packet.checksum_valid = true;
+	}
 	if (sptr) translate_marked_offsets(reader, (VkMarkedOffsetsARM*)sptr, ptr, loc.size);
 
 	mem_unmap(reader, device, loc, ptr);
@@ -5308,12 +5321,19 @@ void tensor_update(lava_file_reader& reader, uint32_t device_index, uint32_t ten
 	VkDevice device = index_to_VkDevice.at(device_index);
 	trackedtensor& tensor_data = VkTensorARM_index.at(tensor_index);
 	char* ptr = mem_map(reader, device, loc);
-	int32_t changed = 0;
+	uint32_t changed = 0;
 
 	if (!reader.run && loc.needs_init) tensor_data.source.register_source(0, loc.size, reader.current, 1, 0, tensor_data.object_type, tensor_data.index);
 
-	if (!reader.run) reader.read_patch_tracking(ptr, loc.size, tensor_data.source, tensor_data.object_type, tensor_data.index);
-	else reader.read_patch(ptr, loc.size);
+	if (!reader.run) changed = reader.read_patch_tracking(ptr, loc.size, tensor_data.source, tensor_data.object_type, tensor_data.index);
+	else changed = reader.read_patch(ptr, loc.size);
+
+	reader.current_update_packet.changed_bytes = changed;
+	if (reader.parent->print_add_checksums)
+	{
+		reader.current_update_packet.checksum = adler32((unsigned char*)ptr, loc.size);
+		reader.current_update_packet.checksum_valid = true;
+	}
 
 	mem_unmap(reader, device, loc, ptr);
 }
