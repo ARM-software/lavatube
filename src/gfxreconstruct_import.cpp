@@ -30,12 +30,25 @@ using gfxrecon::decode::VulkanDeviceAddressFixups;
 using gfxrecon::decode::VulkanShaderGroupHandleFixup;
 using gfxrecon::decode::VulkanShaderGroupHandleFixups;
 using gfxrecon::decode::VulkanUnhandledMetaCommand;
+using gfxrecon::decode::VulkanAccelerationStructureInstanceBuffer;
+using gfxrecon::decode::VulkanAccelerationStructuresBuild;
+using gfxrecon::decode::VulkanAccelerationStructuresCopy;
+using gfxrecon::decode::VulkanAccelerationStructureWriteProperties;
+
+struct gfxreconstruct_acceleration_structure_commands
+{
+	VkQueue queue = VK_NULL_HANDLE;
+	VkCommandPool command_pool = VK_NULL_HANDLE;
+	VkCommandBuffer command_buffer = VK_NULL_HANDLE;
+};
 
 struct gfxreconstruct_import_context
 {
 	std::unordered_map<uint64_t, std::vector<VulkanDeviceAddressFixup>> device_address_fixups;
 	std::unordered_map<uint64_t, std::vector<VulkanShaderGroupHandleFixup>> shader_group_handle_fixups;
+	std::unordered_map<VkDevice, gfxreconstruct_acceleration_structure_commands> acceleration_structure_commands;
 	std::unordered_set<VkDeviceMemory> warned_non_host_visible_memory;
+	uint64_t next_injected_handle = UINT64_MAX;
 	bool ignore_memory_marking_fixups = false;
 };
 
@@ -388,6 +401,10 @@ static void import_memory_update(void* user_data, const VulkanMemoryUpdate& upda
 			for (const VulkanDeviceAddressFixup& fixup : address_it->second)
 			{
 				if (fixup.data_offset < overlap_start || fixup.data_offset + sizeof(VkDeviceAddress) > overlap_end) continue;
+				VkDeviceAddress captured_address = 0;
+				memcpy(&captured_address, reinterpret_cast<const char*>(update.data) + fixup.data_offset - update_start,
+					sizeof(captured_address));
+				if (captured_address == 0) continue;
 				VkMarkingSubTypeARM subtype = {};
 				const VkAccelerationStructureKHR acceleration_structure =
 					reinterpret_cast<VkAccelerationStructureKHR>(static_cast<uintptr_t>(fixup.object_id));
@@ -437,8 +454,15 @@ static void import_device_address_fixups(void* user_data, const VulkanDeviceAddr
 {
 	auto* context = static_cast<gfxreconstruct_import_context*>(user_data);
 	if (context->ignore_memory_marking_fixups) return;
-	context->device_address_fixups[fixups.relation_id] =
-		std::vector<VulkanDeviceAddressFixup>(fixups.fixups, fixups.fixups + fixups.fixup_count);
+	std::vector<VulkanDeviceAddressFixup>& imported_fixups = context->device_address_fixups[fixups.relation_id];
+	imported_fixups.clear();
+	imported_fixups.reserve(fixups.fixup_count);
+	for (size_t i = 0; i < fixups.fixup_count; i++)
+	{
+		const VulkanDeviceAddressFixup& fixup = fixups.fixups[i];
+		if (fixup.original_address == 0) continue;
+		imported_fixups.push_back(fixup);
+	}
 }
 
 static void import_shader_group_handle_fixups(void* user_data, const VulkanShaderGroupHandleFixups& fixups)
@@ -531,9 +555,244 @@ static void import_image_initialization(void*, const VulkanImageInitialization& 
 	file.end_packet();
 }
 
-static void import_resource_initialization_end(void*, const VulkanResourceInitializationEnd& initialization)
+static void finish_acceleration_structure_commands(gfxreconstruct_import_context& context);
+
+static void import_resource_initialization_end(void* user_data, const VulkanResourceInitializationEnd& initialization)
 {
 	(void)initialization;
+	finish_acceleration_structure_commands(*static_cast<gfxreconstruct_import_context*>(user_data));
+}
+
+static uint64_t import_injected_handle(gfxreconstruct_import_context* context)
+{
+	return context->next_injected_handle--;
+}
+
+static void import_set_success_result()
+{
+	lava_file_writer& file = lava_writer::instance().file_writer();
+	memset(&file.use_result, 0, sizeof(file.use_result));
+	file.use_result.result = VK_SUCCESS;
+}
+
+static trackedbuffer* import_find_buffer_by_device_address(VkDeviceAddress address, VkDeviceSize size,
+	VkDeviceSize& buffer_offset)
+{
+	for (trackedbuffer* buffer_data : lava_writer::instance().records.VkBuffer_index.iterate())
+	{
+		if (!buffer_data || buffer_data->device_address == 0 || address < buffer_data->device_address) continue;
+		const VkDeviceSize offset = address - buffer_data->device_address;
+		if (offset > buffer_data->size || size > buffer_data->size - offset) continue;
+		buffer_offset = offset;
+		return buffer_data;
+	}
+	return nullptr;
+}
+
+static void import_acceleration_structure_instances(const VulkanAccelerationStructuresBuild& build)
+{
+	lava_writer& writer = lava_writer::instance();
+	for (size_t i = 0; i < build.instance_buffer_count; i++)
+	{
+		const VulkanAccelerationStructureInstanceBuffer& instance_buffer = build.instance_buffers[i];
+		if (instance_buffer.build_info_index >= build.info_count)
+		{
+			DIE("Invalid gfxreconstruct acceleration-structure build index at block %lu",
+				(unsigned long)build.block_index);
+		}
+		const VkAccelerationStructureBuildGeometryInfoKHR& build_info =
+			build.build_infos[instance_buffer.build_info_index];
+		if (instance_buffer.geometry_index >= build_info.geometryCount)
+		{
+			DIE("Invalid gfxreconstruct acceleration-structure geometry index at block %lu",
+				(unsigned long)build.block_index);
+		}
+		const VkAccelerationStructureGeometryKHR* geometry = build_info.pGeometries
+			? &build_info.pGeometries[instance_buffer.geometry_index]
+			: (build_info.ppGeometries ? build_info.ppGeometries[instance_buffer.geometry_index] : nullptr);
+		if (!geometry || geometry->geometryType != VK_GEOMETRY_TYPE_INSTANCES_KHR ||
+			geometry->geometry.instances.data.deviceAddress != instance_buffer.source_device_address)
+		{
+			DIE("Mismatched gfxreconstruct acceleration-structure instance geometry at block %lu",
+				(unsigned long)build.block_index);
+		}
+		if (instance_buffer.instance_count > SIZE_MAX / sizeof(VkAccelerationStructureInstanceKHR))
+		{
+			DIE("Oversized gfxreconstruct acceleration-structure instance data at block %lu",
+				(unsigned long)build.block_index);
+		}
+		const uint64_t data_size = instance_buffer.instance_count * sizeof(VkAccelerationStructureInstanceKHR);
+		if (data_size == 0) continue;
+		if (!instance_buffer.instances || instance_buffer.source_device_address == 0)
+		{
+			DIE("Invalid gfxreconstruct acceleration-structure instance data at block %lu",
+				(unsigned long)build.block_index);
+		}
+		VkDeviceSize buffer_offset = 0;
+		trackedbuffer* buffer_data = import_find_buffer_by_device_address(instance_buffer.source_device_address,
+			data_size, buffer_offset);
+		if (!buffer_data)
+		{
+			DIE("Cannot resolve gfxreconstruct acceleration-structure instance buffer address %lu at block %lu",
+				(unsigned long)instance_buffer.source_device_address, (unsigned long)build.block_index);
+		}
+		trackeddevice* device_data = writer.records.VkDevice_index.at(build.device);
+		if (!device_data || buffer_data->parent_device_index != device_data->index)
+		{
+			DIE("Invalid device for gfxreconstruct acceleration-structure instance buffer[%u] at block %lu",
+				buffer_data->index, (unsigned long)build.block_index);
+		}
+		std::vector<VkMarkingTypeARM> marking_types(instance_buffer.instance_count,
+			VK_MARKING_TYPE_DEVICE_ADDRESS_ARM);
+		std::vector<VkMarkingSubTypeARM> marking_subtypes(instance_buffer.instance_count);
+		std::vector<VkDeviceSize> marking_offsets(instance_buffer.instance_count);
+		for (size_t j = 0; j < instance_buffer.instance_count; j++)
+		{
+			marking_subtypes[j].deviceAddressType = VK_DEVICE_ADDRESS_TYPE_ACCELERATION_STRUCTURE_ARM;
+			marking_offsets[j] = buffer_offset + j * sizeof(VkAccelerationStructureInstanceKHR)
+				+ offsetof(VkAccelerationStructureInstanceKHR, accelerationStructureReference);
+		}
+		VkMarkedOffsetsARM markings = { VK_STRUCTURE_TYPE_MARKED_OFFSETS_ARM, nullptr };
+		markings.count = instance_buffer.instance_count;
+		markings.pMarkingTypes = marking_types.data();
+		markings.pSubTypes = marking_subtypes.data();
+		markings.pOffsets = marking_offsets.data();
+		write_object_update_packet(writer.file_writer(), device_data, buffer_data, buffer_offset,
+			reinterpret_cast<const char*>(instance_buffer.instances), data_size, &markings);
+	}
+}
+
+static gfxreconstruct_acceleration_structure_commands& import_acceleration_structure_command_buffer(
+	gfxreconstruct_import_context* context, VkDevice device)
+{
+	auto& commands = context->acceleration_structure_commands[device];
+	if (commands.command_buffer != VK_NULL_HANDLE) return commands;
+
+	for (trackedqueue* queue_data : lava_writer::instance().records.VkQueue_index.iterate())
+	{
+		if (queue_data && queue_data->device == device && queue_data->queueFamily == 0 && queue_data->queueIndex == 0)
+		{
+			commands.queue = queue_data->realQueue;
+			break;
+		}
+	}
+	if (commands.queue == VK_NULL_HANDLE)
+	{
+		commands.queue = reinterpret_cast<VkQueue>(static_cast<uintptr_t>(import_injected_handle(context)));
+		trace_vkGetDeviceQueue(device, 0, 0, &commands.queue);
+	}
+
+	commands.command_pool = reinterpret_cast<VkCommandPool>(static_cast<uintptr_t>(import_injected_handle(context)));
+	VkCommandPoolCreateInfo pool_info = { VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO, nullptr };
+	pool_info.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+	pool_info.queueFamilyIndex = 0;
+	import_set_success_result();
+	if (trace_vkCreateCommandPool(device, &pool_info, nullptr, &commands.command_pool) != VK_SUCCESS)
+	{
+		DIE("Failed to create imported acceleration-structure command pool");
+	}
+
+	commands.command_buffer = reinterpret_cast<VkCommandBuffer>(static_cast<uintptr_t>(import_injected_handle(context)));
+	VkCommandBufferAllocateInfo allocate_info = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO, nullptr };
+	allocate_info.commandPool = commands.command_pool;
+	allocate_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+	allocate_info.commandBufferCount = 1;
+	import_set_success_result();
+	if (trace_vkAllocateCommandBuffers(device, &allocate_info, &commands.command_buffer) != VK_SUCCESS)
+	{
+		DIE("Failed to allocate imported acceleration-structure command buffer");
+	}
+	return commands;
+}
+
+static void import_begin_acceleration_structure_commands(gfxreconstruct_acceleration_structure_commands& commands)
+{
+	import_set_success_result();
+	if (trace_vkResetCommandBuffer(commands.command_buffer, 0) != VK_SUCCESS)
+	{
+		DIE("Failed to reset imported acceleration-structure command buffer");
+	}
+	VkCommandBufferBeginInfo begin_info = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO, nullptr };
+	begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+	import_set_success_result();
+	if (trace_vkBeginCommandBuffer(commands.command_buffer, &begin_info) != VK_SUCCESS)
+	{
+		DIE("Failed to begin imported acceleration-structure command buffer");
+	}
+}
+
+static void import_submit_acceleration_structure_commands(gfxreconstruct_acceleration_structure_commands& commands)
+{
+	import_set_success_result();
+	if (trace_vkEndCommandBuffer(commands.command_buffer) != VK_SUCCESS)
+	{
+		DIE("Failed to end imported acceleration-structure command buffer");
+	}
+	VkSubmitInfo submit_info = { VK_STRUCTURE_TYPE_SUBMIT_INFO, nullptr };
+	submit_info.commandBufferCount = 1;
+	submit_info.pCommandBuffers = &commands.command_buffer;
+	import_set_success_result();
+	if (trace_vkQueueSubmit(commands.queue, 1, &submit_info, VK_NULL_HANDLE) != VK_SUCCESS)
+	{
+		DIE("Failed to submit imported acceleration-structure command buffer");
+	}
+	import_set_success_result();
+	if (trace_vkQueueWaitIdle(commands.queue) != VK_SUCCESS)
+	{
+		DIE("Failed to wait for imported acceleration-structure command buffer");
+	}
+}
+
+static void import_acceleration_structures_build(void* user_data, const VulkanAccelerationStructuresBuild& build)
+{
+	if (build.info_count == 0) return;
+	if (build.device == VK_NULL_HANDLE || !build.build_infos || !build.range_infos)
+	{
+		DIE("Invalid gfxreconstruct acceleration-structure build at block %lu", (unsigned long)build.block_index);
+	}
+	import_acceleration_structure_instances(build);
+	auto* context = static_cast<gfxreconstruct_import_context*>(user_data);
+	auto& commands = import_acceleration_structure_command_buffer(context, build.device);
+	import_begin_acceleration_structure_commands(commands);
+	trace_vkCmdBuildAccelerationStructuresKHR(commands.command_buffer, build.info_count, build.build_infos,
+		build.range_infos);
+	import_submit_acceleration_structure_commands(commands);
+}
+
+static void import_acceleration_structures_copy(void* user_data, const VulkanAccelerationStructuresCopy& copy)
+{
+	if (copy.info_count == 0) return;
+	if (copy.device == VK_NULL_HANDLE || !copy.infos)
+	{
+		DIE("Invalid gfxreconstruct acceleration-structure copy at block %lu", (unsigned long)copy.block_index);
+	}
+	auto* context = static_cast<gfxreconstruct_import_context*>(user_data);
+	auto& commands = import_acceleration_structure_command_buffer(context, copy.device);
+	import_begin_acceleration_structure_commands(commands);
+	for (size_t i = 0; i < copy.info_count; i++)
+	{
+		trace_vkCmdCopyAccelerationStructureKHR(commands.command_buffer, &copy.infos[i]);
+	}
+	import_submit_acceleration_structure_commands(commands);
+}
+
+static void import_acceleration_structure_write_properties(void*,
+	const VulkanAccelerationStructureWriteProperties& write)
+{
+	DLOG2("Consumed gfxreconstruct acceleration-structure write-properties metadata at block %lu",
+		(unsigned long)write.block_index);
+}
+
+static void finish_acceleration_structure_commands(gfxreconstruct_import_context& context)
+{
+	for (auto& pair : context.acceleration_structure_commands)
+	{
+		VkDevice device = pair.first;
+		auto& commands = pair.second;
+		trace_vkFreeCommandBuffers(device, commands.command_pool, 1, &commands.command_buffer);
+		trace_vkDestroyCommandPool(device, commands.command_pool, nullptr);
+	}
+	context.acceleration_structure_commands.clear();
 }
 
 static PFN_vkVoidFunction import_callback(const std::string& name, void* callback)
@@ -686,13 +945,16 @@ int main(int argc, char** argv)
 	if (!reader.SetResourceInitializationBeginCallback(import_resource_initialization_begin, nullptr) ||
 		!reader.SetBufferInitializationCallback(import_buffer_initialization, nullptr) ||
 		!reader.SetImageInitializationCallback(import_image_initialization, nullptr) ||
-		!reader.SetResourceInitializationEndCallback(import_resource_initialization_end, nullptr))
+		!reader.SetResourceInitializationEndCallback(import_resource_initialization_end, &import_context))
 	{
 		ELOG("Failed to install the gfxreconstruct resource-initialization callbacks");
 		return 1;
 	}
 	if (!reader.SetDeviceAddressFixupCallback(import_device_address_fixups, &import_context) ||
 		!reader.SetShaderGroupHandleFixupCallback(import_shader_group_handle_fixups, &import_context) ||
+		!reader.SetAccelerationStructuresBuildCallback(import_acceleration_structures_build, &import_context) ||
+		!reader.SetAccelerationStructuresCopyCallback(import_acceleration_structures_copy, &import_context) ||
+		!reader.SetAccelerationStructureWritePropertiesCallback(import_acceleration_structure_write_properties, nullptr) ||
 		!reader.SetUnhandledMetaCommandCallback(warn_unhandled_metacommand, nullptr))
 	{
 		ELOG("Failed to install the gfxreconstruct metacommand callbacks");
@@ -714,6 +976,7 @@ int main(int argc, char** argv)
 	writer.use_dense_output_handle_indices();
 	writer.set_output(output_filename);
 	const bool processed = reader.ProcessAllFrames();
+	finish_acceleration_structure_commands(import_context);
 	writer.serialize();
 	writer.finish();
 

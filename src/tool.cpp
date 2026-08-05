@@ -79,6 +79,11 @@ static inline bool is_update_packet(uint8_t instrtype)
 		|| instrtype == PACKET_IMAGE_UPDATE2 || instrtype == PACKET_BUFFER_UPDATE2;
 }
 
+static inline bool is_initialization_packet(uint8_t instrtype)
+{
+	return instrtype == PACKET_IMAGE_INITIALIZATION || instrtype == PACKET_BUFFER_INITIALIZATION;
+}
+
 static VkObjectType update_packet_object_type(uint8_t instrtype)
 {
 	switch (instrtype)
@@ -307,6 +312,25 @@ static void write_output_update_packet(lava_file_reader& reader, lava_file_write
 	writer.begin_packet(update.instrtype);
 	write_output_update_packet_prefix(reader, writer, packet_mapping, packet_start, update.header_start);
 	writer.write_array(reader.stream_data(update.header_start), packet_end - update.header_start);
+	writer.end_packet();
+}
+
+static void write_output_initialization_packet(lava_file_reader& reader, lava_file_writer& writer,
+	output_packet_mapping& packet_mapping, uint8_t instrtype, uint64_t packet_start, uint64_t packet_end)
+{
+	constexpr uint64_t serialized_handle_size = sizeof(uint32_t) + sizeof(int8_t) + sizeof(uint32_t);
+	const uint64_t packet_payload_start = packet_start + sizeof(uint8_t) + sizeof(uint32_t);
+	const uint64_t data_start = packet_payload_start + serialized_handle_size * 2;
+	if (packet_end < data_start)
+	{
+		ABORT("Invalid initialization packet size on thread %u packet %u", (unsigned)reader.thread_index(),
+			(unsigned)reader.current.packet);
+	}
+	writer.begin_packet(instrtype);
+	const char* input = reader.stream_data(packet_payload_start);
+	write_output_handle(reader, writer, packet_mapping, input);
+	write_output_handle(reader, writer, packet_mapping, input + serialized_handle_size);
+	writer.write_array(reader.stream_data(data_start), packet_end - data_start);
 	writer.end_packet();
 }
 
@@ -1330,9 +1354,13 @@ static void replay_thread(lava_reader* replayer, int thread_id, output_packet_ma
 				assert(packet_mapping);
 				t.current_update_packet.clear();
 				packet_start = t.packet_start();
-				if (instrtype == PACKET_VULKAN_API_CALL || is_update_packet(instrtype)) output_writer->activate_thread_barriers();
+				if (instrtype == PACKET_VULKAN_API_CALL || is_update_packet(instrtype) || is_initialization_packet(instrtype))
+				{
+					output_writer->activate_thread_barriers();
+				}
 				if (instrtype == PACKET_THREAD_BARRIER) packet_mapping->record(t.thread_index(), input_packet + 1, output_writer->current.packet + 1);
-				if (instrtype != PACKET_VULKAN_API_CALL && instrtype != PACKET_THREAD_BARRIER && !is_update_packet(instrtype))
+				if (instrtype != PACKET_VULKAN_API_CALL && instrtype != PACKET_THREAD_BARRIER
+					&& !is_update_packet(instrtype) && !is_initialization_packet(instrtype))
 				{
 					ABORT("Output mode does not yet support packet type %u on thread %u packet %u", (unsigned)instrtype, (unsigned)t.thread_index(), (unsigned)t.current.packet);
 				}
@@ -1364,6 +1392,10 @@ static void replay_thread(lava_reader* replayer, int thread_id, output_packet_ma
 				{
 					write_output_update_packet(t, *output_writer, *packet_mapping, packet_start, packet_end);
 				}
+			}
+			if (write_output && is_initialization_packet(instrtype))
+			{
+				write_output_initialization_packet(t, *output_writer, *packet_mapping, instrtype, packet_start, t.packet_end());
 			}
 			if (write_output && instrtype == PACKET_VULKAN_API_CALL && output_writer->current.packet == output_packet)
 			{
