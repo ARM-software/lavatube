@@ -2974,7 +2974,7 @@ void replay_pre_vkQueuePresentKHR(lava_file_reader& reader, VkQueue queue, VkPre
 			submit.pCommandBuffers = &data.virtual_cmdbuffers[stored_image_index];
 			if (i == pPresentInfo->swapchainCount - 1)
 			{
-				copy_complete_semaphore[0] = data.virtual_semaphores[stored_image_index];
+				copy_complete_semaphore[0] = data.virtual_semaphores[swapchain_image_index];
 				submit.signalSemaphoreCount = 1;
 				submit.pSignalSemaphores = copy_complete_semaphore;
 			}
