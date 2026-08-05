@@ -158,6 +158,10 @@ struct collected_markings_entry
 	uint64_t packet = 0;
 	uint8_t instrtype = 0;
 	uint32_t occurrence = 0;
+	VkObjectType object_type = VK_OBJECT_TYPE_UNKNOWN;
+	uint32_t object_index = CONTAINER_NULL_VALUE;
+	uint32_t memory_index = CONTAINER_NULL_VALUE;
+	VkDeviceSize memory_offset = 0;
 	VkMarkedOffsetsARM* markings = nullptr;
 };
 
@@ -183,7 +187,7 @@ static int usage(const char* argv0)
 	fprintf(stdout, "\t%s list <input packaged file>\n", argv0);
 	fprintf(stdout, "\t%s print <target file> <input packaged file>\n", argv0);
 	fprintf(stdout, "\t%s check <input packaged file>\n", argv0);
-	fprintf(stdout, "\t%s diff [--semantic] [--assert-sane] [--assert-markings] <input packaged file A> <input packaged file B>\n", argv0);
+	fprintf(stdout, "\t%s diff [--semantic] [--assert-sane] [--assert-markings] [--assert-markings-coverage] <input packaged file A> <input packaged file B>\n", argv0);
 	fprintf(stdout, "\t%s list-markings <input packaged file>\n", argv0);
 	return 0;
 }
@@ -427,6 +431,8 @@ static void collect_markings_observer(const change_source& source, const VkMarke
 static void collect_markings_replay_thread(lava_reader* reader, int thread_id)
 {
 	lava_file_reader& t = reader->file_reader(thread_id);
+	markings_collect_state& state = *(markings_collect_state*)reader->markings_observer_data;
+	markings_collect_thread_state& thread_state = state.threads->at(thread_id);
 	t.bind_runner_thread();
 	t.bind_trace_thread_name();
 	t.start_measurement();
@@ -436,7 +442,30 @@ static void collect_markings_replay_thread(lava_reader* reader, int thread_id)
 	{
 		while ((instrtype = t.step()))
 		{
+			const size_t markings_start = thread_state.entries.size();
 			switchboard_packet(instrtype, t);
+			const output_update_packet& update = t.current_update_packet;
+			if (update.valid)
+			{
+				VkObjectType object_type = VK_OBJECT_TYPE_UNKNOWN;
+				const trackedobject* object_data = nullptr;
+				if (update.instrtype == PACKET_BUFFER_UPDATE2) object_type = VK_OBJECT_TYPE_BUFFER;
+				else if (update.instrtype == PACKET_IMAGE_UPDATE2) object_type = VK_OBJECT_TYPE_IMAGE;
+				else if (update.instrtype == PACKET_TENSOR_UPDATE) object_type = VK_OBJECT_TYPE_TENSOR_ARM;
+				if (object_type == VK_OBJECT_TYPE_BUFFER) object_data = &VkBuffer_index.at(update.object_index);
+				else if (object_type == VK_OBJECT_TYPE_IMAGE) object_data = &VkImage_index.at(update.object_index);
+				else if (object_type == VK_OBJECT_TYPE_TENSOR_ARM) object_data = &VkTensorARM_index.at(update.object_index);
+				for (size_t i = markings_start; i < thread_state.entries.size(); i++)
+				{
+					thread_state.entries[i].object_type = object_type;
+					thread_state.entries[i].object_index = update.object_index;
+					if (object_data)
+					{
+						thread_state.entries[i].memory_index = object_data->backing_index;
+						thread_state.entries[i].memory_offset = object_data->offset;
+					}
+				}
+			}
 			t.self_test();
 		}
 	}
@@ -447,6 +476,118 @@ static void collect_markings_replay_thread(lava_reader* reader, int thread_id)
 	uint64_t worker_local = 0;
 	uint64_t runner_local = 0;
 	t.stop_measurement(worker_local, runner_local);
+}
+
+struct marking_coverage_location
+{
+	uint32_t memory_index = CONTAINER_NULL_VALUE;
+	VkDeviceSize first = 0;
+	VkDeviceSize last = 0;
+};
+
+static bool marking_coverage_location_less(const marking_coverage_location& a, const marking_coverage_location& b)
+{
+	if (a.memory_index != b.memory_index) return a.memory_index < b.memory_index;
+	if (a.first != b.first) return a.first < b.first;
+	return a.last < b.last;
+}
+
+static std::string marking_coverage_location_string(const marking_coverage_location& location)
+{
+	return "DeviceMemory[" + _to_string(location.memory_index)
+		+ "] offsets " + _to_string((unsigned long long)location.first)
+		+ ".." + _to_string((unsigned long long)location.last);
+}
+
+static VkDeviceSize marking_coverage_size(VkMarkingTypeARM type)
+{
+	if (type == VK_MARKING_TYPE_DEVICE_ADDRESS_ARM) return sizeof(VkDeviceAddress);
+	if (type == VK_MARKING_TYPE_SHADER_GROUP_HANDLE_ARM) return 32;
+	return 1;
+}
+
+static std::vector<collected_markings_entry> collect_trace_markings(const std::string& pack);
+
+static std::vector<marking_coverage_location> collect_marking_coverage(const std::string& pack)
+{
+	std::vector<marking_coverage_location> locations;
+	std::vector<collected_markings_entry> entries = collect_trace_markings(pack);
+	for (const collected_markings_entry& entry : entries)
+	{
+		if (is_capture_flush_leftover_markings(entry) || !entry.markings) continue;
+		if (entry.memory_index == CONTAINER_NULL_VALUE)
+		{
+			DIE("Cannot identify the memory object for markings at %s", markings_location_string(entry).c_str());
+		}
+		for (uint32_t i = 0; i < entry.markings->count; i++)
+		{
+			marking_coverage_location location;
+			location.memory_index = entry.memory_index;
+			location.first = entry.memory_offset + entry.markings->pOffsets[i];
+			location.last = location.first + marking_coverage_size(entry.markings->pMarkingTypes[i]) - 1;
+			locations.push_back(location);
+		}
+	}
+	free_collected_markings(entries);
+	std::sort(locations.begin(), locations.end(), marking_coverage_location_less);
+	std::vector<marking_coverage_location> merged;
+	for (const marking_coverage_location& location : locations)
+	{
+		if (!merged.empty() && merged.back().memory_index == location.memory_index && location.first <= merged.back().last + 1)
+		{
+			merged.back().last = std::max(merged.back().last, location.last);
+		}
+		else merged.push_back(location);
+	}
+	return merged;
+}
+
+static void append_uncovered_marking_ranges(const std::vector<marking_coverage_location>& source,
+	const std::vector<marking_coverage_location>& coverage, const char* side, markings_compare_result& result)
+{
+	size_t j = 0;
+	for (const marking_coverage_location& location : source)
+	{
+		VkDeviceSize pos = location.first;
+		while (j < coverage.size() && (coverage[j].memory_index < location.memory_index
+			|| (coverage[j].memory_index == location.memory_index && coverage[j].last < pos))) j++;
+		size_t k = j;
+		while (k < coverage.size() && coverage[k].memory_index == location.memory_index && coverage[k].first <= location.last)
+		{
+			if (coverage[k].first > pos)
+			{
+				marking_coverage_location missing = location;
+				missing.first = pos;
+				missing.last = coverage[k].first - 1;
+				result.messages.push_back(std::string("Marking memory only covered by ") + side + ": " + marking_coverage_location_string(missing));
+				result.identical = false;
+			}
+			if (coverage[k].last >= location.last)
+			{
+				pos = location.last + 1;
+				break;
+			}
+			pos = std::max(pos, coverage[k].last + 1);
+			k++;
+		}
+		if (pos <= location.last)
+		{
+			marking_coverage_location missing = location;
+			missing.first = pos;
+			result.messages.push_back(std::string("Marking memory only covered by ") + side + ": " + marking_coverage_location_string(missing));
+			result.identical = false;
+		}
+	}
+}
+
+static markings_compare_result compare_packed_file_marking_coverage(const std::string& pack_a, const std::string& pack_b)
+{
+	markings_compare_result result;
+	const std::vector<marking_coverage_location> a = collect_marking_coverage(pack_a);
+	const std::vector<marking_coverage_location> b = collect_marking_coverage(pack_b);
+	append_uncovered_marking_ranges(a, b, "A", result);
+	append_uncovered_marking_ranges(b, a, "B", result);
+	return result;
 }
 
 static std::vector<collected_markings_entry> collect_trace_markings(const std::string& pack)
@@ -862,11 +1003,13 @@ int main(int argc, char* argv[])
 		bool semantic = false;
 		bool assert_sane = false;
 		bool assert_markings = false;
+		bool assert_markings_coverage = false;
 		std::vector<const char*> positional;
 		for (int i = 2; i < argc; i++)
 		{
 			if (strcmp(argv[i], "--semantic") == 0) semantic = true;
 			else if (strcmp(argv[i], "--assert-markings") == 0) assert_markings = true;
+			else if (strcmp(argv[i], "--assert-markings-coverage") == 0) assert_markings_coverage = true;
 			else if (strcmp(argv[i], "--assert-sane") == 0)
 			{
 				assert_sane = true;
@@ -875,6 +1018,19 @@ int main(int argc, char* argv[])
 			else positional.push_back(argv[i]);
 		}
 		if (positional.size() != 2) return usage(argv[0]);
+		if (assert_markings && assert_markings_coverage) return usage(argv[0]);
+
+		if (assert_markings_coverage)
+		{
+			markings_compare_result markings = compare_packed_file_marking_coverage(positional[0], positional[1]);
+			if (markings.identical)
+			{
+				printf("Marking coverage identical: %s and %s\n", positional[0], positional[1]);
+				return 0;
+			}
+			for (const std::string& message : markings.messages) printf("%s\n", message.c_str());
+			return 1;
+		}
 
 		if (assert_markings && !semantic && !assert_sane)
 		{

@@ -26,3 +26,11 @@ execute_process(
 if(NOT diff_result EQUAL 0)
 	message(FATAL_ERROR "packtool diff --assert-markings failed with exit code ${diff_result}")
 endif()
+
+execute_process(
+	COMMAND "${PACKTOOL}" diff --assert-markings-coverage "${COMPARE_TRACE}" "${OUTPUT_TRACE}"
+	RESULT_VARIABLE coverage_diff_result
+)
+if(NOT coverage_diff_result EQUAL 0)
+	message(FATAL_ERROR "packtool diff --assert-markings-coverage failed with exit code ${coverage_diff_result}")
+endif()
