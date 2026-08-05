@@ -31,8 +31,11 @@ void usage()
 	printf("    continue                 Resume replay and wait until completion.\n");
 	printf("    stop                     Stop the replay.\n");
 	printf("    diagnose deadlock        Detect replay thread wait cycles and blocking GPU waits.\n");
+	printf("    diagnose device          Wait for replay devices to become idle and report errors.\n");
 	printf("    set debug LEVEL          Set replay debug level (zero is the least verbose) [0,1,2,3].\n");
-	printf("    set blackhole BOOL       Set replay blackhole mode (submit empty commandbuffers) [true,false].\n");
+	printf("    set blackhole BOOL       Set replay blackhole mode (submit empty commandbuffers) [true,false], default is false.\n");
+	printf("    set idle-check BOOL      Wait for GPU idle after control commands [true,false], default is true.\n");
+	printf("    set isolate-thread BOOL  Run only the selected replay thread [true,false], default is false.\n");
 	printf("    thread INDEX             Select which traced thread receives step and goto commands.\n");
 	printf("    step                     Advance one packet.\n");
 	printf("    step packets N           Advance N packets.\n");

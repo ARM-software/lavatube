@@ -51,6 +51,7 @@ struct gfxreconstruct_import_context
 	std::unordered_set<VkDeviceMemory> warned_non_host_visible_memory;
 	uint64_t next_injected_handle = UINT64_MAX;
 	bool ignore_memory_marking_fixups = false;
+	bool threadless_metacommands_active = false;
 };
 
 static std::vector<uint32_t> import_thread_endpoints(lava_writer& writer)
@@ -83,15 +84,20 @@ static void import_select_thread(gfxreconstruct_import_context* context, uint64_
 	writer.file_writer().write_thread_barrier(import_thread_endpoints(writer));
 }
 
-static void import_threadless_metacommand_begin()
+static void import_threadless_metacommand_begin(gfxreconstruct_import_context& context)
 {
 	lava_writer& writer = lava_writer::instance();
 	writer.bind_thread(0);
+	// Trim initialization may contain many consecutive threadless metacommands. Keep the
+	// application threads parked until the complete initialization region has finished.
+	if (context.threadless_metacommands_active) return;
 	writer.file_writer().write_thread_barrier(import_thread_endpoints(writer));
+	context.threadless_metacommands_active = true;
 }
 
-static void import_threadless_metacommand_end()
+static void import_threadless_metacommand_end(gfxreconstruct_import_context& context)
 {
+	if (!context.threadless_metacommands_active) return;
 	lava_writer& writer = lava_writer::instance();
 	const std::vector<uint32_t> endpoints = import_thread_endpoints(writer);
 	for (uint16_t i = 1; i < writer.thread_streams.size(); i++)
@@ -100,6 +106,7 @@ static void import_threadless_metacommand_end()
 		writer.file_writer().write_thread_barrier(endpoints);
 	}
 	writer.bind_thread(0);
+	context.threadless_metacommands_active = false;
 }
 
 static void set_captured_return_value(void* user_data, const VulkanNativeCallContext& call)
@@ -617,6 +624,7 @@ static void import_resource_initialization_end(void* user_data, const VulkanReso
 	auto* context = static_cast<gfxreconstruct_import_context*>(user_data);
 	import_select_thread(context, initialization.thread_id);
 	finish_acceleration_structure_commands(*context);
+	import_threadless_metacommand_end(*context);
 }
 
 static uint64_t import_injected_handle(gfxreconstruct_import_context* context)
@@ -724,6 +732,12 @@ static gfxreconstruct_acceleration_structure_commands& import_acceleration_struc
 	auto& commands = context->acceleration_structure_commands[device];
 	if (commands.command_buffer != VK_NULL_HANDLE) return commands;
 
+	import_set_success_result();
+	if (trace_vkDeviceWaitIdle(device) != VK_SUCCESS)
+	{
+		DIE("Failed to idle device before imported acceleration-structure initialization");
+	}
+
 	for (trackedqueue* queue_data : lava_writer::instance().records.VkQueue_index.iterate())
 	{
 		if (queue_data && queue_data->device == device && queue_data->queueFamily == 0 && queue_data->queueIndex == 0)
@@ -806,15 +820,14 @@ static void import_acceleration_structures_build(void* user_data, const VulkanAc
 	{
 		DIE("Invalid gfxreconstruct acceleration-structure build at block %lu", (unsigned long)build.block_index);
 	}
-	import_threadless_metacommand_begin();
-	import_acceleration_structure_instances(build);
 	auto* context = static_cast<gfxreconstruct_import_context*>(user_data);
+	import_threadless_metacommand_begin(*context);
+	import_acceleration_structure_instances(build);
 	auto& commands = import_acceleration_structure_command_buffer(context, build.device);
 	import_begin_acceleration_structure_commands(commands);
 	trace_vkCmdBuildAccelerationStructuresKHR(commands.command_buffer, build.info_count, build.build_infos,
 		build.range_infos);
 	import_submit_acceleration_structure_commands(commands);
-	import_threadless_metacommand_end();
 }
 
 static void import_acceleration_structures_copy(void* user_data, const VulkanAccelerationStructuresCopy& copy)
@@ -824,8 +837,8 @@ static void import_acceleration_structures_copy(void* user_data, const VulkanAcc
 	{
 		DIE("Invalid gfxreconstruct acceleration-structure copy at block %lu", (unsigned long)copy.block_index);
 	}
-	import_threadless_metacommand_begin();
 	auto* context = static_cast<gfxreconstruct_import_context*>(user_data);
+	import_threadless_metacommand_begin(*context);
 	auto& commands = import_acceleration_structure_command_buffer(context, copy.device);
 	import_begin_acceleration_structure_commands(commands);
 	for (size_t i = 0; i < copy.info_count; i++)
@@ -833,22 +846,21 @@ static void import_acceleration_structures_copy(void* user_data, const VulkanAcc
 		trace_vkCmdCopyAccelerationStructureKHR(commands.command_buffer, &copy.infos[i]);
 	}
 	import_submit_acceleration_structure_commands(commands);
-	import_threadless_metacommand_end();
 }
 
-static void import_acceleration_structure_write_properties(void*,
+static void import_acceleration_structure_write_properties(void* user_data,
 	const VulkanAccelerationStructureWriteProperties& write)
 {
-	import_threadless_metacommand_begin();
+	auto* context = static_cast<gfxreconstruct_import_context*>(user_data);
+	import_threadless_metacommand_begin(*context);
 	DLOG2("Consumed gfxreconstruct acceleration-structure write-properties metadata at block %lu",
 		(unsigned long)write.block_index);
-	import_threadless_metacommand_end();
 }
 
 static void finish_acceleration_structure_commands(gfxreconstruct_import_context& context)
 {
 	if (context.acceleration_structure_commands.empty()) return;
-	import_threadless_metacommand_begin();
+	import_threadless_metacommand_begin(context);
 	for (auto& pair : context.acceleration_structure_commands)
 	{
 		VkDevice device = pair.first;
@@ -857,7 +869,6 @@ static void finish_acceleration_structure_commands(gfxreconstruct_import_context
 		trace_vkDestroyCommandPool(device, commands.command_pool, nullptr);
 	}
 	context.acceleration_structure_commands.clear();
-	import_threadless_metacommand_end();
 }
 
 static PFN_vkVoidFunction import_callback(const std::string& name, void* callback)
@@ -1019,7 +1030,7 @@ int main(int argc, char** argv)
 		!reader.SetShaderGroupHandleFixupCallback(import_shader_group_handle_fixups, &import_context) ||
 		!reader.SetAccelerationStructuresBuildCallback(import_acceleration_structures_build, &import_context) ||
 		!reader.SetAccelerationStructuresCopyCallback(import_acceleration_structures_copy, &import_context) ||
-		!reader.SetAccelerationStructureWritePropertiesCallback(import_acceleration_structure_write_properties, nullptr) ||
+		!reader.SetAccelerationStructureWritePropertiesCallback(import_acceleration_structure_write_properties, &import_context) ||
 		!reader.SetUnhandledMetaCommandCallback(warn_unhandled_metacommand, nullptr))
 	{
 		ELOG("Failed to install the gfxreconstruct metacommand callbacks");
@@ -1045,6 +1056,7 @@ int main(int argc, char** argv)
 	writer.bind_thread(0);
 	const bool processed = reader.ProcessAllFrames();
 	finish_acceleration_structure_commands(import_context);
+	import_threadless_metacommand_end(import_context);
 	writer.serialize();
 	writer.finish();
 

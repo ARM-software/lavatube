@@ -244,6 +244,8 @@ public:
 	std::atomic_int cli_thread{ -1 };
 	std::atomic_bool cli_running{ false };
 	std::atomic_bool cli_service{ false };
+	std::atomic_bool cli_idle_check{ true };
+	std::atomic_bool cli_isolate_thread{ false };
 	std::atomic_bool cli_command_active{ false };
 	std::string cli_response; // response data from cli thread to control thread
 	std::atomic_bool cli_params_requested{ false };
@@ -528,6 +530,16 @@ static inline bool check_cli(const callback_context& cb)
 	bool selected_thread = req_thread == cb.reader.current.thread;
 	if (!selected_thread)
 	{
+		if (parent->cli_isolate_thread.load(std::memory_order_acquire))
+		{
+			cb.reader.cli_state.store(cli_thread_state::cli_paused, std::memory_order_release);
+			while (parent->cli_isolate_thread.load(std::memory_order_acquire)
+			       && parent->cli_thread.load(std::memory_order_acquire) != (int)cb.reader.current.thread)
+			{
+				if (parent->stop_requested()) cb.reader.throw_stop_requested();
+				usleep(50);
+			}
+		}
 		cb.reader.cli_state.store(cli_thread_state::running, std::memory_order_release);
 		return false;
 	}
