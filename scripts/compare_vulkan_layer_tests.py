@@ -10,6 +10,7 @@ import sys
 
 
 VULKAN_FUNCTIONS = {"vulkan_test", "vulkan_window_test", "vulkan_tensor_test"}
+LAYER_FUNCTIONS = {"layer_test", "vulkanml_test"}
 
 
 def cmake_calls(path, functions):
@@ -43,16 +44,19 @@ def vulkan_tests(path):
 
 def layer_tests(path):
 	tests = []
-	for _function, arguments in cmake_calls(path, {"layer_test"}):
+	for function, arguments in cmake_calls(path, LAYER_FUNCTIONS):
 		if len(arguments) < 2:
-			raise ValueError(f"{path}: layer_test() needs a test name and executable")
+			raise ValueError(f"{path}: {function}() needs a test name and executable")
 		tests.append(arguments[1:])
 	return tests
 
 
 def commented_layer_tests(path):
 	text = path.read_text(encoding="utf-8")
-	pattern = re.compile(r"^[ \t]*#[ \t]*layer_test\s*\(([^()]*)\)", re.MULTILINE)
+	function_pattern = "|".join(re.escape(function) for function in LAYER_FUNCTIONS)
+	pattern = re.compile(
+		r"^[ \t]*#[ \t]*(?:" + function_pattern + r")\s*\(([^()]*)\)", re.MULTILINE
+	)
 	tests = []
 	for match in pattern.finditer(text):
 		arguments = shlex.split(match.group(1).split("#", 1)[0], comments=False, posix=True)

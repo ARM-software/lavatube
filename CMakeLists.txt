@@ -943,6 +943,7 @@ vulkanml_test(tensors_1 tensors_1)
 vulkanml_test(tensors_2 tensors_2)
 vulkanml_test(tensors_3 tensors_3)
 vulkanml_test(tensors_4 tensors_4)
+vulkanml_test(tensors_5 tensors_5)
 #vulkanml_test(data_graph_optical_flow data_graph_optical_flow)
 
 # --- layer tests ---
