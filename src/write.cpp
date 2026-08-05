@@ -182,7 +182,7 @@ void lava_file_writer::set(const std::string& path)
 
 void lava_file_writer::push_thread_barriers()
 {
-	if (write_output) return;
+	if (write_output && !parent->output_thread_barriers) return;
 	frame_mutex.lock();
 	int size = parent->thread_streams.size();
 	for (int i = 0; i < size; i++)

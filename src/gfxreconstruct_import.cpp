@@ -47,13 +47,64 @@ struct gfxreconstruct_import_context
 	std::unordered_map<uint64_t, std::vector<VulkanDeviceAddressFixup>> device_address_fixups;
 	std::unordered_map<uint64_t, std::vector<VulkanShaderGroupHandleFixup>> shader_group_handle_fixups;
 	std::unordered_map<VkDevice, gfxreconstruct_acceleration_structure_commands> acceleration_structure_commands;
+	std::unordered_map<uint64_t, uint16_t> thread_indices;
 	std::unordered_set<VkDeviceMemory> warned_non_host_visible_memory;
 	uint64_t next_injected_handle = UINT64_MAX;
 	bool ignore_memory_marking_fixups = false;
 };
 
-static void set_captured_return_value(void*, const VulkanNativeCallContext& call)
+static std::vector<uint32_t> import_thread_endpoints(lava_writer& writer)
 {
+	std::vector<uint32_t> endpoints(writer.thread_streams.size());
+	for (size_t i = 0; i < writer.thread_streams.size(); i++)
+	{
+		endpoints[i] = writer.thread_streams.at(i)->current.packet;
+	}
+	return endpoints;
+}
+
+static void import_select_thread(gfxreconstruct_import_context* context, uint64_t gfxreconstruct_thread_id)
+{
+	lava_writer& writer = lava_writer::instance();
+	auto found = context->thread_indices.find(gfxreconstruct_thread_id);
+	if (found != context->thread_indices.end())
+	{
+		writer.bind_thread(found->second);
+		return;
+	}
+	if (writer.thread_streams.size() >= UINT8_MAX)
+	{
+		DIE("Too many gfxreconstruct threads");
+	}
+	const uint16_t thread_index = writer.thread_streams.size();
+	writer.prepare_threads(thread_index + 1);
+	context->thread_indices.emplace(gfxreconstruct_thread_id, thread_index);
+	writer.bind_thread(thread_index);
+	writer.file_writer().write_thread_barrier(import_thread_endpoints(writer));
+}
+
+static void import_threadless_metacommand_begin()
+{
+	lava_writer& writer = lava_writer::instance();
+	writer.bind_thread(0);
+	writer.file_writer().write_thread_barrier(import_thread_endpoints(writer));
+}
+
+static void import_threadless_metacommand_end()
+{
+	lava_writer& writer = lava_writer::instance();
+	const std::vector<uint32_t> endpoints = import_thread_endpoints(writer);
+	for (uint16_t i = 1; i < writer.thread_streams.size(); i++)
+	{
+		writer.bind_thread(i);
+		writer.file_writer().write_thread_barrier(endpoints);
+	}
+	writer.bind_thread(0);
+}
+
+static void set_captured_return_value(void* user_data, const VulkanNativeCallContext& call)
+{
+	import_select_thread(static_cast<gfxreconstruct_import_context*>(user_data), call.call_info.thread_id);
 	lava_file_writer& file = lava_writer::instance().file_writer();
 	memset(&file.use_result, 0, sizeof(file.use_result));
 	if (call.return_value_size == 0) return;
@@ -349,6 +400,7 @@ static VkResult VKAPI_CALL import_vkBindTensorMemoryARM(VkDevice device, uint32_
 static void import_memory_update(void* user_data, const VulkanMemoryUpdate& update)
 {
 	auto* context = static_cast<gfxreconstruct_import_context*>(user_data);
+	import_select_thread(context, update.thread_id);
 	if (update.memory == VK_NULL_HANDLE || !update.data || update.data_size == 0)
 	{
 		DIE("Invalid gfxreconstruct memory update at block %lu", (unsigned long)update.block_index);
@@ -479,8 +531,9 @@ static void warn_unhandled_metacommand(void*, const VulkanUnhandledMetaCommand& 
 		(unsigned long)command.block_index);
 }
 
-static void import_device_memory_properties(void*, const VulkanDeviceMemoryProperties& properties)
+static void import_device_memory_properties(void* user_data, const VulkanDeviceMemoryProperties& properties)
 {
+	import_select_thread(static_cast<gfxreconstruct_import_context*>(user_data), properties.thread_id);
 	lava_file_writer& file = lava_writer::instance().file_writer();
 	if (!file.parent->records.VkPhysicalDevice_index.contains(properties.physical_device))
 	{
@@ -493,9 +546,9 @@ static void import_device_memory_properties(void*, const VulkanDeviceMemoryPrope
 	physical_device_data->has_imported_memory_properties = true;
 }
 
-static void import_resource_initialization_begin(void*, const VulkanResourceInitializationBegin& initialization)
+static void import_resource_initialization_begin(void* user_data, const VulkanResourceInitializationBegin& initialization)
 {
-	(void)initialization;
+	import_select_thread(static_cast<gfxreconstruct_import_context*>(user_data), initialization.thread_id);
 }
 
 static VkResult VKAPI_CALL import_vkCreateBuffer(VkDevice device, const VkBufferCreateInfo* pCreateInfo,
@@ -506,8 +559,9 @@ static VkResult VKAPI_CALL import_vkCreateBuffer(VkDevice device, const VkBuffer
 	return trace_vkCreateBuffer(device, &create_info, pAllocator, pBuffer);
 }
 
-static void import_buffer_initialization(void*, const VulkanBufferInitialization& initialization)
+static void import_buffer_initialization(void* user_data, const VulkanBufferInitialization& initialization)
 {
+	import_select_thread(static_cast<gfxreconstruct_import_context*>(user_data), initialization.thread_id);
 	if (initialization.buffer == VK_NULL_HANDLE || !initialization.data || initialization.data_size == 0)
 	{
 		DIE("Invalid gfxreconstruct buffer initialization at block %lu", (unsigned long)initialization.block_index);
@@ -531,8 +585,9 @@ static void import_buffer_initialization(void*, const VulkanBufferInitialization
 	file.end_packet();
 }
 
-static void import_image_initialization(void*, const VulkanImageInitialization& initialization)
+static void import_image_initialization(void* user_data, const VulkanImageInitialization& initialization)
 {
+	import_select_thread(static_cast<gfxreconstruct_import_context*>(user_data), initialization.thread_id);
 	if (initialization.image == VK_NULL_HANDLE || !initialization.data || initialization.data_size == 0)
 	{
 		DIE("Invalid gfxreconstruct image initialization at block %lu", (unsigned long)initialization.block_index);
@@ -559,8 +614,9 @@ static void finish_acceleration_structure_commands(gfxreconstruct_import_context
 
 static void import_resource_initialization_end(void* user_data, const VulkanResourceInitializationEnd& initialization)
 {
-	(void)initialization;
-	finish_acceleration_structure_commands(*static_cast<gfxreconstruct_import_context*>(user_data));
+	auto* context = static_cast<gfxreconstruct_import_context*>(user_data);
+	import_select_thread(context, initialization.thread_id);
+	finish_acceleration_structure_commands(*context);
 }
 
 static uint64_t import_injected_handle(gfxreconstruct_import_context* context)
@@ -750,6 +806,7 @@ static void import_acceleration_structures_build(void* user_data, const VulkanAc
 	{
 		DIE("Invalid gfxreconstruct acceleration-structure build at block %lu", (unsigned long)build.block_index);
 	}
+	import_threadless_metacommand_begin();
 	import_acceleration_structure_instances(build);
 	auto* context = static_cast<gfxreconstruct_import_context*>(user_data);
 	auto& commands = import_acceleration_structure_command_buffer(context, build.device);
@@ -757,6 +814,7 @@ static void import_acceleration_structures_build(void* user_data, const VulkanAc
 	trace_vkCmdBuildAccelerationStructuresKHR(commands.command_buffer, build.info_count, build.build_infos,
 		build.range_infos);
 	import_submit_acceleration_structure_commands(commands);
+	import_threadless_metacommand_end();
 }
 
 static void import_acceleration_structures_copy(void* user_data, const VulkanAccelerationStructuresCopy& copy)
@@ -766,6 +824,7 @@ static void import_acceleration_structures_copy(void* user_data, const VulkanAcc
 	{
 		DIE("Invalid gfxreconstruct acceleration-structure copy at block %lu", (unsigned long)copy.block_index);
 	}
+	import_threadless_metacommand_begin();
 	auto* context = static_cast<gfxreconstruct_import_context*>(user_data);
 	auto& commands = import_acceleration_structure_command_buffer(context, copy.device);
 	import_begin_acceleration_structure_commands(commands);
@@ -774,17 +833,22 @@ static void import_acceleration_structures_copy(void* user_data, const VulkanAcc
 		trace_vkCmdCopyAccelerationStructureKHR(commands.command_buffer, &copy.infos[i]);
 	}
 	import_submit_acceleration_structure_commands(commands);
+	import_threadless_metacommand_end();
 }
 
 static void import_acceleration_structure_write_properties(void*,
 	const VulkanAccelerationStructureWriteProperties& write)
 {
+	import_threadless_metacommand_begin();
 	DLOG2("Consumed gfxreconstruct acceleration-structure write-properties metadata at block %lu",
 		(unsigned long)write.block_index);
+	import_threadless_metacommand_end();
 }
 
 static void finish_acceleration_structure_commands(gfxreconstruct_import_context& context)
 {
+	if (context.acceleration_structure_commands.empty()) return;
+	import_threadless_metacommand_begin();
 	for (auto& pair : context.acceleration_structure_commands)
 	{
 		VkDevice device = pair.first;
@@ -793,6 +857,7 @@ static void finish_acceleration_structure_commands(gfxreconstruct_import_context
 		trace_vkDestroyCommandPool(device, commands.command_pool, nullptr);
 	}
 	context.acceleration_structure_commands.clear();
+	import_threadless_metacommand_end();
 }
 
 static PFN_vkVoidFunction import_callback(const std::string& name, void* callback)
@@ -927,7 +992,7 @@ int main(int argc, char** argv)
 
 	VulkanApiCallReader reader;
 	if (!register_callbacks(reader)) return 1;
-	if (!reader.SetPreCallHook(set_captured_return_value, nullptr))
+	if (!reader.SetPreCallHook(set_captured_return_value, &import_context))
 	{
 		ELOG("Failed to install the gfxreconstruct return-value hook");
 		return 1;
@@ -937,14 +1002,14 @@ int main(int argc, char** argv)
 		ELOG("Failed to install the gfxreconstruct memory-update callback");
 		return 1;
 	}
-	if (!reader.SetDeviceMemoryPropertiesCallback(import_device_memory_properties, nullptr))
+	if (!reader.SetDeviceMemoryPropertiesCallback(import_device_memory_properties, &import_context))
 	{
 		ELOG("Failed to install the gfxreconstruct device-memory-properties callback");
 		return 1;
 	}
-	if (!reader.SetResourceInitializationBeginCallback(import_resource_initialization_begin, nullptr) ||
-		!reader.SetBufferInitializationCallback(import_buffer_initialization, nullptr) ||
-		!reader.SetImageInitializationCallback(import_image_initialization, nullptr) ||
+	if (!reader.SetResourceInitializationBeginCallback(import_resource_initialization_begin, &import_context) ||
+		!reader.SetBufferInitializationCallback(import_buffer_initialization, &import_context) ||
+		!reader.SetImageInitializationCallback(import_image_initialization, &import_context) ||
 		!reader.SetResourceInitializationEndCallback(import_resource_initialization_end, &import_context))
 	{
 		ELOG("Failed to install the gfxreconstruct resource-initialization callbacks");
@@ -975,6 +1040,9 @@ int main(int argc, char** argv)
 	writer.run = false;
 	writer.use_dense_output_handle_indices();
 	writer.set_output(output_filename);
+	writer.output_thread_barriers = true;
+	writer.prepare_threads(1);
+	writer.bind_thread(0);
 	const bool processed = reader.ProcessAllFrames();
 	finish_acceleration_structure_commands(import_context);
 	writer.serialize();

@@ -224,6 +224,8 @@ public:
 	trace_records records;
 	bool run = true;
 	bool write_output = false;
+	// Importers use tracing callbacks to create a new trace and need their normal synchronization behavior.
+	bool output_thread_barriers = false;
 
 	trace_metadata meta GUARDED_BY(frame_mutex);
 
@@ -302,7 +304,7 @@ inline lava_file_writer& write_header(const char* funcname, lava_function_id id,
 {
 	lava_writer& instance = lava_writer::instance();
 	lava_file_writer& writer = instance.file_writer();
-	if (thread_barrier && !writer.write_output) { frame_mutex.lock(); writer.inject_thread_barrier(); frame_mutex.unlock(); }
+	if (thread_barrier && (!writer.write_output || instance.output_thread_barriers)) { frame_mutex.lock(); writer.inject_thread_barrier(); frame_mutex.unlock(); }
 	writer.write_api_command(id);
 	writer.current.call_id = id;
 	writer.current.frame = instance.global_frame;
