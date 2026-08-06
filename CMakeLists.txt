@@ -91,6 +91,7 @@ endif()
 
 set(RUN_IF_EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/cmake/run_if_exists.sh)
 set(REMOVE_THEN_RUN ${CMAKE_CURRENT_SOURCE_DIR}/cmake/remove_then_run.sh)
+set(RUN_MODEL_TEST ${CMAKE_CURRENT_SOURCE_DIR}/cmake/run_model_test.sh)
 
 # --- spirv-simulator ---
 
@@ -925,7 +926,7 @@ function(vulkanml_test test_name test_exe)
 	set_tests_properties(vulkanml_test_${ARGV0} PROPERTIES
 		FIXTURES_SETUP ${ARGV0}
 		ENVIRONMENT_MODIFICATION
-			"VK_INSTANCE_LAYERS=path_list_append:VK_LAYER_ML_Graph_Emulation;VK_INSTANCE_LAYERS=path_list_append:VK_LAYER_ML_Tensor_Emulation;VK_LAYER_PATH=path_list_prepend:${CMAKE_CURRENT_BINARY_DIR}/implicit_layer.d;LAVATUBE_VIRTUAL_QUEUES=set:1;LAVATUBE_DELETE_EMPTY_TRACE=set:1;LAVATUBE_DESTINATION=set:vulkan_${ARGV0};VK_INSTANCE_LAYERS=path_list_prepend:VK_LAYER_ARM_lavatube;LD_LIBRARY_PATH=set:${CMAKE_CURRENT_BINARY_DIR}/implicit_layer.d"
+			"VK_INSTANCE_LAYERS=path_list_append:VK_LAYER_ML_Graph_Emulation;VK_INSTANCE_LAYERS=path_list_append:VK_LAYER_ML_Tensor_Emulation;VK_ADD_LAYER_PATH=path_list_prepend:${CMAKE_CURRENT_BINARY_DIR}/implicit_layer.d;LAVATUBE_VIRTUAL_QUEUES=set:1;LAVATUBE_DELETE_EMPTY_TRACE=set:1;LAVATUBE_DESTINATION=set:vulkan_${ARGV0};VK_INSTANCE_LAYERS=path_list_prepend:VK_LAYER_ARM_lavatube;LD_LIBRARY_PATH=path_list_prepend:${CMAKE_CURRENT_BINARY_DIR}/implicit_layer.d"
 		SKIP_RETURN_CODE 77
 	)
 
@@ -944,9 +945,31 @@ vulkanml_test(tensors_2 tensors_2)
 vulkanml_test(tensors_3 tensors_3)
 vulkanml_test(tensors_4 tensors_4)
 vulkanml_test(tensors_5 tensors_5)
-#vulkanml_test(data_graph_optical_flow data_graph_optical_flow)
+vulkanml_test(data_graph_optical_flow data_graph_optical_flow)
 
 # --- layer tests ---
+
+function(model_layer_test test_name test_exe)
+	if (NOT GPU_MODEL STREQUAL "")
+		set(MODEL_TRACE_FILE ${CMAKE_CURRENT_BINARY_DIR}/vulkan_${ARGV0}_model.api)
+		add_lavatube_test(model_layer_test_${ARGV0} COMMAND ${REMOVE_THEN_RUN} ${MODEL_TRACE_FILE} $<TARGET_FILE:vulkan_${ARGV1}> ${ARGV2} ${ARGV3} ${ARGV4} ${ARGV5} ${ARGV6} ${ARGV7})
+		set_tests_properties(model_layer_test_${ARGV0} PROPERTIES
+			FIXTURES_SETUP ${ARGV0}_model
+			ENVIRONMENT "${GPU_MODEL};LAVATUBE_VIRTUAL_QUEUES=1;LAVATUBE_DELETE_EMPTY_TRACE=1;LAVATUBE_DESTINATION=vulkan_${ARGV0}_model;VK_LAYER_PATH=${CMAKE_CURRENT_BINARY_DIR}/implicit_layer.d;VK_INSTANCE_LAYERS=VK_LAYER_ARM_lavatube"
+			ENVIRONMENT_MODIFICATION "LD_LIBRARY_PATH=path_list_prepend:${CMAKE_CURRENT_BINARY_DIR}/implicit_layer.d"
+			LABELS gpu_model
+			SKIP_RETURN_CODE 77
+		)
+
+		add_lavatube_test(model_layer_test_${ARGV0}_replay COMMAND ${RUN_IF_EXISTS} ${MODEL_TRACE_FILE} $<TARGET_FILE:lava-replay> -V -w none vulkan_${ARGV0}_model.api)
+		set_tests_properties(model_layer_test_${ARGV0}_replay PROPERTIES
+			ENVIRONMENT "${GPU_MODEL}"
+			FIXTURES_REQUIRED ${ARGV0}_model
+			LABELS gpu_model
+			SKIP_RETURN_CODE 77
+		)
+	endif()
+endfunction()
 
 function(layer_test test_name test_exe)
 	add_lavatube_test(layer_test_${ARGV0} COMMAND vulkan_${ARGV1} --gpu ${ARGV2} ${ARGV3} ${ARGV4} ${ARGV5} ${ARGV6} ${ARGV7})
@@ -1007,23 +1030,32 @@ function(layer_test test_name test_exe)
 		if (ARGV1 STREQUAL "compute_wait")
 			set(MODEL_CAPTURE_EXTRA_ARGS -W 1 -H 1 --payload-bytes 16 --dummy-copy-rounds 0)
 		endif()
-		add_lavatube_test(layer_test_${ARGV0}_model_capture COMMAND ${REMOVE_THEN_RUN} ${MODEL_TRACE_FILE} $<TARGET_FILE:vulkan_${ARGV1}> ${ARGV2} ${ARGV3} ${ARGV4} ${ARGV5} ${ARGV6} ${ARGV7} ${MODEL_CAPTURE_EXTRA_ARGS})
+		add_lavatube_test(layer_test_${ARGV0}_model_capture COMMAND ${RUN_MODEL_TEST} ${REMOVE_THEN_RUN} ${MODEL_TRACE_FILE} $<TARGET_FILE:vulkan_${ARGV1}> ${ARGV2} ${ARGV3} ${ARGV4} ${ARGV5} ${ARGV6} ${ARGV7} ${MODEL_CAPTURE_EXTRA_ARGS})
 		set_tests_properties(layer_test_${ARGV0}_model_capture PROPERTIES
-			FIXTURES_SETUP ${ARGV0}
+			FIXTURES_SETUP ${ARGV0}_model
 			ENVIRONMENT "${GPU_MODEL};LAVATUBE_VIRTUAL_QUEUES=1;LAVATUBE_DELETE_EMPTY_TRACE=1;LAVATUBE_DESTINATION=vulkan_${ARGV0}_model;VK_LAYER_PATH=${CMAKE_CURRENT_BINARY_DIR}/implicit_layer.d;VK_INSTANCE_LAYERS=VK_LAYER_ARM_lavatube"
 			ENVIRONMENT_MODIFICATION "LD_LIBRARY_PATH=path_list_prepend:${CMAKE_CURRENT_BINARY_DIR}/implicit_layer.d"
 			SKIP_RETURN_CODE 77
 		)
-		add_lavatube_test(layer_test_${ARGV0}_model_replay COMMAND ${RUN_IF_EXISTS} ${MODEL_TRACE_FILE} $<TARGET_FILE:lava-replay> -V -w none vulkan_${ARGV0}_model.api)
-		set_tests_properties(layer_test_${ARGV0}_model_replay PROPERTIES ENVIRONMENT "${GPU_MODEL}" SKIP_RETURN_CODE 77 FIXTURES_REQUIRED ${ARGV0})
-		add_lavatube_test(layer_test_${ARGV0}_model_replay_gpu COMMAND ${RUN_IF_EXISTS} ${TRACE_FILE} $<TARGET_FILE:lava-replay> -V -w none vulkan_${ARGV0}.api)
+		add_lavatube_test(layer_test_${ARGV0}_model_replay COMMAND ${RUN_MODEL_TEST} ${RUN_IF_EXISTS} ${MODEL_TRACE_FILE} $<TARGET_FILE:lava-replay> -V -w none vulkan_${ARGV0}_model.api)
+		set_tests_properties(layer_test_${ARGV0}_model_replay PROPERTIES ENVIRONMENT "${GPU_MODEL}" SKIP_RETURN_CODE 77 FIXTURES_REQUIRED ${ARGV0}_model)
+		add_lavatube_test(layer_test_${ARGV0}_model_replay_gpu COMMAND ${RUN_MODEL_TEST} ${RUN_IF_EXISTS} ${TRACE_FILE} $<TARGET_FILE:lava-replay> -V -w none vulkan_${ARGV0}.api)
 		set_tests_properties(layer_test_${ARGV0}_model_replay_gpu PROPERTIES ENVIRONMENT "${GPU_MODEL}" SKIP_RETURN_CODE 77 FIXTURES_REQUIRED ${ARGV0})
-		add_lavatube_test(layer_test_${ARGV0}_model_replay_cpu COMMAND ${RUN_IF_EXISTS} ${SIM_TRACE_FILE} $<TARGET_FILE:lava-replay> -V -w none vulkan_${ARGV0}_simulation.api)
-		set_tests_properties(layer_test_${ARGV0}_model_replay_cpu PROPERTIES ENVIRONMENT "${GPU_MODEL}" SKIP_RETURN_CODE 77 FIXTURES_REQUIRED ${ARGV0})
-		add_lavatube_test(layer_test_${ARGV0}_gpu_replay_model COMMAND ${RUN_IF_EXISTS} ${MODEL_TRACE_FILE} $<TARGET_FILE:lava-replay> -V --gpu vulkan_${ARGV0}_model.api)
-		set_tests_properties(layer_test_${ARGV0}_gpu_replay_model PROPERTIES SKIP_RETURN_CODE 77 FIXTURES_REQUIRED ${ARGV0})
-		add_lavatube_test(layer_test_${ARGV0}_cpu_replay_model COMMAND ${RUN_IF_EXISTS} ${MODEL_TRACE_FILE} $<TARGET_FILE:lava-replay> -V --cpu vulkan_${ARGV0}_model.api)
-		set_tests_properties(layer_test_${ARGV0}_cpu_replay_model PROPERTIES SKIP_RETURN_CODE 77 FIXTURES_REQUIRED ${ARGV0})
+		add_lavatube_test(layer_test_${ARGV0}_model_replay_cpu COMMAND ${RUN_MODEL_TEST} ${RUN_IF_EXISTS} ${SIM_TRACE_FILE} $<TARGET_FILE:lava-replay> -V -w none vulkan_${ARGV0}_simulation.api)
+		set_tests_properties(layer_test_${ARGV0}_model_replay_cpu PROPERTIES ENVIRONMENT "${GPU_MODEL}" SKIP_RETURN_CODE 77 FIXTURES_REQUIRED ${ARGV0}_simulation)
+		add_lavatube_test(layer_test_${ARGV0}_gpu_replay_model COMMAND ${RUN_MODEL_TEST} ${RUN_IF_EXISTS} ${MODEL_TRACE_FILE} $<TARGET_FILE:lava-replay> -V --gpu vulkan_${ARGV0}_model.api)
+		set_tests_properties(layer_test_${ARGV0}_gpu_replay_model PROPERTIES SKIP_RETURN_CODE 77 FIXTURES_REQUIRED ${ARGV0}_model)
+		add_lavatube_test(layer_test_${ARGV0}_cpu_replay_model COMMAND ${RUN_MODEL_TEST} ${RUN_IF_EXISTS} ${MODEL_TRACE_FILE} $<TARGET_FILE:lava-replay> -V --cpu vulkan_${ARGV0}_model.api)
+		set_tests_properties(layer_test_${ARGV0}_cpu_replay_model PROPERTIES SKIP_RETURN_CODE 77 FIXTURES_REQUIRED ${ARGV0}_model)
+		set_tests_properties(
+			layer_test_${ARGV0}_model_capture
+			layer_test_${ARGV0}_model_replay
+			layer_test_${ARGV0}_model_replay_gpu
+			layer_test_${ARGV0}_model_replay_cpu
+			layer_test_${ARGV0}_gpu_replay_model
+			layer_test_${ARGV0}_cpu_replay_model
+			PROPERTIES LABELS gpu_model
+		)
 	endif()
 endfunction()
 
@@ -1194,7 +1226,6 @@ layer_test(graphics_1 graphics_1)
 #layer_test(pipeline_binary compute_2 -b)
 layer_test(pipeline_executable_properties pipeline_executable_properties)
 layer_test(cooperative_matrix cooperative_matrix)
-#layer_test(cooperative_matrix_math cooperative_matrix_math) # test bugged
 layer_test(extended_dynamic_state3 extended_dynamic_state3)
 #layer_test(push_descriptor)
 layer_test(host_image_copy host_image_copy)
@@ -1293,9 +1324,9 @@ layer_test(device_local_memory device_local_memory)
 #layer_test(memory_tracking_race memory_tracking_race) # TBD add support - and make it run faster
 
 # These require the Mali GPU model for now:
-#layer_test(shader_core_properties shader_core_properties)
-#layer_test(shader_core_builtins shader_core_builtins)
-#layer_test(shader_instrumentation shader_instrumentation)
+model_layer_test(shader_core_properties shader_core_properties)
+model_layer_test(shader_core_builtins shader_core_builtins)
+model_layer_test(shader_instrumentation shader_instrumentation)
 
 # The two below will fail as we lack support for interleaved data for VK_EXT_multi_draw for now
 #layer_test(graphics_multi_draw_stride16 graphics_multi_draw --multi-draw-mode indexed --stride-mode aligned16)

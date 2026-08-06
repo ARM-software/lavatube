@@ -10,7 +10,7 @@ import sys
 
 
 VULKAN_FUNCTIONS = {"vulkan_test", "vulkan_window_test", "vulkan_tensor_test"}
-LAYER_FUNCTIONS = {"layer_test", "vulkanml_test"}
+LAYER_FUNCTIONS = {"layer_test", "model_layer_test", "vulkanml_test"}
 
 
 def cmake_calls(path, functions):
