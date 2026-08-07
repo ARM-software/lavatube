@@ -97,6 +97,55 @@ static uint64_t patch_chunked(char* original, const char* changed, uint64_t size
 	return written;
 }
 
+static uint64_t patch_coalesced(char* original, const char* changed, uint64_t size)
+{
+	static constexpr uint64_t equal_gap_threshold = 512;
+	uint64_t total_left = size;
+	uint64_t written = 0;
+	while (total_left)
+	{
+		const uint64_t identical = skip_identical_chunked(original, changed, total_left);
+		original += identical;
+		changed += identical;
+		total_left -= identical;
+		if (total_left == 0) break;
+
+		uint64_t span = 0;
+		uint64_t equal_tail = 0;
+		while (total_left - span >= sizeof(uint64_t))
+		{
+			if (memcmp(original + span, changed + span, sizeof(uint64_t)) == 0)
+			{
+				equal_tail += sizeof(uint64_t);
+				span += sizeof(uint64_t);
+				if (equal_tail >= equal_gap_threshold) break;
+			}
+			else
+			{
+				equal_tail = 0;
+				memcpy(original + span, changed + span, sizeof(uint64_t));
+				span += sizeof(uint64_t);
+			}
+		}
+		span -= equal_tail;
+		if (equal_tail < equal_gap_threshold && total_left - span < sizeof(uint64_t))
+		{
+			const uint64_t tail = total_left - span;
+			if (tail && memcmp(original + span, changed + span, tail) != 0)
+			{
+				memcpy(original + span, changed + span, tail);
+				span += tail;
+			}
+		}
+		assert(span > 0);
+		original += span;
+		changed += span;
+		total_left -= span;
+		written += span;
+	}
+	return written;
+}
+
 static uint64_t get_scale()
 {
 	const char* value = getenv("LAVATUBE_PATCHWRITE_PERF_SCALE");
@@ -143,12 +192,17 @@ static void compare_case(const char* pattern, uint64_t size, const std::vector<c
 	const uint64_t expected_written = patch_word(expected.data(), first.data(), size);
 	const uint64_t candidate_written = patch_chunked(candidate.data(), first.data(), size);
 	if (expected_written != candidate_written || expected != candidate) abort();
+	std::fill(candidate.begin(), candidate.end(), 0);
+	const uint64_t coalesced_written = patch_coalesced(candidate.data(), first.data(), size);
+	if (coalesced_written < expected_written || candidate != expected) abort();
 
 	char name[96];
 	snprintf(name, sizeof(name), "word_%s_%" PRIu64 "K", pattern, size / 1024);
 	run_case(name, first, second, target_bytes, patch_word);
 	snprintf(name, sizeof(name), "chunked256_%s_%" PRIu64 "K", pattern, size / 1024);
 	run_case(name, first, second, target_bytes, patch_chunked);
+	snprintf(name, sizeof(name), "coalesced512_%s_%" PRIu64 "K", pattern, size / 1024);
+	run_case(name, first, second, target_bytes, patch_coalesced);
 }
 
 static void benchmark_size(uint64_t size, uint64_t target_bytes)
@@ -188,6 +242,27 @@ static void benchmark_size(uint64_t size, uint64_t target_bytes)
 	compare_case("alternating_8", size, first, second, target_bytes);
 }
 
+static void benchmark_steelnomad(uint64_t target_bytes)
+{
+	static constexpr uint64_t staging_size = 64ull * 1024ull * 1024ull;
+	static constexpr uint64_t upload_size = 2ull * 1024ull * 1024ull;
+	std::vector<char> first(staging_size, 0);
+	std::vector<char> second(staging_size, 0);
+	memset(first.data(), 0x55, upload_size);
+	memset(second.data(), 0xaa, upload_size);
+	compare_case("steelnomad_reused_upload_2M", staging_size, first, second, target_bytes);
+
+	static constexpr uint64_t fragmented_size = 9ull * 1024ull;
+	first.assign(fragmented_size, 0);
+	second.assign(fragmented_size, 0);
+	for (uint64_t i = 0; i < fragmented_size; i += 2 * sizeof(uint64_t))
+	{
+		memset(first.data() + i, 0x55, sizeof(uint64_t));
+		memset(second.data() + i, 0xaa, sizeof(uint64_t));
+	}
+	compare_case("steelnomad_fragmented_9K", fragmented_size, first, second, target_bytes);
+}
+
 int main()
 {
 	const uint64_t scale = get_scale();
@@ -198,6 +273,7 @@ int main()
 	benchmark_size(256 * 1024, target_bytes);
 	benchmark_size(4 * 1024 * 1024, target_bytes);
 	benchmark_size(64 * 1024 * 1024, target_bytes);
+	benchmark_steelnomad(target_bytes);
 	printf("%-34s %10u %14u %14u %12u %12.2f %14" PRIu64 "\n",
 	       "sink", 0u, 0u, 0u, 0u, 0.0, (uint64_t)perf_sink);
 	return 0;
