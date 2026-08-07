@@ -433,6 +433,7 @@ static void replay_signal_external_semaphore(VkDevice device, VkSemaphore semaph
 		1,
 		&semaphore
 	};
+	lava::lock_guard sync_lock(sync_mutex);
 	VkResult result = wrap_vkQueueSubmit(queue, 1, &submit, VK_NULL_HANDLE);
 	if (result != VK_SUCCESS)
 	{
@@ -1038,8 +1039,15 @@ static void replay_clear_pending_fence(uint32_t fence_index)
 	fence_data.replay_pending_commandbuffers.clear();
 }
 
+static VkResult replay_injected_queue_wait_idle(VkQueue queue, bool queue_access_locked)
+{
+	if (queue_access_locked) return wrap_vkQueueWaitIdle(queue);
+	lava::lock_guard sync_lock(sync_mutex);
+	return wrap_vkQueueWaitIdle(queue);
+}
+
 static void replay_wait_for_pending_commandbuffer(lava_file_reader& reader, uint32_t commandbuffer_index, trackedcmdbuffer& commandbuffer_data,
-	bool allow_simultaneous_use)
+	bool allow_simultaneous_use, bool queue_access_locked)
 {
 	if (!commandbuffer_data.replay_pending) return;
 	if (allow_simultaneous_use && (commandbuffer_data.replay_begin_flags & VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT)) return;
@@ -1065,7 +1073,7 @@ static void replay_wait_for_pending_commandbuffer(lava_file_reader& reader, uint
 	{
 		const uint32_t queue_index = index_to_VkQueue.index_or_invalid(commandbuffer_data.replay_submit_queue);
 		replay_cli_publish_object_wait(reader, cli_thread_state::wait_queue_idle, VK_OBJECT_TYPE_QUEUE, queue_index, commandbuffer_index);
-		const VkResult result = wrap_vkQueueWaitIdle(commandbuffer_data.replay_submit_queue);
+		const VkResult result = replay_injected_queue_wait_idle(commandbuffer_data.replay_submit_queue, queue_access_locked);
 		replay_cli_clear_object_wait(reader, cli_thread_state::wait_queue_idle);
 		if (result != VK_SUCCESS)
 		{
@@ -1149,7 +1157,7 @@ static void replay_destroy_commandbuffer_scratch_buffers(VkDevice device, tracke
 
 static void replay_cleanup_commandbuffer_for_rerecord(lava_file_reader& reader, uint32_t commandbuffer_index, trackedcmdbuffer& commandbuffer_data)
 {
-	replay_wait_for_pending_commandbuffer(reader, commandbuffer_index, commandbuffer_data, false);
+	replay_wait_for_pending_commandbuffer(reader, commandbuffer_index, commandbuffer_data, false, false);
 	replay_instrumentation_cleanup_command_buffer(commandbuffer_data);
 	commandbuffer_data.replay_secondary_commandbuffers.clear();
 	commandbuffer_data.raytracing_sbt_uses.clear();
@@ -1225,7 +1233,7 @@ void replay_pre_vkQueueSubmit2(lava_file_reader& reader, VkQueue queue, uint32_t
 			const uint32_t commandbuffer_index = index_to_VkCommandBuffer.index(command_buffer);
 			if (commandbuffer_index == CONTAINER_INVALID_INDEX) continue;
 			trackedcmdbuffer& commandbuffer_data = VkCommandBuffer_index.at(commandbuffer_index);
-			replay_wait_for_pending_commandbuffer(reader, commandbuffer_index, commandbuffer_data, true);
+			replay_wait_for_pending_commandbuffer(reader, commandbuffer_index, commandbuffer_data, true, true);
 			replay_fixup_commandbuffer_raytracing_instances(reader, commandbuffer_data);
 			replay_fixup_commandbuffer_raytracing_sbt(reader, commandbuffer_data);
 		}
@@ -1251,7 +1259,7 @@ void replay_pre_vkQueueSubmit(lava_file_reader& reader, VkQueue queue, uint32_t 
 			const uint32_t commandbuffer_index = index_to_VkCommandBuffer.index(command_buffer);
 			if (commandbuffer_index == CONTAINER_INVALID_INDEX) continue;
 			trackedcmdbuffer& commandbuffer_data = VkCommandBuffer_index.at(commandbuffer_index);
-			replay_wait_for_pending_commandbuffer(reader, commandbuffer_index, commandbuffer_data, true);
+			replay_wait_for_pending_commandbuffer(reader, commandbuffer_index, commandbuffer_data, true, true);
 			replay_fixup_commandbuffer_raytracing_instances(reader, commandbuffer_data);
 			replay_fixup_commandbuffer_raytracing_sbt(reader, commandbuffer_data);
 		}
@@ -5439,10 +5447,13 @@ static void initialize_buffer_packet(lava_file_reader& reader)
 	submit.commandBufferCount = 1;
 	submit.pCommandBuffers = &command_buffer;
 	VkQueue queue = index_to_VkQueue.at(0);
-	result = wrap_vkQueueSubmit(queue, 1, &submit, VK_NULL_HANDLE);
-	assert(result == VK_SUCCESS);
-	result = wrap_vkQueueWaitIdle(queue);
-	assert(result == VK_SUCCESS);
+	{
+		lava::lock_guard sync_lock(sync_mutex);
+		result = wrap_vkQueueSubmit(queue, 1, &submit, VK_NULL_HANDLE);
+		assert(result == VK_SUCCESS);
+		result = wrap_vkQueueWaitIdle(queue);
+		assert(result == VK_SUCCESS);
+	}
 	wrap_vkDestroyCommandPool(device, pool, nullptr);
 	destroy_internal_buffer(device, staging);
 }
@@ -5537,10 +5548,13 @@ static void initialize_image_packet(lava_file_reader& reader)
 	submit.commandBufferCount = 1;
 	submit.pCommandBuffers = &command_buffer;
 	VkQueue queue = index_to_VkQueue.at(0);
-	result = wrap_vkQueueSubmit(queue, 1, &submit, VK_NULL_HANDLE);
-	assert(result == VK_SUCCESS);
-	result = wrap_vkQueueWaitIdle(queue);
-	assert(result == VK_SUCCESS);
+	{
+		lava::lock_guard sync_lock(sync_mutex);
+		result = wrap_vkQueueSubmit(queue, 1, &submit, VK_NULL_HANDLE);
+		assert(result == VK_SUCCESS);
+		result = wrap_vkQueueWaitIdle(queue);
+		assert(result == VK_SUCCESS);
+	}
 	wrap_vkDestroyCommandPool(device, pool, nullptr);
 	destroy_internal_buffer(device, staging);
 }
