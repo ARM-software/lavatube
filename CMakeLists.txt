@@ -411,6 +411,17 @@ endfunction()
 
 if(NOT ANDROID)
 internal_test(tracing1 tracing_1_2_0.api)
+internal_test(tracing_injected_queue_sync tracing_injected_queue_sync.api)
+add_lavatube_test(trace_test_tracing_injected_queue_sync_validation
+	COMMAND ${CMAKE_COMMAND}
+		-DREPLAY=$<TARGET_FILE:lava-replay>
+		-DTRACE=${CMAKE_CURRENT_BINARY_DIR}/tracing_injected_queue_sync.api
+		-P ${CMAKE_CURRENT_SOURCE_DIR}/tests/replay_no_threading_validation_errors.cmake)
+set_property(TEST trace_test_tracing_injected_queue_sync_validation APPEND PROPERTY FIXTURES_REQUIRED tracing_injected_queue_sync)
+set_tests_properties(trace_test_tracing_injected_queue_sync_validation PROPERTIES TIMEOUT 30)
+if(EXISTS "/usr/share/vulkan/explicit_layer.d/VkLayer_khronos_validation.json")
+	set_tests_properties(trace_test_tracing_injected_queue_sync_validation PROPERTIES ENVIRONMENT "VK_LAYER_PATH=/usr/share/vulkan/explicit_layer.d")
+endif()
 add_lavatube_test(trace_test_1_2 COMMAND tracing1 1)
 add_lavatube_test(trace_test_1_0_replay_2 COMMAND $<TARGET_FILE:lava-replay> -V -B tracing_1_2_0.api)
 add_lavatube_test(trace_test_1_0_replay_3 COMMAND $<TARGET_FILE:lava-replay> -V --no-multithreaded-io tracing_1_2_0.api)
