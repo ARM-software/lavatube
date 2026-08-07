@@ -231,3 +231,36 @@ rewriting. Runtime-state commands that depend on live Vulkan replay state, such 
 `info memory`, `info suballocator`, and pipeline executable statistics, should either be
 omitted from `lava-tool` service mode or return a clear unsupported response until there
 is a concrete tool use case for them.
+
+## Always-available replay diagnostics (summary by codex)
+
+Normal `lava-replay` runs should expose the remote-control diagnostic endpoint as well,
+so that `lava-cli` can attach after an intermittent hang without requiring the hang to be
+reproduced with `--service`. This should be an observer mode rather than literally issuing
+the current `continue` command: replay should start immediately, retain its normal exit
+behavior, and preserve the `check_cli()` fast path by leaving `cli_thread == -1` until a
+client requests control.
+
+The listener should bind to localhost only by default. Normal runs cannot all use the same
+fixed port because parallel replays and tests would collide, so they should use an ephemeral
+port or a PID-addressable Unix socket. The selected endpoint must be printed or registered
+against the replay PID so that `lava-cli` can discover it. Failure to allocate the optional
+diagnostic endpoint should not make an otherwise valid normal replay fail.
+
+Setting `cli_service` in observer mode allows replay threads to publish barrier, handle,
+fence, queue-idle, and device-idle waits for `status`, `info threads`, and
+`diagnose deadlock`. Expensive optional facilities such as pipeline executable statistics,
+memory-budget reporting, and shader instrumentation should remain disabled until explicitly
+requested, rather than changing normal device setup or replay performance.
+
+To move from observation to interactive debugging, add an explicit `pause` or `interrupt`
+command. It should atomically select a replay thread and bring all replay threads to stable
+pause or synchronization points before returning. Existing stepping and inspection commands
+can then operate normally. This requires separating "the replay is running" from "a blocking
+CLI command is active", which are currently both represented by `cli_running`.
+
+The listener adds one polling thread and a local endpoint, but the replay hot path should
+otherwise retain its existing one-atomic fast exit from `check_cli()`. On normal completion,
+the listener must stop automatically and `lava-replay` must exit as it does today. Explicit
+`--service` mode may continue to start paused and remain available after replay reaches
+`DONE` until the client asks it to stop.
