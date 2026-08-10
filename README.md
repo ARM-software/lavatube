@@ -254,6 +254,8 @@ will have the required hint set.
 `LAVATUBE_DELAY_FENCE_SUCCESS_FRAMES` will delay the returned success of vkGetFenceStatus
 and vkWaitForFences for the given number of frames to try to stagger the reuse of
 content assets.
+`LAVATUBE_DELAY_FENCE_SUCCESS_TIMEOUT_THRESHOLD` sets the largest vkWaitForFences
+timeout, in nanoseconds, that is treated as a query and delayed. Its default is zero.
 
 `LAVATUBE_GPU` lets you pick which GPU to use, by index. See vulkaninfo to see which
 index value to use.

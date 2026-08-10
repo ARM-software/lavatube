@@ -109,6 +109,7 @@ extern uint_fast8_t p__dedicated_allocation;
 extern uint_fast8_t p__custom_allocator;
 extern uint_fast8_t p__no_anisotropy;
 extern uint_fast8_t p__delay_fence_success_frames;
+extern uint64_t p__delay_fence_success_timeout_threshold;
 extern FILE* p__debug_destination;
 extern int p__chunksize;
 extern uint_fast8_t p__external_memory;

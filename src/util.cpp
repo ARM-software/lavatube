@@ -377,6 +377,7 @@ uint_fast8_t p__dedicated_allocation = get_env_bool("LAVATUBE_DEDICATED_ALLOCATI
 uint_fast8_t p__custom_allocator = get_env_bool("LAVATUBE_CUSTOM_ALLOCATOR", 0);
 uint_fast8_t p__no_anisotropy = get_env_bool("LAVATUBE_NO_ANISOTROPY", 0);
 uint_fast8_t p__delay_fence_success_frames = get_env_int("LAVATUBE_DELAY_FENCE_SUCCESS_FRAMES", 0); // off by default
+uint64_t p__delay_fence_success_timeout_threshold = get_env_int("LAVATUBE_DELAY_FENCE_SUCCESS_TIMEOUT_THRESHOLD", 0);
 int p__chunksize = get_env_int("LAVATUBE_CHUNK_SIZE", 64 * 1024 * 1024);
 uint_fast8_t p__external_memory = get_env_bool("LAVATUBE_EXTERNAL_MEMORY", 0);
 uint_fast8_t p__disable_multithread_writeout = get_env_bool("LAVATUBE_DISABLE_MULTITHREADED_WRITEOUT", 0);

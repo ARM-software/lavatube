@@ -167,7 +167,7 @@ replay_pre_tool_calls = [
 validate_funcs(replay_pre_tool_calls)
 trace_pre_calls = [ 'vkQueueSubmit', 'vkCreateInstance', 'vkCreateDevice', 'vkFreeMemory', 'vkQueueSubmit2', 'vkQueueSubmit2KHR' ]
 validate_funcs(trace_pre_calls)
-trace_post_calls = [ 'vkCreateInstance', 'vkCreateDevice', 'vkDestroyInstance', 'vkGetPhysicalDeviceFeatures', 'vkGetPhysicalDeviceProperties',
+trace_post_calls = [ 'vkQueueSubmit', 'vkQueueSubmit2', 'vkQueueSubmit2KHR', 'vkCreateInstance', 'vkCreateDevice', 'vkDestroyInstance', 'vkGetPhysicalDeviceFeatures', 'vkGetPhysicalDeviceProperties',
 		'vkGetPhysicalDeviceSurfaceCapabilitiesKHR', 'vkBindImageMemory', 'vkBindBufferMemory', 'vkBindImageMemory2', 'vkBindImageMemory2KHR',
 		'vkBindBufferMemory2', 'vkUpdateDescriptorSets', 'vkUpdateDescriptorSetWithTemplate', 'vkUpdateDescriptorSetWithTemplateKHR',
 		'vkFlushMappedMemoryRanges', 'vkQueuePresentKHR', 'vkMapMemory2KHR', 'vkMapMemory2', 'vkMapMemory', 'vkUnmapMemory', 'vkUnmapMemory2KHR',
@@ -189,6 +189,7 @@ trace_post_calls = [ 'vkCreateInstance', 'vkCreateDevice', 'vkDestroyInstance', 
 		'vkGetPhysicalDeviceMemoryProperties2KHR' ]
 validate_funcs(trace_post_calls)
 trace_post_tool_calls = [
+	'vkQueueSubmit', 'vkQueueSubmit2', 'vkQueueSubmit2KHR',
 	'vkQueuePresentKHR',
 	'vkCreateShaderModule',
 	'vkCreateDescriptorUpdateTemplate', 'vkCreateDescriptorUpdateTemplateKHR',

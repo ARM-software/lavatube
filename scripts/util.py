@@ -1296,18 +1296,7 @@ def add_multi_draw_stride_check(name):
 def save_add_pre(name): # need to include the resource-creating or resource-destroying command to avoid a race-condition
 	z = getspool()
 	if name in ['vkGetFenceStatus', 'vkWaitForFences']:
-		# if waitAll=False for vkWaitForFences not all fences are signaled, but we assume it doesn't matter which one so we set all here anyways
 		if name == 'vkGetFenceStatus': z.do('const uint32_t fenceCount = 1;')
-		z.do('const int frame = lava_writer::instance().global_frame;')
-		z.do('if (p__delay_fence_success_frames > 0) for (unsigned i = 0; i < fenceCount; i++)')
-		z.brace_begin() # the assumption here is that the function is only called once per frame per fence unless it is in a loop
-		z.do('auto* tf = writer.parent->records.VkFence_index.at(%s);' % ('pFences[i]' if name == 'vkWaitForFences' else 'fence'))
-		z.do('if (tf->frame_delay == -1) { tf->frame_delay = p__delay_fence_success_frames; }')
-		if name == 'vkGetFenceStatus':
-			z.do('if (tf->frame_delay > 0) { tf->frame_delay--; writer.write_uint32_t(VK_NOT_READY); return VK_NOT_READY; }')
-		elif name == 'vkWaitForFences':
-			z.do('if (tf->frame_delay > 0 && timeout != UINT32_MAX) { tf->frame_delay--; writer.write_uint32_t(VK_TIMEOUT); return VK_TIMEOUT; }')
-		z.brace_end()
 	if name == 'vkCreateSwapchainKHR': # TBD: also do vkCreateSharedSwapchainsKHR
 		z.init('pCreateInfo->minImageCount = num_swapchains();')
 	elif name == 'vkCreateDevice':
@@ -1365,8 +1354,21 @@ def save_add_tracking(name):
 		z.do('for (unsigned i = 0; i < fenceCount; i++)')
 		z.brace_begin()
 		z.do('auto* tf = writer.parent->records.VkFence_index.at(pFences[i]);')
-		z.do('tf->frame_delay = -1; // reset delay fuse')
+		z.do('tf->fence_delay_until_frame = -1;')
 		z.do('tf->last_modified = writer.current;')
+		z.brace_end()
+	elif name in ['vkGetFenceStatus', 'vkWaitForFences']:
+		z.do('const int current_frame = lava_writer::instance().global_frame;')
+		if name == 'vkWaitForFences':
+			z.do('const bool delay_query = timeout <= p__delay_fence_success_timeout_threshold;')
+		z.do('for (unsigned i = 0; i < fenceCount; i++)')
+		z.brace_begin()
+		z.do('auto* tf = writer.parent->records.VkFence_index.at(%s);' % ('pFences[i]' if name == 'vkWaitForFences' else 'fence'))
+		if name == 'vkGetFenceStatus':
+			z.do('if (retval == VK_SUCCESS && tf->fence_delay_until_frame > current_frame) retval = VK_NOT_READY;')
+		else:
+			z.do('if (!delay_query) tf->fence_delay_until_frame = -1;')
+			z.do('else if (retval == VK_SUCCESS && tf->fence_delay_until_frame > current_frame) retval = VK_TIMEOUT;')
 		z.brace_end()
 	elif name in [ 'vkCmdCopyBufferToImage', 'vkCmdCopyImageToBuffer', 'VkCopyBufferToImageInfo2', 'VkCopyBufferToImageInfo2KHR', 'VkCopyImageToBufferInfo2', 'VkCopyImageToBufferInfo2KHR' ]:
 		if name[0] == 'V': z.decl(vk.trackable_type_map_trace['VkCommandBuffer'] + '*', totrackable('VkCommandBuffer'), custom='writer.parent->records.VkCommandBuffer_index.at(writer.commandBuffer);')

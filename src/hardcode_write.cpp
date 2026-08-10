@@ -1812,6 +1812,38 @@ static void trace_pre_vkQueueSubmit(VkQueue queue, uint32_t submitCount, const V
 	instance.memory_mutex.unlock();
 }
 
+static void trace_post_queue_submit_fence(VkFence fence)
+{
+	if (fence == VK_NULL_HANDLE) return;
+	auto* fence_data = lava_writer::instance().records.VkFence_index.at(fence);
+	fence_data->fence_delay_until_frame = lava_writer::instance().global_frame + p__delay_fence_success_frames;
+}
+
+static void trace_post_queue_submit_frame_boundary(const void* pNext)
+{
+	const VkFrameBoundaryEXT* boundary = (const VkFrameBoundaryEXT*)find_extension(pNext, VK_STRUCTURE_TYPE_FRAME_BOUNDARY_EXT);
+	if (boundary && (boundary->flags & VK_FRAME_BOUNDARY_FRAME_END_BIT_EXT)) lava_writer::instance().new_frame();
+}
+
+static void trace_post_vkQueueSubmit(lava_file_writer& writer, VkResult result, VkQueue queue, uint32_t submitCount, const VkSubmitInfo* pSubmits, VkFence fence)
+{
+	if (result != VK_SUCCESS) return;
+	trace_post_queue_submit_fence(fence);
+	for (uint32_t i = 0; i < submitCount; i++) trace_post_queue_submit_frame_boundary(pSubmits[i].pNext);
+}
+
+static void trace_post_vkQueueSubmit2(lava_file_writer& writer, VkResult result, VkQueue queue, uint32_t submitCount, const VkSubmitInfo2* pSubmits, VkFence fence)
+{
+	if (result != VK_SUCCESS) return;
+	trace_post_queue_submit_fence(fence);
+	for (uint32_t i = 0; i < submitCount; i++) trace_post_queue_submit_frame_boundary(pSubmits[i].pNext);
+}
+
+static void trace_post_vkQueueSubmit2KHR(lava_file_writer& writer, VkResult result, VkQueue queue, uint32_t submitCount, const VkSubmitInfo2* pSubmits, VkFence fence)
+{
+	trace_post_vkQueueSubmit2(writer, result, queue, submitCount, pSubmits, fence);
+}
+
 static void trace_post_vkQueuePresentKHR(lava_file_writer& writer, VkResult result, VkQueue queue, const VkPresentInfoKHR* pPresentInfo)
 {
 	assert(pPresentInfo->swapchainCount == 1); // more than one not yet supported

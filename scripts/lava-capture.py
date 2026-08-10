@@ -45,6 +45,7 @@ def args():
 	parser.add_argument('--dedicated-buffer', dest='dedbuf', action='store_true', help='Request dedicated memory allocation for buffers')
 	parser.add_argument('--dedicated-image', dest='dedimg', action='store_true', help='Request dedicated memory allocation for images')
 	parser.add_argument('--delayfence', dest='delayfence', metavar='<times>', help='Delay successful fence waits the given number of times')
+	parser.add_argument('--delayfence-threshold', dest='delayfence_threshold', metavar='<nanoseconds>', help='Only delay fence waits with a timeout at or below this threshold')
 	parser.add_argument('--gpu', dest='gpu', metavar='<gpu>', help='Use the specified GPU for tracing')
 	parser.add_argument('--automate', dest='automate', action='store_true', help='Try to automate the run as much as possible if app supports CBS')
 	parser.add_argument('--no-multithread', dest='nomp', action='store_true', help='Turn off multi-threaded compression and disk writeout (saves memory)')
@@ -105,6 +106,7 @@ if __name__ == '__main__':
 	if args.dedbuf: os.environ['LAVATUBE_DEDICATED_BUFFER'] = '1'
 	if args.dedimg: os.environ['LAVATUBE_DEDICATED_IMAGE'] = '1'
 	if args.delayfence: os.environ['LAVATUBE_DELAY_FENCE_SUCCESS_FRAMES'] = args.delayfence
+	if args.delayfence_threshold: os.environ['LAVATUBE_DELAY_FENCE_SUCCESS_TIMEOUT_THRESHOLD'] = args.delayfence_threshold
 	if args.debug: os.environ['LAVATUBE_DEBUG'] = args.debug
 	if args.file: os.environ['LAVATUBE_DESTINATION'] = os.path.abspath(args.file)
 	if args.log: os.environ['LAVATUBE_DEBUG_FILE'] = args.log
@@ -138,6 +140,7 @@ if __name__ == '__main__':
 	PrintEnvVar('LAVATUBE_DEDICATED_BUFFER')
 	PrintEnvVar('LAVATUBE_DEDICATED_IMAGE')
 	PrintEnvVar('LAVATUBE_DELAY_FENCE_SUCCESS_FRAMES')
+	PrintEnvVar('LAVATUBE_DELAY_FENCE_SUCCESS_TIMEOUT_THRESHOLD')
 	PrintEnvVar('LAVATUBE_BLACKLIST_EXTENSIONS')
 	PrintEnvVar('BENCHMARKING_ENABLE_JSON')
 

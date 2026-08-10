@@ -638,7 +638,7 @@ struct trackedfence : trackable
 	bool replay_last_submit_source_valid = false;
 
 	// tracer only
-	int frame_delay = -1; // delay fuse uninitialized
+	int fence_delay_until_frame = -1;
 };
 
 struct trackedsemaphore : trackable
