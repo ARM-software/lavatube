@@ -62,6 +62,21 @@ int get_env_int(const char* name, int v)
 	return v;
 }
 
+uint64_t get_env_uint64(const char* name, uint64_t v)
+{
+	const char* tmpstr = getenv(name);
+	if (!tmpstr) return v;
+
+	errno = 0;
+	char* end = nullptr;
+	const unsigned long long value = strtoull(tmpstr, &end, 10);
+	if (errno == ERANGE || end == tmpstr || *end != '\0' || tmpstr[0] == '-')
+	{
+		ABORT("Invalid unsigned integer in %s: %s", name, tmpstr);
+	}
+	return value;
+}
+
 static VkFormat host_image_copy_plane_format(VkFormat format, VkImageAspectFlags aspect)
 {
 	if ((aspect & (VK_IMAGE_ASPECT_PLANE_0_BIT | VK_IMAGE_ASPECT_PLANE_1_BIT | VK_IMAGE_ASPECT_PLANE_2_BIT)) == 0)
@@ -377,7 +392,7 @@ uint_fast8_t p__dedicated_allocation = get_env_bool("LAVATUBE_DEDICATED_ALLOCATI
 uint_fast8_t p__custom_allocator = get_env_bool("LAVATUBE_CUSTOM_ALLOCATOR", 0);
 uint_fast8_t p__no_anisotropy = get_env_bool("LAVATUBE_NO_ANISOTROPY", 0);
 uint_fast8_t p__delay_fence_success_frames = get_env_int("LAVATUBE_DELAY_FENCE_SUCCESS_FRAMES", 0); // off by default
-uint64_t p__delay_fence_success_timeout_threshold = get_env_int("LAVATUBE_DELAY_FENCE_SUCCESS_TIMEOUT_THRESHOLD", 0);
+uint64_t p__delay_fence_success_timeout_threshold = get_env_uint64("LAVATUBE_DELAY_FENCE_SUCCESS_TIMEOUT_THRESHOLD", 0);
 int p__chunksize = get_env_int("LAVATUBE_CHUNK_SIZE", 64 * 1024 * 1024);
 uint_fast8_t p__external_memory = get_env_bool("LAVATUBE_EXTERNAL_MEMORY", 0);
 uint_fast8_t p__disable_multithread_writeout = get_env_bool("LAVATUBE_DISABLE_MULTITHREADED_WRITEOUT", 0);

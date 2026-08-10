@@ -1816,7 +1816,7 @@ static void trace_post_queue_submit_fence(VkFence fence)
 {
 	if (fence == VK_NULL_HANDLE) return;
 	auto* fence_data = lava_writer::instance().records.VkFence_index.at(fence);
-	fence_data->fence_delay_until_frame = lava_writer::instance().global_frame + p__delay_fence_success_frames;
+	fence_data->fence_delay_until_frame = lava_writer::instance().global_frame.load(std::memory_order_relaxed) + p__delay_fence_success_frames;
 }
 
 static void trace_post_queue_submit_frame_boundary(const void* pNext)

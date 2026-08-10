@@ -45,7 +45,7 @@ def args():
 	parser.add_argument('--dedicated-buffer', dest='dedbuf', action='store_true', help='Request dedicated memory allocation for buffers')
 	parser.add_argument('--dedicated-image', dest='dedimg', action='store_true', help='Request dedicated memory allocation for images')
 	parser.add_argument('--delayfence', dest='delayfence', metavar='<times>', help='Delay successful fence waits the given number of times')
-	parser.add_argument('--delayfence-threshold', dest='delayfence_threshold', metavar='<nanoseconds>', help='Only delay fence waits with a timeout at or below this threshold')
+	parser.add_argument('--delayfence-threshold', dest='delayfence_threshold', metavar='<nanoseconds>', help='Only delay fence waits with a timeout at or below this threshold in nanoseconds')
 	parser.add_argument('--gpu', dest='gpu', metavar='<gpu>', help='Use the specified GPU for tracing')
 	parser.add_argument('--automate', dest='automate', action='store_true', help='Try to automate the run as much as possible if app supports CBS')
 	parser.add_argument('--no-multithread', dest='nomp', action='store_true', help='Turn off multi-threaded compression and disk writeout (saves memory)')

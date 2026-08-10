@@ -1358,7 +1358,7 @@ def save_add_tracking(name):
 		z.do('tf->last_modified = writer.current;')
 		z.brace_end()
 	elif name in ['vkGetFenceStatus', 'vkWaitForFences']:
-		z.do('const int current_frame = lava_writer::instance().global_frame;')
+		z.do('const int current_frame = lava_writer::instance().global_frame.load(std::memory_order_relaxed);')
 		if name == 'vkWaitForFences':
 			z.do('const bool delay_query = timeout <= p__delay_fence_success_timeout_threshold;')
 		z.do('for (unsigned i = 0; i < fenceCount; i++)')

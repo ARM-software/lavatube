@@ -308,6 +308,7 @@ typedef uint64_t (VKAPI_PTR *PFN_vkGetDeviceTracingObjectPropertyTRACETOOLTEST)(
 
 // Environment functions
 int get_env_int(const char* name, int v);
+uint64_t get_env_uint64(const char* name, uint64_t v);
 int get_env_bool(const char* name, int v);
 FILE* get_env_file(const char* name, FILE* fallback);
 
