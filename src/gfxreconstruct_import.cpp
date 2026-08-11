@@ -79,6 +79,7 @@ static void import_select_thread(gfxreconstruct_import_context* context, uint64_
 	}
 	const uint16_t thread_index = writer.thread_streams.size();
 	writer.prepare_threads(thread_index + 1);
+	writer.thread_streams.at(thread_index)->activate_thread_barriers();
 	context->thread_indices.emplace(gfxreconstruct_thread_id, thread_index);
 	writer.bind_thread(thread_index);
 	writer.file_writer().write_thread_barrier(import_thread_endpoints(writer));

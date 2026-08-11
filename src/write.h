@@ -288,7 +288,7 @@ inline void lava_file_writer::write_api_command(uint16_t id)
 	device = VK_NULL_HANDLE;
 	physicalDevice = VK_NULL_HANDLE;
 	commandBuffer = VK_NULL_HANDLE;
-	if (!write_output && pending_barrier.load(std::memory_order_relaxed))
+	if ((!write_output || parent->output_thread_barriers) && pending_barrier.load(std::memory_order_relaxed))
 	{
 		frame_mutex.lock();
 		inject_thread_barrier();
