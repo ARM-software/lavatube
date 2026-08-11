@@ -503,6 +503,8 @@ internal_test(tracing_buffers tracing_buffers.api)
 add_lavatube_test(trace_test_buffers_replay_cpu COMMAND $<TARGET_FILE:lava-replay> -C -V tracing_buffers.api)
 set_tests_properties(trace_test_buffers_replay_cpu PROPERTIES FIXTURES_REQUIRED tracing_buffers)
 
+internal_test(tracing_indexed_draw tracing_indexed_draw.api)
+
 internal_test(tracing_memory tracing_memory.api)
 add_test(NAME trace_test_memory_replay_cpu COMMAND ${CMAKE_CURRENT_BINARY_DIR}/lava-replay -C -V tracing_memory.api)
 set_tests_properties(trace_test_memory_replay_cpu PROPERTIES FIXTURES_REQUIRED tracing_memory)
