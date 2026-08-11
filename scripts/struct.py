@@ -39,7 +39,9 @@ def struct_header_read(r, selected = None):
 		if name in spec.protected_types:
 			print('#ifdef %s' % spec.protected_types[name], file=r)
 		accessor = '%s* sptr' % name
-		print('void read_%s(lava_file_reader& reader, %s);' % (name, accessor), file=r)
+		special = ''
+		if name == 'VkWriteDescriptorSet': special = ', bool ignoreDstSet'
+		print('void read_%s(lava_file_reader& reader, %s%s);' % (name, accessor, special), file=r)
 		if name in spec.protected_types:
 			print('#endif // %s' % spec.protected_types[name], file=r)
 	print(file=r)
@@ -121,7 +123,9 @@ def struct_impl_read(r, selected = None):
 		if name in spec.protected_types:
 			print('#ifdef %s' % spec.protected_types[name], file=r)
 		accessor = '%s* sptr' % name
-		print('void read_%s(lava_file_reader& reader, %s)' % (name, accessor), file=r)
+		special = ''
+		if name == 'VkWriteDescriptorSet': special = ', bool ignoreDstSet'
+		print('void read_%s(lava_file_reader& reader, %s%s)' % (name, accessor, special), file=r)
 		print('{', file=r)
 		if v.attrib.get('alias'):
 			print('\tread_%s(reader, sptr);' % (v.attrib.get('alias')), file=r)

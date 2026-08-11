@@ -111,6 +111,10 @@ static void import_threadless_metacommand_end(gfxreconstruct_import_context& con
 
 static void set_captured_return_value(void* user_data, const VulkanNativeCallContext& call)
 {
+	if (call.name && strncmp(call.name, "vkCmdPushDescriptorSet", strlen("vkCmdPushDescriptorSet")) == 0)
+	{
+		DIE("Cannot import unsupported push descriptor command %s", call.name);
+	}
 	import_select_thread(static_cast<gfxreconstruct_import_context*>(user_data), call.call_info.thread_id);
 	lava_file_writer& file = lava_writer::instance().file_writer();
 	memset(&file.use_result, 0, sizeof(file.use_result));
@@ -154,6 +158,13 @@ static void VKAPI_CALL import_vkGetPhysicalDeviceProperties(VkPhysicalDevice phy
 static VkResult VKAPI_CALL import_vkCreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo* pCreateInfo,
 	const VkAllocationCallbacks* pAllocator, VkDevice* pDevice)
 {
+	for (uint32_t i = 0; pCreateInfo && i < pCreateInfo->enabledExtensionCount; i++)
+	{
+		if (strcmp(pCreateInfo->ppEnabledExtensionNames[i], VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME) == 0)
+		{
+			DIE("Cannot import unsupported device extension %s", VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME);
+		}
+	}
 	trackedphysicaldevice* physical_device_data = lava_writer::instance().records.VkPhysicalDevice_index.at(physicalDevice);
 	if (!physical_device_data->has_imported_memory_properties)
 	{

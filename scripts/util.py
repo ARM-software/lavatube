@@ -274,8 +274,8 @@ class parameter(spec.base_parameter):
 		# Stupid exceptions where Vulkan depends on out-of-struct state for allowing garbage values in struct member pointers
 		if mytype == 'VkPipelineViewportStateCreateInfo' and not self.read: accessor += ', sptr->pDynamicState'
 		elif mytype == 'VkCommandBufferBeginInfo' and not self.read: accessor += ', commandbuffer_data'
-		elif 'vkCmdPushDescriptorSet' in self.funcname and mytype == 'VkWriteDescriptorSet' and not self.read: accessor += ', true'
-		elif mytype == 'VkWriteDescriptorSet' and not self.read: accessor += ', false'
+		elif 'vkCmdPushDescriptorSet' in self.funcname and mytype == 'VkWriteDescriptorSet': accessor += ', true'
+		elif mytype == 'VkWriteDescriptorSet': accessor += ', false'
 
 		if self.funcname[0] == 'V' and mytype in vk.deconst_struct and not self.read: # we cannot modify passed in memory when writing
 			if size:
@@ -442,6 +442,9 @@ class parameter(spec.base_parameter):
 		if self.optional and not self.name in vk.skip_opt_check:
 			z.do('%s = reader.read_uint8_t(); // whether we should load %s' % (z.tmp('uint8_t'), self.name))
 			z.do('if (%s)' % z.tmp('uint8_t'))
+			z.brace_begin()
+		if (self.disphandle or self.nondisphandle) and self.funcname in vk.extra_optionals and self.name in vk.extra_optionals[self.funcname]:
+			z.do('if (%s)' % vk.extra_optionals[self.funcname][self.name])
 			z.brace_begin()
 
 		if self.name == 'pAllocator':
@@ -902,6 +905,8 @@ class parameter(spec.base_parameter):
 			z.do('reader.device = commandbuffer_data.device;')
 			z.do('reader.physicalDevice = commandbuffer_data.physicalDevice;')
 
+		if (self.disphandle or self.nondisphandle) and self.funcname in vk.extra_optionals and self.name in vk.extra_optionals[self.funcname]:
+			z.brace_end()
 		if self.optional and not self.name in vk.skip_opt_check:
 			z.brace_end()
 

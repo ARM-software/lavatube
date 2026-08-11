@@ -739,6 +739,12 @@ if(NOT ANDROID)
 
 		gfxr_import_replay_test(demo_triangle 3)
 		gfxr_import_replay_test(demo_bloom 3)
+		add_lavatube_test(gfxr_import_demo_pushdescriptors_rejected
+			COMMAND ${CMAKE_COMMAND}
+				-DIMPORTER=$<TARGET_FILE:lava-gfxr-import>
+				-DINPUT_TRACE=${PROJECT_SOURCE_DIR}/traces/demo_pushdescriptors.gfxr
+				-DOUTPUT_TRACE=${CMAKE_CURRENT_BINARY_DIR}/gfxr_import_demo_pushdescriptors.api
+				-P ${PROJECT_SOURCE_DIR}/tests/gfxr_import_expect_failure.cmake)
 		install(TARGETS lava-gfxr-import RUNTIME)
 	else()
 		message(STATUS "GFXReconstruct Vulkan API reader not found; lava-gfxr-import will not be built")
