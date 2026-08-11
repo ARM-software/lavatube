@@ -697,6 +697,48 @@ if(NOT ANDROID)
 		target_link_libraries(lava-gfxr-import ${COMMON_LIBRARIES} lavatube GFXReconstruct::vulkan_api_reader)
 		target_compile_options(lava-gfxr-import PRIVATE ${COMMON_FLAGS})
 		add_dependencies(lava-gfxr-import sync_generated)
+
+		function(gfxr_import_replay_test name screenshot_frame)
+			set(test_prefix "gfxr_import_${name}")
+			set(imported_trace "${CMAKE_CURRENT_BINARY_DIR}/${test_prefix}.api")
+			set(reference_prefix "${CMAKE_CURRENT_BINARY_DIR}/${test_prefix}_reference_")
+			set(imported_prefix "${CMAKE_CURRENT_BINARY_DIR}/${test_prefix}_imported_")
+
+			add_lavatube_test(${test_prefix}_cleanup COMMAND ${CMAKE_COMMAND} -E rm -f
+				${imported_trace} ${reference_prefix}${screenshot_frame}.png ${imported_prefix}${screenshot_frame}.png)
+			set_tests_properties(${test_prefix}_cleanup PROPERTIES FIXTURES_SETUP ${test_prefix}_clean)
+
+			add_lavatube_test(${test_prefix}_convert
+				COMMAND $<TARGET_FILE:lava-gfxr-import>
+					${PROJECT_SOURCE_DIR}/traces/${name}.gfxr ${imported_trace})
+			set_tests_properties(${test_prefix}_convert PROPERTIES
+				FIXTURES_REQUIRED ${test_prefix}_clean
+				FIXTURES_SETUP ${test_prefix}_trace)
+
+			add_lavatube_test(${test_prefix}_reference_replay
+				COMMAND $<TARGET_FILE:lava-replay> -G -w none --screenshots ${screenshot_frame}
+					--screenshot-prefix ${reference_prefix} ${PROJECT_SOURCE_DIR}/traces/${name}.api)
+			set_tests_properties(${test_prefix}_reference_replay PROPERTIES
+				FIXTURES_REQUIRED ${test_prefix}_clean
+				FIXTURES_SETUP ${test_prefix}_reference
+				RESOURCE_LOCK gfxr_import_replay_gpu)
+
+			add_lavatube_test(${test_prefix}_imported_replay
+				COMMAND $<TARGET_FILE:lava-replay> -G -w none --screenshots ${screenshot_frame}
+					--screenshot-prefix ${imported_prefix} ${imported_trace})
+			set_tests_properties(${test_prefix}_imported_replay PROPERTIES
+				FIXTURES_REQUIRED ${test_prefix}_trace
+				FIXTURES_SETUP ${test_prefix}_imported
+				RESOURCE_LOCK gfxr_import_replay_gpu)
+
+			add_lavatube_test(${test_prefix}_compare COMMAND $<TARGET_FILE:check_png>
+				${reference_prefix}${screenshot_frame}.png --compare ${imported_prefix}${screenshot_frame}.png)
+			set_tests_properties(${test_prefix}_compare PROPERTIES
+				FIXTURES_REQUIRED "${test_prefix}_reference;${test_prefix}_imported")
+		endfunction()
+
+		gfxr_import_replay_test(demo_triangle 3)
+		gfxr_import_replay_test(demo_bloom 3)
 		install(TARGETS lava-gfxr-import RUNTIME)
 	else()
 		message(STATUS "GFXReconstruct Vulkan API reader not found; lava-gfxr-import will not be built")

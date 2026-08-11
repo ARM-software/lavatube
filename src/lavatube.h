@@ -188,6 +188,13 @@ struct trackedmemory : trackable
 	exposure exposed;
 	/// Native handle of the memory
 	VkDeviceMemory backing = VK_NULL_HANDLE;
+	struct import_update
+	{
+		VkDeviceSize offset = 0;
+		std::vector<char> data;
+	};
+	/// Memory contents received by an importer, retained for later bindings.
+	std::vector<import_update> import_updates;
 
 	/// Data structure used to track usage of Vulkan objects. We can use this to
 	/// make sure we recreate them together again on replay if they are aliased.

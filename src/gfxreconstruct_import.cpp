@@ -270,6 +270,19 @@ static void finish_import_binding(trackedobject* object_data, trackedmemory* mem
 	}
 	memory_data->bind(object_data);
 	object_data->enter_bound();
+	for (const auto& update : memory_data->import_updates)
+	{
+		const VkDeviceSize update_end = update.offset + update.data.size();
+		const VkDeviceSize object_end = memory_offset + object_data->size;
+		const VkDeviceSize overlap_start = std::max(update.offset, memory_offset);
+		const VkDeviceSize overlap_end = std::min(update_end, object_end);
+		if (overlap_start >= overlap_end) continue;
+		const auto& devices = writer.records.VkDevice_index.iterate();
+		assert(object_data->parent_device_index < devices.size());
+		write_object_update_packet(writer.file_writer(), devices.at(object_data->parent_device_index), object_data,
+			overlap_start - memory_offset, update.data.data() + overlap_start - update.offset,
+			overlap_end - overlap_start, nullptr);
+	}
 }
 
 static VkResult VKAPI_CALL import_vkBindBufferMemory(VkDevice device, VkBuffer buffer, VkDeviceMemory memory,
@@ -504,7 +517,12 @@ static void import_memory_update(void* user_data, const VulkanMemoryUpdate& upda
 	context->shader_group_handle_fixups.erase(relation_id);
 	if (emitted == 0)
 	{
-		WLOG("gfxreconstruct memory update at block %lu did not overlap a bound buffer, image, or tensor",
+		trackedmemory::import_update retained;
+		retained.offset = update_start;
+		retained.data.resize(update.data_size);
+		memcpy(retained.data.data(), update.data, update.data_size);
+		memory_data->import_updates.emplace_back(std::move(retained));
+		DLOG2("Retained gfxreconstruct memory update at block %lu until a resource is bound",
 			(unsigned long)update.block_index);
 	}
 }
@@ -1054,6 +1072,9 @@ int main(int argc, char** argv)
 	writer.output_thread_barriers = true;
 	writer.prepare_threads(1);
 	writer.bind_thread(0);
+	// Thread 0 is reserved for threadless metacommands, but traces without any
+	// handled metacommands still need a non-empty stream for the reader.
+	writer.file_writer().write_thread_barrier(import_thread_endpoints(writer));
 	const bool processed = reader.ProcessAllFrames();
 	finish_acceleration_structure_commands(import_context);
 	import_threadless_metacommand_end(import_context);
