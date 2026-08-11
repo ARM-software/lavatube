@@ -741,12 +741,21 @@ if(NOT ANDROID)
 
 		gfxr_import_replay_test(demo_triangle 3)
 		gfxr_import_replay_test(demo_bloom 3)
-		add_lavatube_test(gfxr_import_demo_pushdescriptors_rejected
-			COMMAND ${CMAKE_COMMAND}
-				-DIMPORTER=$<TARGET_FILE:lava-gfxr-import>
-				-DINPUT_TRACE=${PROJECT_SOURCE_DIR}/traces/demo_pushdescriptors.gfxr
-				-DOUTPUT_TRACE=${CMAKE_CURRENT_BINARY_DIR}/gfxr_import_demo_pushdescriptors.api
-				-P ${PROJECT_SOURCE_DIR}/tests/gfxr_import_expect_failure.cmake)
+		set(GFXR_PUSH_DESCRIPTOR_TRACE ${CMAKE_CURRENT_BINARY_DIR}/gfxr_import_demo_pushdescriptors.api)
+		add_lavatube_test(gfxr_import_demo_pushdescriptors_cleanup
+			COMMAND ${CMAKE_COMMAND} -E rm -f ${GFXR_PUSH_DESCRIPTOR_TRACE})
+		set_tests_properties(gfxr_import_demo_pushdescriptors_cleanup PROPERTIES
+			FIXTURES_SETUP gfxr_import_demo_pushdescriptors_clean)
+		add_lavatube_test(gfxr_import_demo_pushdescriptors_convert
+			COMMAND $<TARGET_FILE:lava-gfxr-import>
+				${PROJECT_SOURCE_DIR}/traces/demo_pushdescriptors.gfxr ${GFXR_PUSH_DESCRIPTOR_TRACE})
+		set_tests_properties(gfxr_import_demo_pushdescriptors_convert PROPERTIES
+			FIXTURES_REQUIRED gfxr_import_demo_pushdescriptors_clean
+			FIXTURES_SETUP gfxr_import_demo_pushdescriptors_trace)
+		add_lavatube_test(gfxr_import_demo_pushdescriptors_replay
+			COMMAND $<TARGET_FILE:lava-replay> -V -w none ${GFXR_PUSH_DESCRIPTOR_TRACE})
+		set_tests_properties(gfxr_import_demo_pushdescriptors_replay PROPERTIES
+			FIXTURES_REQUIRED gfxr_import_demo_pushdescriptors_trace)
 		install(TARGETS lava-gfxr-import RUNTIME)
 	else()
 		message(STATUS "GFXReconstruct Vulkan API reader not found; lava-gfxr-import will not be built")
