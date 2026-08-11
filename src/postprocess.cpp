@@ -205,7 +205,53 @@ static void handle_VkCopyDescriptorSets(uint32_t descriptorCopyCount, const VkCo
 	}
 }
 
-void postprocess_vkCmdPushDescriptorSetKHR(callback_context& cb, VkCommandBuffer commandBuffer, VkPipelineBindPoint pipelineBindPoint, VkPipelineLayout layout, uint32_t set, uint32_t descriptorWriteCount, const VkWriteDescriptorSet* pDescriptorWrites)
+static VkWriteDescriptorSet* copy_push_descriptor_writes(uint32_t descriptorWriteCount, const VkWriteDescriptorSet* pDescriptorWrites)
+{
+	if (descriptorWriteCount == 0) return nullptr;
+	VkWriteDescriptorSet* writes = (VkWriteDescriptorSet*)calloc(descriptorWriteCount, sizeof(VkWriteDescriptorSet));
+	assert(writes);
+	for (uint32_t i = 0; i < descriptorWriteCount; i++)
+	{
+		writes[i] = pDescriptorWrites[i];
+		writes[i].pNext = nullptr;
+		writes[i].dstSet = VK_NULL_HANDLE;
+		writes[i].pImageInfo = nullptr;
+		writes[i].pBufferInfo = nullptr;
+		writes[i].pTexelBufferView = nullptr;
+		switch (writes[i].descriptorType)
+		{
+		case VK_DESCRIPTOR_TYPE_SAMPLER:
+		case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
+		case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:
+		case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:
+		case VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT:
+			writes[i].pImageInfo = (VkDescriptorImageInfo*)malloc(writes[i].descriptorCount * sizeof(VkDescriptorImageInfo));
+			assert(writes[i].pImageInfo);
+			memcpy((void*)writes[i].pImageInfo, pDescriptorWrites[i].pImageInfo, writes[i].descriptorCount * sizeof(VkDescriptorImageInfo));
+			break;
+		case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
+		case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
+		case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC:
+		case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC:
+			writes[i].pBufferInfo = (VkDescriptorBufferInfo*)malloc(writes[i].descriptorCount * sizeof(VkDescriptorBufferInfo));
+			assert(writes[i].pBufferInfo);
+			memcpy((void*)writes[i].pBufferInfo, pDescriptorWrites[i].pBufferInfo, writes[i].descriptorCount * sizeof(VkDescriptorBufferInfo));
+			break;
+		case VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER:
+		case VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER:
+			writes[i].pTexelBufferView = (VkBufferView*)malloc(writes[i].descriptorCount * sizeof(VkBufferView));
+			assert(writes[i].pTexelBufferView);
+			memcpy((void*)writes[i].pTexelBufferView, pDescriptorWrites[i].pTexelBufferView, writes[i].descriptorCount * sizeof(VkBufferView));
+			break;
+		default:
+			ABORT("Push descriptor type %s is not supported by SPIR-V simulation", VkDescriptorType_to_string(writes[i].descriptorType).c_str());
+		}
+	}
+	return writes;
+}
+
+static void append_push_descriptor_command(callback_context& cb, VkCommandBuffer commandBuffer, VkPipelineBindPoint pipelineBindPoint,
+	VkPipelineLayout layout, uint32_t set, uint32_t descriptorWriteCount, const VkWriteDescriptorSet* pDescriptorWrites)
 {
 	const uint32_t cmdbuffer_index = index_to_VkCommandBuffer.index(commandBuffer);
 	auto& cmdbuffer_data = VkCommandBuffer_index.at(cmdbuffer_index);
@@ -214,8 +260,14 @@ void postprocess_vkCmdPushDescriptorSetKHR(callback_context& cb, VkCommandBuffer
 	cmd.data.push_descriptorset.pipelineBindPoint = pipelineBindPoint;
 	cmd.data.push_descriptorset.layout = layout;
 	cmd.data.push_descriptorset.set = set;
-	// TBD handle pDescriptorWrites here
+	cmd.data.push_descriptorset.descriptorWriteCount = descriptorWriteCount;
+	cmd.data.push_descriptorset.pDescriptorWrites = copy_push_descriptor_writes(descriptorWriteCount, pDescriptorWrites);
 	cmdbuffer_data.commands.push_back(cmd);
+}
+
+void postprocess_vkCmdPushDescriptorSetKHR(callback_context& cb, VkCommandBuffer commandBuffer, VkPipelineBindPoint pipelineBindPoint, VkPipelineLayout layout, uint32_t set, uint32_t descriptorWriteCount, const VkWriteDescriptorSet* pDescriptorWrites)
+{
+	append_push_descriptor_command(cb, commandBuffer, pipelineBindPoint, layout, set, descriptorWriteCount, pDescriptorWrites);
 }
 
 void postprocess_vkCmdPushDescriptorSet(callback_context& cb, VkCommandBuffer commandBuffer, VkPipelineBindPoint pipelineBindPoint, VkPipelineLayout layout, uint32_t set, uint32_t descriptorWriteCount, const VkWriteDescriptorSet* pDescriptorWrites)
@@ -225,35 +277,24 @@ void postprocess_vkCmdPushDescriptorSet(callback_context& cb, VkCommandBuffer co
 
 void postprocess_vkCmdPushDescriptorSet2KHR(callback_context& cb, VkCommandBuffer commandBuffer, const VkPushDescriptorSetInfoKHR* pPushDescriptorSetInfo)
 {
-	const uint32_t cmdbuffer_index = index_to_VkCommandBuffer.index(commandBuffer);
-	auto& cmdbuffer_data = VkCommandBuffer_index.at(cmdbuffer_index);
+	const VkShaderStageFlags graphics_stages = VK_SHADER_STAGE_ALL_GRAPHICS | VK_SHADER_STAGE_TASK_BIT_EXT | VK_SHADER_STAGE_MESH_BIT_EXT;
+	const VkShaderStageFlags supported_stages = graphics_stages | VK_SHADER_STAGE_COMPUTE_BIT;
+	assert((pPushDescriptorSetInfo->stageFlags & ~supported_stages) == 0);
 
 	// "If stageFlags specifies a subset of all stages corresponding to one or more pipeline bind points, the binding operation still affects all stages corresponding to
 	// the given pipeline bind point(s) as if the equivalent original version of this command had been called with the same parameters. For example, specifying a
 	// stageFlags value of VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_COMPUTE_BIT is equivalent to calling the original version of this
 	// command once with VK_PIPELINE_BIND_POINT_GRAPHICS and once with VK_PIPELINE_BIND_POINT_COMPUTE."
 
-	if (pPushDescriptorSetInfo->stageFlags & (VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT))
+	if (pPushDescriptorSetInfo->stageFlags & graphics_stages)
 	{
-		trackedcommand cmd { VKCMDPUSHDESCRIPTORSETKHR };
-		cmd.source = cb.reader.current;
-		cmd.data.push_descriptorset.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-		cmd.data.push_descriptorset.layout = pPushDescriptorSetInfo->layout;
-		cmd.data.push_descriptorset.set = pPushDescriptorSetInfo->set;
-		cmd.data.push_descriptorset.descriptorWriteCount = pPushDescriptorSetInfo->descriptorWriteCount;
-		// TBD handle pDescriptorWrites here
-		cmdbuffer_data.commands.push_back(cmd);
+		append_push_descriptor_command(cb, commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pPushDescriptorSetInfo->layout,
+			pPushDescriptorSetInfo->set, pPushDescriptorSetInfo->descriptorWriteCount, pPushDescriptorSetInfo->pDescriptorWrites);
 	}
 	if (pPushDescriptorSetInfo->stageFlags & VK_SHADER_STAGE_COMPUTE_BIT)
 	{
-		trackedcommand cmd { VKCMDPUSHDESCRIPTORSETKHR };
-		cmd.source = cb.reader.current;
-		cmd.data.push_descriptorset.pipelineBindPoint = VK_PIPELINE_BIND_POINT_COMPUTE;
-		cmd.data.push_descriptorset.layout = pPushDescriptorSetInfo->layout;
-		cmd.data.push_descriptorset.set = pPushDescriptorSetInfo->set;
-		cmd.data.push_descriptorset.descriptorWriteCount = pPushDescriptorSetInfo->descriptorWriteCount;
-		// TBD handle pDescriptorWrites here
-		cmdbuffer_data.commands.push_back(cmd);
+		append_push_descriptor_command(cb, commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pPushDescriptorSetInfo->layout,
+			pPushDescriptorSetInfo->set, pPushDescriptorSetInfo->descriptorWriteCount, pPushDescriptorSetInfo->pDescriptorWrites);
 	}
 }
 

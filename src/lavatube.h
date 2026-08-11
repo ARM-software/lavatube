@@ -757,7 +757,7 @@ struct trackedcommand // does _not_ inherit trackable
 			VkPipelineLayout layout;
 			uint32_t set;
 			uint32_t descriptorWriteCount;
-			// TBD pDescriptorWrites copy here
+			VkWriteDescriptorSet* pDescriptorWrites;
 		} push_descriptorset;
 		struct bind_pipeline
 		{

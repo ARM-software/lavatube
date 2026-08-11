@@ -198,7 +198,7 @@ static bool same_source(const change_source& a, const change_source& b)
 static void set_storage_buffer_binding(command_execution_data& data, uint32_t set, uint32_t binding, trackedbuffer* buffer_data,
 	VkDeviceSize offset, VkDeviceSize size)
 {
-	command_execution_data::simulator_binding& dst = data.descriptor_sets[set][binding];
+	command_execution_data::simulator_binding& dst = data.descriptor_sets[VK_PIPELINE_BIND_POINT_COMPUTE][set][binding];
 	dst.descriptor_type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
 	dst.buffers.resize(1);
 	dst.buffers[0] = { buffer_data, offset, size };
@@ -446,6 +446,67 @@ static void execute_compute_shader()
 	assert(fixture.data.stats.commands == 2);
 	assert(fixture.data.stats.execution_commands == 1);
 	assert(fixture.descriptor_buffer_payloads.empty());
+}
+
+static void execute_compute_shader_push_descriptors()
+{
+	compute_shader_fixture fixture;
+	fixture.data.descriptor_sets.clear();
+
+	index_to_VkBuffer.clear();
+	index_to_VkBuffer.resize(2);
+	const VkBuffer input_buffer = (VkBuffer)(uintptr_t)1;
+	const VkBuffer output_buffer = (VkBuffer)(uintptr_t)2;
+	index_to_VkBuffer.set(0, input_buffer);
+	index_to_VkBuffer.set(1, output_buffer);
+
+	trackedcommand push { VKCMDPUSHDESCRIPTORSETKHR };
+	push.data.push_descriptorset.pipelineBindPoint = VK_PIPELINE_BIND_POINT_COMPUTE;
+	push.data.push_descriptorset.layout = VK_NULL_HANDLE;
+	push.data.push_descriptorset.set = 0;
+	push.data.push_descriptorset.descriptorWriteCount = 2;
+	push.data.push_descriptorset.pDescriptorWrites = (VkWriteDescriptorSet*)calloc(2, sizeof(VkWriteDescriptorSet));
+	assert(push.data.push_descriptorset.pDescriptorWrites);
+	for (uint32_t i = 0; i < 2; i++)
+	{
+		VkWriteDescriptorSet& write = push.data.push_descriptorset.pDescriptorWrites[i];
+		write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+		write.dstBinding = i;
+		write.descriptorCount = 1;
+		write.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+		write.pBufferInfo = (VkDescriptorBufferInfo*)calloc(1, sizeof(VkDescriptorBufferInfo));
+		assert(write.pBufferInfo);
+		((VkDescriptorBufferInfo*)write.pBufferInfo)->buffer = (i == 0) ? input_buffer : output_buffer;
+		((VkDescriptorBufferInfo*)write.pBufferInfo)->range = VK_WHOLE_SIZE;
+	}
+	fixture.cmdbuffer_data.commands.push_front(push);
+	trackedcommand graphics_push { VKCMDPUSHDESCRIPTORSETKHR };
+	graphics_push.data.push_descriptorset.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+	graphics_push.data.push_descriptorset.layout = VK_NULL_HANDLE;
+	graphics_push.data.push_descriptorset.set = 0;
+	graphics_push.data.push_descriptorset.descriptorWriteCount = 2;
+	graphics_push.data.push_descriptorset.pDescriptorWrites = (VkWriteDescriptorSet*)calloc(2, sizeof(VkWriteDescriptorSet));
+	assert(graphics_push.data.push_descriptorset.pDescriptorWrites);
+	for (uint32_t i = 0; i < 2; i++)
+	{
+		VkWriteDescriptorSet& write = graphics_push.data.push_descriptorset.pDescriptorWrites[i];
+		write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+		write.dstBinding = i;
+		write.descriptorCount = 1;
+		write.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+		write.pBufferInfo = (VkDescriptorBufferInfo*)calloc(1, sizeof(VkDescriptorBufferInfo));
+		assert(write.pBufferInfo);
+		((VkDescriptorBufferInfo*)write.pBufferInfo)->buffer = input_buffer;
+		((VkDescriptorBufferInfo*)write.pBufferInfo)->range = VK_WHOLE_SIZE;
+	}
+	fixture.cmdbuffer_data.commands.insert(++fixture.cmdbuffer_data.commands.begin(), graphics_push);
+
+	assert(execute_commands(fixture.data));
+	assert(fixture.output_value() == compute_shader_expected_output);
+	assert(fixture.stage().calls == 1);
+	assert(fixture.data.stats.commands == 4);
+	assert(fixture.data.stats.execution_commands == 1);
+	index_to_VkBuffer.clear();
 }
 
 static void execute_compute_shader_copy_provenance()
@@ -1048,6 +1109,7 @@ int main(int argc, char** argv)
 	execute_null();
 	execute_copy_buffer();
 	execute_compute_shader();
+	execute_compute_shader_push_descriptors();
 	execute_compute_shader_copy_provenance();
 	execute_compute_shader_bda_unbound_input();
 	execute_compute_shader_bda_copied_address_chain();

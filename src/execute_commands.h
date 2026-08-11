@@ -14,11 +14,12 @@ struct command_execution_data
 		std::vector<image_access> images;
 		std::vector<uint64_t> opaques;
 	};
+	using simulator_descriptor_sets = std::unordered_map<uint32_t, std::unordered_map<uint32_t, simulator_binding>>;
 
 	const trackeddevice& device_data;
 	const trackedcmdbuffer& cmdbuffer_data;
 	const address_remapper<trackedobject>& device_address_remapping;
-	std::unordered_map<uint32_t, std::unordered_map<uint32_t, simulator_binding>> descriptor_sets; // set -> binding -> logical binding contents
+	std::unordered_map<VkPipelineBindPoint, simulator_descriptor_sets> descriptor_sets; // bind point -> set -> binding -> logical binding contents
 	std::vector<std::byte> push_constants; // current state of the push constants
 	host_write_regions push_constant_sources;
 	std::list<address_rewrite>& global_output_rewrite_queue;

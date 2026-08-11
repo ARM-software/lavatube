@@ -36,14 +36,6 @@ static uint64_t descriptor_dynamic_slot(uint32_t binding, uint32_t array_index)
 	return (uint64_t(binding) << 32) | array_index;
 }
 
-static VkDescriptorBufferInfo descriptor_dynamic_slot_value(const trackeddescriptorset_trace* tds, uint32_t binding, uint32_t array_index)
-{
-	static const VkDescriptorBufferInfo empty = { VK_NULL_HANDLE, 0, 0 };
-	const uint64_t slot = descriptor_dynamic_slot(binding, array_index);
-	const auto it = tds->dynamic_buffers.find(slot);
-	return (it != tds->dynamic_buffers.end()) ? it->second : empty;
-}
-
 static void trace_post_vkSubmitDebugUtilsMessageEXT(lava_file_writer& writer,
     VkInstance                                  instance,
     VkDebugUtilsMessageSeverityFlagBitsEXT      messageSeverity,
@@ -1096,10 +1088,11 @@ static void handle_VkCopyDescriptorSets(lava_file_writer& writer, uint32_t descr
 		merge_descriptor_touched(dst, src);
 		for (uint32_t j = 0; j < pDescriptorCopies[i].descriptorCount; j++)
 		{
-			const VkDescriptorBufferInfo src_info = descriptor_dynamic_slot_value(src,
-				pDescriptorCopies[i].srcBinding, pDescriptorCopies[i].srcArrayElement + j);
+			const uint64_t src_slot = descriptor_dynamic_slot(pDescriptorCopies[i].srcBinding, pDescriptorCopies[i].srcArrayElement + j);
 			const uint64_t dst_slot = descriptor_dynamic_slot(pDescriptorCopies[i].dstBinding, pDescriptorCopies[i].dstArrayElement + j);
-			dst->dynamic_buffers[dst_slot] = src_info;
+			const auto src_info = src->dynamic_buffers.find(src_slot);
+			if (src_info != src->dynamic_buffers.end()) dst->dynamic_buffers[dst_slot] = src_info->second;
+			else dst->dynamic_buffers.erase(dst_slot);
 		}
 	}
 }

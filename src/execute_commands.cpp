@@ -516,7 +516,13 @@ static bool run_spirv(command_execution_data& data, const shader_stage& stage, c
 	{
 		inputs.specialization_constant_offsets[v.constantID] = v.offset;
 	}
-	for (const auto& set_pair : data.descriptor_sets)
+	const command_execution_data::simulator_descriptor_sets empty_descriptor_sets;
+	const VkPipelineBindPoint descriptor_bind_point = shader_object
+		? (stage.stage == VK_SHADER_STAGE_COMPUTE_BIT ? VK_PIPELINE_BIND_POINT_COMPUTE : VK_PIPELINE_BIND_POINT_GRAPHICS)
+		: owner_bind_point;
+	const auto descriptor_sets_it = data.descriptor_sets.find(descriptor_bind_point);
+	const auto& descriptor_sets = descriptor_sets_it == data.descriptor_sets.end() ? empty_descriptor_sets : descriptor_sets_it->second;
+	for (const auto& set_pair : descriptor_sets)
 	{
 		auto& set_bindings = inputs.bindings[set_pair.first];
 		for (const auto& binding_pair : set_pair.second)
@@ -1118,6 +1124,91 @@ static void record_descriptor_buffer_payload(const command_execution_data& data,
 	}
 }
 
+static void apply_push_descriptor_writes(command_execution_data& data, VkPipelineBindPoint pipelineBindPoint, uint32_t set,
+	uint32_t descriptorWriteCount, const VkWriteDescriptorSet* pDescriptorWrites)
+{
+	for (uint32_t i = 0; i < descriptorWriteCount; i++)
+	{
+		const VkWriteDescriptorSet& write = pDescriptorWrites[i];
+		command_execution_data::simulator_binding& dst = data.descriptor_sets[pipelineBindPoint][set][write.dstBinding];
+		dst.descriptor_type = write.descriptorType;
+		dst.descriptor_buffer_backed = false;
+		for (uint32_t j = 0; j < write.descriptorCount; j++)
+		{
+			const uint32_t array_index = write.dstArrayElement + j;
+			switch (write.descriptorType)
+			{
+			case VK_DESCRIPTOR_TYPE_SAMPLER:
+			case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
+			case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:
+			case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:
+			case VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT:
+				{
+					if (dst.images.size() <= array_index) dst.images.resize(array_index + 1);
+					image_access access { nullptr, write.pImageInfo[j].imageLayout };
+					if (write.pImageInfo[j].imageView != VK_NULL_HANDLE)
+					{
+						const uint32_t view_index = index_to_VkImageView.index(write.pImageInfo[j].imageView);
+						auto& view_data = VkImageView_index.at(view_index);
+						access.image_data = &VkImage_index.at(view_data.image_index);
+					}
+					dst.images[array_index] = access;
+				}
+				break;
+			case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
+			case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
+			case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC:
+			case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC:
+				{
+					if (dst.buffers.size() <= array_index) dst.buffers.resize(array_index + 1);
+					buffer_access access;
+					if (write.pBufferInfo[j].buffer != VK_NULL_HANDLE)
+					{
+						const uint32_t buffer_index = index_to_VkBuffer.index(write.pBufferInfo[j].buffer);
+						access.buffer_data = &VkBuffer_index.at(buffer_index);
+						access.offset = write.pBufferInfo[j].offset;
+						access.size = write.pBufferInfo[j].range;
+						if (access.size == VK_WHOLE_SIZE) access.size = access.buffer_data->size - access.offset;
+					}
+					dst.buffers[array_index] = access;
+				}
+				break;
+			case VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER:
+			case VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER:
+				{
+					if (dst.buffers.size() <= array_index) dst.buffers.resize(array_index + 1);
+					buffer_access access;
+					if (write.pTexelBufferView[j] != VK_NULL_HANDLE)
+					{
+						const uint32_t view_index = index_to_VkBufferView.index(write.pTexelBufferView[j]);
+						auto& view_data = VkBufferView_index.at(view_index);
+						access.buffer_data = &VkBuffer_index.at(view_data.buffer_index);
+						access.offset = view_data.offset;
+						access.size = view_data.range;
+						if (access.size == VK_WHOLE_SIZE) access.size = access.buffer_data->size - access.offset;
+					}
+					dst.buffers[array_index] = access;
+				}
+				break;
+			default:
+				assert(false);
+				break;
+			}
+		}
+	}
+}
+
+static void free_push_descriptor_writes(uint32_t descriptorWriteCount, VkWriteDescriptorSet* pDescriptorWrites)
+{
+	for (uint32_t i = 0; i < descriptorWriteCount; i++)
+	{
+		free((void*)pDescriptorWrites[i].pImageInfo);
+		free((void*)pDescriptorWrites[i].pBufferInfo);
+		free((void*)pDescriptorWrites[i].pTexelBufferView);
+	}
+	free(pDescriptorWrites);
+}
+
 bool execute_commands(command_execution_data& data)
 {
 	std::vector<std::byte> push_constants; // current state of the push constants
@@ -1135,6 +1226,7 @@ bool execute_commands(command_execution_data& data)
 		{
 		case VKCMDBINDDESCRIPTORSETS:
 			{
+			auto& descriptor_sets = data.descriptor_sets[c.data.bind_descriptorsets.pipelineBindPoint];
 			const trackedpipelinelayout* layout_data = nullptr;
 			if (c.data.bind_descriptorsets.layout != VK_NULL_HANDLE)
 			{
@@ -1146,7 +1238,7 @@ bool execute_commands(command_execution_data& data)
 			{
 				uint32_t set = c.data.bind_descriptorsets.firstSet + i;
 				auto& tds = VkDescriptorSet_index.at(c.data.bind_descriptorsets.pDescriptorSets[i]); // is index now
-				data.descriptor_sets[set].clear();
+				descriptor_sets[set].clear();
 				const trackeddescriptorsetlayout* set_layout_data = nullptr;
 				if (layout_data && set < layout_data->layout_indices.size())
 				{
@@ -1157,7 +1249,7 @@ bool execute_commands(command_execution_data& data)
 				{
 					const uint32_t binding = descriptor_binding_slot_binding(pair.first);
 					const uint32_t array_index = descriptor_binding_slot_array_index(pair.first);
-					command_execution_data::simulator_binding& dst = data.descriptor_sets[set][binding];
+					command_execution_data::simulator_binding& dst = descriptor_sets[set][binding];
 					if (set_layout_data)
 					{
 						auto type_it = set_layout_data->binding_types.find(binding);
@@ -1172,7 +1264,7 @@ bool execute_commands(command_execution_data& data)
 				{
 					const uint32_t binding = descriptor_binding_slot_binding(pair.first);
 					const uint32_t array_index = descriptor_binding_slot_array_index(pair.first);
-					command_execution_data::simulator_binding& dst = data.descriptor_sets[set][binding];
+					command_execution_data::simulator_binding& dst = descriptor_sets[set][binding];
 					if (set_layout_data)
 					{
 						auto type_it = set_layout_data->binding_types.find(binding);
@@ -1187,7 +1279,7 @@ bool execute_commands(command_execution_data& data)
 				{
 					const uint32_t binding = descriptor_binding_slot_binding(pair.first);
 					const uint32_t array_index = descriptor_binding_slot_array_index(pair.first);
-					command_execution_data::simulator_binding& dst = data.descriptor_sets[set][binding];
+					command_execution_data::simulator_binding& dst = descriptor_sets[set][binding];
 					if (set_layout_data)
 					{
 						auto type_it = set_layout_data->binding_types.find(binding);
@@ -1215,7 +1307,7 @@ bool execute_commands(command_execution_data& data)
 					}
 					access.size = pair.second.range;
 					if (access.size == VK_WHOLE_SIZE) access.size = buffer_data.size - access.offset;
-					command_execution_data::simulator_binding& dst = data.descriptor_sets[set][binding];
+					command_execution_data::simulator_binding& dst = descriptor_sets[set][binding];
 					dst.descriptor_type = set_layout_data ? set_layout_data->binding_types.at(binding) : VK_DESCRIPTOR_TYPE_MAX_ENUM;
 					if (set_layout_data)
 					{
@@ -1250,6 +1342,7 @@ bool execute_commands(command_execution_data& data)
 			break;
 		case VKCMDSETDESCRIPTORBUFFEROFFSETSEXT:
 			{
+				auto& descriptor_sets = data.descriptor_sets[c.data.set_descriptor_buffer_offsets_ext.pipelineBindPoint];
 				const uint32_t layout_index = index_to_VkPipelineLayout.index(c.data.set_descriptor_buffer_offsets_ext.layout);
 				if (layout_index == CONTAINER_INVALID_INDEX) break;
 				const trackedpipelinelayout& layout_data = VkPipelineLayout_index.at(layout_index);
@@ -1277,7 +1370,7 @@ bool execute_commands(command_execution_data& data)
 						const VkDeviceSize binding_offset = offset_it != set_layout_data.offsets.end() ? offset_it->second : 0;
 						const VkDeviceSize descriptor_offset = descriptor_buffer.offset + set_offset + binding_offset;
 						if (descriptor_offset >= descriptor_buffer.buffer_data->size) continue;
-						command_execution_data::simulator_binding& dst = data.descriptor_sets[set][binding];
+						command_execution_data::simulator_binding& dst = descriptor_sets[set][binding];
 						dst.descriptor_type = binding_pair.second;
 						dst.descriptor_buffer_backed = true;
 						dst.buffers.clear();
@@ -1348,7 +1441,10 @@ bool execute_commands(command_execution_data& data)
 			else if (c.data.bind_pipeline.pipelineBindPoint == VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR) raytracing_pipeline_bound = c.data.bind_pipeline.pipeline_index;
 			break;
 		case VKCMDPUSHDESCRIPTORSETKHR:
-			assert(false); // TBD
+			apply_push_descriptor_writes(data, c.data.push_descriptorset.pipelineBindPoint, c.data.push_descriptorset.set,
+				c.data.push_descriptorset.descriptorWriteCount,
+				c.data.push_descriptorset.pDescriptorWrites);
+			free_push_descriptor_writes(c.data.push_descriptorset.descriptorWriteCount, c.data.push_descriptorset.pDescriptorWrites);
 			break;
 		case VKCMDBINDSHADERSEXT:
 			for (uint32_t i = 0; i < c.data.bind_shaders_ext.stageCount; i++)
