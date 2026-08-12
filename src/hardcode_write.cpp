@@ -1161,6 +1161,29 @@ static trackedbuffer* find_buffer_by_device_address(const trace_records& records
 	return best;
 }
 
+static void trace_post_vkCmdBindDescriptorBuffersEXT(lava_file_writer& writer, VkCommandBuffer commandBuffer, uint32_t bufferCount,
+	const VkDescriptorBufferBindingInfoEXT* pBindingInfos)
+{
+	if (!pBindingInfos) return;
+	auto* cmdbuf_data = writer.parent->records.VkCommandBuffer_index.at(commandBuffer);
+	if (!cmdbuf_data) return;
+
+	// Descriptor payloads may contain device addresses that are opaque to capture. Use the existing conservative
+	// queue-submit path to capture exposed data from every address-taken buffer used by this command buffer.
+	cmdbuf_data->uses_device_address_shader = true;
+	for (uint32_t i = 0; i < bufferCount; i++)
+	{
+		VkDeviceSize offset = 0;
+		trackedbuffer* buffer_data = find_buffer_by_device_address(writer.parent->records, pBindingInfos[i].address, 1, offset);
+		if (!buffer_data)
+		{
+			WLOG("Descriptor buffer binding address 0x%llx is not mapped to a tracked buffer", (unsigned long long)pBindingInfos[i].address);
+			continue;
+		}
+		cmdbuf_data->touch(buffer_data, offset, buffer_data->size - offset, __LINE__);
+	}
+}
+
 static void trace_touch_sbt_region(lava_file_writer& writer, trackedcmdbuffer_trace* cmdbuf_data,
 	const VkStridedDeviceAddressRegionKHR* region, const char* label)
 {

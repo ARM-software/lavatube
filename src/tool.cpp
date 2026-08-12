@@ -740,9 +740,9 @@ static trackedbuffer* find_output_descriptor_buffer(VkDeviceAddress address, VkD
 	for (uint32_t i = 0; i < index_to_VkBuffer.size(); i++)
 	{
 		trackedbuffer& buffer = VkBuffer_index.at(i);
-		if (buffer.device_address == 0 || buffer.size == 0) continue;
-		if (address < buffer.device_address) continue;
-		const VkDeviceSize offset = address - buffer.device_address;
+		if (buffer.capture_device_address == 0 || buffer.size == 0) continue;
+		if (address < buffer.capture_device_address) continue;
+		const VkDeviceSize offset = address - buffer.capture_device_address;
 		if (offset + size > buffer.size) continue;
 		out_offset = offset;
 		return &buffer;
@@ -865,6 +865,8 @@ static bool descriptor_buffer_update_already_queued(uint32_t buffer_index, VkDev
 
 static void queue_synthetic_descriptor_buffer_update(uint32_t buffer_index, VkDeviceSize offset, VkDescriptorType type)
 {
+	if (descriptor_output_marking_exists(buffer_index, offset, type)) return;
+
 	std::vector<uint8_t> bytes;
 	auto payload_entry = std::find_if(descriptor_buffer_payloads_for_output.begin(), descriptor_buffer_payloads_for_output.end(),
 		[&](const descriptor_buffer_payload& payload)
@@ -882,7 +884,6 @@ static void queue_synthetic_descriptor_buffer_update(uint32_t buffer_index, VkDe
 	}
 	if (bytes.empty())
 	{
-		if (descriptor_output_marking_exists(buffer_index, offset, type)) return;
 		std::vector<uint8_t> captured_bytes;
 		const std::vector<uint8_t>* captured_bytes_ptr = nullptr;
 		auto payload_it = std::find_if(pending_descriptor_payloads.begin(), pending_descriptor_payloads.end(),

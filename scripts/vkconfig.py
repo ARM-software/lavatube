@@ -181,7 +181,7 @@ trace_post_calls = [ 'vkQueueSubmit', 'vkQueueSubmit2', 'vkQueueSubmit2KHR', 'vk
 		'vkGetDeviceImageMemoryRequirements', 'vkGetDeviceImageMemoryRequirementsKHR', 'vkGetPhysicalDeviceFeatures2', 'vkGetPhysicalDeviceFeatures2KHR',
 		'vkGetPhysicalDeviceMemoryProperties2', 'vkGetDeviceImageSparseMemoryRequirementsKHR', 'vkGetDeviceImageSparseMemoryRequirements',
 		'vkCreateShaderModule', 'vkCreateGraphicsPipelines', 'vkCreateComputePipelines', 'vkCreateRayTracingPipelinesKHR',
-		'vkCmdBindPipeline', 'vkGetBufferDeviceAddress', 'vkGetBufferDeviceAddressKHR', 'vkGetBufferDeviceAddressEXT',
+		'vkCmdBindPipeline', 'vkCmdBindDescriptorBuffersEXT', 'vkGetBufferDeviceAddress', 'vkGetBufferDeviceAddressKHR', 'vkGetBufferDeviceAddressEXT',
 		'vkGetAccelerationStructureDeviceAddressKHR', 'vkCmdBindDescriptorSets2KHR', 'vkCmdBindDescriptorSets2', 'vkGetTensorMemoryRequirementsARM',
 		'vkGetDeviceTensorMemoryRequirementsARM',
 		'vkBindTensorMemoryARM', 'vkGetDataGraphPipelineSessionMemoryRequirementsARM', 'vkBindDataGraphPipelineSessionMemoryARM',
