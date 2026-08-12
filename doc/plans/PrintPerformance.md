@@ -6,7 +6,7 @@ few packets and packet ranges here and there. Can we do better?
 ## Idea: Separate generated parser code for printing
 
 We currently piggy-back on the replay code for printing, mixing the two. This is not ideal,
-but gave us a quick way to implement the functionality. It also allows us to print threaded calls
+but it gave us a quick way to implement the functionality. It also allows us to print threaded calls
 in somewhat similar order as a normal replay. If we make separate parser code for printing, we
 could optimize it by not using a thread model. The disadvantage is that the thread ordering would
 no longer make much sense, and so we should probably only print one thread at a time. The current
@@ -22,9 +22,11 @@ being initialized and updated.
 
 Questions:
 - What else will break / won't be visible if we don't track state incrementally?
+- Do we need a new primitive file parser that isn't aggressively multi-threaded? The current
+  low-level code in `filereader.h` is optimized for incremental streaming, not for jumping around.
 
 How:
-- We would likely need a whole ned set of operations in `scripts/util.py` parallel to the current
+- We would likely need a whole new set of operations in `scripts/util.py` parallel to the current
   'load' and 'save' functions. That would be a lot of new code to maintain, and the reason why we
   don't currently do this.
 

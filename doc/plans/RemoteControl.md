@@ -44,7 +44,8 @@ More instructions to implement:
   push a callback on the queue submit so we can queuewaitidle -> write -> clear writeout queue
 * `lava-cli split-cmdbuf-by-renderpass` - only when on `vkBeginCommandBuffer` to split commandbuffers by renderpasses
 * `lava-cli split-cmdbuf-by-shader` - only when on `vkBeginCommandBuffer` to split commandbuffers by shader calls
-* `lava-cli prompt <file>` - as above, but read prompt from file in current working directory
+* `lava-cli add-markers` - only when on `vkBeginCommandBuffer` to sprinkle `vkCmdWriteBufferMarker2AMD()` calls after every command into the generated commandbuffer; returns index of target marker buffer (which is persistently mapped)
+* `lava-cli read-markers` - read out the last value of our markers, useful if we encountered a device lost error during execution of a marked up commandbuffer
 * `lava-cli backtrace` - generate a backtrace from the current position, could invoke gdb, need to figure out what to do for Android
 	- on same host, llm model could just fire up gdb, which is far more powerful, so of limited usefulness
 	- could we annotate the backtrace with extra info to increase usefulness?
@@ -53,20 +54,6 @@ More instructions to implement:
 * `lava-cli inject <packet> <thread> fence-wait <device index> <fence index>` - similar to the above, inject a future wait for the given fence before the given packet boundary
 * `lava-cli inject <packet> <thread> queue-wait <queue index>` - similar to the above, inject a future wait for the given queue before the given packet boundary
 * `lava-cli inject <packet> <thread> host-wait <packet> <thread>` - similar to the above, inject a future barrier waiting for the given other thread and packet before the given packet boundary
-
-## lava-tui integration
-
-Rename `lava-tui` to `lava-chat <prompt>`.
-
-Give an instruction in natural language form to be interpreted by an LLM with defined tool
-access to the replay.
-
-We could keep around a session history file that could feed into calls `lava-chat`. We only ever
-have one client to one replayer, never any one-to-many relations. We can keep a session file under
-`~/.lavatube/sessions/latest.txt` and rename completed session to ``~/.lavatube/sessions/<timestamp>.txt`.
-
-The `new` and `stop` commands reset the session. With any other command, if no session found, start
-one and list the new session file.
 
 ## Notes
 
