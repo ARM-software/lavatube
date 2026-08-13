@@ -243,6 +243,8 @@ set(LAVATUBE_SRC
     ${PROJECT_SOURCE_DIR}/src/window.h
     ${PROJECT_SOURCE_DIR}/src/filereader.cpp
     ${PROJECT_SOURCE_DIR}/src/filereader.h
+    ${PROJECT_SOURCE_DIR}/src/random_access_file_reader.cpp
+    ${PROJECT_SOURCE_DIR}/src/random_access_file_reader.h
     ${PROJECT_SOURCE_DIR}/src/read.cpp
     ${PROJECT_SOURCE_DIR}/src/read.h
     ${PROJECT_SOURCE_DIR}/src/replay_screenshot.cpp
@@ -588,6 +590,22 @@ target_compile_options(read_preload PRIVATE ${COMMON_FLAGS})
 add_dependencies(read_preload sync_generated)
 add_lavatube_test(read_test_preload COMMAND read_preload)
 set_tests_properties(read_test_preload PROPERTIES TIMEOUT 10)
+
+add_executable(random_access_file_reader_test tests/random_access_file_reader.cpp)
+target_include_directories(random_access_file_reader_test ${COMMON_INCLUDE})
+target_link_libraries(random_access_file_reader_test ${COMMON_LIBRARIES} lavatube)
+target_compile_options(random_access_file_reader_test PRIVATE ${COMMON_FLAGS})
+add_dependencies(random_access_file_reader_test sync_generated)
+add_lavatube_test(read_test_random_access COMMAND random_access_file_reader_test)
+set_tests_properties(read_test_random_access PROPERTIES TIMEOUT 10)
+
+add_executable(large_trace_test tests/large_trace.cpp)
+target_include_directories(large_trace_test ${COMMON_INCLUDE})
+target_link_libraries(large_trace_test ${COMMON_LIBRARIES} lavatube)
+target_compile_options(large_trace_test PRIVATE ${COMMON_FLAGS})
+add_dependencies(large_trace_test sync_generated)
+add_lavatube_test(large_trace_test COMMAND large_trace_test)
+set_tests_properties(large_trace_test PROPERTIES TIMEOUT 10)
 
 add_executable(write5 tests/write5.cpp src/filewriter.cpp src/filereader.cpp src/util.cpp src/android_utils.cpp)
 target_include_directories(write5 ${COMMON_INCLUDE})
