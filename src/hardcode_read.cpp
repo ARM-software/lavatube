@@ -524,7 +524,7 @@ void retrace_vkGetSemaphoreFdKHR(lava_file_reader& reader)
 	callback_context cb_context{ reader };
 	cb_context.result.vkresult = retval;
 	for (auto* c : vkGetSemaphoreFdKHR_callbacks) c(cb_context, device, pGetFdInfo, pFd);
-	if (reader.parent->print_packets) print_params_publish(cb_context, json_params_vkGetSemaphoreFdKHR(cb_context, device, pGetFdInfo, pFd));
+	if (reader.parent->print_packets && print_params_requested(cb_context)) print_params_publish(cb_context, json_params_vkGetSemaphoreFdKHR(cb_context, device, pGetFdInfo, pFd));
 	while (check_cli(cb_context)) cli_params_vkGetSemaphoreFdKHR(cb_context, device, pGetFdInfo, pFd);
 }
 
@@ -615,7 +615,7 @@ void retrace_vkImportSemaphoreFdKHR(lava_file_reader& reader)
 	callback_context cb_context{ reader };
 	cb_context.result.vkresult = retval;
 	for (auto* c : vkImportSemaphoreFdKHR_callbacks) c(cb_context, device, pImportSemaphoreFdInfo);
-	if (reader.parent->print_packets) print_params_publish(cb_context, json_params_vkImportSemaphoreFdKHR(cb_context, device, pImportSemaphoreFdInfo));
+	if (reader.parent->print_packets && print_params_requested(cb_context)) print_params_publish(cb_context, json_params_vkImportSemaphoreFdKHR(cb_context, device, pImportSemaphoreFdInfo));
 	while (check_cli(cb_context)) cli_params_vkImportSemaphoreFdKHR(cb_context, device, pImportSemaphoreFdInfo);
 }
 
@@ -3444,7 +3444,7 @@ void retrace_vkSyncBufferTRACETOOLTEST(lava_file_reader& reader)
 	reader.physicalDevice = VkDevice_index.at(device_index).physicalDevice;
 	callback_context cb_context{ reader };
 	for (auto* c : vkSyncBufferTRACETOOLTEST_callbacks) c(cb_context, device, buffer);
-	if (reader.parent->print_packets) print_params_publish(cb_context, json_params_vkSyncBufferTRACETOOLTEST(cb_context, device, buffer));
+	if (reader.parent->print_packets && print_params_requested(cb_context)) print_params_publish(cb_context, json_params_vkSyncBufferTRACETOOLTEST(cb_context, device, buffer));
 	while (check_cli(cb_context)) cli_params_vkSyncBufferTRACETOOLTEST(cb_context, device, buffer);
 }
 
@@ -3463,7 +3463,7 @@ void retrace_vkFrameBoundaryANDROID(lava_file_reader& reader)
 	sync_lock.unlock();
 	callback_context cb_context{ reader };
 	for (auto* c : vkFrameBoundaryANDROID_callbacks) c(cb_context, device, semaphore, image);
-	if (reader.parent->print_packets) print_params_publish(cb_context, json_params_vkFrameBoundaryANDROID(cb_context, device, semaphore, image));
+	if (reader.parent->print_packets && print_params_requested(cb_context)) print_params_publish(cb_context, json_params_vkFrameBoundaryANDROID(cb_context, device, semaphore, image));
 	if (stop_after_frame)
 	{
 		if (reader.run) reader.parent->request_stop(device);
@@ -3845,7 +3845,7 @@ void retrace_vkAssertBufferARM(lava_file_reader& reader)
 		callback_context cb_context{ reader };
 		cb_context.result.vkresult = VK_SUCCESS;
 		for (auto* c : vkAssertBufferARM_callbacks) c(cb_context, device, &info, &checksum, comment);
-		if (reader.parent->print_packets) print_params_publish(cb_context, json_params_vkAssertBufferARM(cb_context, device, &info, &checksum, comment));
+		if (reader.parent->print_packets && print_params_requested(cb_context)) print_params_publish(cb_context, json_params_vkAssertBufferARM(cb_context, device, &info, &checksum, comment));
 		return;
 	}
 	uint32_t checksum_new = adler32(nullptr, 0);
@@ -3867,7 +3867,7 @@ void retrace_vkAssertBufferARM(lava_file_reader& reader)
 	callback_context cb_context{ reader };
 	cb_context.result.vkresult = VK_SUCCESS;
 	for (auto* c : vkAssertBufferARM_callbacks) c(cb_context, device, &info, &checksum, comment);
-	if (reader.parent->print_packets) print_params_publish(cb_context, json_params_vkAssertBufferARM(cb_context, device, &info, &checksum, comment));
+	if (reader.parent->print_packets && print_params_requested(cb_context)) print_params_publish(cb_context, json_params_vkAssertBufferARM(cb_context, device, &info, &checksum, comment));
 	while (check_cli(cb_context)) cli_params_vkAssertBufferARM(cb_context, device, &info, &checksum, comment);
 }
 
@@ -3887,7 +3887,7 @@ void retrace_vkAssertMemoryARM(lava_file_reader& reader)
 		callback_context cb_context{ reader };
 		cb_context.result.vkresult = VK_SUCCESS;
 		for (auto* c : vkAssertMemoryARM_callbacks) c(cb_context, device, &info, &checksum, comment);
-		if (reader.parent->print_packets) print_params_publish(cb_context, json_params_vkAssertMemoryARM(cb_context, device, &info, &checksum, comment));
+		if (reader.parent->print_packets && print_params_requested(cb_context)) print_params_publish(cb_context, json_params_vkAssertMemoryARM(cb_context, device, &info, &checksum, comment));
 		return;
 	}
 	uint32_t checksum_new = adler32(nullptr, 0);
@@ -3919,7 +3919,7 @@ void retrace_vkAssertMemoryARM(lava_file_reader& reader)
 	callback_context cb_context{ reader };
 	cb_context.result.vkresult = VK_SUCCESS;
 	for (auto* c : vkAssertMemoryARM_callbacks) c(cb_context, device, &info, &checksum, comment);
-	if (reader.parent->print_packets) print_params_publish(cb_context, json_params_vkAssertMemoryARM(cb_context, device, &info, &checksum, comment));
+	if (reader.parent->print_packets && print_params_requested(cb_context)) print_params_publish(cb_context, json_params_vkAssertMemoryARM(cb_context, device, &info, &checksum, comment));
 	while (check_cli(cb_context)) cli_params_vkAssertMemoryARM(cb_context, device, &info, &checksum, comment);
 }
 
@@ -4470,7 +4470,7 @@ void retrace_vkCmdUpdateBuffer2ARM(lava_file_reader& reader)
 	tbuf.last_modified = reader.current;
 	callback_context cb_context{ reader };
 	for (auto* c : vkCmdUpdateBuffer2ARM_callbacks) c(cb_context, commandBuffer, &info);
-	if (reader.parent->print_packets) print_params_publish(cb_context, json_params_vkCmdUpdateBuffer2ARM(cb_context, commandBuffer, &info));
+	if (reader.parent->print_packets && print_params_requested(cb_context)) print_params_publish(cb_context, json_params_vkCmdUpdateBuffer2ARM(cb_context, commandBuffer, &info));
 	while (check_cli(cb_context)) cli_params_vkCmdUpdateBuffer2ARM(cb_context, commandBuffer, &info);
 }
 
@@ -4501,7 +4501,7 @@ void retrace_vkCmdUpdateMemory2ARM(lava_file_reader& reader)
 	if (buffer_data) buffer_data->last_modified = reader.current;
 	callback_context cb_context{ reader };
 	for (auto* c : vkCmdUpdateMemory2ARM_callbacks) c(cb_context, commandBuffer, &info);
-	if (reader.parent->print_packets) print_params_publish(cb_context, json_params_vkCmdUpdateMemory2ARM(cb_context, commandBuffer, &info));
+	if (reader.parent->print_packets && print_params_requested(cb_context)) print_params_publish(cb_context, json_params_vkCmdUpdateMemory2ARM(cb_context, commandBuffer, &info));
 	while (check_cli(cb_context)) cli_params_vkCmdUpdateMemory2ARM(cb_context, commandBuffer, &info);
 }
 
@@ -4651,7 +4651,7 @@ void retrace_vkGetSwapchainImagesKHR(lava_file_reader& reader)
 	callback_context cb_context{ reader };
 	cb_context.result.vkresult = result;
 	for (auto* c : vkGetSwapchainImagesKHR_callbacks) c(cb_context, device, swapchain, &pSwapchainImageCount, pSwapchainImages);
-	if (reader.parent->print_packets) print_params_publish(cb_context, json_params_vkGetSwapchainImagesKHR(cb_context, device, swapchain));
+	if (reader.parent->print_packets && print_params_requested(cb_context)) print_params_publish(cb_context, json_params_vkGetSwapchainImagesKHR(cb_context, device, swapchain));
 	while (check_cli(cb_context)) cli_params_vkGetSwapchainImagesKHR(cb_context, device, swapchain);
 }
 
@@ -4713,7 +4713,7 @@ static void replay_vkCreateSurfaceKHR_packet(lava_file_reader& reader, const sur
 	if (pSurface) index_to_VkSurfaceKHR.set(packet.surface_index, pSurface);
 	// TBD we should create some window-common callback a user can attach to and trigger here
 	callback_context cb_context{ reader };
-	if (reader.parent->print_packets) print_params_publish(cb_context, json_params_vkCreateSurfaceKHR(cb_context, packet));
+	if (reader.parent->print_packets && print_params_requested(cb_context)) print_params_publish(cb_context, json_params_vkCreateSurfaceKHR(cb_context, packet));
 	while (check_cli(cb_context)) cli_params_vkCreateSurfaceKHR(cb_context, packet);
 }
 
@@ -4859,7 +4859,7 @@ void retrace_vkGetDeviceQueue2(lava_file_reader& reader)
 	}
 	callback_context cb_context{ reader };
 	for (auto* c : vkGetDeviceQueue2_callbacks) c(cb_context, device, &info_real, &queue);
-	if (reader.parent->print_packets) print_params_publish(cb_context, json_params_vkGetDeviceQueue2(cb_context, device, &info_real));
+	if (reader.parent->print_packets && print_params_requested(cb_context)) print_params_publish(cb_context, json_params_vkGetDeviceQueue2(cb_context, device, &info_real));
 	while (check_cli(cb_context)) cli_params_vkGetDeviceQueue2(cb_context, device, &info_real);
 }
 
@@ -4933,7 +4933,7 @@ void retrace_vkGetDeviceQueue(lava_file_reader& reader)
 	}
 	callback_context cb_context{ reader };
 	for (auto* c : vkGetDeviceQueue_callbacks) c(cb_context, device, queueFamilyIndex, queueIndex, &queue);
-	if (reader.parent->print_packets) print_params_publish(cb_context, json_params_vkGetDeviceQueue(cb_context, device, queueFamilyIndex, queueIndex));
+	if (reader.parent->print_packets && print_params_requested(cb_context)) print_params_publish(cb_context, json_params_vkGetDeviceQueue(cb_context, device, queueFamilyIndex, queueIndex));
 	while (check_cli(cb_context)) cli_params_vkGetDeviceQueue(cb_context, device, queueFamilyIndex, queueIndex);
 }
 
@@ -5044,7 +5044,7 @@ void retrace_vkEnumerateInstanceLayerProperties(lava_file_reader& reader)
 		pProperties_ptr = reader.run ? pProperties.data() : &tool_property;
 	}
 	for (auto* c : vkEnumerateInstanceLayerProperties_callbacks) c(cb_context, pPropertyCount_ptr, pProperties_ptr);
-	if (reader.parent->print_packets) print_params_publish(cb_context, json_params_vkEnumerateInstanceLayerProperties(cb_context));
+	if (reader.parent->print_packets && print_params_requested(cb_context)) print_params_publish(cb_context, json_params_vkEnumerateInstanceLayerProperties(cb_context));
 	while (check_cli(cb_context)) cli_params_vkEnumerateInstanceLayerProperties(cb_context);
 }
 
@@ -5081,7 +5081,7 @@ void retrace_vkEnumerateInstanceExtensionProperties(lava_file_reader& reader)
 		pProperties_ptr = reader.run ? pProperties.data() : &tool_property;
 	}
 	for (auto* c : vkEnumerateInstanceExtensionProperties_callbacks) c(cb_context, pLayerName, pPropertyCount_ptr, pProperties_ptr);
-	if (reader.parent->print_packets) print_params_publish(cb_context, json_params_vkEnumerateInstanceExtensionProperties(cb_context, pLayerName));
+	if (reader.parent->print_packets && print_params_requested(cb_context)) print_params_publish(cb_context, json_params_vkEnumerateInstanceExtensionProperties(cb_context, pLayerName));
 	while (check_cli(cb_context)) cli_params_vkEnumerateInstanceExtensionProperties(cb_context, pLayerName);
 }
 
@@ -5127,7 +5127,7 @@ void retrace_vkEnumerateDeviceLayerProperties(lava_file_reader& reader)
 		pProperties_ptr = reader.run ? pProperties.data() : &tool_property;
 	}
 	for (auto* c : vkEnumerateDeviceLayerProperties_callbacks) c(cb_context, physicalDevice, pPropertyCount_ptr, pProperties_ptr);
-	if (reader.parent->print_packets) print_params_publish(cb_context, json_params_vkEnumerateDeviceLayerProperties(cb_context, physicalDevice));
+	if (reader.parent->print_packets && print_params_requested(cb_context)) print_params_publish(cb_context, json_params_vkEnumerateDeviceLayerProperties(cb_context, physicalDevice));
 	while (check_cli(cb_context)) cli_params_vkEnumerateDeviceLayerProperties(cb_context, physicalDevice);
 }
 
@@ -5174,7 +5174,7 @@ void retrace_vkEnumerateDeviceExtensionProperties(lava_file_reader& reader)
 		pProperties_ptr = reader.run ? pProperties.data() : &tool_property;
 	}
 	for (auto* c : vkEnumerateDeviceExtensionProperties_callbacks) c(cb_context, physicalDevice, pLayerName, pPropertyCount_ptr, pProperties_ptr);
-	if (reader.parent->print_packets) print_params_publish(cb_context, json_params_vkEnumerateDeviceExtensionProperties(cb_context, physicalDevice, pLayerName));
+	if (reader.parent->print_packets && print_params_requested(cb_context)) print_params_publish(cb_context, json_params_vkEnumerateDeviceExtensionProperties(cb_context, physicalDevice, pLayerName));
 	while (check_cli(cb_context)) cli_params_vkEnumerateDeviceExtensionProperties(cb_context, physicalDevice, pLayerName);
 }
 
@@ -5199,7 +5199,7 @@ void retrace_vkGetPhysicalDeviceXlibPresentationSupportKHR(lava_file_reader& rea
 	callback_context cb_context{ reader };
 	cb_context.result.vkbool = retval;
 	for (auto* c : vkGetPhysicalDeviceXlibPresentationSupportKHR_callbacks) c(cb_context, physicalDevice, queueFamilyIndex, nullptr, 0);
-	if (reader.parent->print_packets) print_params_publish(cb_context, json_params_vkGetPhysicalDeviceXlibPresentationSupportKHR(cb_context, physicalDevice, queueFamilyIndex));
+	if (reader.parent->print_packets && print_params_requested(cb_context)) print_params_publish(cb_context, json_params_vkGetPhysicalDeviceXlibPresentationSupportKHR(cb_context, physicalDevice, queueFamilyIndex));
 	while (check_cli(cb_context)) cli_params_vkGetPhysicalDeviceXlibPresentationSupportKHR(cb_context, physicalDevice, queueFamilyIndex);
 }
 
@@ -5234,7 +5234,7 @@ void retrace_vkGetPhysicalDeviceXcbPresentationSupportKHR(lava_file_reader& read
 	callback_context cb_context{ reader };
 	cb_context.result.vkbool = retval;
 	for (auto* c : vkGetPhysicalDeviceXcbPresentationSupportKHR_callbacks) c(cb_context, physicalDevice, queueFamilyIndex, nullptr, visual_id);
-	if (reader.parent->print_packets) print_params_publish(cb_context, json_params_vkGetPhysicalDeviceXcbPresentationSupportKHR(cb_context, physicalDevice, queueFamilyIndex, visual_id));
+	if (reader.parent->print_packets && print_params_requested(cb_context)) print_params_publish(cb_context, json_params_vkGetPhysicalDeviceXcbPresentationSupportKHR(cb_context, physicalDevice, queueFamilyIndex, visual_id));
 	while (check_cli(cb_context)) cli_params_vkGetPhysicalDeviceXcbPresentationSupportKHR(cb_context, physicalDevice, queueFamilyIndex, visual_id);
 }
 

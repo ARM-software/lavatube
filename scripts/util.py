@@ -2177,7 +2177,7 @@ def loadfunc(name, node, target, header):
 	elif retval == 'PFN_vkVoidFunction': z.do('cb_context.result.address = retval;')
 	else: assert False, 'Unhandled callback result type %s from %s' % (retval, name)
 	z.do('for (auto* c : %s_callbacks) c(%s);' % (name, 'cb_context, ' + ', '.join(call_list)))
-	z.do('if (reader.parent->print_packets) print_params_publish(cb_context, json_params_%s(%s));' % (name, 'cb_context, ' + ', '.join(call_list) if call_list else 'cb_context'))
+	z.do('if (reader.parent->print_packets && print_params_requested(cb_context)) print_params_publish(cb_context, json_params_%s(%s));' % (name, 'cb_context, ' + ', '.join(call_list) if call_list else 'cb_context'))
 	if name == 'vkQueuePresentKHR':
 		z.do('if (stop_after_present) // if it returns true, then we have hit the end of our global frame range, so terminate everything')
 		z.brace_begin()

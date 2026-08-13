@@ -587,6 +587,7 @@ Json::Value cli_params_attachment(const callback_context& cb);
 void cli_params_publish(callback_context& cb, Json::Value v);
 void cli_params_unavailable(callback_context& cb);
 void cli_params_packet(callback_context& cb);
+bool print_params_requested(callback_context& cb);
 void print_params_publish(callback_context& cb, Json::Value v);
 void print_params_unavailable(callback_context& cb);
 void print_params_packet(callback_context& cb);

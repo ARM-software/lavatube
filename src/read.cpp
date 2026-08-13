@@ -322,6 +322,21 @@ static bool print_selector_matches(const lava_reader* parent, uint32_t thread, u
 	return false;
 }
 
+bool print_params_requested(callback_context& cb)
+{
+	lava_reader* parent = cb.reader.parent;
+	const bool thread_selected = parent->print_thread_index != UINT32_MAX && cb.reader.current.thread == parent->print_thread_index;
+	const bool selector_selected = print_selector_matches(parent, cb.reader.current.thread, cb.reader.print_packet_number);
+	if ((!parent->print_selectors.empty() && !selector_selected)
+	    || (parent->print_selectors.empty() && parent->print_thread_index != UINT32_MAX && !thread_selected)
+	    || !parent->is_frame_selected(cb.reader.print_packet_frame))
+	{
+		cb.reader.printed_current_packet = true;
+		return false;
+	}
+	return true;
+}
+
 static void print_mark_selectors(lava_reader* parent, uint32_t thread, uint32_t packet)
 {
 	for (print_packet_selector& selector : parent->print_selectors)
@@ -387,11 +402,13 @@ void print_params_publish(callback_context& cb, Json::Value v)
 
 void print_params_unavailable(callback_context& cb)
 {
+	if (!print_params_requested(cb)) return;
 	print_params_publish(cb, params_unavailable_json(cb));
 }
 
 void print_params_packet(callback_context& cb)
 {
+	if (!print_params_requested(cb)) return;
 	print_params_publish(cb, params_packet_json(cb));
 }
 
