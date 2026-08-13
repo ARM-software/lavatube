@@ -8,6 +8,8 @@
 #include <string>
 #include <vector>
 
+#include "jsoncpp/json/value.h"
+#include "file_format.h"
 #include "packfile.h"
 #include "util.h"
 
@@ -36,6 +38,11 @@ public:
 	~random_access_file_reader();
 
 	void seek(uint64_t position);
+	/// Load packet checkpoints from frames_N.json. Missing checkpoint data is valid for legacy traces.
+	void load_packet_checkpoints(const Json::Value& frame_info);
+	/// Seek to the closest checkpoint at or before packet and return that checkpoint's packet index.
+	/// Without checkpoint data, seeks to the start and returns packet zero.
+	uint32_t seek_to_packet(uint32_t packet);
 	void read_bytes(void* destination, uint64_t byte_count);
 
 	inline uint8_t read_uint8_t() { return read_value<uint8_t>(); }
@@ -83,6 +90,8 @@ public:
 	uint8_t compression_algorithm() const { return mCompressionAlgorithm; }
 	uint64_t decompression_count() const { return mDecompressionCount; }
 	const std::vector<random_access_chunk_info>& chunks() const { return mChunks; }
+	const std::vector<packet_checkpoint>& packet_checkpoints() const { return mPacketCheckpoints; }
+	bool has_packet_checkpoints() const { return !mPacketCheckpoints.empty(); }
 
 private:
 	template <typename T> T read_value()
@@ -103,6 +112,7 @@ private:
 	zipc_mapping mZipMapping = {};
 	std::string mFilename;
 	std::vector<random_access_chunk_info> mChunks;
+	std::vector<packet_checkpoint> mPacketCheckpoints;
 	std::vector<char> mChunkData;
 	uint64_t mTotalUncompressed = 0;
 	uint64_t mPosition = 0;

@@ -245,6 +245,7 @@ set(LAVATUBE_SRC
     ${PROJECT_SOURCE_DIR}/src/filereader.h
     ${PROJECT_SOURCE_DIR}/src/random_access_file_reader.cpp
     ${PROJECT_SOURCE_DIR}/src/random_access_file_reader.h
+    ${PROJECT_SOURCE_DIR}/src/file_format.h
     ${PROJECT_SOURCE_DIR}/src/read.cpp
     ${PROJECT_SOURCE_DIR}/src/read.h
     ${PROJECT_SOURCE_DIR}/src/replay_screenshot.cpp

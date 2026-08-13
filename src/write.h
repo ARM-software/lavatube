@@ -17,6 +17,7 @@
 #include "external/tracetooltests/src/usagetracker/vulkan_feature_detect.h"
 #include "containers.h"
 #include "lavamutex.h"
+#include "file_format.h"
 #include "filewriter.h"
 #include "lavatube.h"
 #include "write_resource_auto.h"
@@ -182,7 +183,9 @@ public:
 private:
 	std::string mPath;
 	std::vector<framedata> frames;
+	std::vector<packet_checkpoint> packet_checkpoints;
 	char thread_name[16];
+	uint64_t checkpoint_chunk_offset = 0;
 	uint64_t packet_start = 0;
 	uint32_t* packet_size = nullptr;
 	bool packet_open = false;

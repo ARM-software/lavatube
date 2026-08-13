@@ -792,6 +792,7 @@ static void normalize_frames_json(Json::Value& value)
 {
 	value.removeMember("compressed_sizes");
 	value.removeMember("uncompressed_sizes");
+	value.removeMember("packet_checkpoints");
 }
 
 static void normalize_tracking_json(Json::Value& value, const std::map<unsigned, std::string>& dict)

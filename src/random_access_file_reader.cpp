@@ -239,6 +239,68 @@ void random_access_file_reader::seek(uint64_t position)
 	mPosition = position;
 }
 
+void random_access_file_reader::load_packet_checkpoints(const Json::Value& frame_info)
+{
+	mPacketCheckpoints.clear();
+	if (!frame_info.isMember("packet_checkpoints")) return;
+
+	const Json::Value& values = frame_info["packet_checkpoints"];
+	if (!values.isArray()) ABORT("Packet checkpoints are not an array for random-access input \"%s\"", mFilename.c_str());
+	for (Json::ArrayIndex i = 0; i < values.size(); i++)
+	{
+		const Json::Value& value = values[i];
+		if (!value.isObject() || !value.isMember("packet") || !value["packet"].isUInt()
+		    || !value.isMember("position") || !value["position"].isUInt64())
+		{
+			ABORT("Invalid packet checkpoint %u for random-access input \"%s\"", i, mFilename.c_str());
+		}
+
+		packet_checkpoint checkpoint;
+		checkpoint.packet = value["packet"].asUInt();
+		checkpoint.position = value["position"].asUInt64();
+		if (checkpoint.position >= mTotalUncompressed)
+		{
+			ABORT("Packet checkpoint %u exceeds random-access input \"%s\"", i, mFilename.c_str());
+		}
+		if (i == 0 && (checkpoint.packet != 0 || checkpoint.position != 0))
+		{
+			ABORT("First packet checkpoint is not packet zero at position zero for random-access input \"%s\"",
+			      mFilename.c_str());
+		}
+		if (!mPacketCheckpoints.empty())
+		{
+			const packet_checkpoint& previous = mPacketCheckpoints.back();
+			if (checkpoint.packet <= previous.packet || checkpoint.position <= previous.position)
+			{
+				ABORT("Packet checkpoints are not strictly increasing for random-access input \"%s\"", mFilename.c_str());
+			}
+		}
+		mPacketCheckpoints.push_back(checkpoint);
+	}
+}
+
+uint32_t random_access_file_reader::seek_to_packet(uint32_t packet)
+{
+	if (mPacketCheckpoints.empty())
+	{
+		seek(0);
+		return 0;
+	}
+
+	size_t first = 0;
+	size_t last = mPacketCheckpoints.size();
+	while (first < last)
+	{
+		const size_t middle = first + (last - first) / 2;
+		if (mPacketCheckpoints[middle].packet <= packet) first = middle + 1;
+		else last = middle;
+	}
+	assert(first > 0);
+	const packet_checkpoint& checkpoint = mPacketCheckpoints[first - 1];
+	seek(checkpoint.position);
+	return checkpoint.packet;
+}
+
 void random_access_file_reader::read_bytes(void* destination, uint64_t byte_count)
 {
 	if (!destination && byte_count != 0) ABORT("Null destination for random-access read");

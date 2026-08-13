@@ -170,6 +170,7 @@ public:
 	void set(const std::string& path);
 
 	void change_default_chunk_size(size_t size) { assert(uidx < size); uncompressed_chunk_size = size; chunk.shrink(size); }
+	uint64_t current_chunk_uncompressed_offset() const { return uncompressed_bytes - uidx; }
 
 	void disable_multithreaded_compress()
 	{

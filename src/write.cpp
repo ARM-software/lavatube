@@ -246,6 +246,14 @@ lava_file_writer::~lava_file_writer()
 	v["compressed_sizes"] = Json::arrayValue;
 	for (const auto i : uncompressed_sizes) v["uncompressed_sizes"].append((Json::Value::UInt64)i);
 	for (const auto i : compressed_sizes) v["compressed_sizes"].append((Json::Value::UInt64)i);
+	v["packet_checkpoints"] = Json::arrayValue;
+	for (const packet_checkpoint& checkpoint : packet_checkpoints)
+	{
+		Json::Value k;
+		k["packet"] = checkpoint.packet;
+		k["position"] = (Json::Value::UInt64)checkpoint.position;
+		v["packet_checkpoints"].append(k);
+	}
 	DLOG("Wrapping up thread %u with %d frames", current.thread, highest);
 	v["highest_global_frame"] = highest;
 	const std::string path = mPath + "/frames_" + _to_string((unsigned)current.thread) + ".json";
@@ -268,6 +276,15 @@ void lava_file_writer::new_frame(int global_frame)
 void lava_file_writer::begin_packet(uint8_t type)
 {
 	end_packet();
+	const uint64_t chunk_offset = current_chunk_uncompressed_offset();
+	if (packet_checkpoints.empty() || chunk_offset > checkpoint_chunk_offset)
+	{
+		packet_checkpoint checkpoint;
+		checkpoint.packet = current.packet;
+		checkpoint.position = uncompressed_bytes;
+		packet_checkpoints.push_back(checkpoint);
+		checkpoint_chunk_offset = chunk_offset;
+	}
 	current.packet_type = type;
 	if (type != PACKET_VULKAN_API_CALL) current.call_id = UINT16_MAX;
 	packet_start = uncompressed_bytes;

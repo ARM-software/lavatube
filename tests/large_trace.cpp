@@ -165,6 +165,25 @@ int main()
 		assert(crossing_packet_count > 0);
 
 		const Json::Value frames = read_large_trace_json(frames_filename);
+		reader.load_packet_checkpoints(frames);
+		assert(reader.has_packet_checkpoints());
+		assert(reader.packet_checkpoints().size() > 32);
+		assert(reader.packet_checkpoints().size() < packet_count);
+		size_t checkpoint_index = 0;
+		for (uint32_t packet = 0; packet < packet_count; packet++)
+		{
+			while (checkpoint_index + 1 < reader.packet_checkpoints().size()
+			       && reader.packet_checkpoints().at(checkpoint_index + 1).packet <= packet)
+			{
+				checkpoint_index++;
+			}
+			const packet_checkpoint& checkpoint = reader.packet_checkpoints().at(checkpoint_index);
+			assert(checkpoint.packet <= packet);
+			assert(checkpoint.position == packet_positions.at(checkpoint.packet));
+			assert(reader.seek_to_packet(packet) == checkpoint.packet);
+			assert(reader.position() == checkpoint.position);
+		}
+
 		assert(frames["frames"].size() == 2);
 		assert(frames["frames"][0]["global_frame"].asInt() == 0);
 		assert(frames["frames"][0]["local_frame"].asInt() == -1);

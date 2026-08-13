@@ -61,6 +61,13 @@ static void test_direct_random_access(uint_fast8_t compression_algorithm)
 		random_access_file_reader reader(filename);
 		assert(reader.size() == payload.size());
 		assert(reader.position() == 0);
+		Json::Value legacy_frame_info;
+		legacy_frame_info["frames"] = Json::arrayValue;
+		reader.load_packet_checkpoints(legacy_frame_info);
+		assert(!reader.has_packet_checkpoints());
+		reader.seek(123);
+		assert(reader.seek_to_packet(1000) == 0);
+		assert(reader.position() == 0);
 		assert(reader.remaining() == payload.size());
 		assert(reader.compression_algorithm() == compression_algorithm);
 		assert(reader.version() == 3);
