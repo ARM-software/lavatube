@@ -330,6 +330,71 @@ static bool collect_contiguous_device_address_marking(const std::vector<simulato
 	return true;
 }
 
+/// TODO This function is temporary until the simulator accurately pinpoints addresses inside composite structures.
+static bool collect_composite_device_address_marking(const std::vector<simulator_buffer_range>& ranges,
+	const SPIRVSimulator::PhysicalAddressData& pointer_data, std::vector<discovered_buffer_marking>& discovered)
+{
+	bool found = false;
+	for (const SPIRVSimulator::DataSourceBits& source : pointer_data.bit_components)
+	{
+		if (source.location != SPIRVSimulator::StorageClass && source.location != SPIRVSimulator::SpecConstant) continue;
+		if (source.bit_offset != 0 || source.bitcount <= sizeof(VkDeviceAddress) * 8 || source.bitcount % 8 != 0) continue;
+		const VkDeviceSize source_size = source.bitcount / 8;
+		VkDeviceSize local_offset = 0;
+		const simulator_buffer_range* range = find_simulator_source_range(ranges, source, source_size, local_offset);
+		if (!range) continue;
+		const std::byte* source_bytes = static_cast<const std::byte*>(range->base_ptr);
+		bool address_alignment[sizeof(VkDeviceAddress)] = {};
+		for (VkDeviceSize byte_offset = local_offset; byte_offset + sizeof(VkDeviceAddress) <= local_offset + source_size; byte_offset++)
+		{
+			VkDeviceAddress candidate = 0;
+			memcpy(&candidate, source_bytes + byte_offset, sizeof(candidate));
+			if (candidate == pointer_data.raw_pointer_value) address_alignment[byte_offset % sizeof(VkDeviceAddress)] = true;
+		}
+		for (VkDeviceSize byte_offset = 0; byte_offset + sizeof(VkDeviceAddress) <= range->size; byte_offset++)
+		{
+			if (!address_alignment[byte_offset % sizeof(VkDeviceAddress)]) continue;
+			VkDeviceAddress candidate = 0;
+			memcpy(&candidate, source_bytes + byte_offset, sizeof(candidate));
+			bool known_address = false;
+			for (const simulator_buffer_range& candidate_range : ranges)
+			{
+				if (!candidate_range.physical_address_backing || !candidate_range.buffer_data) continue;
+				const VkDeviceAddress base_address = candidate_range.buffer_data->capture_device_address
+					? candidate_range.buffer_data->capture_device_address : candidate_range.buffer_data->device_address;
+				if (base_address != 0 && candidate >= base_address && candidate - base_address < candidate_range.buffer_data->size)
+				{
+					known_address = true;
+					break;
+				}
+			}
+			if (!known_address) continue;
+			host_write_reference source_ref;
+			const VkDeviceSize address_offset = byte_offset;
+			if (!get_range_source_reference(*range, address_offset, sizeof(VkDeviceAddress), source_ref))
+			{
+				abort_missing_range_source(*range, address_offset, sizeof(VkDeviceAddress), "SPIR-V composite physical-address source marking");
+			}
+			VkMarkingSubTypeARM subtype{};
+			subtype.deviceAddressType = VK_DEVICE_ADDRESS_TYPE_BUFFER_ARM;
+			discovered.push_back({
+				.buffer_data = range->buffer_data,
+				.output_object_type = range_output_object_type(*range),
+				.output_object_index = range_output_object_index(*range),
+				.output_stage_index = range_output_stage_index(*range, source_ref),
+				.offset = (source_ref.object_offset >= 0) ? (VkDeviceSize)source_ref.object_offset : range->buffer_offset + address_offset,
+				.size = sizeof(VkDeviceAddress),
+				.type = VK_MARKING_TYPE_DEVICE_ADDRESS_ARM,
+				.subtype = subtype,
+				.has_explicit_source = true,
+				.source = source_ref.source,
+			});
+			found = true;
+		}
+	}
+	return found;
+}
+
 static void merge_simulator_output_candidates(const shader_stage& stage, const change_source& source,
 	const std::unordered_map<const void*, simulator_buffer_range>& range_lookup, const SPIRVSimulator::SimulationResults& results)
 {
@@ -486,6 +551,7 @@ static void collect_simulator_physical_address_markings(const std::vector<simula
 			found_source = true;
 		}
 		if (!found_source) found_source = collect_contiguous_device_address_marking(ranges, pointer_data, discovered);
+		if (!found_source) found_source = collect_composite_device_address_marking(ranges, pointer_data, discovered);
 	}
 }
 

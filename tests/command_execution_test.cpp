@@ -96,6 +96,7 @@ static const unsigned char command_execution_compute_spv[] = {
 };
 
 #include "command_execution_shaders.inc"
+#include "command_execution_bda_composite.inc"
 
 void usage()
 {
@@ -148,6 +149,11 @@ static std::vector<uint32_t> bda_interleave_output_shader_code()
 static std::vector<uint32_t> bda_two_store_shader_code()
 {
 	return shader_code_from_bytes(command_execution_bda_two_store_direct_spv, command_execution_bda_two_store_direct_spv_len);
+}
+
+static std::vector<uint32_t> bda_composite_shader_code()
+{
+	return shader_code_from_bytes(command_execution_bda_composite_spv, command_execution_bda_composite_spv_len);
 }
 
 static void execute_null()
@@ -301,6 +307,11 @@ static uint32_t load_u32(const suballoc_location& loc, VkDeviceSize offset)
 }
 
 static void store_u32(const suballoc_location& loc, VkDeviceSize offset, uint32_t value)
+{
+	std::memcpy(reinterpret_cast<char*>(loc.memory) + offset, &value, sizeof(value));
+}
+
+static void store_device_address(const suballoc_location& loc, VkDeviceSize offset, VkDeviceAddress value)
 {
 	std::memcpy(reinterpret_cast<char*>(loc.memory) + offset, &value, sizeof(value));
 }
@@ -672,6 +683,110 @@ static void execute_compute_shader_bda_unbound_input()
 		free_marked_offsets(entry.markings);
 	}
 
+	allocator.destroy();
+}
+
+static void execute_compute_shader_bda_composite_array()
+{
+	constexpr uint32_t node_count = 3;
+	constexpr VkDeviceSize node_size = sizeof(VkDeviceAddress) * 2 + sizeof(uint32_t) * 2;
+	constexpr VkDeviceSize nodes_size = node_size * node_count;
+	constexpr VkDeviceSize target_size = sizeof(uint32_t);
+	constexpr uint32_t target_count = node_count * 2;
+	constexpr uint32_t output_index = 1;
+	constexpr uint32_t first_target_index = 2;
+	constexpr VkDeviceAddress first_target_address = 0x550100000ull;
+
+	VkBuffer_index.clear();
+	VkBuffer_index.resize(first_target_index + target_count);
+	init_buffer(0, nodes_size);
+	init_buffer(output_index, sizeof(uint32_t));
+	VkBuffer_index[0].usage |= VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+	VkBuffer_index[output_index].usage |= VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+	for (uint32_t i = 0; i < target_count; i++)
+	{
+		const uint32_t buffer_index = first_target_index + i;
+		init_buffer(buffer_index, target_size);
+		VkBuffer_index[buffer_index].usage |= VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+		const VkDeviceAddress address = first_target_address + (VkDeviceAddress)i * 0x10000;
+		VkBuffer_index[buffer_index].capture_device_address = address;
+		VkBuffer_index[buffer_index].device_address = address;
+	}
+
+	std::vector<trackedimage> images;
+	std::vector<trackedtensor> tensors;
+	std::vector<trackeddatagraphpipelinesession> sessions;
+	suballocator allocator;
+	allocator.create(VK_NULL_HANDLE, VK_NULL_HANDLE, images, VkBuffer_index, tensors, sessions, 1, false);
+	for (uint32_t i = 0; i < VkBuffer_index.size(); i++) allocator.add_trackedobject(0, i + 1, VkBuffer_index[i]);
+
+	suballoc_location nodes = allocator.find_buffer_memory(0);
+	suballoc_location output = allocator.find_buffer_memory(output_index);
+	std::memset(nodes.memory, 0, nodes.size);
+	std::memset(output.memory, 0, output.size);
+	for (uint32_t node = 0; node < node_count; node++)
+	{
+		const VkDeviceSize node_offset = node * node_size;
+		for (uint32_t member = 0; member < 2; member++)
+		{
+			const uint32_t target = node * 2 + member;
+			const VkDeviceAddress address = first_target_address + (VkDeviceAddress)target * 0x10000;
+			store_device_address(nodes, node_offset + member * sizeof(VkDeviceAddress), address);
+			suballoc_location target_buffer = allocator.find_buffer_memory(first_target_index + target);
+			std::memset(target_buffer.memory, 0, target_buffer.size);
+			store_u32(target_buffer, 0, target + 1);
+		}
+		store_u32(nodes, node_offset + sizeof(VkDeviceAddress) * 2, 0x12340000 + node);
+		store_u32(nodes, node_offset + sizeof(VkDeviceAddress) * 2 + sizeof(uint32_t), 0x56780000 + node);
+	}
+	const change_source nodes_source = make_source(34);
+	VkBuffer_index[0].source.register_source(0, nodes_size, nodes_source);
+
+	init_compute_pipeline(9, bda_composite_shader_code());
+	trackedcmdbuffer cmdbuffer_data;
+	cmdbuffer_data.index = 0;
+	add_bind_compute_pipeline(cmdbuffer_data);
+	add_dispatch(cmdbuffer_data, make_source(35));
+
+	trackeddevice device_data;
+	device_data.index = 0;
+	device_data.allocator = &allocator;
+	address_remapper<trackedobject> device_address_remapping;
+	for (uint32_t i = 0; i < target_count; i++)
+	{
+		const VkDeviceAddress address = first_target_address + (VkDeviceAddress)i * 0x10000;
+		device_address_remapping.add(address, &VkBuffer_index[first_target_index + i]);
+	}
+	std::list<address_rewrite> global_output_rewrite_queue;
+	std::deque<descriptor_rewrite> pending_descriptor_rewrites;
+	std::vector<descriptor_buffer_payload> descriptor_buffer_payloads;
+	command_execution_data data {
+		.device_data = device_data,
+		.cmdbuffer_data = cmdbuffer_data,
+		.device_address_remapping = device_address_remapping,
+		.global_output_rewrite_queue = global_output_rewrite_queue,
+		.pending_descriptor_rewrites = pending_descriptor_rewrites,
+		.descriptor_buffer_payloads = descriptor_buffer_payloads,
+	};
+	set_storage_buffer_binding(data, 0, 0, &VkBuffer_index[0], 0, nodes_size);
+	set_storage_buffer_binding(data, 0, 1, &VkBuffer_index[output_index], 0, sizeof(uint32_t));
+
+	assert(execute_commands(data));
+	assert(load_u32(output, 0) == 3);
+	assert(VkPipeline_index[0].shader_stages[0].calls == 1);
+	assert(global_output_rewrite_queue.size() == 1);
+	const address_rewrite& rewrite = global_output_rewrite_queue.front();
+	assert(same_source(rewrite.source, nodes_source));
+	assert(rewrite.markings);
+	assert(rewrite.markings->count == target_count);
+	for (uint32_t i = 0; i < target_count; i++)
+	{
+		const VkDeviceSize expected_offset = (i / 2) * node_size + (i % 2) * sizeof(VkDeviceAddress);
+		assert(rewrite.markings->pMarkingTypes[i] == VK_MARKING_TYPE_DEVICE_ADDRESS_ARM);
+		assert(rewrite.markings->pOffsets[i] == expected_offset);
+	}
+	assert(descriptor_buffer_payloads.empty());
+	for (address_rewrite& entry : global_output_rewrite_queue) free_marked_offsets(entry.markings);
 	allocator.destroy();
 }
 
@@ -1112,6 +1227,7 @@ int main(int argc, char** argv)
 	execute_compute_shader_push_descriptors();
 	execute_compute_shader_copy_provenance();
 	execute_compute_shader_bda_unbound_input();
+	execute_compute_shader_bda_composite_array();
 	execute_compute_shader_bda_copied_address_chain();
 	execute_compute_shader_bda_two_lane_output_provenance();
 	execute_compute_shader_bda_interleave_copied_address_provenance();
