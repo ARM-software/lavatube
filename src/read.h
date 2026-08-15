@@ -469,6 +469,14 @@ private:
 	uint64_t current_packet_end = 0;
 	uint32_t current_packet_size = 0;
 	std::vector<unsigned> current_barrier_packet_indices;
+	struct print_frame_boundary
+	{
+		uint64_t position = 0;
+		uint32_t next_frame = 0;
+	};
+	std::vector<print_frame_boundary> print_frame_boundaries;
+	size_t next_print_frame_boundary = 0;
+	uint32_t isolated_print_frame = 0;
 };
 
 inline void lava_file_reader::read_barrier()
@@ -481,6 +489,7 @@ inline void lava_file_reader::read_barrier()
 		assert(current_barrier_packet_indices[i] != UINT32_MAX);
 	}
 	complete_packet();
+	if (is_isolated()) return;
 	for (int i = 0; i < (int)size; i++)
 	{
 		const unsigned packet_index = current_barrier_packet_indices[i];
@@ -507,7 +516,7 @@ inline uint32_t lava_file_reader::read_handle(DEBUGPARAM(const char* name))
 	const uint32_t index = read_uint32_t();
 	const int req_thread = read_int8_t();
 	const uint32_t req_packet = read_uint32_t();
-	if (req_thread < 0 || req_thread == (int)current.thread)
+	if (is_isolated() || req_thread < 0 || req_thread == (int)current.thread)
 	{
 		DLOG2("[t%02d %06d] read handle %s index=%u from same thread", (int)current.thread, (int)current.packet + 1, name, (unsigned)index);
 		return index;

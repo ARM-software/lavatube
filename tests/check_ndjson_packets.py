@@ -11,11 +11,12 @@ def fail(message):
 
 def main():
 	if len(sys.argv) < 2:
-		return fail("usage: check_ndjson_packets.py <path> [expected-frame] [--expect-frame N] [--expect-index N] [--expect-thread N] [--expect-count N] [--expect-pairs INDEX:THREAD,...] [--expect-thread-barrier-params true]")
+		return fail("usage: check_ndjson_packets.py <path> [expected-frame] [--expect-frame N] [--expect-index N] [--expect-name NAME] [--expect-thread N] [--expect-count N] [--expect-pairs INDEX:THREAD,...] [--expect-thread-barrier-params true]")
 
 	path = sys.argv[1]
 	expected_frame = None
 	expected_index = None
+	expected_name = None
 	expected_thread = None
 	expected_count = None
 	expected_pairs = None
@@ -33,6 +34,8 @@ def main():
 			expected_frame = int(args[1])
 		elif args[0] == "--expect-index":
 			expected_index = int(args[1])
+		elif args[0] == "--expect-name":
+			expected_name = args[1]
 		elif args[0] == "--expect-thread":
 			expected_thread = int(args[1])
 		elif args[0] == "--expect-count":
@@ -61,6 +64,8 @@ def main():
 				return fail(f"{path}:{lineno}: expected frame {expected_frame}, got {packet['frame']}")
 			if expected_index is not None and packet["index"] != expected_index:
 				return fail(f"{path}:{lineno}: expected index {expected_index}, got {packet['index']}")
+			if expected_name is not None and packet["name"] != expected_name:
+				return fail(f"{path}:{lineno}: expected name {expected_name}, got {packet['name']}")
 			if expected_thread is not None and packet["thread"] != expected_thread:
 				return fail(f"{path}:{lineno}: expected thread {expected_thread}, got {packet['thread']}")
 			pair = f"{packet['index']}:{packet['thread']}"

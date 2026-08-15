@@ -472,11 +472,19 @@ for v in spec.root.findall('types/type'):
 		if spec.str_contains_vendor(name): continue
 		out(targets_read, '\t\tif (p == "%s")' % name)
 		out(targets_read, '\t\t{')
-		out(targets_read, '\t\t\tindex_to_%s.resize(v[p].asInt());' % name)
+		out(targets_read, '\t\t\tconst uint32_t count = v[p].asUInt();')
+		out(targets_read, '\t\t\tindex_to_%s.resize(count);' % name)
+		out(targets_read, '\t\t\tif (replayer.is_isolated())')
+		out(targets_read, '\t\t\t{')
+		out(targets_read, '\t\t\t\tfor (uint32_t index = 0; index < count; index++)')
+		out(targets_read, '\t\t\t\t{')
+		out(targets_read, '\t\t\t\t\tindex_to_%s.set(index, fake_handle<%s>(index));' % (name, name))
+		out(targets_read, '\t\t\t\t}')
+		out(targets_read, '\t\t\t}')
 		if v.find('name').text == 'VkInstance':
-			out(targets_read, '\t\t\tif (v[p].asInt() == 0) ELOG("No Vulkan instances recorded. Broken trace file!");')
+			out(targets_read, '\t\t\tif (count == 0) ELOG("No Vulkan instances recorded. Broken trace file!");')
 		if v.find('name').text == 'VkSurfaceKHR':
-			out(targets_read, '\t\t\twindow_preallocate(v[p].asInt());')
+			out(targets_read, '\t\t\tif (!replayer.is_isolated()) window_preallocate(count);')
 		out(targets_read, '\t\t}')
 out(targets_read, '\t}')
 out(targets_read, '}')

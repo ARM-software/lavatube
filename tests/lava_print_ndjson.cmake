@@ -31,6 +31,19 @@ if(DEFINED MAX)
 	list(APPEND TOOL_ARGS --max "${MAX}")
 endif()
 
+if(ISOLATED)
+	set(REFERENCE_OUTPUT "${OUTPUT_FILE}.stateful")
+	execute_process(
+		COMMAND "${LAVA_PRINT}" ${TOOL_ARGS} "${INPUT_TRACE}"
+		OUTPUT_FILE "${REFERENCE_OUTPUT}"
+		RESULT_VARIABLE reference_result
+	)
+	if(NOT reference_result EQUAL 0)
+		message(FATAL_ERROR "stateful lava-print reference failed with exit code ${reference_result}")
+	endif()
+	list(APPEND TOOL_ARGS --isolated)
+endif()
+
 execute_process(
 	COMMAND "${LAVA_PRINT}" ${TOOL_ARGS} "${INPUT_TRACE}"
 	OUTPUT_FILE "${OUTPUT_FILE}"
@@ -40,6 +53,16 @@ if(NOT print_result EQUAL 0)
 	message(FATAL_ERROR "lava-print failed with exit code ${print_result}")
 endif()
 
+if(ISOLATED)
+	execute_process(
+		COMMAND "${CMAKE_COMMAND}" -E compare_files "${REFERENCE_OUTPUT}" "${OUTPUT_FILE}"
+		RESULT_VARIABLE compare_result
+	)
+	if(NOT compare_result EQUAL 0)
+		message(FATAL_ERROR "isolated lava-print output differs from stateful output")
+	endif()
+endif()
+
 if(DEFINED EXPECT_FRAME)
 	set(CHECK_ARGS --expect-frame "${EXPECT_FRAME}")
 else()
@@ -47,6 +70,9 @@ else()
 endif()
 if(DEFINED EXPECT_INDEX)
 	list(APPEND CHECK_ARGS --expect-index "${EXPECT_INDEX}")
+endif()
+if(DEFINED EXPECT_NAME)
+	list(APPEND CHECK_ARGS --expect-name "${EXPECT_NAME}")
 endif()
 if(DEFINED EXPECT_THREAD)
 	list(APPEND CHECK_ARGS --expect-thread "${EXPECT_THREAD}")

@@ -29,6 +29,7 @@ void usage()
 	printf("-f/--frames start end  Select a frame range\n");
 	printf("-t/--thread NUM        Only print for this thread (can explicitly override with --select)\n");
 	printf("--select LIST          Print selected packets: INDEX or INDEX:THREAD, comma-separated. Set default thread with --thread\n");
+	printf("--isolated             Decode only --select packets without maintaining replay state\n");
 	printf("-m/--max NUM           Stop after printing this many entries\n");
 	printf("--skip-missing-input   Exit with code 77 if the input trace file does not exist\n");
 	printf("--add-checksums        Include resulting update checksums (may be expensive)\n");
@@ -103,6 +104,15 @@ static void normalize_selectors(std::vector<print_packet_selector>& selectors, u
 	selectors.swap(deduplicated);
 }
 
+static bool isolated_packet_selected(const lava_reader& replayer, const lava_file_reader& reader)
+{
+	for (const print_packet_selector& selector : replayer.print_selectors)
+	{
+		if (selector.thread == reader.current.thread && selector.packet == reader.print_packet_number) return true;
+	}
+	return false;
+}
+
 static void replay_thread(lava_reader* replayer, int thread_id)
 {
 	if (p__sandbox_level >= 2) sandbox_level_three();
@@ -111,11 +121,16 @@ static void replay_thread(lava_reader* replayer, int thread_id)
 	t.bind_trace_thread_name();
 	t.start_measurement();
 	uint8_t instrtype;
-	assert(t.is_stateful());
+	assert(t.is_stateful() || t.is_isolated());
 	try
 	{
 		while ((instrtype = t.step()))
 		{
+			if (t.is_isolated() && !isolated_packet_selected(*replayer, t))
+			{
+				t.self_test();
+				continue;
+			}
 			switchboard_packet(instrtype, t);
 			if (instrtype != PACKET_VULKAN_API_CALL && replayer->print_packets && !t.printed_current_packet)
 			{
@@ -146,6 +161,7 @@ int main(int argc, char **argv)
 	bool skip_missing_input = false;
 	bool have_select = false;
 	bool add_checksums = false;
+	bool isolated = false;
 
 	if (p__debug_destination == stdout) p__debug_destination = stderr;
 	if (p__sandbox_level >= 1) sandbox_level_one();
@@ -210,6 +226,10 @@ int main(int argc, char **argv)
 		{
 			add_checksums = true;
 		}
+		else if (match(argv[i], nullptr, "--isolated", remaining))
+		{
+			isolated = true;
+		}
 		else if (strcmp(argv[i], "--") == 0) // eg in case you have a file named -f ...
 		{
 			remaining--;
@@ -241,6 +261,8 @@ int main(int argc, char **argv)
 	}
 
 	normalize_selectors(print_selectors, print_thread_index == UINT32_MAX ? 0 : print_thread_index);
+	if (isolated && print_selectors.empty()) DIE("--isolated requires --select");
+	if (isolated && add_checksums) DIE("--add-checksums is not available with --isolated");
 
 	if (print_thread_index != UINT32_MAX || !print_selectors.empty())
 	{
@@ -266,7 +288,7 @@ int main(int argc, char **argv)
 	if (p__sandbox_level >= 3) sandbox_level_two();
 
 	lava_reader replayer;
-	replayer.run_type = reader_run_type::stateful;
+	replayer.run_type = isolated ? reader_run_type::isolated : reader_run_type::stateful;
 	replayer.print_packets = true;
 	replayer.print_add_checksums = add_checksums;
 	replayer.print_thread_index = print_thread_index;

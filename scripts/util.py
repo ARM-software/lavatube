@@ -836,7 +836,7 @@ class parameter(spec.base_parameter):
 				z.decl('suballoc_location', 'loc', struct=True)
 				z.do('auto& datagraph_binding = %s.get_binding(sptr->bindPoint, sptr->objectIndex);' % totrackable('VkDataGraphPipelineSessionARM'))
 				z.do('datagraph_binding.memory_flags = session_memory_flags;')
-				z.do('loc = device_data.allocator->add_datagraphpipelinesession(reader.thread_index(), (uint64_t)sptr->session, %s, sptr->bindPoint, sptr->objectIndex);' % totrackable('VkDataGraphPipelineSessionARM'))
+				z.do('if (!reader.is_isolated()) loc = device_data.allocator->add_datagraphpipelinesession(reader.thread_index(), (uint64_t)sptr->session, %s, sptr->bindPoint, sptr->objectIndex);' % totrackable('VkDataGraphPipelineSessionARM'))
 				z.do('if (reader.is_replay())')
 				z.brace_begin()
 				z.do('assert(loc.memory != VK_NULL_HANDLE);')
@@ -856,7 +856,8 @@ class parameter(spec.base_parameter):
 					z.do('assert((lava_tiling)tiling == image_data.tiling);')
 					z.do('const VkDeviceSize min_size = static_cast<VkDeviceSize>(reader.read_uint64_t()); // fetch padded memory size')
 					z.do('(void)min_size; // unused, we now read size from the JSON metadata file')
-				z.do('suballoc_location loc = device_data.allocator->add_trackedobject(reader.thread_index(), (uint64_t)%s, %s);' % (varname, totrackable(self.type)))
+				z.do('suballoc_location loc = {};')
+				z.do('if (!reader.is_isolated()) loc = device_data.allocator->add_trackedobject(reader.thread_index(), (uint64_t)%s, %s);' % (varname, totrackable(self.type)))
 			if self.name == 'memory':
 				z.do('if (reader.is_replay())')
 				z.brace_begin()

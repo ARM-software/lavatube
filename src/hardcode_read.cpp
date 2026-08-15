@@ -4688,6 +4688,12 @@ static void replay_vkCreateSurfaceKHR_packet(lava_file_reader& reader, const sur
 		height = t.info.imageExtent.height;
 	}
 	if (packet.retval != VK_SUCCESS) return; // there was no window created, skip it
+	if (reader.is_isolated())
+	{
+		callback_context cb_context{ reader };
+		if (reader.parent->print_packets && print_params_requested(cb_context)) print_params_publish(cb_context, json_params_vkCreateSurfaceKHR(cb_context, packet));
+		return;
+	}
 	auto& data = VkSurfaceKHR_index.at(packet.surface_index);
 	data.creation = reader.current;
 	data.last_modified = reader.current;
@@ -5372,6 +5378,11 @@ uint32_t update_image_packet(uint8_t instrtype, lava_file_reader& reader)
 	reader.current_update_packet.payload_start = reader.stream_position();
 	reader.current_update_packet.size = size;
 	reader.current_update_packet.sptr = sptr;
+	if (reader.is_isolated())
+	{
+		reader.current_update_packet.changed_bytes = reader.read_patch(nullptr, size);
+		return image_index;
+	}
 	image_update(reader, device_index, image_index, size, sptr);
 	return image_index;
 }
@@ -5393,12 +5404,18 @@ uint32_t update_buffer_packet(uint8_t instrtype, lava_file_reader& reader)
 	reader.current_update_packet.payload_start = reader.stream_position();
 	reader.current_update_packet.size = size;
 	reader.current_update_packet.sptr = sptr;
+	if (reader.is_isolated())
+	{
+		reader.current_update_packet.changed_bytes = reader.read_patch(nullptr, size);
+		return buffer_index;
+	}
 	buffer_update(reader, device_index, buffer_index, size, sptr);
 	return buffer_index;
 }
 
 static void initialize_buffer_packet(lava_file_reader& reader)
 {
+	if (reader.is_isolated()) return;
 	const uint32_t device_index = reader.read_handle(DEBUGPARAM("VkDevice"));
 	const uint32_t buffer_index = reader.read_handle(DEBUGPARAM("VkBuffer"));
 	const uint64_t data_size = reader.read_uint64_t();
@@ -5460,6 +5477,7 @@ static void initialize_buffer_packet(lava_file_reader& reader)
 
 static void initialize_image_packet(lava_file_reader& reader)
 {
+	if (reader.is_isolated()) return;
 	const uint32_t device_index = reader.read_handle(DEBUGPARAM("VkDevice"));
 	const uint32_t image_index = reader.read_handle(DEBUGPARAM("VkImage"));
 	const VkImageAspectFlags aspect = reader.read_uint32_t();
@@ -5575,6 +5593,11 @@ uint32_t update_tensor_packet(uint8_t instrtype, lava_file_reader& reader)
 	reader.current_update_packet.payload_start = reader.stream_position();
 	reader.current_update_packet.size = size;
 	reader.current_update_packet.sptr = sptr;
+	if (reader.is_isolated())
+	{
+		reader.current_update_packet.changed_bytes = reader.read_patch(nullptr, size);
+		return tensor_index;
+	}
 	tensor_update(reader, device_index, tensor_index, size, sptr);
 	return tensor_index;
 }

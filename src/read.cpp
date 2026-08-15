@@ -93,6 +93,17 @@ lava_file_reader::lava_file_reader(lava_reader* _parent, const std::string& path
 	current.frame = 0;
 	current.thread = mytid;
 	memset(trace_thread_name, 0, sizeof(trace_thread_name));
+	if (is_isolated() && frameinfo.isMember("frames"))
+	{
+		print_frame_boundaries.reserve(frameinfo["frames"].size());
+		for (const auto& i : frameinfo["frames"])
+		{
+			print_frame_boundary boundary;
+			boundary.position = i["position"].asUInt64();
+			boundary.next_frame = i["global_frame"].asUInt() + 1;
+			print_frame_boundaries.push_back(boundary);
+		}
+	}
 
 	if (frameinfo.isMember("thread_name"))
 	{
@@ -156,6 +167,16 @@ uint8_t lava_file_reader::step()
 	if (r != PACKET_VULKAN_API_CALL) current.call_id = UINT16_MAX;
 	printed_current_packet = false;
 	print_packet_frame = current.frame;
+	if (is_isolated())
+	{
+		while (next_print_frame_boundary < print_frame_boundaries.size()
+		       && print_frame_boundaries[next_print_frame_boundary].position <= current_packet_start)
+		{
+			isolated_print_frame = print_frame_boundaries[next_print_frame_boundary].next_frame;
+			next_print_frame_boundary++;
+		}
+		print_packet_frame = isolated_print_frame;
+	}
 	print_packet_number = current.packet;
 	current_packet_open = true;
 	return r;

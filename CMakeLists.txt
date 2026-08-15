@@ -806,6 +806,66 @@ add_lavatube_test(lava_print_tracing2_select0_ndjson
 		-DEXPECT_INDEX=0
 		-P ${PROJECT_SOURCE_DIR}/tests/lava_print_ndjson.cmake)
 set_tests_properties(lava_print_tracing2_select0_ndjson PROPERTIES FIXTURES_REQUIRED tracing_2)
+add_lavatube_test(lava_print_tracing2_isolated_barrier_ndjson
+	COMMAND ${CMAKE_COMMAND}
+		-DLAVA_PRINT=$<TARGET_FILE:lava-print>
+		-DPYTHON_EXECUTABLE=${PYTHON_EXECUTABLE}
+		-DINPUT_TRACE=${CMAKE_CURRENT_BINARY_DIR}/tracing_2.api
+		-DOUTPUT_FILE=${CMAKE_CURRENT_BINARY_DIR}/lava_print_tracing2_isolated_barrier.ndjson
+		-DSELECT=0
+		-DEXPECT_INDEX=0
+		-DEXPECT_THREAD_BARRIER_PARAMS=1
+		-DISOLATED=ON
+		-P ${PROJECT_SOURCE_DIR}/tests/lava_print_ndjson.cmake)
+set_tests_properties(lava_print_tracing2_isolated_barrier_ndjson PROPERTIES FIXTURES_REQUIRED tracing_2)
+add_lavatube_test(lava_print_tracing2_isolated_buffer_update_ndjson
+	COMMAND ${CMAKE_COMMAND}
+		-DLAVA_PRINT=$<TARGET_FILE:lava-print>
+		-DPYTHON_EXECUTABLE=${PYTHON_EXECUTABLE}
+		-DINPUT_TRACE=${CMAKE_CURRENT_BINARY_DIR}/tracing_2.api
+		-DOUTPUT_FILE=${CMAKE_CURRENT_BINARY_DIR}/lava_print_tracing2_isolated_buffer_update.ndjson
+		-DSELECT=69
+		-DEXPECT_INDEX=69
+		-DEXPECT_NAME=legacy_buffer_update
+		-DISOLATED=ON
+		-P ${PROJECT_SOURCE_DIR}/tests/lava_print_ndjson.cmake)
+set_tests_properties(lava_print_tracing2_isolated_buffer_update_ndjson PROPERTIES FIXTURES_REQUIRED tracing_2)
+add_lavatube_test(lava_print_tracing2_isolated_api_ndjson
+	COMMAND ${CMAKE_COMMAND}
+		-DLAVA_PRINT=$<TARGET_FILE:lava-print>
+		-DPYTHON_EXECUTABLE=${PYTHON_EXECUTABLE}
+		-DINPUT_TRACE=${CMAKE_CURRENT_BINARY_DIR}/tracing_2.api
+		-DOUTPUT_FILE=${CMAKE_CURRENT_BINARY_DIR}/lava_print_tracing2_isolated_api.ndjson
+		-DSELECT=4
+		-DEXPECT_INDEX=4
+		-DEXPECT_NAME=vkEnumeratePhysicalDevices
+		-DISOLATED=ON
+		-P ${PROJECT_SOURCE_DIR}/tests/lava_print_ndjson.cmake)
+set_tests_properties(lava_print_tracing2_isolated_api_ndjson PROPERTIES FIXTURES_REQUIRED tracing_2)
+add_lavatube_test(lava_print_vkcube_isolated_lifecycle_ndjson
+	COMMAND ${CMAKE_COMMAND}
+		-DLAVA_PRINT=$<TARGET_FILE:lava-print>
+		-DPYTHON_EXECUTABLE=${PYTHON_EXECUTABLE}
+		-DINPUT_TRACE=${PROJECT_SOURCE_DIR}/traces/lunarg_vkcube_xcb.api
+		-DOUTPUT_FILE=${CMAKE_CURRENT_BINARY_DIR}/lava_print_vkcube_isolated_lifecycle.ndjson
+		-DSELECT=2,49,61
+		-DEXPECT_PAIRS=2:0,49:0,61:0
+		-DISOLATED=ON
+		-P ${PROJECT_SOURCE_DIR}/tests/lava_print_ndjson.cmake)
+add_lavatube_test(lava_print_vkcube_isolated_frame_ndjson
+	COMMAND ${CMAKE_COMMAND}
+		-DLAVA_PRINT=$<TARGET_FILE:lava-print>
+		-DPYTHON_EXECUTABLE=${PYTHON_EXECUTABLE}
+		-DINPUT_TRACE=${PROJECT_SOURCE_DIR}/traces/lunarg_vkcube_xcb.api
+		-DOUTPUT_FILE=${CMAKE_CURRENT_BINARY_DIR}/lava_print_vkcube_isolated_frame.ndjson
+		-DSELECT=137
+		-DFRAME_START=1
+		-DFRAME_END=1
+		-DEXPECT_INDEX=137
+		-DEXPECT_NAME=vkWaitForFences
+		-DEXPECT_FRAME=1
+		-DISOLATED=ON
+		-P ${PROJECT_SOURCE_DIR}/tests/lava_print_ndjson.cmake)
 add_lavatube_test(lava_print_tracing2_select_list_ndjson
 	COMMAND ${CMAKE_COMMAND}
 		-DLAVA_PRINT=$<TARGET_FILE:lava-print>
