@@ -111,7 +111,7 @@ static void replay_thread(lava_reader* replayer, int thread_id)
 	t.bind_trace_thread_name();
 	t.start_measurement();
 	uint8_t instrtype;
-	assert(t.run == false);
+	assert(t.is_stateful());
 	try
 	{
 		while ((instrtype = t.step()))
@@ -266,7 +266,7 @@ int main(int argc, char **argv)
 	if (p__sandbox_level >= 3) sandbox_level_two();
 
 	lava_reader replayer;
-	replayer.run = false;
+	replayer.run_type = reader_run_type::stateful;
 	replayer.print_packets = true;
 	replayer.print_add_checksums = add_checksums;
 	replayer.print_thread_index = print_thread_index;

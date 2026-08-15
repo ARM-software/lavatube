@@ -101,6 +101,13 @@ struct replay_stop_requested
 {
 };
 
+enum class reader_run_type : uint8_t
+{
+	replay,
+	stateful,
+	isolated,
+};
+
 class lava_reader
 {
 	friend lava_file_reader;
@@ -195,9 +202,12 @@ public:
 	// The dictionary is read from a JSON file and then mapped from their to our function ids.
 	std::unordered_map<uint16_t, uint16_t> dictionary;
 
-	/// Whether we should actually call into Vulkan or if we are just processing the data.
-	/// Duplicated into the file reader.
-	bool run = true;
+	/// Select whether we replay Vulkan calls, process the trace statefully without Vulkan, or
+	/// decode isolated packets without maintaining replay state. Duplicated into the file reader.
+	reader_run_type run_type = reader_run_type::replay;
+	bool is_replay() const { return run_type == reader_run_type::replay; }
+	bool is_stateful() const { return run_type == reader_run_type::stateful; }
+	bool is_isolated() const { return run_type == reader_run_type::isolated; }
 
 	/// Whether this replay pass should emit a rewritten output trace.
 	/// Duplicated into the file reader.
@@ -394,8 +404,12 @@ public:
 	// Keep throw sites tightly scoped to cooperative replay shutdown waits.
 	[[noreturn]] void throw_stop_requested() const { throw replay_stop_requested{}; }
 
-	/// Whether we should actually call into Vulkan or if we are just processing the data
-	bool run = true;
+	/// Select whether we replay Vulkan calls, process the trace statefully without Vulkan, or
+	/// decode an isolated packet without maintaining replay state.
+	reader_run_type run_type = reader_run_type::replay;
+	bool is_replay() const { return run_type == reader_run_type::replay; }
+	bool is_stateful() const { return run_type == reader_run_type::stateful; }
+	bool is_isolated() const { return run_type == reader_run_type::isolated; }
 	bool write_output = false;
 	bool printed_current_packet = false;
 	uint32_t print_packet_frame = 0;
@@ -432,7 +446,7 @@ public:
 	void self_test() const
 	{
 		assert(parent);
-		assert(run == parent->run);
+		assert(run_type == parent->run_type);
 		assert(write_output == parent->write_output);
 		assert(global_frames >= local_frames);
 		file_reader::self_test();

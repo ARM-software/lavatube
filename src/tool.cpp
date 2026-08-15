@@ -1319,7 +1319,7 @@ static void replay_thread(lava_reader* replayer, int thread_id, output_packet_ma
 	t.bind_trace_thread_name();
 	t.start_measurement();
 	uint8_t instrtype;
-	assert(t.run == false);
+	assert(t.is_stateful());
 	if (verbose)
 	{
 		for (const auto& pair : replayer->device_address_remapping.iter())
@@ -1514,7 +1514,7 @@ static void add_callbacks_for_first_round(bool enable_simulation, bool enable_su
 		CALLBACK(vkCreateShadersEXT);
 		CALLBACK(vkCmdBindShadersEXT);
 
-		// Tool validation runs with reader.run == false, so these callbacks consume stored
+		// Tool validation runs with reader.run_type == reader_run_type::stateful, so these callbacks consume stored
 		// device addresses from the trace and populate the remappers we use for analysis.
 		vkGetBufferDeviceAddress_callbacks.push_back(replay_callback_vkGetBufferDeviceAddress);
 		vkGetBufferDeviceAddressKHR_callbacks.push_back(replay_callback_vkGetBufferDeviceAddressKHR);
@@ -1654,7 +1654,7 @@ int main(int argc, char **argv)
 	if (need_first_round)
 	{
 		lava_reader replayer;
-		replayer.run = false; // do not actually run anything
+		replayer.run_type = reader_run_type::stateful; // do not actually run anything
 		replayer.validate = simulate; // abort on less serious errors, not just warn
 		replayer.simulate = simulate;
 		replayer.pass = 0; // first pass
@@ -1694,7 +1694,7 @@ int main(int argc, char **argv)
 	{
 		lava_reader replayer;
 		replayer.pass = 1;
-		replayer.run = false;
+		replayer.run_type = reader_run_type::stateful;
 		replayer.write_output = true;
 		replayer.validate = false;
 		replayer.simulate = false;

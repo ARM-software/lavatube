@@ -394,7 +394,7 @@ const char* const* instance_layers(lava_file_reader& reader, uint32_t& len)
 	static std::vector<const char *> dst;
 	static std::vector<std::string> backing;
 	const char* const* retval = reader.read_string_array(len);
-	if (!reader.run) return retval;
+	if (!reader.is_replay()) return retval;
 
 	backing.clear();
 	dst.clear();
@@ -449,11 +449,11 @@ const char* const* device_extensions(VkDeviceCreateInfo* sptr, lava_file_reader&
 	const char* const* stored = reader.read_string_array(len); // all extensions used in original
 	const uint32_t stored_len = len;
 	const uint32_t metadata_len = reader.parent->stored_device_requested_extensions.size();
-	const bool use_stored_metadata = reader.run && !p__skip_remove_unused && reader.parent->has_stored_device_requested_extensions;
+	const bool use_stored_metadata = reader.is_replay() && !p__skip_remove_unused && reader.parent->has_stored_device_requested_extensions;
 	reader.parent->cli_pipeline_executable_stats_enabled.store(false, std::memory_order_release);
 	reader.parent->cli_memory_budget_enabled.store(false, std::memory_order_release);
 	reader.parent->cli_shader_instrumentation_enabled.store(false, std::memory_order_release);
-	if (!reader.run) return stored;
+	if (!reader.is_replay()) return stored;
 	const std::vector<const char*> do_not_copy = {
 		VK_KHR_SWAPCHAIN_EXTENSION_NAME, VK_KHR_GET_MEMORY_REQUIREMENTS_2_EXTENSION_NAME,
 		VK_KHR_DEDICATED_ALLOCATION_EXTENSION_NAME, VK_EXT_PIPELINE_CREATION_FEEDBACK_EXTENSION_NAME,
@@ -701,8 +701,8 @@ const char* const* instance_extensions(lava_file_reader& reader, uint32_t& len)
 	const char* const* stored = reader.read_string_array(len);
 	const uint32_t stored_len = len;
 	const uint32_t metadata_len = reader.parent->stored_instance_requested_extensions.size();
-	const bool use_stored_metadata = reader.run && !p__skip_remove_unused && reader.parent->has_stored_instance_requested_extensions;
-	if (!reader.run) return stored;
+	const bool use_stored_metadata = reader.is_replay() && !p__skip_remove_unused && reader.parent->has_stored_instance_requested_extensions;
+	if (!reader.is_replay()) return stored;
 
 	bool host_has_surface = false;
 	backing.clear();

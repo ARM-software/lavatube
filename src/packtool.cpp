@@ -437,7 +437,7 @@ static void collect_markings_replay_thread(lava_reader* reader, int thread_id)
 	t.bind_trace_thread_name();
 	t.start_measurement();
 	uint8_t instrtype;
-	assert(t.run == false);
+	assert(t.is_stateful());
 	try
 	{
 		while ((instrtype = t.step()))
@@ -599,7 +599,7 @@ static std::vector<collected_markings_entry> collect_trace_markings(const std::s
 	Json::Value meta = packed_json("metadata.json", pack);
 	std::vector<markings_collect_thread_state> thread_states(meta["threads"].asUInt());
 	state.threads = &thread_states;
-	reader.run = false;
+	reader.run_type = reader_run_type::stateful;
 	reader.write_output = false;
 	reader.validate = false;
 	reader.pass = 0;

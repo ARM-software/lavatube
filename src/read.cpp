@@ -85,7 +85,7 @@ lava_file_reader::lava_file_reader(lava_reader* _parent, const std::string& path
 	: file_reader(packed_open("thread_" + std::to_string(mytid) + ".bin", path), mytid, uncompressed_size, uncompressed_target, start == 0)
 {
 	parent = _parent;
-	run = parent->run;
+	run_type = parent->run_type;
 	write_output = parent->write_output;
 	global_frames = frames;
 	current.thread = mytid;
@@ -428,7 +428,7 @@ void lava_reader::finalize()
 {
 	const double total_time_ms = ((gettime() - mStartTime.load()) / 1000000UL);
 	const double fps = (total_time_ms > 0.0) ? ((double)global_frame_count / (total_time_ms / 1000.0)) : 0.0;
-	if (run) ILOG("==== %.2f ms, %u frames (%.2f fps) ====", total_time_ms, global_frame_count, fps);
+	if (is_replay()) ILOG("==== %.2f ms, %u frames (%.2f fps) ====", total_time_ms, global_frame_count, fps);
 	Json::Value out;
 	out["fps"] = fps;
 	out["frames"] = global_frame_count;
@@ -458,7 +458,7 @@ void lava_reader::finalize()
 	{
 		process_time = diff_timespec(&stop_process_cpu_usage, &process_cpu_usage);
 	}
-	if (run) ILOG("CPU time spent in ms - readahead workers %lu, API runners %lu, full process %lu", (long unsigned)worker, (long unsigned)runner, (long unsigned)process_time);
+	if (is_replay()) ILOG("CPU time spent in ms - readahead workers %lu, API runners %lu, full process %lu", (long unsigned)worker, (long unsigned)runner, (long unsigned)process_time);
 	out["readahead_workers_time"] = worker;
 	out["api_runners_time"] = runner;
 	out["process_time"] = process_time;
@@ -472,7 +472,7 @@ void lava_reader::finalize()
 
 bool lava_reader::cleanup_after_stop()
 {
-	if (!stop_requested() || !run || thread_streams.empty()) return false;
+	if (!stop_requested() || !is_replay() || thread_streams.empty()) return false;
 	const VkDevice cleanup_device = reinterpret_cast<VkDevice>(mCleanupDevice.load(std::memory_order_acquire));
 	if (cleanup_device == VK_NULL_HANDLE) return false;
 	wrap_vkDeviceWaitIdle(cleanup_device);
