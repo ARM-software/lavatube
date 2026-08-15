@@ -577,6 +577,16 @@ static std::string service_command_response(const std::vector<std::string>& comm
 		if (replayer.cli_running.load(std::memory_order_acquire)) response = "ERROR replay is running\n";
 		else response = cli_wait_idle_devices();
 	}
+	else if (command.size() == 1 && command[0] == "self-test")
+	{
+		if (replayer.cli_running.load(std::memory_order_acquire)) response = "ERROR replay is running\n";
+		else if (!cli_thread_ready()) response = "ERROR replay is not initialized\n";
+		else
+		{
+			response = cli_wait_for_quiescence_and_idle();
+			if (response == "OK\n") replayer.self_test();
+		}
+	}
 	else if (command.size() == 2 && command[0] == "thread")
 	{
 		uint32_t thread_id = 0;

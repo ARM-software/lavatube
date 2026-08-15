@@ -541,6 +541,22 @@ lava_file_reader& lava_reader::file_reader(uint16_t thread_id)
 	return *thread_streams.at(thread_id);
 }
 
+void lava_reader::self_test() const
+{
+	assert(thread_streams.size() == threads.size());
+	assert(thread_packet_numbers);
+	retrace_self_test();
+	for (const trackeddevice& device_data : VkDevice_index)
+	{
+		if (device_data.allocator) (void)device_data.allocator->self_test();
+	}
+	for (const lava_file_reader* reader : thread_streams)
+	{
+		assert(reader);
+		reader->self_test();
+	}
+}
+
 #if defined(__linux__) && defined(STATX_BTIME)
 static std::string trace_file_timestamp(int64_t seconds, uint32_t nanoseconds)
 {

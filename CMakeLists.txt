@@ -1032,6 +1032,12 @@ if(NOT ANDROID)
 			$<TARGET_FILE:lava-cli>
 			${CMAKE_CURRENT_BINARY_DIR}/tracing_2.api)
 	set_tests_properties(lava_cli_info_trace PROPERTIES FIXTURES_REQUIRED tracing_2 TIMEOUT 40)
+	add_lavatube_test(lava_cli_self_test
+		COMMAND ${PYTHON_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tests/lava_cli_self_test.py
+			$<TARGET_FILE:lava-replay>
+			$<TARGET_FILE:lava-cli>
+			${CMAKE_CURRENT_BINARY_DIR}/tracing_2.api)
+	set_tests_properties(lava_cli_self_test PROPERTIES FIXTURES_REQUIRED tracing_2 TIMEOUT 40)
 endif()
 
 # --- lava-tui ---

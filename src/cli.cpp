@@ -36,6 +36,9 @@ void usage()
 	printf("    set blackhole BOOL       Set replay blackhole mode (submit empty commandbuffers) [true,false], default is false.\n");
 	printf("    set idle-check BOOL      Wait for GPU idle after control commands [true,false], default is true.\n");
 	printf("    set isolate-thread BOOL  Run only the selected replay thread [true,false], default is false.\n");
+#ifndef NDEBUG
+	printf("    self-test                Run internal consistency assert checks.\n");
+#endif
 	printf("    thread INDEX             Select which traced thread receives step and goto commands.\n");
 	printf("    step                     Advance one packet.\n");
 	printf("    step packets N           Advance N packets.\n");

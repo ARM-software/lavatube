@@ -121,6 +121,7 @@ public:
 	void collect_trace_file_info(const std::string& path);
 	void init(const std::string& path);
 	~lava_reader();
+	void self_test() const;
 
 	lava_file_reader& file_reader(uint16_t thread_id);
 

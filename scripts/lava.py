@@ -490,6 +490,32 @@ out(targets_read, '\t}')
 out(targets_read, '}')
 out(targets_read_headers, 'void retrace_init(lava_reader& replayer, const Json::Value& v);')
 
+out(targets_read)
+out(targets_read_headers, 'void retrace_self_test();')
+out(targets_read, 'template <typename T>')
+out(targets_read, 'static void retrace_self_test_objects(const std::vector<T>& objects)')
+out(targets_read, '{')
+out(targets_read, '\tfor (const auto& data : objects)')
+out(targets_read, '\t{')
+out(targets_read, '\t\tif (data.state == (uint8_t)trackable::states::uninitialized || data.state == (uint8_t)trackable::states::initialized)')
+out(targets_read, '\t\t{')
+out(targets_read, '\t\t\tstatic_cast<const trackable&>(data).self_test();')
+out(targets_read, '\t\t}')
+out(targets_read, '\t\telse data.self_test();')
+out(targets_read, '\t}')
+out(targets_read, '}')
+out(targets_read)
+out(targets_read, 'void retrace_self_test()')
+out(targets_read, '{')
+for v in spec.root.findall('types/type'):
+	if v.attrib.get('category') == 'handle':
+		if v.find('name') == None or v.find('name').text == 'VkDeviceMemory': # ignore aliases and replay-suballocated memory
+			continue
+		name = v.find('name').text
+		if spec.str_contains_vendor(name): continue
+		out(targets_read, '\tretrace_self_test_objects(%s_index);' % name)
+out(targets_read, '}')
+
 out(targets_write)
 out(targets_write, 'Json::Value trace_limits(const lava_writer* instance)')
 out(targets_write, '{')
