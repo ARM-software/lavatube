@@ -89,6 +89,10 @@ struct descriptor_rewrite
 	std::vector<uint8_t> capture_bytes;
 	std::vector<uint8_t> bytes;
 	change_source source;
+	bool has_buffer_address_info = false;
+	VkDeviceAddress buffer_address = 0;
+	VkDeviceSize buffer_range = 0;
+	VkFormat buffer_format = VK_FORMAT_UNDEFINED;
 };
 
 struct descriptor_buffer_payload

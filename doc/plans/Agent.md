@@ -72,7 +72,6 @@ It should return structured evidence along the lines of:
 ```json
   {
     "status": "answered",
-    "question": "...",
     "conclusion": "...",
     "confidence": 0.8,
     "evidence": [
@@ -85,13 +84,9 @@ It should return structured evidence along the lines of:
       }
     ],
     "unresolved": ["..."],
-    "target": {
-      "trace": <trace filename>,
-      "service": "localhost:11901"
-    },
     "usage": {
-      "model_rounds": 3,
-      "tool_calls": 6
+      "rounds": 3,
+      "calls": 6
     }
   }
 ```

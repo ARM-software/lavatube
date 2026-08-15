@@ -1,5 +1,7 @@
 #include "execute_commands.h"
 #include "markings.h"
+#include "postprocess.h"
+#include "read.h"
 #include "read_auto.h"
 #include "suballocator.h"
 
@@ -375,6 +377,8 @@ static void add_dispatch(trackedcmdbuffer& cmdbuffer_data, const change_source& 
 constexpr uint32_t compute_shader_input_value = 41;
 constexpr uint32_t compute_shader_expected_output = 42;
 constexpr VkDeviceSize compute_shader_buffer_size = sizeof(uint32_t);
+constexpr VkDeviceSize compute_shader_descriptor_size = 16;
+constexpr VkDeviceSize compute_shader_descriptor_buffer_size = 64;
 
 struct compute_shader_fixture
 {
@@ -401,15 +405,19 @@ struct compute_shader_fixture
 		}
 	{
 		VkBuffer_index.clear();
-		VkBuffer_index.resize(2);
+		VkBuffer_index.resize(3);
 		init_buffer(0, compute_shader_buffer_size);
 		init_buffer(1, compute_shader_buffer_size);
+		init_buffer(2, compute_shader_descriptor_buffer_size);
 		VkBuffer_index[0].usage |= VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
 		VkBuffer_index[1].usage |= VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+		VkBuffer_index[2].usage |= VK_BUFFER_USAGE_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+		VkBuffer_index[2].usage2 |= VK_BUFFER_USAGE_2_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT | VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT;
 
 		allocator.create(VK_NULL_HANDLE, VK_NULL_HANDLE, images, VkBuffer_index, tensors, sessions, 1, false);
 		allocator.add_trackedobject(0, 1, VkBuffer_index[0]);
 		allocator.add_trackedobject(0, 2, VkBuffer_index[1]);
+		allocator.add_trackedobject(0, 3, VkBuffer_index[2]);
 
 		suballoc_location input = allocator.find_buffer_memory(0);
 		suballoc_location output = allocator.find_buffer_memory(1);
@@ -457,6 +465,392 @@ static void execute_compute_shader()
 	assert(fixture.data.stats.commands == 2);
 	assert(fixture.data.stats.execution_commands == 1);
 	assert(fixture.descriptor_buffer_payloads.empty());
+}
+
+static descriptor_rewrite make_buffer_descriptor_rewrite(VkDescriptorType type, const std::vector<uint8_t>& bytes,
+	VkDeviceAddress address, VkDeviceSize range)
+{
+	descriptor_rewrite rewrite;
+	rewrite.type = type;
+	rewrite.capture_bytes = bytes;
+	rewrite.bytes = bytes;
+	rewrite.source = make_source(13);
+	rewrite.has_buffer_address_info = true;
+	rewrite.buffer_address = address;
+	rewrite.buffer_range = range;
+	return rewrite;
+}
+
+static void track_descriptor_set_layout_size()
+{
+	lava_reader parent;
+	const char packet = 0;
+	lava_file_reader reader(&parent, &packet, sizeof(packet), int(0), uint32_t(0), uint32_t(0), uint8_t(0));
+	callback_context cb { reader };
+	const VkDescriptorSetLayout layout = (VkDescriptorSetLayout)(uintptr_t)1;
+	index_to_VkDescriptorSetLayout.clear();
+	index_to_VkDescriptorSetLayout.resize(1);
+	index_to_VkDescriptorSetLayout.set(0, layout);
+	VkDescriptorSetLayout_index.clear();
+	VkDescriptorSetLayout_index.resize(1);
+	VkDeviceSize layout_size = 4096;
+	postprocess_vkGetDescriptorSetLayoutSizeEXT(cb, VK_NULL_HANDLE, layout, &layout_size);
+	assert(VkDescriptorSetLayout_index[0].size == layout_size);
+	index_to_VkDescriptorSetLayout.clear();
+	VkDescriptorSetLayout_index.clear();
+}
+
+static void add_descriptor_buffer_commands(trackedcmdbuffer& cmdbuffer_data, VkDeviceAddress descriptor_buffer_address,
+	VkPipelineLayout pipeline_layout)
+{
+	trackedcommand bind_descriptor_buffer { VKCMDBINDDESCRIPTORBUFFERSEXT };
+	bind_descriptor_buffer.data.bind_descriptor_buffers_ext.bufferCount = 1;
+	bind_descriptor_buffer.data.bind_descriptor_buffers_ext.addresses = (VkDeviceAddress*)malloc(sizeof(VkDeviceAddress));
+	bind_descriptor_buffer.data.bind_descriptor_buffers_ext.usages = (VkBufferUsageFlags*)malloc(sizeof(VkBufferUsageFlags));
+	assert(bind_descriptor_buffer.data.bind_descriptor_buffers_ext.addresses);
+	assert(bind_descriptor_buffer.data.bind_descriptor_buffers_ext.usages);
+	bind_descriptor_buffer.data.bind_descriptor_buffers_ext.addresses[0] = descriptor_buffer_address;
+	bind_descriptor_buffer.data.bind_descriptor_buffers_ext.usages[0] = VK_BUFFER_USAGE_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT;
+	cmdbuffer_data.commands.push_back(bind_descriptor_buffer);
+
+	trackedcommand set_descriptor_buffer_offset { VKCMDSETDESCRIPTORBUFFEROFFSETSEXT };
+	set_descriptor_buffer_offset.data.set_descriptor_buffer_offsets_ext.pipelineBindPoint = VK_PIPELINE_BIND_POINT_COMPUTE;
+	set_descriptor_buffer_offset.data.set_descriptor_buffer_offsets_ext.layout = pipeline_layout;
+	set_descriptor_buffer_offset.data.set_descriptor_buffer_offsets_ext.firstSet = 0;
+	set_descriptor_buffer_offset.data.set_descriptor_buffer_offsets_ext.setCount = 1;
+	set_descriptor_buffer_offset.data.set_descriptor_buffer_offsets_ext.pBufferIndices = (uint32_t*)malloc(sizeof(uint32_t));
+	set_descriptor_buffer_offset.data.set_descriptor_buffer_offsets_ext.pOffsets = (VkDeviceSize*)malloc(sizeof(VkDeviceSize));
+	assert(set_descriptor_buffer_offset.data.set_descriptor_buffer_offsets_ext.pBufferIndices);
+	assert(set_descriptor_buffer_offset.data.set_descriptor_buffer_offsets_ext.pOffsets);
+	set_descriptor_buffer_offset.data.set_descriptor_buffer_offsets_ext.pBufferIndices[0] = 0;
+	set_descriptor_buffer_offset.data.set_descriptor_buffer_offsets_ext.pOffsets[0] = 0;
+	cmdbuffer_data.commands.push_back(set_descriptor_buffer_offset);
+}
+
+static void execute_compute_shader_mutable_descriptor_buffer()
+{
+	constexpr VkDeviceAddress input_address = 0x100000;
+	constexpr VkDeviceAddress output_address = 0x200000;
+	constexpr VkDeviceAddress descriptor_buffer_address = 0x300000;
+	constexpr VkDeviceSize descriptor_size = compute_shader_descriptor_size;
+	compute_shader_fixture fixture;
+	fixture.data.descriptor_sets.clear();
+
+	VkBuffer_index[0].device_address = input_address;
+	VkBuffer_index[1].device_address = output_address;
+	VkBuffer_index[2].device_address = descriptor_buffer_address;
+	fixture.device_address_remapping.add(input_address, &VkBuffer_index[0]);
+	fixture.device_address_remapping.add(output_address, &VkBuffer_index[1]);
+	fixture.device_address_remapping.add(descriptor_buffer_address, &VkBuffer_index[2]);
+
+	std::vector<uint8_t> input_descriptor(descriptor_size, 0x11);
+	std::vector<uint8_t> output_descriptor(descriptor_size, 0x22);
+	suballoc_location descriptor_buffer = fixture.allocator.find_buffer_memory(2);
+	memcpy(descriptor_buffer.memory, input_descriptor.data(), input_descriptor.size());
+	memcpy(reinterpret_cast<char*>(descriptor_buffer.memory) + descriptor_size, output_descriptor.data(), output_descriptor.size());
+	fixture.pending_descriptor_rewrites.push_back(make_buffer_descriptor_rewrite(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+		input_descriptor, input_address, compute_shader_buffer_size));
+	fixture.pending_descriptor_rewrites.push_back(make_buffer_descriptor_rewrite(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+		input_descriptor, input_address, compute_shader_buffer_size));
+	fixture.pending_descriptor_rewrites.push_back(make_buffer_descriptor_rewrite(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+		output_descriptor, output_address, compute_shader_buffer_size));
+
+	const VkDescriptorSetLayout set_layout = (VkDescriptorSetLayout)(uintptr_t)1;
+	const VkPipelineLayout pipeline_layout = (VkPipelineLayout)(uintptr_t)1;
+	VkDescriptorSetLayout_index.clear();
+	VkDescriptorSetLayout_index.resize(1);
+	VkDescriptorSetLayout_index[0].binding_types[0] = VK_DESCRIPTOR_TYPE_MUTABLE_EXT;
+	VkDescriptorSetLayout_index[0].binding_types[1] = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+	VkDescriptorSetLayout_index[0].binding_counts[0] = 1;
+	VkDescriptorSetLayout_index[0].binding_counts[1] = 1;
+	VkDescriptorSetLayout_index[0].offsets[0] = 0;
+	VkDescriptorSetLayout_index[0].offsets[1] = descriptor_size;
+	index_to_VkDescriptorSetLayout.clear();
+	index_to_VkDescriptorSetLayout.resize(1);
+	index_to_VkDescriptorSetLayout.set(0, set_layout);
+
+	VkPipelineLayout_index.clear();
+	VkPipelineLayout_index.resize(1);
+	VkPipelineLayout_index[0].layouts.push_back(set_layout);
+	VkPipelineLayout_index[0].layout_indices.push_back(0);
+	index_to_VkPipelineLayout.clear();
+	index_to_VkPipelineLayout.resize(1);
+	index_to_VkPipelineLayout.set(0, pipeline_layout);
+
+	fixture.cmdbuffer_data.commands.clear();
+	add_bind_compute_pipeline(fixture.cmdbuffer_data);
+	add_descriptor_buffer_commands(fixture.cmdbuffer_data, descriptor_buffer_address, pipeline_layout);
+	add_dispatch(fixture.cmdbuffer_data, make_source(12));
+
+	assert(execute_commands(fixture.data));
+	assert(fixture.output_value() == compute_shader_expected_output);
+	assert(fixture.stage().calls == 1);
+	assert(fixture.data.stats.commands == 4);
+	assert(fixture.data.stats.execution_commands == 1);
+	assert(fixture.descriptor_buffer_payloads.size() == 2);
+	assert(fixture.descriptor_buffer_payloads[0].type == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+	assert(fixture.descriptor_buffer_payloads[1].type == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+
+	index_to_VkPipelineLayout.clear();
+	index_to_VkDescriptorSetLayout.clear();
+	VkPipelineLayout_index.clear();
+	VkDescriptorSetLayout_index.clear();
+}
+
+static void execute_compute_shader_descriptor_buffer_array()
+{
+	constexpr VkDeviceAddress first_address = 0x100000;
+	constexpr VkDeviceAddress second_address = 0x200000;
+	constexpr VkDeviceAddress descriptor_buffer_address = 0x300000;
+	constexpr VkDeviceSize descriptor_size = compute_shader_descriptor_size;
+	compute_shader_fixture fixture;
+	fixture.data.descriptor_sets.clear();
+
+	VkBuffer_index[0].device_address = first_address;
+	VkBuffer_index[1].device_address = second_address;
+	VkBuffer_index[2].device_address = descriptor_buffer_address;
+	fixture.device_address_remapping.add(first_address, &VkBuffer_index[0]);
+	fixture.device_address_remapping.add(second_address, &VkBuffer_index[1]);
+	fixture.device_address_remapping.add(descriptor_buffer_address, &VkBuffer_index[2]);
+
+	std::vector<uint8_t> first_descriptor(descriptor_size, 0x33);
+	std::vector<uint8_t> second_descriptor(descriptor_size, 0x44);
+	suballoc_location descriptor_buffer = fixture.allocator.find_buffer_memory(2);
+	memcpy(descriptor_buffer.memory, first_descriptor.data(), first_descriptor.size());
+	memcpy(reinterpret_cast<char*>(descriptor_buffer.memory) + descriptor_size, second_descriptor.data(), second_descriptor.size());
+	fixture.pending_descriptor_rewrites.push_back(make_buffer_descriptor_rewrite(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+		first_descriptor, first_address, compute_shader_buffer_size));
+	fixture.pending_descriptor_rewrites.push_back(make_buffer_descriptor_rewrite(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+		second_descriptor, second_address, compute_shader_buffer_size));
+
+	const VkDescriptorSetLayout set_layout = (VkDescriptorSetLayout)(uintptr_t)1;
+	const VkPipelineLayout pipeline_layout = (VkPipelineLayout)(uintptr_t)1;
+	VkDescriptorSetLayout_index.clear();
+	VkDescriptorSetLayout_index.resize(1);
+	VkDescriptorSetLayout_index[0].size = compute_shader_descriptor_buffer_size;
+	VkDescriptorSetLayout_index[0].binding_types[0] = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+	VkDescriptorSetLayout_index[0].binding_counts[0] = 2;
+	VkDescriptorSetLayout_index[0].offsets[0] = 0;
+	index_to_VkDescriptorSetLayout.clear();
+	index_to_VkDescriptorSetLayout.resize(1);
+	index_to_VkDescriptorSetLayout.set(0, set_layout);
+
+	VkPipelineLayout_index.clear();
+	VkPipelineLayout_index.resize(1);
+	VkPipelineLayout_index[0].layouts.push_back(set_layout);
+	VkPipelineLayout_index[0].layout_indices.push_back(0);
+	index_to_VkPipelineLayout.clear();
+	index_to_VkPipelineLayout.resize(1);
+	index_to_VkPipelineLayout.set(0, pipeline_layout);
+
+	fixture.cmdbuffer_data.commands.clear();
+	add_descriptor_buffer_commands(fixture.cmdbuffer_data, descriptor_buffer_address, pipeline_layout);
+
+	assert(execute_commands(fixture.data));
+	const auto& binding = fixture.data.descriptor_sets.at(VK_PIPELINE_BIND_POINT_COMPUTE).at(0).at(0);
+	assert(binding.descriptor_type == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+	assert(!binding.descriptor_buffer_backed);
+	assert(binding.buffers.size() == 2);
+	assert(binding.buffers[0].buffer_data == &VkBuffer_index[0]);
+	assert(binding.buffers[1].buffer_data == &VkBuffer_index[1]);
+	assert(fixture.data.stats.commands == 2);
+	assert(fixture.data.stats.execution_commands == 0);
+	assert(fixture.descriptor_buffer_payloads.size() == 2);
+
+	index_to_VkPipelineLayout.clear();
+	index_to_VkDescriptorSetLayout.clear();
+	VkPipelineLayout_index.clear();
+	VkDescriptorSetLayout_index.clear();
+}
+
+static void execute_compute_shader_mixed_mutable_descriptor_buffer_array()
+{
+	constexpr VkDeviceAddress first_address = 0x100000;
+	constexpr VkDeviceAddress second_address = 0x200000;
+	constexpr VkDeviceAddress descriptor_buffer_address = 0x300000;
+	compute_shader_fixture fixture;
+	fixture.data.descriptor_sets.clear();
+
+	VkBuffer_index[0].device_address = first_address;
+	VkBuffer_index[1].device_address = second_address;
+	VkBuffer_index[2].device_address = descriptor_buffer_address;
+	fixture.device_address_remapping.add(first_address, &VkBuffer_index[0]);
+	fixture.device_address_remapping.add(second_address, &VkBuffer_index[1]);
+	fixture.device_address_remapping.add(descriptor_buffer_address, &VkBuffer_index[2]);
+
+	std::vector<uint8_t> first_descriptor(compute_shader_descriptor_size, 0x51);
+	std::vector<uint8_t> second_descriptor(compute_shader_descriptor_size, 0x52);
+	suballoc_location descriptor_buffer = fixture.allocator.find_buffer_memory(2);
+	memcpy(descriptor_buffer.memory, first_descriptor.data(), first_descriptor.size());
+	memcpy(reinterpret_cast<char*>(descriptor_buffer.memory) + compute_shader_descriptor_size,
+		second_descriptor.data(), second_descriptor.size());
+	fixture.pending_descriptor_rewrites.push_back(make_buffer_descriptor_rewrite(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+		first_descriptor, first_address, compute_shader_buffer_size));
+	fixture.pending_descriptor_rewrites.push_back(make_buffer_descriptor_rewrite(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+		second_descriptor, second_address, compute_shader_buffer_size));
+
+	const VkDescriptorSetLayout set_layout = (VkDescriptorSetLayout)(uintptr_t)1;
+	const VkPipelineLayout pipeline_layout = (VkPipelineLayout)(uintptr_t)1;
+	VkDescriptorSetLayout_index.clear();
+	VkDescriptorSetLayout_index.resize(1);
+	VkDescriptorSetLayout_index[0].size = compute_shader_descriptor_size * 2;
+	VkDescriptorSetLayout_index[0].binding_types[0] = VK_DESCRIPTOR_TYPE_MUTABLE_EXT;
+	VkDescriptorSetLayout_index[0].binding_counts[0] = 2;
+	VkDescriptorSetLayout_index[0].offsets[0] = 0;
+	index_to_VkDescriptorSetLayout.clear();
+	index_to_VkDescriptorSetLayout.resize(1);
+	index_to_VkDescriptorSetLayout.set(0, set_layout);
+
+	VkPipelineLayout_index.clear();
+	VkPipelineLayout_index.resize(1);
+	VkPipelineLayout_index[0].layouts.push_back(set_layout);
+	VkPipelineLayout_index[0].layout_indices.push_back(0);
+	index_to_VkPipelineLayout.clear();
+	index_to_VkPipelineLayout.resize(1);
+	index_to_VkPipelineLayout.set(0, pipeline_layout);
+
+	fixture.cmdbuffer_data.commands.clear();
+	add_descriptor_buffer_commands(fixture.cmdbuffer_data, descriptor_buffer_address, pipeline_layout);
+
+	assert(execute_commands(fixture.data));
+	const auto& binding = fixture.data.descriptor_sets.at(VK_PIPELINE_BIND_POINT_COMPUTE).at(0).at(0);
+	assert(!binding.descriptor_buffer_backed);
+	assert(binding.buffers.size() == 2);
+	assert(binding.buffers[0].buffer_data == &VkBuffer_index[0]);
+	assert(binding.buffers[1].buffer_data == &VkBuffer_index[1]);
+	assert(fixture.descriptor_buffer_payloads.size() == 2);
+	assert(fixture.descriptor_buffer_payloads[0].type == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
+	assert(fixture.descriptor_buffer_payloads[1].type == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+
+	index_to_VkPipelineLayout.clear();
+	index_to_VkDescriptorSetLayout.clear();
+	VkPipelineLayout_index.clear();
+	VkDescriptorSetLayout_index.clear();
+}
+
+static void execute_compute_shader_mutable_descriptor_buffer_array_boundary()
+{
+	constexpr VkDeviceAddress first_address = 0x100000;
+	constexpr VkDeviceAddress second_address = 0x200000;
+	constexpr VkDeviceAddress descriptor_buffer_address = 0x300000;
+	compute_shader_fixture fixture;
+	fixture.data.descriptor_sets.clear();
+
+	VkBuffer_index[0].device_address = first_address;
+	VkBuffer_index[1].device_address = second_address;
+	VkBuffer_index[2].device_address = descriptor_buffer_address;
+	fixture.device_address_remapping.add(first_address, &VkBuffer_index[0]);
+	fixture.device_address_remapping.add(second_address, &VkBuffer_index[1]);
+	fixture.device_address_remapping.add(descriptor_buffer_address, &VkBuffer_index[2]);
+
+	std::vector<uint8_t> first_descriptor(compute_shader_descriptor_size, 0x61);
+	std::vector<uint8_t> second_descriptor(compute_shader_descriptor_size, 0x62);
+	suballoc_location descriptor_buffer = fixture.allocator.find_buffer_memory(2);
+	memcpy(descriptor_buffer.memory, first_descriptor.data(), first_descriptor.size());
+	memcpy(reinterpret_cast<char*>(descriptor_buffer.memory) + compute_shader_descriptor_size,
+		second_descriptor.data(), second_descriptor.size());
+	memcpy(reinterpret_cast<char*>(descriptor_buffer.memory) + compute_shader_descriptor_size * 2,
+		first_descriptor.data(), first_descriptor.size());
+	fixture.pending_descriptor_rewrites.push_back(make_buffer_descriptor_rewrite(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+		first_descriptor, first_address, compute_shader_buffer_size));
+	fixture.pending_descriptor_rewrites.push_back(make_buffer_descriptor_rewrite(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+		second_descriptor, second_address, compute_shader_buffer_size));
+
+	const VkDescriptorSetLayout set_layout = (VkDescriptorSetLayout)(uintptr_t)1;
+	const VkPipelineLayout pipeline_layout = (VkPipelineLayout)(uintptr_t)1;
+	VkDescriptorSetLayout_index.clear();
+	VkDescriptorSetLayout_index.resize(1);
+	VkDescriptorSetLayout_index[0].size = compute_shader_descriptor_size * 3;
+	VkDescriptorSetLayout_index[0].binding_types[0] = VK_DESCRIPTOR_TYPE_MUTABLE_EXT;
+	VkDescriptorSetLayout_index[0].binding_types[1] = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+	VkDescriptorSetLayout_index[0].binding_counts[0] = 2;
+	VkDescriptorSetLayout_index[0].binding_counts[1] = 1;
+	VkDescriptorSetLayout_index[0].offsets[0] = 0;
+	VkDescriptorSetLayout_index[0].offsets[1] = compute_shader_descriptor_size * 2;
+	index_to_VkDescriptorSetLayout.clear();
+	index_to_VkDescriptorSetLayout.resize(1);
+	index_to_VkDescriptorSetLayout.set(0, set_layout);
+
+	VkPipelineLayout_index.clear();
+	VkPipelineLayout_index.resize(1);
+	VkPipelineLayout_index[0].layouts.push_back(set_layout);
+	VkPipelineLayout_index[0].layout_indices.push_back(0);
+	index_to_VkPipelineLayout.clear();
+	index_to_VkPipelineLayout.resize(1);
+	index_to_VkPipelineLayout.set(0, pipeline_layout);
+
+	fixture.cmdbuffer_data.commands.clear();
+	add_descriptor_buffer_commands(fixture.cmdbuffer_data, descriptor_buffer_address, pipeline_layout);
+
+	assert(execute_commands(fixture.data));
+	const auto& binding = fixture.data.descriptor_sets.at(VK_PIPELINE_BIND_POINT_COMPUTE).at(0).at(0);
+	assert(!binding.descriptor_buffer_backed);
+	assert(binding.buffers.size() == 2);
+	assert(binding.buffers[0].buffer_data == &VkBuffer_index[0]);
+	assert(binding.buffers[1].buffer_data == &VkBuffer_index[1]);
+
+	index_to_VkPipelineLayout.clear();
+	index_to_VkDescriptorSetLayout.clear();
+	VkPipelineLayout_index.clear();
+	VkDescriptorSetLayout_index.clear();
+}
+
+static void execute_compute_shader_descriptor_buffer_array_fallback()
+{
+	constexpr VkDeviceAddress first_address = 0x100000;
+	constexpr VkDeviceAddress descriptor_buffer_address = 0x300000;
+	compute_shader_fixture fixture;
+	fixture.data.descriptor_sets.clear();
+
+	VkBuffer_index[0].device_address = first_address;
+	VkBuffer_index[2].device_address = descriptor_buffer_address;
+	fixture.device_address_remapping.add(first_address, &VkBuffer_index[0]);
+	fixture.device_address_remapping.add(descriptor_buffer_address, &VkBuffer_index[2]);
+
+	std::vector<uint8_t> known_descriptor(compute_shader_descriptor_size, 0x71);
+	std::vector<uint8_t> unknown_descriptor(compute_shader_descriptor_size, 0x72);
+	suballoc_location descriptor_buffer = fixture.allocator.find_buffer_memory(2);
+	memcpy(descriptor_buffer.memory, known_descriptor.data(), known_descriptor.size());
+	memcpy(reinterpret_cast<char*>(descriptor_buffer.memory) + compute_shader_descriptor_size,
+		known_descriptor.data(), known_descriptor.size());
+	memcpy(reinterpret_cast<char*>(descriptor_buffer.memory) + compute_shader_descriptor_size * 2,
+		unknown_descriptor.data(), unknown_descriptor.size());
+	fixture.pending_descriptor_rewrites.push_back(make_buffer_descriptor_rewrite(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+		known_descriptor, first_address, compute_shader_buffer_size));
+
+	const VkDescriptorSetLayout set_layout = (VkDescriptorSetLayout)(uintptr_t)1;
+	const VkPipelineLayout pipeline_layout = (VkPipelineLayout)(uintptr_t)1;
+	VkDescriptorSetLayout_index.clear();
+	VkDescriptorSetLayout_index.resize(1);
+	VkDescriptorSetLayout_index[0].size = compute_shader_descriptor_size * 3;
+	VkDescriptorSetLayout_index[0].binding_types[0] = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+	VkDescriptorSetLayout_index[0].binding_counts[0] = 2;
+	VkDescriptorSetLayout_index[0].offsets[0] = compute_shader_descriptor_size;
+	index_to_VkDescriptorSetLayout.clear();
+	index_to_VkDescriptorSetLayout.resize(1);
+	index_to_VkDescriptorSetLayout.set(0, set_layout);
+
+	VkPipelineLayout_index.clear();
+	VkPipelineLayout_index.resize(1);
+	VkPipelineLayout_index[0].layouts.push_back(set_layout);
+	VkPipelineLayout_index[0].layout_indices.push_back(0);
+	index_to_VkPipelineLayout.clear();
+	index_to_VkPipelineLayout.resize(1);
+	index_to_VkPipelineLayout.set(0, pipeline_layout);
+
+	fixture.cmdbuffer_data.commands.clear();
+	add_descriptor_buffer_commands(fixture.cmdbuffer_data, descriptor_buffer_address, pipeline_layout);
+
+	assert(execute_commands(fixture.data));
+	const auto& binding = fixture.data.descriptor_sets.at(VK_PIPELINE_BIND_POINT_COMPUTE).at(0).at(0);
+	assert(binding.descriptor_buffer_backed);
+	assert(fixture.descriptor_buffer_payloads.size() == 1);
+	assert(fixture.descriptor_buffer_payloads[0].offset == compute_shader_descriptor_size);
+
+	index_to_VkPipelineLayout.clear();
+	index_to_VkDescriptorSetLayout.clear();
+	VkPipelineLayout_index.clear();
+	VkDescriptorSetLayout_index.clear();
 }
 
 static void execute_compute_shader_push_descriptors()
@@ -1223,7 +1617,13 @@ int main(int argc, char** argv)
 
 	execute_null();
 	execute_copy_buffer();
+	track_descriptor_set_layout_size();
 	execute_compute_shader();
+	execute_compute_shader_mutable_descriptor_buffer();
+	execute_compute_shader_descriptor_buffer_array();
+	execute_compute_shader_mixed_mutable_descriptor_buffer_array();
+	execute_compute_shader_mutable_descriptor_buffer_array_boundary();
+	execute_compute_shader_descriptor_buffer_array_fallback();
 	execute_compute_shader_push_descriptors();
 	execute_compute_shader_copy_provenance();
 	execute_compute_shader_bda_unbound_input();

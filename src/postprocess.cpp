@@ -344,6 +344,17 @@ void postprocess_vkCreatePipelineLayout(callback_context& cb, VkDevice device, c
 	}
 }
 
+void postprocess_vkGetDescriptorSetLayoutSizeEXT(callback_context& cb, VkDevice device, VkDescriptorSetLayout layout,
+	VkDeviceSize* pLayoutSizeInBytes)
+{
+	(void)cb;
+	(void)device;
+	if (!pLayoutSizeInBytes || layout == VK_NULL_HANDLE) return;
+	const uint32_t layout_index = index_to_VkDescriptorSetLayout.index(layout);
+	if (layout_index == CONTAINER_INVALID_INDEX) return;
+	VkDescriptorSetLayout_index.at(layout_index).size = *pLayoutSizeInBytes;
+}
+
 void postprocess_vkGetDescriptorSetLayoutBindingOffsetEXT(callback_context& cb, VkDevice device, VkDescriptorSetLayout layout,
 	uint32_t binding, VkDeviceSize* pOffset)
 {

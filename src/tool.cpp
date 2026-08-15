@@ -863,22 +863,40 @@ static bool descriptor_buffer_update_already_queued(uint32_t buffer_index, VkDev
 			});
 }
 
+static VkDescriptorType resolve_mutable_descriptor_buffer_type(uint32_t buffer_index, VkDeviceSize offset)
+{
+	VkDescriptorType resolved_type = VK_DESCRIPTOR_TYPE_MUTABLE_EXT;
+	for (const descriptor_buffer_payload& payload : descriptor_buffer_payloads_for_output)
+	{
+		if (payload.buffer_index != buffer_index || payload.offset != offset || payload.bytes.empty()) continue;
+		std::vector<uint8_t> captured_bytes;
+		if (!read_output_descriptor_buffer_payload(buffer_index, offset, payload.bytes.size(), captured_bytes)) continue;
+		if (captured_bytes != payload.bytes) continue;
+		// A mutable uniform/storage descriptor may have the same opaque bytes for the same logical buffer.
+		// Keep the most recently observed concrete type instead of rejecting that valid representation.
+		resolved_type = payload.type;
+	}
+	return resolved_type;
+}
+
 static void queue_synthetic_descriptor_buffer_update(uint32_t buffer_index, VkDeviceSize offset, VkDescriptorType type)
 {
-	if (descriptor_output_marking_exists(buffer_index, offset, type)) return;
+	const VkDescriptorType resolved_type = type == VK_DESCRIPTOR_TYPE_MUTABLE_EXT
+		? resolve_mutable_descriptor_buffer_type(buffer_index, offset) : type;
+	if (descriptor_output_marking_exists(buffer_index, offset, resolved_type)) return;
 
 	std::vector<uint8_t> bytes;
 	auto payload_entry = std::find_if(descriptor_buffer_payloads_for_output.begin(), descriptor_buffer_payloads_for_output.end(),
 		[&](const descriptor_buffer_payload& payload)
 		{
-			return payload.buffer_index == buffer_index && payload.offset == offset && payload.type == type;
+			return payload.buffer_index == buffer_index && payload.offset == offset && payload.type == resolved_type;
 		});
 	if (payload_entry != descriptor_buffer_payloads_for_output.end())
 	{
 		const uint32_t matching_payload_slots = std::count_if(descriptor_buffer_payloads_for_output.begin(), descriptor_buffer_payloads_for_output.end(),
 			[&](const descriptor_buffer_payload& payload)
 			{
-				return payload.type == type && payload.bytes == payload_entry->bytes;
+				return payload.type == resolved_type && payload.bytes == payload_entry->bytes;
 			});
 		if (matching_payload_slots > 1) bytes = payload_entry->bytes;
 	}
@@ -887,31 +905,31 @@ static void queue_synthetic_descriptor_buffer_update(uint32_t buffer_index, VkDe
 		std::vector<uint8_t> captured_bytes;
 		const std::vector<uint8_t>* captured_bytes_ptr = nullptr;
 		auto payload_it = std::find_if(pending_descriptor_payloads.begin(), pending_descriptor_payloads.end(),
-			[type](const pending_descriptor_payload& payload)
+			[resolved_type](const pending_descriptor_payload& payload)
 			{
-				return payload.type == type;
+				return payload.type == resolved_type;
 			});
 		if (payload_it != pending_descriptor_payloads.end()
 			&& read_output_descriptor_buffer_payload(buffer_index, offset, payload_it->bytes.size(), captured_bytes))
 		{
 			captured_bytes_ptr = &captured_bytes;
 		}
-		const bool found_payload = (captured_bytes_ptr && find_pending_descriptor_payload(type, captured_bytes, bytes))
-			|| find_unique_pending_descriptor_payload(type, bytes)
-			|| pop_pending_descriptor_payload(type, captured_bytes_ptr, bytes)
-			|| (captured_bytes_ptr && pop_pending_descriptor_payload(type, nullptr, bytes));
+		const bool found_payload = (captured_bytes_ptr && find_pending_descriptor_payload(resolved_type, captured_bytes, bytes))
+			|| find_unique_pending_descriptor_payload(resolved_type, bytes)
+			|| pop_pending_descriptor_payload(resolved_type, captured_bytes_ptr, bytes)
+			|| (captured_bytes_ptr && pop_pending_descriptor_payload(resolved_type, nullptr, bytes));
 		if (!found_payload)
 		{
 			return;
 		}
 	}
 	if (bytes.empty()) return;
-	if (descriptor_buffer_update_already_queued(buffer_index, offset, type, bytes)) return;
-	note_used_descriptor_payload(type, bytes);
+	if (descriptor_buffer_update_already_queued(buffer_index, offset, resolved_type, bytes)) return;
+	note_used_descriptor_payload(resolved_type, bytes);
 	pending_descriptor_buffer_update update = {
 		.buffer_index = buffer_index,
 		.offset = offset,
-		.type = type,
+		.type = resolved_type,
 		.bytes = std::move(bytes),
 	};
 	emitted_descriptor_buffer_updates.push_back(update);
@@ -1015,6 +1033,57 @@ static void flush_synthetic_descriptor_buffer_updates()
 	erase_used_descriptor_payloads();
 }
 
+static VkDeviceSize output_descriptor_binding_end(const trackeddescriptorsetlayout& layout_data, VkDeviceSize set_base,
+	VkDeviceSize binding_offset, VkDeviceSize buffer_size)
+{
+	VkDeviceSize binding_end = buffer_size;
+	for (const auto& candidate : layout_data.offsets)
+	{
+		if (candidate.second <= binding_offset || candidate.second > buffer_size - set_base) continue;
+		const VkDeviceSize candidate_end = set_base + candidate.second;
+		if (candidate_end < binding_end) binding_end = candidate_end;
+	}
+	if (layout_data.size > binding_offset && layout_data.size <= buffer_size - set_base)
+	{
+		const VkDeviceSize layout_end = set_base + layout_data.size;
+		if (layout_end < binding_end) binding_end = layout_end;
+	}
+	return binding_end;
+}
+
+static bool output_descriptor_payload_matches(const descriptor_buffer_payload& payload)
+{
+	std::vector<uint8_t> current_bytes;
+	return read_output_descriptor_buffer_payload(payload.buffer_index, payload.offset, payload.bytes.size(), current_bytes)
+		&& current_bytes == payload.bytes;
+}
+
+static void queue_synthetic_descriptor_buffer_binding_updates(const trackeddescriptorsetlayout& layout_data,
+	uint32_t buffer_index, VkDeviceSize set_base, uint32_t binding, VkDeviceSize binding_offset, VkDescriptorType layout_type)
+{
+	const trackedbuffer& buffer_data = VkBuffer_index.at(buffer_index);
+	if (set_base > buffer_data.size || binding_offset > buffer_data.size - set_base) return;
+	const VkDeviceSize binding_start = set_base + binding_offset;
+	const VkDeviceSize binding_end = output_descriptor_binding_end(layout_data, set_base, binding_offset, buffer_data.size);
+	std::vector<VkDeviceSize> offsets;
+	offsets.push_back(binding_start);
+	for (const descriptor_buffer_payload& payload : descriptor_buffer_payloads_for_output)
+	{
+		if (payload.buffer_index != buffer_index || payload.offset < binding_start || payload.offset >= binding_end) continue;
+		if (layout_type != VK_DESCRIPTOR_TYPE_MUTABLE_EXT && payload.type != layout_type) continue;
+		if (!output_descriptor_payload_matches(payload)) continue;
+		offsets.push_back(payload.offset);
+	}
+	std::sort(offsets.begin(), offsets.end());
+	offsets.erase(std::unique(offsets.begin(), offsets.end()), offsets.end());
+	auto count_it = layout_data.binding_counts.find(binding);
+	if (count_it != layout_data.binding_counts.end() && offsets.size() > count_it->second) offsets.resize(count_it->second);
+	for (VkDeviceSize offset : offsets)
+	{
+		queue_synthetic_descriptor_buffer_update(buffer_index, offset, layout_type);
+	}
+}
+
 static void output_note_descriptor_buffer_offsets(VkPipelineLayout layout, uint32_t firstSet, uint32_t setCount,
 	const uint32_t* pBufferIndices, const VkDeviceSize* pOffsets)
 {
@@ -1030,6 +1099,9 @@ static void output_note_descriptor_buffer_offsets(VkPipelineLayout layout, uint3
 		const output_descriptor_buffer_binding& descriptor_buffer = output_descriptor_buffers[descriptor_buffer_index];
 		if (descriptor_buffer.buffer_index == CONTAINER_INVALID_INDEX) continue;
 		const VkDeviceSize set_offset = pOffsets ? pOffsets[i] : 0;
+		const trackedbuffer& descriptor_buffer_data = VkBuffer_index.at(descriptor_buffer.buffer_index);
+		if (descriptor_buffer.offset > descriptor_buffer_data.size || set_offset > descriptor_buffer_data.size - descriptor_buffer.offset) continue;
+		const VkDeviceSize set_base = descriptor_buffer.offset + set_offset;
 		uint32_t set_layout_index = CONTAINER_INVALID_INDEX;
 		if (set < layout_data.layout_indices.size()) set_layout_index = layout_data.layout_indices[set];
 		if (set_layout_index == CONTAINER_INVALID_INDEX && set < layout_data.layouts.size())
@@ -1043,8 +1115,8 @@ static void output_note_descriptor_buffer_offsets(VkPipelineLayout layout, uint3
 			const uint32_t binding = binding_pair.first;
 			const auto offset_it = set_layout_data.offsets.find(binding);
 			const VkDeviceSize binding_offset = offset_it != set_layout_data.offsets.end() ? offset_it->second : 0;
-			queue_synthetic_descriptor_buffer_update(descriptor_buffer.buffer_index,
-				descriptor_buffer.offset + set_offset + binding_offset, binding_pair.second);
+			queue_synthetic_descriptor_buffer_binding_updates(set_layout_data, descriptor_buffer.buffer_index,
+				set_base, binding, binding_offset, binding_pair.second);
 		}
 	}
 }
@@ -1074,6 +1146,31 @@ static void note_descriptor_payload(callback_context& cb, VkDevice device, const
 	payload.source = cb.reader.current;
 	memcpy(payload.capture_bytes.data(), pDescriptor, dataSize);
 	memcpy(payload.bytes.data(), pDescriptor, dataSize);
+	const VkDescriptorAddressInfoEXT* address_info = nullptr;
+	switch (pDescriptorInfo->type)
+	{
+	case VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER:
+		address_info = pDescriptorInfo->data.pUniformTexelBuffer;
+		break;
+	case VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER:
+		address_info = pDescriptorInfo->data.pStorageTexelBuffer;
+		break;
+	case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
+		address_info = pDescriptorInfo->data.pUniformBuffer;
+		break;
+	case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
+		address_info = pDescriptorInfo->data.pStorageBuffer;
+		break;
+	default:
+		break;
+	}
+	if (address_info)
+	{
+		payload.has_buffer_address_info = true;
+		payload.buffer_address = address_info->address;
+		payload.buffer_range = address_info->range;
+		payload.buffer_format = address_info->format;
+	}
 	lava::lock_guard lock(sync_mutex);
 	cb.reader.parent->pending_descriptor_rewrites.push_back(std::move(payload));
 }
@@ -1498,6 +1595,7 @@ static void add_callbacks_for_first_round(bool enable_simulation, bool enable_su
 		CALLBACK(vkCmdBindDescriptorSets2);
 		CALLBACK(vkCreateDescriptorSetLayout);
 		CALLBACK(vkCreatePipelineLayout);
+		CALLBACK(vkGetDescriptorSetLayoutSizeEXT);
 		CALLBACK(vkGetDescriptorSetLayoutBindingOffsetEXT);
 		CALLBACK(vkCmdBindDescriptorBuffersEXT);
 		CALLBACK(vkCmdSetDescriptorBufferOffsetsEXT);
@@ -1722,6 +1820,7 @@ int main(int argc, char **argv)
 		vkCreateDescriptorUpdateTemplateKHR_callbacks.push_back(replay_callback_vkCreateDescriptorUpdateTemplateKHR);
 		vkCreateDescriptorSetLayout_callbacks.push_back(postprocess_vkCreateDescriptorSetLayout);
 		vkCreatePipelineLayout_callbacks.push_back(postprocess_vkCreatePipelineLayout);
+		vkGetDescriptorSetLayoutSizeEXT_callbacks.push_back(postprocess_vkGetDescriptorSetLayoutSizeEXT);
 		vkGetDescriptorSetLayoutBindingOffsetEXT_callbacks.push_back(postprocess_vkGetDescriptorSetLayoutBindingOffsetEXT);
 		vkGetBufferDeviceAddress_callbacks.push_back(replay_callback_vkGetBufferDeviceAddress);
 		vkGetBufferDeviceAddressKHR_callbacks.push_back(replay_callback_vkGetBufferDeviceAddressKHR);

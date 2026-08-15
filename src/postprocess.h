@@ -9,6 +9,7 @@ void postprocess_vkCmdPushDescriptorSet2(callback_context& cb, VkCommandBuffer c
 void postprocess_vkUpdateDescriptorSets(callback_context& cb, VkDevice device, uint32_t descriptorWriteCount, const VkWriteDescriptorSet* pDescriptorWrites, uint32_t descriptorCopyCount, const VkCopyDescriptorSet* pDescriptorCopies);
 void postprocess_vkCreateDescriptorSetLayout(callback_context& cb, VkDevice device, const VkDescriptorSetLayoutCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkDescriptorSetLayout* pSetLayout);
 void postprocess_vkCreatePipelineLayout(callback_context& cb, VkDevice device, const VkPipelineLayoutCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkPipelineLayout* pPipelineLayout);
+void postprocess_vkGetDescriptorSetLayoutSizeEXT(callback_context& cb, VkDevice device, VkDescriptorSetLayout layout, VkDeviceSize* pLayoutSizeInBytes);
 void postprocess_vkGetDescriptorSetLayoutBindingOffsetEXT(callback_context& cb, VkDevice device, VkDescriptorSetLayout layout, uint32_t binding, VkDeviceSize* pOffset);
 void postprocess_vkCmdBindDescriptorBuffersEXT(callback_context& cb, VkCommandBuffer commandBuffer, uint32_t bufferCount, const VkDescriptorBufferBindingInfoEXT* pBindingInfos);
 void postprocess_vkCmdSetDescriptorBufferOffsetsEXT(callback_context& cb, VkCommandBuffer commandBuffer, VkPipelineBindPoint pipelineBindPoint, VkPipelineLayout layout, uint32_t firstSet, uint32_t setCount, const uint32_t* pBufferIndices, const VkDeviceSize* pOffsets);

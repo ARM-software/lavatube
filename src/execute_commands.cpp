@@ -649,30 +649,6 @@ static bool run_spirv(command_execution_data& data, const shader_stage& stage, c
 					if (binding_ptr) set_bindings[binding_pair.first] = binding_ptr;
 				}
 				break;
-			case VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER:
-			case VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER:
-				{
-					for (auto it = binding.buffers.rbegin(); it != binding.buffers.rend(); ++it)
-					{
-						if (!it->buffer_data) continue;
-						suballoc_location loc = data.device_data.allocator->find_buffer_memory(it->buffer_data->index);
-						assert(loc.mapped);
-						std::byte* binding_ptr = (std::byte*)loc.mapped + it->offset;
-						const VkDeviceSize binding_size = (it->size != 0) ? it->size : (it->buffer_data->size - it->offset);
-						set_bindings[binding_pair.first] = binding_ptr;
-						register_simulator_buffer_range(simulator_ranges, binding_ptr, binding_size, it->buffer_data, it->offset, set_pair.first, binding_pair.first);
-						if (binding_size > 0)
-						{
-							inputs.rt_array_lengths[simulator_pointer_bits(binding_ptr)][0] = static_cast<size_t>(binding_size);
-						}
-						if ((it->buffer_data->usage2 & VK_BUFFER_USAGE_2_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT) != 0)
-						{
-							inputs.descriptor_candidates[binding_ptr];
-						}
-						break;
-					}
-				}
-				break;
 			case VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR:
 			case VK_DESCRIPTOR_TYPE_TENSOR_ARM:
 				for (auto it = binding.opaques.rbegin(); it != binding.opaques.rend(); ++it)
@@ -683,6 +659,8 @@ static bool run_spirv(command_execution_data& data, const shader_stage& stage, c
 					break;
 				}
 				break;
+			case VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER:
+			case VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER:
 			case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
 			case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
 			case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC:
@@ -1161,6 +1139,147 @@ struct descriptor_buffer_binding_state
 	VkBufferUsageFlags usage = 0;
 };
 
+static bool descriptor_rewrite_matches_slot(const descriptor_rewrite& payload, VkDescriptorType layout_type,
+	const std::byte* descriptor_ptr, VkDeviceSize available)
+{
+	if (!payload.has_buffer_address_info || payload.capture_bytes.empty()) return false;
+	if (layout_type != VK_DESCRIPTOR_TYPE_MUTABLE_EXT && payload.type != layout_type) return false;
+	if (payload.capture_bytes.size() > available) return false;
+	return memcmp(descriptor_ptr, payload.capture_bytes.data(), payload.capture_bytes.size()) == 0;
+}
+
+static bool same_descriptor_resource(const descriptor_rewrite& a, const descriptor_rewrite& b)
+{
+	// Mutable uniform/storage descriptors may have identical opaque bytes for the same buffer.
+	// The concrete type does not change the logical resource used by the simulator.
+	return a.buffer_address == b.buffer_address && a.buffer_range == b.buffer_range
+		&& a.buffer_format == b.buffer_format;
+}
+
+static const descriptor_rewrite* find_descriptor_buffer_resource(const command_execution_data& data,
+	const descriptor_buffer_binding_state& descriptor_buffer, VkDeviceSize descriptor_offset, VkDescriptorType layout_type)
+{
+	if (!descriptor_buffer.buffer_data || descriptor_offset >= descriptor_buffer.buffer_data->size) return nullptr;
+	suballoc_location loc = data.device_data.allocator->find_buffer_memory(descriptor_buffer.buffer_data->index);
+	if (!loc.mapped) return nullptr;
+	const std::byte* descriptor_ptr = reinterpret_cast<const std::byte*>(loc.mapped) + descriptor_offset;
+	const VkDeviceSize available = descriptor_buffer.buffer_data->size - descriptor_offset;
+	const descriptor_rewrite* found = nullptr;
+	for (const descriptor_rewrite& payload : data.pending_descriptor_rewrites)
+	{
+		if (!descriptor_rewrite_matches_slot(payload, layout_type, descriptor_ptr, available)) continue;
+		if (found && !same_descriptor_resource(*found, payload))
+		{
+			ABORT("Descriptor buffer slot at offset %llu has ambiguous logical buffer resources",
+				(unsigned long long)descriptor_offset);
+		}
+		found = &payload;
+	}
+	return found;
+}
+
+static bool resolve_descriptor_buffer_resource(command_execution_data& data,
+	const descriptor_buffer_binding_state& descriptor_buffer, VkDeviceSize descriptor_offset, VkDescriptorType layout_type,
+	buffer_access& dst, VkDescriptorType& resolved_type)
+{
+	const descriptor_rewrite* payload = find_descriptor_buffer_resource(data, descriptor_buffer, descriptor_offset, layout_type);
+	if (!payload) return false;
+
+	resolved_type = payload->type;
+	if (payload->buffer_address == 0) return true;
+
+	const VkDeviceSize required_size = payload->buffer_range == VK_WHOLE_SIZE ? 1 : payload->buffer_range;
+	mapped_address_range mapping;
+	if (!map_device_address_range(data, payload->buffer_address, required_size, mapping, "descriptor buffer resource"))
+	{
+		ABORT("Failed to resolve descriptor buffer resource address 0x%llx type %s",
+			(unsigned long long)payload->buffer_address, VkDescriptorType_to_string(payload->type).c_str());
+	}
+	VkDeviceSize range = payload->buffer_range;
+	if (range == VK_WHOLE_SIZE) range = mapping.buffer_data->size - mapping.buffer_offset;
+	dst = {
+		.buffer_data = mapping.buffer_data,
+		.offset = mapping.buffer_offset,
+		.size = range,
+	};
+	return true;
+}
+
+static bool resolve_descriptor_buffer_binding(command_execution_data& data,
+	const descriptor_buffer_binding_state& descriptor_buffer, VkDeviceSize descriptor_offset, VkDeviceSize binding_end,
+	VkDescriptorType layout_type, uint32_t descriptor_count, command_execution_data::simulator_binding& dst,
+	VkDescriptorType& resolved_type, std::vector<VkDeviceSize>& descriptor_offsets,
+	std::vector<VkDescriptorType>& descriptor_types)
+{
+	if (descriptor_count == 0 || descriptor_offset >= binding_end) return false;
+	const descriptor_rewrite* first = find_descriptor_buffer_resource(data, descriptor_buffer, descriptor_offset, layout_type);
+	if (!first) return false;
+
+	VkDeviceSize stride = first->capture_bytes.size();
+	if (descriptor_count > 1 && layout_type == VK_DESCRIPTOR_TYPE_MUTABLE_EXT)
+	{
+		VkDeviceSize candidate_stride = 0;
+		const VkDeviceSize max_stride = (binding_end - descriptor_offset - 1) / (descriptor_count - 1);
+		std::vector<VkDeviceSize> possible_strides;
+		possible_strides.push_back(stride);
+		for (const descriptor_rewrite& payload : data.pending_descriptor_rewrites)
+		{
+			if (!payload.has_buffer_address_info || payload.capture_bytes.empty()) continue;
+			possible_strides.push_back(payload.capture_bytes.size());
+		}
+		const VkDeviceSize binding_span = binding_end - descriptor_offset;
+		if (binding_span % descriptor_count == 0) possible_strides.push_back(binding_span / descriptor_count);
+		std::sort(possible_strides.begin(), possible_strides.end());
+		possible_strides.erase(std::unique(possible_strides.begin(), possible_strides.end()), possible_strides.end());
+		for (VkDeviceSize possible_stride : possible_strides)
+		{
+			if (possible_stride < stride || possible_stride > max_stride) continue;
+			bool matches = true;
+			for (uint32_t i = 1; i < descriptor_count; i++)
+			{
+				const VkDeviceSize element_offset = descriptor_offset + possible_stride * i;
+				const descriptor_rewrite* payload = find_descriptor_buffer_resource(data, descriptor_buffer, element_offset, layout_type);
+				if (!payload)
+				{
+					matches = false;
+					break;
+				}
+			}
+			if (!matches) continue;
+			if (candidate_stride != 0) return false;
+			candidate_stride = possible_stride;
+		}
+		if (candidate_stride == 0) return false;
+		stride = candidate_stride;
+	}
+
+	std::vector<buffer_access> buffers(descriptor_count);
+	std::vector<VkDeviceSize> resolved_offsets(descriptor_count);
+	std::vector<VkDescriptorType> resolved_types(descriptor_count);
+	VkDescriptorType binding_type = VK_DESCRIPTOR_TYPE_MAX_ENUM;
+	for (uint32_t i = 0; i < descriptor_count; i++)
+	{
+		if (i != 0 && stride > (binding_end - descriptor_offset) / i) return false;
+		const VkDeviceSize element_offset = descriptor_offset + stride * i;
+		if (element_offset >= binding_end) return false;
+		VkDescriptorType element_type = VK_DESCRIPTOR_TYPE_MAX_ENUM;
+		if (!resolve_descriptor_buffer_resource(data, descriptor_buffer, element_offset, layout_type, buffers[i], element_type)) return false;
+		if (binding_type == VK_DESCRIPTOR_TYPE_MAX_ENUM) binding_type = element_type;
+		resolved_offsets[i] = element_offset;
+		resolved_types[i] = element_type;
+	}
+
+	resolved_type = binding_type;
+	dst.descriptor_type = resolved_type;
+	dst.descriptor_buffer_backed = false;
+	dst.buffers = std::move(buffers);
+	dst.images.clear();
+	dst.opaques.clear();
+	descriptor_offsets = std::move(resolved_offsets);
+	descriptor_types = std::move(resolved_types);
+	return true;
+}
+
 static void record_descriptor_buffer_payload(const command_execution_data& data, uint32_t buffer_index, VkDeviceSize offset, VkDescriptorType type)
 {
 	trackedbuffer& buffer_data = VkBuffer_index.at(buffer_index);
@@ -1169,21 +1288,22 @@ static void record_descriptor_buffer_payload(const command_execution_data& data,
 
 	for (const descriptor_rewrite& payload : data.pending_descriptor_rewrites)
 	{
-		if (payload.type != type || payload.capture_bytes.empty()) continue;
+		if ((type != VK_DESCRIPTOR_TYPE_MUTABLE_EXT && payload.type != type) || payload.capture_bytes.empty()) continue;
 		if (offset > buffer_data.size || payload.capture_bytes.size() > buffer_data.size - offset) continue;
 		if (memcmp(loc.mapped + offset, payload.capture_bytes.data(), payload.capture_bytes.size()) != 0) continue;
 
 		auto existing = std::find_if(data.descriptor_buffer_payloads.begin(), data.descriptor_buffer_payloads.end(),
 			[&](const descriptor_buffer_payload& entry)
 			{
-				return entry.buffer_index == buffer_index && entry.offset == offset && entry.type == type && entry.bytes == payload.capture_bytes;
+				return entry.buffer_index == buffer_index && entry.offset == offset && entry.type == payload.type
+					&& entry.bytes == payload.capture_bytes;
 			});
 		if (existing != data.descriptor_buffer_payloads.end()) return;
 
 		data.descriptor_buffer_payloads.push_back({
 			.buffer_index = buffer_index,
 			.offset = offset,
-			.type = type,
+			.type = payload.type,
 			.bytes = payload.capture_bytes,
 		});
 		return;
@@ -1437,28 +1557,59 @@ bool execute_commands(command_execution_data& data)
 						const VkDeviceSize descriptor_offset = descriptor_buffer.offset + set_offset + binding_offset;
 						if (descriptor_offset >= descriptor_buffer.buffer_data->size) continue;
 						command_execution_data::simulator_binding& dst = descriptor_sets[set][binding];
-						dst.descriptor_type = binding_pair.second;
-						dst.descriptor_buffer_backed = true;
-						dst.buffers.clear();
-						dst.images.clear();
-						dst.opaques.clear();
-						dst.buffers.push_back({
-							.buffer_data = descriptor_buffer.buffer_data,
-							.offset = descriptor_offset,
-							.size = descriptor_buffer.buffer_data->size - descriptor_offset,
-						});
-						VkMarkingSubTypeARM subtype{};
-						subtype.descriptorType = binding_pair.second;
+						VkDescriptorType descriptor_type = binding_pair.second;
+						uint32_t descriptor_count = 1;
+						auto count_it = set_layout_data.binding_counts.find(binding);
+						if (count_it != set_layout_data.binding_counts.end()) descriptor_count = count_it->second;
+						VkDeviceSize binding_end = descriptor_buffer.buffer_data->size;
+						for (const auto& candidate : set_layout_data.offsets)
+						{
+							if (candidate.second <= binding_offset) continue;
+							const VkDeviceSize candidate_end = descriptor_buffer.offset + set_offset + candidate.second;
+							if (candidate_end < binding_end) binding_end = candidate_end;
+						}
+						if (set_layout_data.size > binding_offset)
+						{
+							const VkDeviceSize layout_end = descriptor_buffer.offset + set_offset + set_layout_data.size;
+							if (layout_end < binding_end) binding_end = layout_end;
+						}
+						std::vector<VkDeviceSize> descriptor_offsets;
+						std::vector<VkDescriptorType> descriptor_types;
+						if (!resolve_descriptor_buffer_binding(data, descriptor_buffer, descriptor_offset, binding_end,
+							binding_pair.second, descriptor_count, dst, descriptor_type, descriptor_offsets, descriptor_types))
+						{
+							dst.descriptor_type = binding_pair.second;
+							dst.descriptor_buffer_backed = true;
+							dst.buffers.clear();
+							dst.images.clear();
+							dst.opaques.clear();
+							dst.buffers.push_back({
+								.buffer_data = descriptor_buffer.buffer_data,
+								.offset = descriptor_offset,
+								.size = descriptor_buffer.buffer_data->size - descriptor_offset,
+							});
+							descriptor_offsets.clear();
+							descriptor_types.clear();
+							descriptor_offsets.push_back(descriptor_offset);
+							descriptor_types.push_back(descriptor_type);
+						}
 						std::vector<discovered_buffer_marking> discovered_markings;
-						discovered_markings.push_back({
-							.buffer_data = descriptor_buffer.buffer_data,
-							.offset = descriptor_offset,
-							.size = 1,
-							.type = VK_MARKING_TYPE_DESCRIPTOR_ARM,
-							.subtype = subtype,
-						});
+						for (size_t element = 0; element < descriptor_offsets.size(); element++)
+						{
+							const VkDeviceSize element_offset = descriptor_offsets[element];
+							const VkDescriptorType element_type = descriptor_types[element];
+							VkMarkingSubTypeARM subtype{};
+							subtype.descriptorType = element_type;
+							discovered_markings.push_back({
+								.buffer_data = descriptor_buffer.buffer_data,
+								.offset = element_offset,
+								.size = 1,
+								.type = VK_MARKING_TYPE_DESCRIPTOR_ARM,
+								.subtype = subtype,
+							});
+							record_descriptor_buffer_payload(data, descriptor_buffer.buffer_data->index, element_offset, element_type);
+						}
 						merge_discovered_markings(data, discovered_markings);
-						record_descriptor_buffer_payload(data, descriptor_buffer.buffer_data->index, descriptor_offset, binding_pair.second);
 					}
 				}
 			}
