@@ -44,6 +44,23 @@ if(ISOLATED)
 	list(APPEND TOOL_ARGS --isolated)
 endif()
 
+if(DEFINED REFERENCE_LAVA_PRINT)
+	set(REFERENCE_OUTPUT "${OUTPUT_FILE}.reference")
+	set(REFERENCE_ARGS ${TOOL_ARGS})
+	if(ISOLATED_REFERENCE)
+		list(APPEND REFERENCE_ARGS --isolated)
+	endif()
+	execute_process(
+		COMMAND "${REFERENCE_LAVA_PRINT}" ${REFERENCE_ARGS} "${INPUT_TRACE}"
+		OUTPUT_FILE "${REFERENCE_OUTPUT}"
+		RESULT_VARIABLE reference_result
+	)
+	if(NOT reference_result EQUAL 0)
+		message(FATAL_ERROR "reference lava-print failed with exit code ${reference_result}")
+	endif()
+	list(APPEND COMPARE_OUTPUTS "${REFERENCE_OUTPUT}")
+endif()
+
 execute_process(
 	COMMAND "${LAVA_PRINT}" ${TOOL_ARGS} "${INPUT_TRACE}"
 	OUTPUT_FILE "${OUTPUT_FILE}"
@@ -62,6 +79,16 @@ if(ISOLATED)
 		message(FATAL_ERROR "isolated lava-print output differs from stateful output")
 	endif()
 endif()
+
+foreach(COMPARE_OUTPUT IN LISTS COMPARE_OUTPUTS)
+	execute_process(
+		COMMAND "${CMAKE_COMMAND}" -E compare_files "${COMPARE_OUTPUT}" "${OUTPUT_FILE}"
+		RESULT_VARIABLE compare_result
+	)
+	if(NOT compare_result EQUAL 0)
+		message(FATAL_ERROR "lava-print output differs from ${COMPARE_OUTPUT}")
+	endif()
+endforeach()
 
 if(DEFINED EXPECT_FRAME)
 	set(CHECK_ARGS --expect-frame "${EXPECT_FRAME}")

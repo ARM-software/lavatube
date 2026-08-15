@@ -115,6 +115,8 @@ class lava_reader
 public:
 	lava_reader() {}
 	lava_reader(const std::string& path) { init(path); }
+	/// Load trace dictionaries, limits, tracking and metadata without opening thread streams.
+	void init_metadata(const std::string& path);
 	void init(const std::string& path);
 	~lava_reader();
 
@@ -151,7 +153,7 @@ public:
 	bool stop_requested() const { return mStopRequested.load(std::memory_order_acquire); }
 	bool cleanup_after_stop();
 
-	std::vector<std::atomic_uint_fast32_t>* thread_packet_numbers; // thread local packet numbers
+	std::vector<std::atomic_uint_fast32_t>* thread_packet_numbers = nullptr; // thread local packet numbers
 
 	// This is thread safe since we allocate it all before threading begins.
 	address_remapper<trackedobject> device_address_remapping;
@@ -293,7 +295,12 @@ public:
 	/// Initialize one thread of replay. Frame start and end values are global, not local. Frames are either (end-start)
 	/// or total number of global frames in the trace.
 	lava_file_reader(lava_reader* _parent, const std::string& path, int mytid, int frames, const Json::Value& frameinfo, size_t uncompressed_size, size_t uncompressed_wanted, int start = 0, int end = -1);
+	/// Decode one caller-owned, uncompressed packet without constructing a streaming file reader.
+	lava_file_reader(lava_reader* _parent, const char* packet, size_t packet_size, int mytid,
+		uint32_t packet_index, uint32_t frame, uint8_t stored_stream_version);
 	~lava_file_reader();
+	void reset_fixed_packet(const char* packet, size_t packet_size, uint32_t packet_index,
+		uint32_t frame, uint8_t stored_stream_version);
 
 	/// Returns zero if no more instructions in the file, or the instruction type found.
 	uint8_t step();

@@ -13,6 +13,10 @@
 #include "containers.h"
 #include "util.h"
 
+struct fixed_buffer_input
+{
+};
+
 class file_reader
 {
 	file_reader(const file_reader&) = delete;
@@ -24,6 +28,7 @@ protected:
 		uint64_t current_write = write_position.load(std::memory_order_acquire);
 		if (unlikely(size > current_write - read_position))
 		{
+			if (fixed_buffer) ABORT("Attempt to read past fixed input buffer");
 			// Publish the position we need so the decompressor skips its throttle sleep while we're blocked.
 			needed_write_position.store(read_position + size, std::memory_order_release);
 			while (size > current_write - read_position)
@@ -54,6 +59,7 @@ protected:
 	std::atomic_uint64_t uncompressed_bytes { 0 };
 
 	void decompress_chunk();
+	void reset_fixed_buffer(const char* data, size_t size, uint8_t version);
 
 	template <typename T> inline void read_value(T* val)
 	{
@@ -68,6 +74,8 @@ public:
 	/// Initialize one thread of replay.
 	file_reader(const std::string& filename, unsigned mytid, size_t uncompressed_size, size_t uncompressed_target, bool preload_active = true);
 	file_reader(packed pf, unsigned mytid, size_t uncompressed_size, size_t uncompressed_target, bool preload_active = true);
+	/// Read from a caller-owned uncompressed buffer. The buffer must outlive this reader.
+	file_reader(fixed_buffer_input, const char* data, size_t size, unsigned mytid, uint8_t version);
 	~file_reader();
 
 	inline uint8_t read_uint8_t() { uint8_t t; read_value(&t); return t; }
@@ -221,6 +229,7 @@ private:
 	void init_mapped(const packed& pf, size_t uncompressed_size, size_t uncompressed_target);
 
 	bool multithreaded_read = true;
+	bool fixed_buffer = false;
 	size_t last_chunk_uncompressed_size = 0;
 	std::atomic<bool> preload_activated{ true };
 	/// Set by check_space() when waiting for data; tells decompressor to skip throttle sleep until satisfied.

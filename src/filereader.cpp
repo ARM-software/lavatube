@@ -110,9 +110,39 @@ file_reader::file_reader(packed pf, unsigned mytid, size_t uncompressed_size, si
 	DLOG("%u : %s opened for reading from inside %s (size %lu) and decompressor thread launched!", tid, pf.inside.c_str(), pf.pack.c_str(), (unsigned long)pf.filesize);
 }
 
+file_reader::file_reader(fixed_buffer_input, const char* data, size_t size, unsigned mytid, uint8_t version)
+	: multithreaded_read(false), fixed_buffer(true), preload_activated(false), tid(mytid)
+{
+	reset_fixed_buffer(data, size, version);
+}
+
+void file_reader::reset_fixed_buffer(const char* data, size_t size, uint8_t version)
+{
+	if (!fixed_buffer) ABORT("Cannot replace input buffer on a streaming file reader");
+	if (!data || size == 0) ABORT("Invalid fixed input buffer");
+	uncompressed_data = const_cast<char*>(data);
+	total_uncompressed = size;
+	uncompressed_wanted = size;
+	read_position = 0;
+	freed_position = 0;
+	checkpoint_position = UINT64_MAX;
+	last_chunk_uncompressed_size = 0;
+	uncompressed_bytes.store(0, std::memory_order_relaxed);
+	needed_write_position.store(0, std::memory_order_relaxed);
+	write_position.store(size, std::memory_order_relaxed);
+	done_decompressing.store(true, std::memory_order_relaxed);
+	stream_version = version;
+	pool.reset();
+}
+
 void file_reader::release_checkpoint()
 {
 	if (checkpoint_position == UINT64_MAX) return;
+	if (fixed_buffer)
+	{
+		checkpoint_position = UINT64_MAX;
+		return;
+	}
 	assert(checkpoint_position >= freed_position);
 	const uintptr_t pa_ptr = ((uintptr_t)uncompressed_data + freed_position) & page_mask(); // must be page-aligned
 	const size_t pa_size = (checkpoint_position - freed_position) & page_mask(); // must be page-aligned
@@ -144,6 +174,7 @@ void file_reader::release_compressed_pages()
 
 file_reader::~file_reader()
 {
+	if (fixed_buffer) return;
 	done_decompressing = true;
 	if (decompressor_thread.joinable()) decompressor_thread.join();
 	if (zip_handle)

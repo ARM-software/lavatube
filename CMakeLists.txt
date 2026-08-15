@@ -606,7 +606,7 @@ target_link_libraries(large_trace_test ${COMMON_LIBRARIES} lavatube)
 target_compile_options(large_trace_test PRIVATE ${COMMON_FLAGS})
 add_dependencies(large_trace_test sync_generated)
 add_lavatube_test(large_trace_test COMMAND large_trace_test)
-set_tests_properties(large_trace_test PROPERTIES TIMEOUT 10)
+set_tests_properties(large_trace_test PROPERTIES TIMEOUT 10 FIXTURES_SETUP large_trace)
 
 add_executable(write5 tests/write5.cpp src/filewriter.cpp src/filereader.cpp src/util.cpp src/android_utils.cpp)
 target_include_directories(write5 ${COMMON_INCLUDE})
@@ -788,6 +788,56 @@ target_include_directories(lava-print ${COMMON_INCLUDE})
 target_link_libraries(lava-print ${COMMON_LIBRARIES} lavatube)
 target_compile_options(lava-print PRIVATE ${COMMON_FLAGS})
 add_dependencies(lava-print sync_generated)
+add_executable(lava-print-fast src/print_fast.cpp)
+target_include_directories(lava-print-fast ${COMMON_INCLUDE})
+target_link_libraries(lava-print-fast ${COMMON_LIBRARIES} lavatube)
+target_compile_options(lava-print-fast PRIVATE ${COMMON_FLAGS})
+add_dependencies(lava-print-fast sync_generated)
+add_lavatube_test(lava_print_large_trace_isolated_ndjson
+	COMMAND ${CMAKE_COMMAND}
+		-DLAVA_PRINT=$<TARGET_FILE:lava-print>
+		-DPYTHON_EXECUTABLE=${PYTHON_EXECUTABLE}
+		-DINPUT_TRACE=${CMAKE_CURRENT_BINARY_DIR}/large_trace.api
+		-DOUTPUT_FILE=${CMAKE_CURRENT_BINARY_DIR}/lava_print_large_trace_isolated.ndjson
+		-DSELECT=500
+		-DEXPECT_FRAME=0
+		-DEXPECT_INDEX=500
+		-DEXPECT_NAME=thread_barrier
+		-DEXPECT_THREAD=0
+		-DEXPECT_COUNT=1
+		-DISOLATED=ON
+		-P ${PROJECT_SOURCE_DIR}/tests/lava_print_ndjson.cmake)
+set_tests_properties(lava_print_large_trace_isolated_ndjson PROPERTIES FIXTURES_REQUIRED large_trace)
+add_lavatube_test(lava_print_fast_large_trace_ndjson
+	COMMAND ${CMAKE_COMMAND}
+		-DLAVA_PRINT=$<TARGET_FILE:lava-print-fast>
+		-DREFERENCE_LAVA_PRINT=$<TARGET_FILE:lava-print>
+		-DPYTHON_EXECUTABLE=${PYTHON_EXECUTABLE}
+		-DINPUT_TRACE=${CMAKE_CURRENT_BINARY_DIR}/large_trace.api
+		-DOUTPUT_FILE=${CMAKE_CURRENT_BINARY_DIR}/lava_print_fast_large_trace.ndjson
+		-DTHREAD=0
+		-DSELECT=500
+		-DEXPECT_FRAME=0
+		-DEXPECT_INDEX=500
+		-DEXPECT_NAME=thread_barrier
+		-DEXPECT_THREAD=0
+		-DEXPECT_COUNT=1
+		-P ${PROJECT_SOURCE_DIR}/tests/lava_print_ndjson.cmake)
+set_tests_properties(lava_print_fast_large_trace_ndjson PROPERTIES FIXTURES_REQUIRED large_trace)
+add_lavatube_test(lava_print_fast_large_trace_full_ndjson
+	COMMAND ${CMAKE_COMMAND}
+		-DLAVA_PRINT=$<TARGET_FILE:lava-print-fast>
+		-DREFERENCE_LAVA_PRINT=$<TARGET_FILE:lava-print>
+		-DPYTHON_EXECUTABLE=${PYTHON_EXECUTABLE}
+		-DINPUT_TRACE=${CMAKE_CURRENT_BINARY_DIR}/large_trace.api
+		-DOUTPUT_FILE=${CMAKE_CURRENT_BINARY_DIR}/lava_print_fast_large_trace_full.ndjson
+		-DTHREAD=0
+		-DEXPECT_FRAME=0
+		-DEXPECT_NAME=thread_barrier
+		-DEXPECT_THREAD=0
+		-DEXPECT_COUNT=512
+		-P ${PROJECT_SOURCE_DIR}/tests/lava_print_ndjson.cmake)
+set_tests_properties(lava_print_fast_large_trace_full_ndjson PROPERTIES FIXTURES_REQUIRED large_trace)
 add_lavatube_test(lava_print_tracing2_ndjson
 	COMMAND ${CMAKE_COMMAND}
 		-DLAVA_PRINT=$<TARGET_FILE:lava-print>
@@ -842,6 +892,34 @@ add_lavatube_test(lava_print_tracing2_isolated_api_ndjson
 		-DISOLATED=ON
 		-P ${PROJECT_SOURCE_DIR}/tests/lava_print_ndjson.cmake)
 set_tests_properties(lava_print_tracing2_isolated_api_ndjson PROPERTIES FIXTURES_REQUIRED tracing_2)
+add_lavatube_test(lava_print_fast_tracing2_api_ndjson
+	COMMAND ${CMAKE_COMMAND}
+		-DLAVA_PRINT=$<TARGET_FILE:lava-print-fast>
+		-DREFERENCE_LAVA_PRINT=$<TARGET_FILE:lava-print>
+		-DPYTHON_EXECUTABLE=${PYTHON_EXECUTABLE}
+		-DINPUT_TRACE=${CMAKE_CURRENT_BINARY_DIR}/tracing_2.api
+		-DOUTPUT_FILE=${CMAKE_CURRENT_BINARY_DIR}/lava_print_fast_tracing2_api.ndjson
+		-DTHREAD=0
+		-DSELECT=4
+		-DEXPECT_INDEX=4
+		-DEXPECT_NAME=vkEnumeratePhysicalDevices
+		-DISOLATED_REFERENCE=ON
+		-P ${PROJECT_SOURCE_DIR}/tests/lava_print_ndjson.cmake)
+set_tests_properties(lava_print_fast_tracing2_api_ndjson PROPERTIES FIXTURES_REQUIRED tracing_2)
+add_lavatube_test(lava_print_fast_tracing2_buffer_update_ndjson
+	COMMAND ${CMAKE_COMMAND}
+		-DLAVA_PRINT=$<TARGET_FILE:lava-print-fast>
+		-DREFERENCE_LAVA_PRINT=$<TARGET_FILE:lava-print>
+		-DPYTHON_EXECUTABLE=${PYTHON_EXECUTABLE}
+		-DINPUT_TRACE=${CMAKE_CURRENT_BINARY_DIR}/tracing_2.api
+		-DOUTPUT_FILE=${CMAKE_CURRENT_BINARY_DIR}/lava_print_fast_tracing2_buffer_update.ndjson
+		-DTHREAD=0
+		-DSELECT=69
+		-DEXPECT_INDEX=69
+		-DEXPECT_NAME=legacy_buffer_update
+		-DISOLATED_REFERENCE=ON
+		-P ${PROJECT_SOURCE_DIR}/tests/lava_print_ndjson.cmake)
+set_tests_properties(lava_print_fast_tracing2_buffer_update_ndjson PROPERTIES FIXTURES_REQUIRED tracing_2)
 add_lavatube_test(lava_print_vkcube_isolated_lifecycle_ndjson
 	COMMAND ${CMAKE_COMMAND}
 		-DLAVA_PRINT=$<TARGET_FILE:lava-print>
@@ -865,6 +943,22 @@ add_lavatube_test(lava_print_vkcube_isolated_frame_ndjson
 		-DEXPECT_NAME=vkWaitForFences
 		-DEXPECT_FRAME=1
 		-DISOLATED=ON
+		-P ${PROJECT_SOURCE_DIR}/tests/lava_print_ndjson.cmake)
+add_lavatube_test(lava_print_fast_vkcube_legacy_frame_ndjson
+	COMMAND ${CMAKE_COMMAND}
+		-DLAVA_PRINT=$<TARGET_FILE:lava-print-fast>
+		-DREFERENCE_LAVA_PRINT=$<TARGET_FILE:lava-print>
+		-DPYTHON_EXECUTABLE=${PYTHON_EXECUTABLE}
+		-DINPUT_TRACE=${PROJECT_SOURCE_DIR}/traces/lunarg_vkcube_xcb.api
+		-DOUTPUT_FILE=${CMAKE_CURRENT_BINARY_DIR}/lava_print_fast_vkcube_legacy_frame.ndjson
+		-DTHREAD=0
+		-DSELECT=137
+		-DFRAME_START=1
+		-DFRAME_END=1
+		-DEXPECT_INDEX=137
+		-DEXPECT_NAME=vkWaitForFences
+		-DEXPECT_FRAME=1
+		-DISOLATED_REFERENCE=ON
 		-P ${PROJECT_SOURCE_DIR}/tests/lava_print_ndjson.cmake)
 add_lavatube_test(lava_print_tracing2_select_list_ndjson
 	COMMAND ${CMAKE_COMMAND}
@@ -920,7 +1014,7 @@ add_lavatube_test(lava_print_vkcube_frame2_ndjson
 		-P ${PROJECT_SOURCE_DIR}/tests/lava_print_ndjson.cmake)
 add_lavatube_test(lava_print_skip_missing COMMAND lava-print --skip-missing-input does_not_exist.api)
 set_tests_properties(lava_print_skip_missing PROPERTIES SKIP_RETURN_CODE 77)
-install(TARGETS lava-print RUNTIME)
+install(TARGETS lava-print lava-print-fast RUNTIME)
 
 # --- lava-cli ---
 

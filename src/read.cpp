@@ -140,6 +140,38 @@ lava_file_reader::lava_file_reader(lava_reader* _parent, const std::string& path
 	}
 }
 
+lava_file_reader::lava_file_reader(lava_reader* _parent, const char* packet, size_t packet_size, int mytid,
+	uint32_t packet_index, uint32_t frame, uint8_t stored_stream_version)
+	: file_reader(fixed_buffer_input{}, packet, packet_size, mytid, stored_stream_version)
+{
+	parent = _parent;
+	run_type = parent->run_type;
+	write_output = parent->write_output;
+	global_frames = parent->global_frame_count;
+	current.thread = mytid;
+	current.packet = packet_index;
+	current.frame = frame;
+	isolated_print_frame = frame;
+}
+
+void lava_file_reader::reset_fixed_packet(const char* packet, size_t packet_size, uint32_t packet_index,
+	uint32_t frame, uint8_t stored_stream_version)
+{
+	if (current_packet_open) ABORT("Cannot replace an incomplete fixed-buffer packet");
+	reset_fixed_buffer(packet, packet_size, stored_stream_version);
+	current.packet = packet_index;
+	current.frame = frame;
+	current.packet_type = UINT8_MAX;
+	current.call_id = UINT16_MAX;
+	isolated_print_frame = frame;
+	printed_current_packet = false;
+	terminated.store(false, std::memory_order_relaxed);
+	device = VK_NULL_HANDLE;
+	physicalDevice = VK_NULL_HANDLE;
+	current_update_packet.clear();
+	current_barrier_packet_indices.clear();
+}
+
 uint8_t lava_file_reader::step()
 {
 	complete_packet();
@@ -506,7 +538,7 @@ lava_file_reader& lava_reader::file_reader(uint16_t thread_id)
 	return *thread_streams.at(thread_id);
 }
 
-void lava_reader::init(const std::string& path)
+void lava_reader::init_metadata(const std::string& path)
 {
 	// read dictionary
 	mPackedFile = path;
@@ -543,8 +575,14 @@ void lava_reader::init(const std::string& path)
 
 	// initialize threads -- note that this happens before threading begins, so thread safe
 	threads.resize(num_threads);
-	thread_streams.resize(num_threads);
 	thread_packet_numbers = new std::vector<std::atomic_uint_fast32_t>(num_threads);
+}
+
+void lava_reader::init(const std::string& path)
+{
+	init_metadata(path);
+	const int num_threads = threads.size();
+	thread_streams.resize(num_threads);
 
 	for (int thread_id = 0; thread_id < num_threads; thread_id++)
 	{
