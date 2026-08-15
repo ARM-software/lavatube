@@ -504,6 +504,7 @@ static bool cli_command_bypasses_active(const std::vector<std::string>& command)
 	if (command.size() == 1 && command[0] == "status") return true;
 	if (command.size() == 1 && command[0] == "stop") return true;
 	if (command.size() == 2 && command[0] == "diagnose" && command[1] == "deadlock") return true;
+	if (command.size() == 2 && command[0] == "info" && command[1] == "trace") return true;
 	if (command.size() == 2 && command[0] == "info" && command[1] == "threads") return true;
 	return false;
 }
@@ -867,9 +868,14 @@ static std::string service_command_response(const std::vector<std::string>& comm
 			if (response.empty() || response.back() != '\n') response += "\n";
 		}
 	}
-	else if (command.size() == 1 && command[0] == "info") // general info
+	else if (command.size() == 2 && command[0] == "info" && command[1] == "trace")
 	{
-		response = "INFO\n"; // TODO just a placeholder for now
+		Json::Value value;
+		value["filename"] = replayer.packed_file();
+		value["file_size"] = (Json::UInt64)replayer.trace_file_size();
+		if (replayer.trace_file_creation_timestamp().empty()) value["creation_timestamp"] = Json::nullValue;
+		else value["creation_timestamp"] = replayer.trace_file_creation_timestamp();
+		response = trace_metadata_json_compact(value) + "\n";
 	}
 	else if (command.size() == 2 && command[0] == "info" && command[1] == "threads") // list thread info
 	{
@@ -1349,6 +1355,7 @@ int main(int argc, char **argv)
 		printf("SKIP: input trace file does not exist or is not readable: %s\n", filename.c_str());
 		return 77;
 	}
+	replayer.collect_trace_file_info(filename);
 
 	if (wsi.empty()) wsi_initialize(nullptr);
 	else wsi_initialize(wsi.c_str());

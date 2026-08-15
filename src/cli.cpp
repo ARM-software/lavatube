@@ -51,14 +51,14 @@ void usage()
 	printf("Trace metadata:\n");
 	printf("    show TYPE INDEX          Print JSON metadata for replay object TYPE with INDEX.\n");
 	printf("    info objects             Print object creation counts from limits metadata.\n");
+	printf("    info trace               Print JSON information about the replayed trace file.\n");
 	printf("    info threads             List traced threads.\n");
 	printf("    info thread THREAD       Print JSON metadata for THREAD.\n");
 	printf("    info frame THREAD FRAME  Print JSON metadata for FRAME in THREAD.\n");
 	printf("    info memory              Print current Vulkan memory heap usage and budgets.\n");
 	printf("    info suballocator        Print current suballocator heap internals.\n");
-	printf("    info                     Print general service info.\n");
 	printf("\n");
-	printf("    Long running commands keep 'status', 'info threads', 'diagnose deadlock', and 'stop' responsive; other concurrent commands fail.\n");
+	printf("    Long running commands keep 'status', 'info trace', 'info threads', 'diagnose deadlock', and 'stop' responsive; other concurrent commands fail.\n");
 	exit(-1);
 }
 

@@ -1,6 +1,9 @@
 #include <fstream>
 #include <errno.h>
 #include <algorithm>
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <time.h>
 
 #include "lavatube.h"
 #include "read.h"
@@ -538,10 +541,48 @@ lava_file_reader& lava_reader::file_reader(uint16_t thread_id)
 	return *thread_streams.at(thread_id);
 }
 
+#if defined(__linux__) && defined(STATX_BTIME)
+static std::string trace_file_timestamp(int64_t seconds, uint32_t nanoseconds)
+{
+	const time_t timestamp = (time_t)seconds;
+	struct tm utc = {};
+	if (!gmtime_r(&timestamp, &utc)) return {};
+
+	char date[32] = {};
+	if (strftime(date, sizeof(date), "%Y-%m-%dT%H:%M:%S", &utc) == 0) return {};
+
+	char value[48] = {};
+	snprintf(value, sizeof(value), "%s.%09uZ", date, nanoseconds);
+	return value;
+}
+#endif
+
+void lava_reader::collect_trace_file_info(const std::string& path)
+{
+	if (mPackedFile == path) return;
+
+	struct stat64 status = {};
+	if (stat64(path.c_str(), &status) == -1) ABORT("Failed to stat trace file %s: %s", path.c_str(), strerror(errno));
+	if (status.st_size < 0) ABORT("Trace file %s has an invalid size", path.c_str());
+
+	mPackedFile = path;
+	mTraceFileSize = (uint64_t)status.st_size;
+	mTraceFileCreationTimestamp.clear();
+
+#if defined(__linux__) && defined(STATX_BTIME)
+	struct statx extended_status = {};
+	if (statx(AT_FDCWD, path.c_str(), AT_STATX_SYNC_AS_STAT, STATX_BTIME, &extended_status) == 0
+		&& (extended_status.stx_mask & STATX_BTIME) != 0)
+	{
+		mTraceFileCreationTimestamp = trace_file_timestamp(extended_status.stx_btime.tv_sec, extended_status.stx_btime.tv_nsec);
+	}
+#endif
+}
+
 void lava_reader::init_metadata(const std::string& path)
 {
 	// read dictionary
-	mPackedFile = path;
+	collect_trace_file_info(path);
 	Json::Value dict = packed_json("dictionary.json", mPackedFile);
 	for (const std::string& funcname : dict.getMemberNames())
 	{

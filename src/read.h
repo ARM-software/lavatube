@@ -117,6 +117,8 @@ public:
 	lava_reader(const std::string& path) { init(path); }
 	/// Load trace dictionaries, limits, tracking and metadata without opening thread streams.
 	void init_metadata(const std::string& path);
+	/// Collect immutable information about the outer trace file.
+	void collect_trace_file_info(const std::string& path);
 	void init(const std::string& path);
 	~lava_reader();
 
@@ -138,6 +140,9 @@ public:
 	/// Dump trace information to stdout
 	void dump_info();
 	const std::string& packed_file() const { return mPackedFile; }
+	uint64_t trace_file_size() const { return mTraceFileSize; }
+	/// Empty when the filesystem does not expose a file birth time.
+	const std::string& trace_file_creation_timestamp() const { return mTraceFileCreationTimestamp; }
 
 	void finalize();
 	void request_stop(VkDevice cleanup_device = VK_NULL_HANDLE)
@@ -279,6 +284,8 @@ private:
 	/// Start CPU usage for whole process
 	struct timespec process_cpu_usage;
 	std::string mPackedFile;
+	uint64_t mTraceFileSize = 0;
+	std::string mTraceFileCreationTimestamp;
 	std::vector<lava_file_reader*> thread_streams;
 	int mStart = 0;
 	int mEnd = -1;

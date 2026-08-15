@@ -37,6 +37,8 @@ More instructions to implement:
 	- 'objects' - show table of all non-zero-sized object types, with pending, created, bound (if applicable) and destroyed columns
 	- 'swapchains' - show image index numbers of real and fake swapchains and their status
 	- 'device-fault' - use `VK_KHR_device_fault` to print device-lost info (only works on nvidia for now)
+	- 'device' - information about the current GPU physical devices through `vkGetPhysicalDeviceProperties2` to get `VkPhysicalDeviceProperties` and `VkPhysicalDeviceDriverProperties` for each, dump as ndjson
+	- 'system' - information about the current system (non-GPU), report back Linux (kernel) version, Android version (or Windows) version, as ndjson
 * `lava-cli list <object type> [filter=all|created|bound|destroyed] [limit=20]` - list all objects of given type tracked globally and their status
 * `lava-cli save buffer|image|tensor <index> <filename>` - write exact contents of object given by index to the given filename (if bound; possibly using staging)
 * `lava-cli convert image <index> <filename.png>` - transform to linear format and write contents of image data given by index to the given filename (if bound; possibly using staging; as PNG)
@@ -54,6 +56,7 @@ More instructions to implement:
 * `lava-cli inject <packet> <thread> fence-wait <device index> <fence index>` - similar to the above, inject a future wait for the given fence before the given packet boundary
 * `lava-cli inject <packet> <thread> queue-wait <queue index>` - similar to the above, inject a future wait for the given queue before the given packet boundary
 * `lava-cli inject <packet> <thread> host-wait <packet> <thread>` - similar to the above, inject a future barrier waiting for the given other thread and packet before the given packet boundary
+* `lava-cli self-test` - run all available internal self-tests
 
 ## Notes
 
