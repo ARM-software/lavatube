@@ -1251,7 +1251,7 @@ function(layer_test test_name test_exe)
 		SKIP_RETURN_CODE 77
 	)
 
-	add_lavatube_test(layer_test_${ARGV0}_simulation COMMAND vulkan_${ARGV1} --cpu ${ARGV2} ${ARGV3} ${ARGV4} ${ARGV5} ${ARGV6} ${ARGV7})
+	add_lavatube_test(layer_test_${ARGV0}_simulation COMMAND vulkan_${ARGV1} ${ARGV2} ${ARGV3} ${ARGV4} ${ARGV5} ${ARGV6} ${ARGV7})
 	set_tests_properties(layer_test_${ARGV0}_simulation PROPERTIES
 		FIXTURES_SETUP ${ARGV0}_simulation
 		ENVIRONMENT "LAVATUBE_VIRTUAL_QUEUES=1;LAVATUBE_DELETE_EMPTY_TRACE=1;LAVATUBE_DESTINATION=vulkan_${ARGV0}_simulation;VK_LAYER_PATH=${CMAKE_CURRENT_BINARY_DIR}/implicit_layer.d;VK_INSTANCE_LAYERS=VK_LAYER_ARM_lavatube;LD_LIBRARY_PATH=${CMAKE_CURRENT_BINARY_DIR}/implicit_layer.d"

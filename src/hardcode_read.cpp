@@ -2564,6 +2564,53 @@ static void queue_descriptor_rewrite(lava_file_reader& reader, VkPhysicalDevice 
 	reader.parent->pending_descriptor_rewrites.push_back(std::move(rewrite));
 }
 
+[[noreturn]] static void skip_descriptor_heap_portability(lava_file_reader& reader, VkDescriptorType descriptor_type,
+	size_t capture_size, size_t replay_size)
+{
+	const std::string descriptor_name = VkDescriptorType_to_string(descriptor_type);
+	printf("SKIP: descriptor heap portability unsupported while replaying %s at thread=%u packet=%u frame=%u: replay device uses %zu-byte descriptors, "
+		"but the trace captured %zu-byte descriptors.\n",
+		descriptor_name.c_str(), reader.current.thread, reader.current.packet, reader.current.frame, replay_size, capture_size);
+	printf("SKIP: capture and replay across devices with different descriptor-heap sizes is not supported for this trace.\n");
+	reader.parent->exit_status = 77;
+	reader.parent->request_stop(reader.device);
+	reader.throw_stop_requested();
+}
+
+static void check_descriptor_heap_portability(lava_file_reader& reader, VkDevice device, VkDescriptorType descriptor_type,
+	const VkHostAddressRangeEXT& descriptor)
+{
+	if (device == VK_NULL_HANDLE || !descriptor.address || descriptor.size == 0 || !wrap_vkGetPhysicalDeviceDescriptorSizeEXT) return;
+	const VkPhysicalDevice physical_device = descriptor_buffer_physical_device(reader, device);
+	if (physical_device == VK_NULL_HANDLE) return;
+	const size_t replay_size = wrap_vkGetPhysicalDeviceDescriptorSizeEXT(physical_device, descriptor_type);
+	if (replay_size != 0 && replay_size != descriptor.size)
+	{
+		skip_descriptor_heap_portability(reader, descriptor_type, descriptor.size, replay_size);
+	}
+}
+
+void replay_pre_vkWriteSamplerDescriptorsEXT(lava_file_reader& reader, VkDevice device, uint32_t samplerCount,
+	const VkSamplerCreateInfo* pSamplers, const VkHostAddressRangeEXT* pDescriptors)
+{
+	(void)pSamplers;
+	if (!pDescriptors) return;
+	for (uint32_t i = 0; i < samplerCount; i++)
+	{
+		check_descriptor_heap_portability(reader, device, VK_DESCRIPTOR_TYPE_SAMPLER, pDescriptors[i]);
+	}
+}
+
+void replay_pre_vkWriteResourceDescriptorsEXT(lava_file_reader& reader, VkDevice device, uint32_t resourceCount,
+	const VkResourceDescriptorInfoEXT* pResources, const VkHostAddressRangeEXT* pDescriptors)
+{
+	if (!pResources || !pDescriptors) return;
+	for (uint32_t i = 0; i < resourceCount; i++)
+	{
+		check_descriptor_heap_portability(reader, device, pResources[i].type, pDescriptors[i]);
+	}
+}
+
 void replay_callback_vkGetDescriptorEXT(callback_context& cb, VkDevice device, const VkDescriptorGetInfoEXT* pDescriptorInfo, size_t dataSize, void* pDescriptor)
 {
 	if (!cb.reader.is_replay() || !pDescriptorInfo || !pDescriptor || device == VK_NULL_HANDLE) return;
