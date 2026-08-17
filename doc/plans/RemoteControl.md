@@ -3,6 +3,10 @@
 Motivation: Make debugging easier with a new command-line tool to break and inspect
 running trace replays.
 
+Terminology:
+* `lava-cli` is the _controller_ (whoever calls it is the _agent_)
+* `lava-replay` is the _replay service_ (its underlying system is the _replay host system_)
+
 Inspired by [Renderdoc's CLI tool](https://github.com/BANANASJIM/rdc-cli).
 
 ## Functionality
@@ -13,23 +17,11 @@ background thread that listens on a TCP port, then waits for further instruction
 on this port. These instructions are sent from a new tool `lava-cli`.
 
 More instructions to implement:
-* `lava-cli log update` - receive logfile delta since previous call to this command, which is stored in a temporary file that can be searched with `logtail`
-	- ideally we would output to both stdout/android log at the same time as saving to file that we can send here, but easier implementation if we just pick one output target
-	- `lava-cli` should receive the logs, append it to our copy of the logfile, and just output 'DONE' to stdout
-	- replayer on its end must clear the log file upon successfully sending off the update
-* `lava-cli log tail [REGEX=*] [limit=10] [since=LINE] [update=on|off]` - returns the last regex matches up to `limit` in the log, optionally starting search at `LINE`
-	- apparently the PCRE syntax is the most LLM friendly, RE2 is likely the best regex engine for it, but requires abseil
-	- `update on` (the default) automatically calls `log update` first
-	- re2: can support through apt on linux, FetchContent for android? as git submodule is _not_ recommended as requires abseil which is hard to build (esp for android)
-		- but only needed for`lava-cli` which we don't want to build for Android anyways
 * `lava-cli validation update` - similar to `log update`, just get the latest validation warnings; if no validation layer enabled, just return 'ERROR'
 * `lava-cli validation tail [REGEX=*] [limit=10] [since=LINE] [update=on|off]` - similar to `log tail` above
-* `lava-cli syslog update` - similar to `log update`, just get the latest system log entries; logcat on Android and syslog on Linux, we might want to pre-filter on some keywords ('lava', trace name, GPU names, etc.)
-* `lava-cli syslog tail [REGEX=*] [limit=10] [since=LINE] [update=on|off]` - similar to `log tail` above
-* `lava-cli callprint CALL THREAD` - print call parameters _as stored on disk_ for any call and its chained pnext structs; safest to invoke `lava-print` as a command because of our globals,
-  but would be good to maintain some cache
-	- we need to ensure we have a local copy of the trace file; easiest to pass in as a parameter
-	- this is only for TUI, a separate tool can just invoke `lava-print`
+* `lava-cli syslog update` - similar to `log update`, just get the latest relevant system log entries; logcat on Android and syslog on Linux, we will want to pre-filter on some keywords ('lava', trace name, GPU names, etc.)
+	- we do not want to use re2 on the replay service (to avoid the extra dependency on android), just very basic keyword filtering should do
+* `lava-cli syslog tail [REGEX=*] [limit=10] [since=LINE] [update=on|off]` - similar to `log tail`
 * `lava-cli step frames X` - step the given number of frames ahead in the current thread, then pause again
 * `lava-cli goto frame X` - replay until we get to the given frame
 * `lava-cli repeat` - repeat the current call (without incrementing the packet count); not all calls are safe to repeat - use common sense

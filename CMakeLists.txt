@@ -1018,26 +1018,33 @@ install(TARGETS lava-print lava-print-fast RUNTIME)
 
 # --- lava-cli ---
 
+if(NOT ANDROID)
+pkg_check_modules(RE2 REQUIRED IMPORTED_TARGET re2)
 add_executable(lava-cli src/cli.cpp)
 target_include_directories(lava-cli ${COMMON_INCLUDE})
-target_link_libraries(lava-cli ${COMMON_LIBRARIES} lavatube)
+target_link_libraries(lava-cli ${COMMON_LIBRARIES} lavatube PkgConfig::RE2)
 target_compile_options(lava-cli PRIVATE ${COMMON_FLAGS})
 add_dependencies(lava-cli sync_generated)
 install(TARGETS lava-cli RUNTIME)
 
-if(NOT ANDROID)
-	add_lavatube_test(lava_cli_info_trace
-		COMMAND ${PYTHON_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tests/lava_cli_info_trace.py
-			$<TARGET_FILE:lava-replay>
-			$<TARGET_FILE:lava-cli>
-			${CMAKE_CURRENT_BINARY_DIR}/tracing_2.api)
-	set_tests_properties(lava_cli_info_trace PROPERTIES FIXTURES_REQUIRED tracing_2 TIMEOUT 40)
-	add_lavatube_test(lava_cli_self_test
-		COMMAND ${PYTHON_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tests/lava_cli_self_test.py
-			$<TARGET_FILE:lava-replay>
-			$<TARGET_FILE:lava-cli>
-			${CMAKE_CURRENT_BINARY_DIR}/tracing_2.api)
-	set_tests_properties(lava_cli_self_test PROPERTIES FIXTURES_REQUIRED tracing_2 TIMEOUT 40)
+add_lavatube_test(lava_cli_info_trace
+	COMMAND ${PYTHON_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tests/lava_cli_info_trace.py
+		$<TARGET_FILE:lava-replay>
+		$<TARGET_FILE:lava-cli>
+		${CMAKE_CURRENT_BINARY_DIR}/tracing_2.api)
+set_tests_properties(lava_cli_info_trace PROPERTIES FIXTURES_REQUIRED tracing_2 TIMEOUT 40)
+add_lavatube_test(lava_cli_self_test
+	COMMAND ${PYTHON_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tests/lava_cli_self_test.py
+		$<TARGET_FILE:lava-replay>
+		$<TARGET_FILE:lava-cli>
+		${CMAKE_CURRENT_BINARY_DIR}/tracing_2.api)
+set_tests_properties(lava_cli_self_test PROPERTIES FIXTURES_REQUIRED tracing_2 TIMEOUT 40)
+add_lavatube_test(lava_cli_log_test
+	COMMAND ${PYTHON_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tests/lava_cli_log_test.py
+		$<TARGET_FILE:lava-replay>
+		$<TARGET_FILE:lava-cli>
+		${CMAKE_CURRENT_BINARY_DIR}/tracing_2.api)
+set_tests_properties(lava_cli_log_test PROPERTIES FIXTURES_REQUIRED tracing_2 TIMEOUT 60)
 endif()
 
 # --- lava-tui ---

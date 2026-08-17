@@ -13,7 +13,6 @@ General:
 
 Tools
 * Improve the python code generators
-* Make `lava-print` faster
 
 Android
 * Replay

@@ -4,12 +4,31 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <errno.h>
+#include <fcntl.h>
+#include <inttypes.h>
+#include <sys/stat.h>
 
+#include <deque>
+#include <fstream>
+#include <limits>
+#include <sstream>
 #include <string>
+#include <utility>
+#include <vector>
+
+#include <re2/re2.h>
 
 #include "lavatube.h"
 
 static bool verbose = false;
+
+struct log_tail_options
+{
+	std::string expression = ".*";
+	uint32_t limit = 10;
+	uint64_t since = 0;
+	bool update = true;
+};
 
 void usage()
 {
@@ -46,6 +65,11 @@ void usage()
 	printf("    goto PACKET              Continue until thread-relative packet number PACKET.\n");
 	printf("    goto NAME                Continue until next Vulkan command NAME, e.g. vkQueueSubmit.\n");
 	printf("\n");
+	printf("Replay logs:\n");
+	printf("    log update               Append new replay logs to the local host/port cache.\n");
+	printf("    log tail [REGEX] [limit=N] [since=LINE] [update=on|off]\n");
+	printf("                             Print matching cached lines; update=off still validates the replay session.\n");
+	printf("\n");
 	printf("Call inspection:\n");
 	printf("    parameters               Print JSON parameters for the currently paused Vulkan call.\n");
 	printf("    instrument [detailed]    Instrument the command buffer after a paused vkBeginCommandBuffer.\n");
@@ -61,14 +85,381 @@ void usage()
 	printf("    info memory              Print current Vulkan memory heap usage and budgets.\n");
 	printf("    info suballocator        Print current suballocator heap internals.\n");
 	printf("\n");
-	printf("    Long running commands keep 'status', 'info trace', 'info threads', 'diagnose deadlock', and 'stop' responsive; other concurrent commands fail.\n");
+	printf("    Long running commands keep 'status', 'log update', 'info trace', 'info threads', 'diagnose deadlock', and 'stop' responsive; other concurrent commands fail.\n");
 	exit(-1);
+}
+
+static bool parse_u64(const std::string& text, uint64_t& value)
+{
+	if (text.empty() || text[0] == '-') return false;
+	char* end = nullptr;
+	errno = 0;
+	const unsigned long long parsed = strtoull(text.c_str(), &end, 10);
+	if (errno != 0 || end == text.c_str() || *end != '\0') return false;
+	value = (uint64_t)parsed;
+	return true;
+}
+
+static bool parse_log_tail_options(const std::vector<std::string>& command, log_tail_options& options)
+{
+	bool have_expression = false;
+	bool have_limit = false;
+	bool have_since = false;
+	bool have_update = false;
+
+	for (size_t i = 2; i < command.size(); i++)
+	{
+		const std::string& argument = command[i];
+		if (argument.rfind("limit=", 0) == 0)
+		{
+			uint64_t limit = 0;
+			if (have_limit || !parse_u64(argument.substr(6), limit) || limit == 0 || limit > 1000)
+			{
+				fprintf(stderr, "ERROR limit must be between 1 and 1000\n");
+				return false;
+			}
+			have_limit = true;
+			options.limit = (uint32_t)limit;
+		}
+		else if (argument.rfind("since=", 0) == 0)
+		{
+			if (have_since || !parse_u64(argument.substr(6), options.since))
+			{
+				fprintf(stderr, "ERROR since must be a non-negative line number\n");
+				return false;
+			}
+			have_since = true;
+		}
+		else if (argument.rfind("update=", 0) == 0)
+		{
+			if (have_update)
+			{
+				fprintf(stderr, "ERROR update was specified more than once\n");
+				return false;
+			}
+			const std::string value = argument.substr(7);
+			if (value == "on") options.update = true;
+			else if (value == "off") options.update = false;
+			else
+			{
+				fprintf(stderr, "ERROR update must be on or off\n");
+				return false;
+			}
+			have_update = true;
+		}
+		else if (argument.find('=') != std::string::npos)
+		{
+			fprintf(stderr, "ERROR unknown log tail option: %s\n", argument.c_str());
+			return false;
+		}
+		else
+		{
+			if (have_expression)
+			{
+				fprintf(stderr, "ERROR log tail accepts only one regular expression\n");
+				return false;
+			}
+			have_expression = true;
+			options.expression = argument;
+		}
+	}
+	return true;
+}
+
+static std::string command_string(const std::vector<std::string>& command)
+{
+	std::string keyword;
+	for (const std::string& argument : command)
+	{
+		if (!keyword.empty()) keyword += " ";
+		keyword += argument;
+	}
+	return keyword;
+}
+
+static std::string remote_command(const std::string& hostname, int port, const std::string& keyword, size_t max_response)
+{
+	const int fd = lava_tcp_connect(hostname, port);
+	if (!lava_tcp_send_all(fd, keyword + "\n"))
+	{
+		close(fd);
+		DIE("Failed to send %s command to %s:%d: %s", keyword.c_str(), hostname.c_str(), port, strerror(errno));
+	}
+	const std::string response = lava_tcp_receive_all(fd, max_response);
+	close(fd);
+	return response;
+}
+
+static uint64_t log_cache_hash(const std::string& hostname, int port)
+{
+	uint64_t value = UINT64_C(1469598103934665603);
+	const std::string key = hostname + ":" + std::to_string(port);
+	for (unsigned char c : key)
+	{
+		value ^= c;
+		value *= UINT64_C(1099511628211);
+	}
+	return value;
+}
+
+static bool prepare_log_cache_path(const std::string& hostname, int port, std::string& path)
+{
+	std::string directory;
+	const char* runtime_directory = getenv("XDG_RUNTIME_DIR");
+	if (runtime_directory && runtime_directory[0] != '\0')
+	{
+		directory = std::string(runtime_directory) + "/lavatube";
+	}
+	else
+	{
+		directory = "/tmp/lavatube-" + std::to_string((uint64_t)getuid());
+	}
+
+	if (mkdir(directory.c_str(), 0700) != 0 && errno != EEXIST)
+	{
+		fprintf(stderr, "ERROR failed to create log cache directory %s: %s\n", directory.c_str(), strerror(errno));
+		return false;
+	}
+
+	struct stat directory_status = {};
+	if (stat(directory.c_str(), &directory_status) != 0 || !S_ISDIR(directory_status.st_mode) || directory_status.st_uid != getuid())
+	{
+		fprintf(stderr, "ERROR log cache directory %s is not a private directory owned by this user\n", directory.c_str());
+		return false;
+	}
+	if ((directory_status.st_mode & 077) != 0 && chmod(directory.c_str(), 0700) != 0)
+	{
+		fprintf(stderr, "ERROR failed to make log cache directory %s private: %s\n", directory.c_str(), strerror(errno));
+		return false;
+	}
+
+	char filename[32];
+	snprintf(filename, sizeof(filename), "/%016" PRIx64 ".log", log_cache_hash(hostname, port));
+	path = directory + filename;
+	return true;
+}
+
+static bool write_private_file(const std::string& path, const std::string& data)
+{
+	const int fd = open(path.c_str(), O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0600);
+	if (fd < 0) return false;
+	if (fchmod(fd, 0600) != 0)
+	{
+		close(fd);
+		return false;
+	}
+
+	const char* position = data.data();
+	size_t remaining = data.size();
+	while (remaining > 0)
+	{
+		const ssize_t written = write(fd, position, remaining);
+		if (written < 0)
+		{
+			if (errno == EINTR) continue;
+			close(fd);
+			return false;
+		}
+		if (written == 0)
+		{
+			close(fd);
+			return false;
+		}
+		position += written;
+		remaining -= (size_t)written;
+	}
+	return close(fd) == 0;
+}
+
+static bool synchronize_log_session(const std::string& path, const std::string& session)
+{
+	std::string cached_session;
+	std::ifstream session_input(path + ".session");
+	if (session_input) std::getline(session_input, cached_session);
+	if (cached_session == session) return true;
+
+	if (!write_private_file(path, "") || !write_private_file(path + ".session", session + "\n"))
+	{
+		fprintf(stderr, "ERROR failed to reset the local log cache for the current replay session: %s\n", strerror(errno));
+		return false;
+	}
+	return true;
+}
+
+static bool parse_log_session_response(const std::string& response, std::string& session)
+{
+	std::istringstream header(response);
+	std::string status;
+	std::string extra;
+	header >> status >> session;
+	return header && status == "OK" && !session.empty() && !(header >> extra);
+}
+
+static bool validate_log_session(const std::string& hostname, int port, const std::string& path)
+{
+	const std::string response = remote_command(hostname, port, "log session", 1024);
+	std::string session;
+	if (!parse_log_session_response(response, session))
+	{
+		fprintf(stderr, "ERROR malformed replay log session response\n");
+		return false;
+	}
+	return synchronize_log_session(path, session);
+}
+
+static bool parse_log_update_response(const std::string& response, std::string& session, uint64_t& start, uint64_t& end, uint64_t& snapshot_end, size_t& payload_offset)
+{
+	const size_t newline = response.find('\n');
+	if (newline == std::string::npos) return false;
+
+	std::istringstream header(response.substr(0, newline));
+	std::string status;
+	std::string extra;
+	header >> status >> session >> start >> end >> snapshot_end;
+	if (!header || status != "OK" || (header >> extra)) return false;
+	if (session.empty()) return false;
+	if (start > end || end > snapshot_end) return false;
+	payload_offset = newline + 1;
+	return response.size() - payload_offset == end - start;
+}
+
+static bool append_log_chunk(const std::string& path, const std::string& response, uint64_t start, uint64_t end, size_t payload_offset)
+{
+	int flags = O_WRONLY | O_CREAT | O_CLOEXEC;
+	if (start == 0) flags |= O_TRUNC;
+	else flags |= O_APPEND;
+	const int fd = open(path.c_str(), flags, 0600);
+	if (fd < 0)
+	{
+		fprintf(stderr, "ERROR failed to open local log cache %s: %s; restart replay before retrying to avoid a log gap\n", path.c_str(), strerror(errno));
+		return false;
+	}
+
+	struct stat status = {};
+	if (fstat(fd, &status) != 0 || status.st_size < 0 || (uint64_t)status.st_size != start)
+	{
+		fprintf(stderr, "ERROR local log cache does not match the replay cursor; restart replay before retrying to avoid a log gap\n");
+		close(fd);
+		return false;
+	}
+	if (fchmod(fd, 0600) != 0)
+	{
+		fprintf(stderr, "ERROR failed to make local log cache private: %s; restart replay before retrying to avoid a log gap\n", strerror(errno));
+		close(fd);
+		return false;
+	}
+
+	const char* data = response.data() + payload_offset;
+	size_t remaining = (size_t)(end - start);
+	while (remaining > 0)
+	{
+		const ssize_t written = write(fd, data, remaining);
+		if (written < 0)
+		{
+			if (errno == EINTR) continue;
+			fprintf(stderr, "ERROR failed to append local log cache: %s; restart replay before retrying to avoid a log gap\n", strerror(errno));
+			close(fd);
+			return false;
+		}
+		if (written == 0)
+		{
+			fprintf(stderr, "ERROR failed to append local log cache; restart replay before retrying to avoid a log gap\n");
+			close(fd);
+			return false;
+		}
+		data += written;
+		remaining -= (size_t)written;
+	}
+	if (close(fd) != 0)
+	{
+		fprintf(stderr, "ERROR failed to close local log cache: %s; restart replay before retrying to avoid a log gap\n", strerror(errno));
+		return false;
+	}
+	return true;
+}
+
+static bool update_log_cache(const std::string& hostname, int port, const std::string& path)
+{
+	std::string expected_session;
+	uint64_t snapshot_end = 0;
+	uint64_t end = 0;
+	do
+	{
+		const std::string response = remote_command(hostname, port, "log update", 512 * 1024 + 4096);
+		if (response.rfind("ERROR", 0) == 0)
+		{
+			fprintf(stderr, "%s", response.c_str());
+			return false;
+		}
+
+		uint64_t start = 0;
+		std::string session;
+		size_t payload_offset = 0;
+		if (!parse_log_update_response(response, session, start, end, snapshot_end, payload_offset))
+		{
+			fprintf(stderr, "ERROR malformed or truncated log update response; restart replay before retrying to avoid a log gap\n");
+			return false;
+		}
+		if (expected_session.empty())
+		{
+			expected_session = session;
+			if (!synchronize_log_session(path, session)) return false;
+		}
+		else if (session != expected_session)
+		{
+			fprintf(stderr, "ERROR replay service restarted during log update; restart replay before retrying to avoid a log gap\n");
+			return false;
+		}
+		if (!append_log_chunk(path, response, start, end, payload_offset)) return false;
+	} while (end < snapshot_end);
+	return true;
+}
+
+static bool tail_log_cache(const std::string& path, const log_tail_options& options)
+{
+	re2::RE2 expression(options.expression);
+	if (!expression.ok())
+	{
+		fprintf(stderr, "ERROR invalid regular expression: %s\n", expression.error().c_str());
+		return false;
+	}
+
+	std::ifstream input(path);
+	if (!input)
+	{
+		fprintf(stderr, "ERROR no local log cache; run 'lava-cli log update' first\n");
+		return false;
+	}
+
+	std::deque<std::pair<uint64_t, std::string>> matches;
+	std::string line;
+	uint64_t line_number = 0;
+	while (std::getline(input, line))
+	{
+		line_number++;
+		if (line_number <= options.since) continue;
+		if (!line.empty() && line.back() == '\r') line.pop_back();
+		if (!re2::RE2::PartialMatch(line, expression)) continue;
+		matches.emplace_back(line_number, line);
+		if (matches.size() > options.limit) matches.pop_front();
+	}
+	if (input.bad())
+	{
+		fprintf(stderr, "ERROR failed to read local log cache %s\n", path.c_str());
+		return false;
+	}
+
+	for (const auto& match : matches)
+	{
+		printf("%" PRIu64 ":%s\n", match.first, match.second.c_str());
+	}
+	return true;
 }
 
 int main(int argc, char **argv)
 {
 	std::string hostname = "localhost";
-	std::string keyword;
+	std::vector<std::string> command;
 	int port = p__port;
 	int remaining = argc - 1; // zeroth is name of program
 
@@ -102,29 +493,50 @@ int main(int argc, char **argv)
 		}
 		else
 		{
-			keyword = get_str(argv[i], remaining);
+			command.push_back(get_str(argv[i], remaining));
 			while (remaining > 0)
 			{
-				keyword += " " + get_str(argv[++i], remaining);
+				command.push_back(get_str(argv[++i], remaining));
 			}
 		}
 	}
 
-	if (keyword.empty()) usage();
+	if (command.empty()) usage();
+	const bool log_update = command.size() >= 2 && command[0] == "log" && command[1] == "update";
+	const bool log_tail = command.size() >= 2 && command[0] == "log" && command[1] == "tail";
+	if (log_update || log_tail)
+	{
+		if (log_update && command.size() != 2)
+		{
+			fprintf(stderr, "ERROR log update does not accept arguments\n");
+			return 1;
+		}
+
+		log_tail_options options;
+		if (log_tail && !parse_log_tail_options(command, options)) return 1;
+		std::string cache_path;
+		if (!prepare_log_cache_path(hostname, port, cache_path)) return 1;
+
+		if (verbose) printf("Connecting to %s:%d\n", hostname.c_str(), port);
+		if (log_update || options.update)
+		{
+			if (!update_log_cache(hostname, port, cache_path)) return 1;
+		}
+		else if (!validate_log_session(hostname, port, cache_path)) return 1;
+		if (log_update)
+		{
+			printf("DONE\n");
+			return 0;
+		}
+		return tail_log_cache(cache_path, options) ? 0 : 1;
+	}
 
 	if (verbose)
 	{
 		printf("Connecting to %s:%d\n", hostname.c_str(), port);
 	}
 
-	const int fd = lava_tcp_connect(hostname, port);
-	if (!lava_tcp_send_all(fd, keyword + "\n"))
-	{
-		DIE("Failed to send %s command to %s:%d: %s", keyword.c_str(), hostname.c_str(), port, strerror(errno));
-	}
-	const std::string response = lava_tcp_receive_all(fd);
-	close(fd);
-
+	const std::string response = remote_command(hostname, port, command_string(command), 1024 * 1024);
 	printf("%s", response.c_str());
 	if (response.empty() || response.rfind("ERROR", 0) == 0 || response == "DEVICE_LOST\n" || response == "DEVICE_LOST") return 1;
 

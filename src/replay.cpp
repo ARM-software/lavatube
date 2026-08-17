@@ -503,10 +503,83 @@ static bool cli_command_bypasses_active(const std::vector<std::string>& command)
 {
 	if (command.size() == 1 && command[0] == "status") return true;
 	if (command.size() == 1 && command[0] == "stop") return true;
+	if (command.size() == 2 && command[0] == "log" && command[1] == "session") return true;
+	if (command.size() == 2 && command[0] == "log" && command[1] == "update") return true;
 	if (command.size() == 2 && command[0] == "diagnose" && command[1] == "deadlock") return true;
 	if (command.size() == 2 && command[0] == "info" && command[1] == "trace") return true;
 	if (command.size() == 2 && command[0] == "info" && command[1] == "threads") return true;
 	return false;
+}
+
+struct service_client_state
+{
+	std::atomic_uint active_clients{ 0 };
+	std::atomic_bool log_update_active{ false };
+	std::string log_session;
+	off_t log_cursor = 0;
+	off_t log_snapshot_end = 0;
+};
+
+static std::string service_log_session_id()
+{
+	const uint64_t nanoseconds = (uint64_t)std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+	std::ostringstream id;
+	id << std::hex << (uint64_t)getpid() << "-" << nanoseconds;
+	return id.str();
+}
+
+static std::string service_log_update_response(service_client_state* state, off_t& cursor_commit)
+{
+	cursor_commit = -1;
+	flockfile(p__debug_destination);
+	if (fflush(p__debug_destination) != 0)
+	{
+		funlockfile(p__debug_destination);
+		return "ERROR failed to flush replay log\n";
+	}
+
+	const off_t file_end = ftello(p__debug_destination);
+	if (file_end < 0 || file_end < state->log_cursor)
+	{
+		funlockfile(p__debug_destination);
+		return "ERROR failed to inspect replay log\n";
+	}
+	if (state->log_cursor == state->log_snapshot_end)
+	{
+		state->log_snapshot_end = file_end;
+	}
+	if (state->log_snapshot_end < state->log_cursor || state->log_snapshot_end > file_end)
+	{
+		funlockfile(p__debug_destination);
+		return "ERROR invalid replay log cursor\n";
+	}
+
+	const off_t maximum_end = state->log_cursor + 512 * 1024;
+	const off_t chunk_end = std::min(maximum_end, state->log_snapshot_end);
+	std::string payload((size_t)(chunk_end - state->log_cursor), '\0');
+	size_t received = 0;
+	while (received < payload.size())
+	{
+		const ssize_t result = pread(fileno(p__debug_destination), payload.data() + received, payload.size() - received, state->log_cursor + (off_t)received);
+		if (result < 0)
+		{
+			if (errno == EINTR) continue;
+			funlockfile(p__debug_destination);
+			return "ERROR failed to read replay log\n";
+		}
+		if (result == 0)
+		{
+			funlockfile(p__debug_destination);
+			return "ERROR incomplete replay log read\n";
+		}
+		received += (size_t)result;
+	}
+	funlockfile(p__debug_destination);
+
+	std::ostringstream header;
+	header << "OK " << state->log_session << " " << state->log_cursor << " " << chunk_end << " " << state->log_snapshot_end << "\n";
+	cursor_commit = chunk_end;
+	return header.str() + payload;
 }
 
 static void cli_cancel_pending_requests()
@@ -519,7 +592,7 @@ static void cli_cancel_pending_requests()
 	replayer.cli_params_ready.notify_all();
 }
 
-static std::string service_command_response(const std::vector<std::string>& command)
+static std::string service_command_response(service_client_state* state, const std::vector<std::string>& command, off_t& log_cursor_commit)
 {
 	std::string response;
 	if (command.empty())
@@ -567,6 +640,18 @@ static std::string service_command_response(const std::vector<std::string>& comm
 		done_var.store(true, std::memory_order_release);
 		done_var.notify_all();
 		response = "OK\n";
+	}
+	else if (command.size() == 2 && command[0] == "log" && command[1] == "update")
+	{
+		response = service_log_update_response(state, log_cursor_commit);
+	}
+	else if (command.size() == 2 && command[0] == "log" && command[1] == "session")
+	{
+		response = "OK " + state->log_session + "\n";
+	}
+	else if (command.size() >= 2 && command[0] == "log" && command[1] == "tail")
+	{
+		response = "ERROR log tail is handled by lava-cli\n";
 	}
 	else if (command.size() == 2 && command[0] == "diagnose" && command[1] == "deadlock")
 	{
@@ -956,11 +1041,6 @@ static std::string service_command_response(const std::vector<std::string>& comm
 	return response;
 }
 
-struct service_client_state
-{
-	std::atomic_uint active_clients{ 0 };
-};
-
 static void service_client_done(service_client_state* state)
 {
 	state->active_clients.fetch_sub(1, std::memory_order_acq_rel);
@@ -974,9 +1054,22 @@ static void service_client(service_client_state* state, int client_fd)
 	const std::vector<std::string> command = split_command(keyword);
 	std::string response;
 	const bool bypass_active = cli_command_bypasses_active(command);
+	const bool log_update = command.size() == 2 && command[0] == "log" && command[1] == "update";
 	bool command_active = false;
+	bool log_update_active = false;
+	off_t log_cursor_commit = -1;
 
-	if (!bypass_active)
+	if (log_update)
+	{
+		bool expected = false;
+		log_update_active = state->log_update_active.compare_exchange_strong(expected, true, std::memory_order_acq_rel);
+		if (!log_update_active)
+		{
+			response = "ERROR another log update is active\n";
+		}
+	}
+
+	if (response.empty() && !bypass_active)
 	{
 		bool expected = false;
 		command_active = replayer.cli_command_active.compare_exchange_strong(expected, true, std::memory_order_acq_rel);
@@ -988,7 +1081,7 @@ static void service_client(service_client_state* state, int client_fd)
 
 	if (response.empty())
 	{
-		response = service_command_response(command);
+		response = service_command_response(state, command, log_cursor_commit);
 	}
 
 	if (command_active)
@@ -996,7 +1089,16 @@ static void service_client(service_client_state* state, int client_fd)
 		replayer.cli_command_active.store(false, std::memory_order_release);
 	}
 
-	if (!lava_tcp_send_all(client_fd, response))
+	const bool sent = lava_tcp_send_all(client_fd, response);
+	if (sent && log_cursor_commit >= 0)
+	{
+		state->log_cursor = log_cursor_commit;
+	}
+	if (log_update_active)
+	{
+		state->log_update_active.store(false, std::memory_order_release);
+	}
+	if (!sent)
 	{
 		ELOG("Failed to send remote control response: %s", strerror(errno));
 	}
@@ -1010,6 +1112,7 @@ static void service_listener()
 	const int listen_fd = lava_tcp_listen(hostname, port);
 	ILOG("Remote control listening on %s:%d", hostname.c_str(), port);
 	service_client_state client_state;
+	client_state.log_session = service_log_session_id();
 
 	while (!done_var.load(std::memory_order_acquire))
 	{
@@ -1147,6 +1250,7 @@ int main(int argc, char **argv)
 	bool infodump = false;
 	bool skip_missing_input = false;
 	std::string wsi;
+	std::string logfile;
 	std::vector<replay_screenshot_range> screenshot_ranges;
 	std::string screenshot_prefix = "screenshot_frame_";
 	bool screenshot_prefix_set = false;
@@ -1172,9 +1276,8 @@ int main(int argc, char **argv)
 		else if (match(argv[i], "-o", "--logfile", remaining))
 		{
 			if (remaining < 1) usage();
-			std::string val = get_str(argv[++i], remaining);
-			if (p__debug_destination != stdout) ABORT("We already have a different debug file destination!");
-			p__debug_destination = fopen(val.c_str(), "w");
+			if (p__debug_destination != stdout) DIE("We already have a different debug file destination!");
+			logfile = get_str(argv[++i], remaining);
 		}
 		else if (match(argv[i], "-V", "--validate", remaining))
 		{
@@ -1345,6 +1448,11 @@ int main(int argc, char **argv)
 		}
 	}
 
+	if (service && !logfile.empty()) DIE("Cannot use custom logfile with replay service mode");
+	if (!logfile.empty())
+	{
+		p__debug_destination = fopen(logfile.c_str(), "w");
+	}
 	if (p__noscreen && !p__virtualswap) DIE("The \"none\" WSI can only be used with a virtual swapchain!");
 	if (p__realimages > 0 && !p__virtualswap) DIE("Setting the number of virtual images can only be done with a virtual swapchain!");
 	if (p__realpresentmode != VK_PRESENT_MODE_MAX_ENUM_KHR && !p__virtualswap) DIE("Changing present mode can only be used with a virtual swapchain!");
@@ -1365,18 +1473,20 @@ int main(int argc, char **argv)
 		printf("SKIP: input trace file does not exist or is not readable: %s\n", filename.c_str());
 		return 77;
 	}
-	replayer.collect_trace_file_info(filename);
-
-	if (wsi.empty()) wsi_initialize(nullptr);
-	else wsi_initialize(wsi.c_str());
-
 	if (service)
 	{
+		FILE* service_log = tmpfile();
+		if (!service_log) DIE("Failed to create replay service log: %s", strerror(errno));
+		p__debug_destination = service_log;
 		replayer.cli_service.store(true, std::memory_order_release);
 		replayer.cli_pipeline_executable_stats_requested = true;
 		replayer.cli_memory_budget_requested = true;
 		replayer.cli_shader_instrumentation_requested = true;
 	}
+	replayer.collect_trace_file_info(filename);
+
+	if (wsi.empty()) wsi_initialize(nullptr);
+	else wsi_initialize(wsi.c_str());
 
 	if (service)
 	{
