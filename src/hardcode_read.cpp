@@ -3170,6 +3170,38 @@ void replay_pre_vkCreateSharedSwapchainsKHR(lava_file_reader& reader, VkDevice d
 
 void replay_pre_vkCreateSwapchainKHR(lava_file_reader& reader, VkDevice device, VkSwapchainCreateInfoKHR* pCreateInfo, VkAllocationCallbacks* pAllocator, VkSwapchainKHR* pSwapchain)
 {
+	if (!is_noscreen())
+	{
+		const uint32_t device_index = index_to_VkDevice.index(device);
+		const VkPhysicalDevice physical_device = VkDevice_index.at(device_index).physicalDevice;
+		uint32_t surface_format_count = 0;
+		VkResult result = wrap_vkGetPhysicalDeviceSurfaceFormatsKHR(physical_device, pCreateInfo->surface, &surface_format_count, nullptr);
+		if (result != VK_SUCCESS)
+		{
+			ABORT("Failed to query replay surface formats before creating swapchain: %s", errorString(result));
+		}
+		std::vector<VkSurfaceFormatKHR> surface_formats(surface_format_count);
+		result = wrap_vkGetPhysicalDeviceSurfaceFormatsKHR(physical_device, pCreateInfo->surface, &surface_format_count, surface_formats.data());
+		if (result != VK_SUCCESS)
+		{
+			ABORT("Failed to query %u replay surface formats before creating swapchain: %s", surface_format_count, errorString(result));
+		}
+		bool format_supported = false;
+		for (const VkSurfaceFormatKHR& surface_format : surface_formats)
+		{
+			if ((surface_format.format == pCreateInfo->imageFormat || surface_format.format == VK_FORMAT_UNDEFINED)
+				&& surface_format.colorSpace == pCreateInfo->imageColorSpace)
+			{
+				format_supported = true;
+				break;
+			}
+		}
+		if (!format_supported)
+		{
+			ABORT("Captured swapchain format %s with color space %s is not supported by the replay surface",
+				VkFormat_to_string(pCreateInfo->imageFormat).c_str(), VkColorSpaceKHR_to_string(pCreateInfo->imageColorSpace).c_str());
+		}
+	}
 	if (is_virtualswapchain())
 	{
 		if (p__realpresentmode != VK_PRESENT_MODE_MAX_ENUM_KHR) pCreateInfo->presentMode = p__realpresentmode;
