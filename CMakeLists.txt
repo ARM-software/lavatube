@@ -1037,8 +1037,14 @@ add_lavatube_test(lava_cli_self_test
 	COMMAND ${PYTHON_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tests/lava_cli_self_test.py
 		$<TARGET_FILE:lava-replay>
 		$<TARGET_FILE:lava-cli>
-		${CMAKE_CURRENT_BINARY_DIR}/tracing_2.api)
-set_tests_properties(lava_cli_self_test PROPERTIES FIXTURES_REQUIRED tracing_2 TIMEOUT 40)
+		${CMAKE_CURRENT_BINARY_DIR}/tracing_headless2.api)
+set_tests_properties(lava_cli_self_test PROPERTIES FIXTURES_REQUIRED tracing_headless2 TIMEOUT 40)
+add_lavatube_test(lava_cli_startup_test
+	COMMAND ${PYTHON_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tests/lava_cli_startup_test.py
+		$<TARGET_FILE:lava-replay>
+		$<TARGET_FILE:lava-cli>
+		${CMAKE_CURRENT_BINARY_DIR}/tracing_headless2.api)
+set_tests_properties(lava_cli_startup_test PROPERTIES FIXTURES_REQUIRED tracing_headless2 TIMEOUT 60)
 add_lavatube_test(lava_cli_log_test
 	COMMAND ${PYTHON_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tests/lava_cli_log_test.py
 		$<TARGET_FILE:lava-replay>

@@ -802,6 +802,7 @@ trackedshaderobject trackedshaderobject_json(const Json::Value& v)
 	t.stage.flags = (VkShaderCreateFlagsEXT)v["flags"].asUInt();
 	t.stage.stage = (VkShaderStageFlagBits)v["stage"].asUInt();
 	t.stage.name = v["entry_name"].asString();
+	t.enter_initialized();
 	return t;
 }
 
@@ -813,6 +814,7 @@ trackedsurface trackedsurface_json(const Json::Value& v)
 	t.height = v["height"].asUInt();
 	t.x = v["x"].asInt();
 	t.y = v["y"].asInt();
+	t.enter_initialized();
 	return t;
 }
 

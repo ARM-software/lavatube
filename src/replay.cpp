@@ -1547,8 +1547,11 @@ int main(int argc, char **argv)
 		replayer.cli_pipeline_executable_stats_requested = true;
 		replayer.cli_memory_budget_requested = true;
 		replayer.cli_shader_instrumentation_requested = true;
-		service_thread = std::thread(service_listener, &service_state);
 	}
+	replayer.collect_trace_file_info(filename);
+
+	if (wsi.empty()) wsi_initialize(nullptr);
+	else wsi_initialize(wsi.c_str());
 
 	if (p__sandbox_level >= 2) sandbox_level_two();
 
@@ -1567,6 +1570,7 @@ int main(int argc, char **argv)
 	if (service)
 	{
 		replayer.cli_thread.store(0, std::memory_order_release); // set currently probed thread, indicates active CLI operation
+		service_thread = std::thread(service_listener, &service_state);
 		replayer.cli_running.wait(false);
 		if (service_stop_requested.load(std::memory_order_acquire))
 		{
