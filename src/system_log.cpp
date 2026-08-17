@@ -114,6 +114,7 @@ system_log_collector::probe_result system_log_collector::probe(const char* sourc
 	if (WIFEXITED(status) && WEXITSTATUS(status) == 0)
 	{
 		result.available = true;
+		result.warning = single_line(child_error);
 		return result;
 	}
 
@@ -238,9 +239,21 @@ bool system_log_collector::start(const std::string& trace_filename)
 	const probe_result user = probe("--user");
 	const probe_result system = probe("--system");
 	std::vector<std::string> sources;
-	if (user.available) sources.push_back("--user");
+	if (user.available)
+	{
+		sources.push_back("--user");
+		if (!user.warning.empty()) mWarning = "user journal warning: " + user.warning;
+	}
 	else mWarning = "user journal unavailable: " + user.error;
-	if (system.available) sources.push_back("--system");
+	if (system.available)
+	{
+		sources.push_back("--system");
+		if (!system.warning.empty())
+		{
+			if (!mWarning.empty()) mWarning += "; ";
+			mWarning += "system journal warning: " + system.warning;
+		}
+	}
 	else
 	{
 		if (!mWarning.empty()) mWarning += "; ";
@@ -277,6 +290,33 @@ bool system_log_collector::append_output_lines()
 	return true;
 }
 
+void system_log_collector::append_follower_warning(const std::string& value)
+{
+	const std::string detail = single_line(value);
+	if (detail.empty()) return;
+
+	std::lock_guard<std::mutex> lock(mWarningMutex);
+	if (mWarning.find(detail) != std::string::npos) return;
+	std::string message = "journalctl follower warning: " + detail;
+	if (!mWarning.empty()) message = "; " + message;
+	if (mWarning.size() < 32768)
+	{
+		const size_t retained = std::min(message.size(), (size_t)32768 - mWarning.size());
+		mWarning.append(message, 0, retained);
+	}
+}
+
+void system_log_collector::publish_follower_warning_lines()
+{
+	size_t newline = mPendingWarning.find('\n');
+	while (newline != std::string::npos)
+	{
+		append_follower_warning(mPendingWarning.substr(0, newline));
+		mPendingWarning.erase(0, newline + 1);
+		newline = mPendingWarning.find('\n');
+	}
+}
+
 void system_log_collector::read_pipe(int& fd, bool output_pipe)
 {
 	char buffer[4096];
@@ -303,10 +343,19 @@ void system_log_collector::read_pipe(int& fd, bool output_pipe)
 			if (pid >= 0) kill(pid, SIGTERM);
 		}
 	}
-	else if (mChildError.size() < 16384)
+	else
 	{
-		const size_t retained = std::min((size_t)bytes, (size_t)16384 - mChildError.size());
-		mChildError.append(buffer, retained);
+		if (mChildError.size() < 16384)
+		{
+			const size_t retained = std::min((size_t)bytes, (size_t)16384 - mChildError.size());
+			mChildError.append(buffer, retained);
+		}
+		if (mPendingWarning.size() < 16384)
+		{
+			const size_t retained = std::min((size_t)bytes, (size_t)16384 - mPendingWarning.size());
+			mPendingWarning.append(buffer, retained);
+			publish_follower_warning_lines();
+		}
 	}
 }
 
@@ -422,6 +471,7 @@ bool system_log_collector::available(std::string& warning, std::string& error) c
 	const collector_status status = mStatus.load(std::memory_order_acquire);
 	if (status == collector_status::ready)
 	{
+		std::lock_guard<std::mutex> lock(mWarningMutex);
 		warning = mWarning;
 		return true;
 	}

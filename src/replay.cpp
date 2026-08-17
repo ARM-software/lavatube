@@ -1529,6 +1529,11 @@ int main(int argc, char **argv)
 		printf("SKIP: input trace file does not exist or is not readable: %s\n", filename.c_str());
 		return 77;
 	}
+	replayer.collect_trace_file_info(filename);
+
+	if (wsi.empty()) wsi_initialize(nullptr);
+	else wsi_initialize(wsi.c_str());
+
 	if (service)
 	{
 		FILE* service_log = tmpfile();
@@ -1542,14 +1547,6 @@ int main(int argc, char **argv)
 		replayer.cli_pipeline_executable_stats_requested = true;
 		replayer.cli_memory_budget_requested = true;
 		replayer.cli_shader_instrumentation_requested = true;
-	}
-	replayer.collect_trace_file_info(filename);
-
-	if (wsi.empty()) wsi_initialize(nullptr);
-	else wsi_initialize(wsi.c_str());
-
-	if (service)
-	{
 		service_thread = std::thread(service_listener, &service_state);
 	}
 

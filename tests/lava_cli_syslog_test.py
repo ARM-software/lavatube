@@ -18,13 +18,20 @@ import time
 arguments = sys.argv[1:]
 source = 'user' if '--user' in arguments else 'system'
 if '--follow' not in arguments:
-	if os.environ.get('FAKE_JOURNAL_' + source.upper()) == 'fail':
+	behavior = os.environ.get('FAKE_JOURNAL_' + source.upper())
+	if behavior == 'fail':
 		print(source + ' journal permission denied', file=sys.stderr)
 		sys.exit(1)
+	if behavior == 'warn':
+		print(source + ' journal permission warning', file=sys.stderr)
 	sys.exit(0)
 
 with open(os.environ['FAKE_JOURNAL_ARGUMENTS'], 'w', encoding='utf-8') as output:
 	output.write('\n'.join(arguments) + '\n')
+for journal_source in ('user', 'system'):
+	if '--' + journal_source in arguments and os.environ.get('FAKE_JOURNAL_' + journal_source.upper()) == 'warn':
+		time.sleep(float(os.environ.get('FAKE_JOURNAL_WARNING_DELAY', '0')))
+		print(journal_source + ' journal follower warning', file=sys.stderr, flush=True)
 if os.environ.get('FAKE_JOURNAL_RUNTIME_FAIL') == 'yes':
 	time.sleep(0.2)
 	print('journal stream access revoked', file=sys.stderr)
@@ -125,6 +132,18 @@ def wait_for_syslog(cli_path, port, environment, expected):
 	raise RuntimeError('timed out waiting for syslog line: ' + repr(last_result.stdout if last_result else None))
 
 
+def wait_for_syslog_warning(cli_path, port, environment, expected):
+	deadline = time.monotonic() + 5
+	last_result = None
+	while time.monotonic() < deadline:
+		last_result = run_cli(cli_path, port, environment, 'syslog', 'update')
+		require_success(last_result, 'DONE\n')
+		if expected in last_result.stderr:
+			return last_result
+		time.sleep(0.05)
+	raise RuntimeError('timed out waiting for syslog warning: ' + repr(last_result.stderr if last_result else None))
+
+
 def main():
 	if len(sys.argv) != 4:
 		raise RuntimeError('usage: lava_cli_syslog_test.py LAVA_REPLAY LAVA_CLI TRACE')
@@ -193,18 +212,19 @@ def main():
 			stop_replay(replay, cli_path, port, environment)
 
 		del environment['FAKE_JOURNAL_USER']
-		environment['FAKE_JOURNAL_SYSTEM'] = 'fail'
+		environment['FAKE_JOURNAL_SYSTEM'] = 'warn'
+		environment['FAKE_JOURNAL_WARNING_DELAY'] = '0.3'
 		replay = start_replay(replay_path, cli_path, trace_path, port, environment)
 		try:
-			result = run_cli(cli_path, port, environment, 'syslog', 'update')
-			require_success(result, 'DONE\n')
-			if 'WARNING system journal unavailable' not in result.stderr:
-				raise RuntimeError('system journal access failure was not reported: ' + repr(result.stderr))
+			result = wait_for_syslog_warning(cli_path, port, environment, 'journalctl follower warning: system journal follower warning')
+			if 'WARNING system journal warning: system journal permission warning' not in result.stderr:
+				raise RuntimeError('successful system journal warning was not reported: ' + repr(result.stderr))
 			arguments = open(environment['FAKE_JOURNAL_ARGUMENTS'], encoding='utf-8').read().splitlines()
-			if '--system' in arguments or '--user' not in arguments:
-				raise RuntimeError('follower did not use the accessible user journal: ' + repr(arguments))
+			if '--system' not in arguments or '--user' not in arguments:
+				raise RuntimeError('follower did not retain the warning-producing journal: ' + repr(arguments))
 		finally:
 			stop_replay(replay, cli_path, port, environment)
+		del environment['FAKE_JOURNAL_WARNING_DELAY']
 
 		environment['FAKE_JOURNAL_USER'] = 'fail'
 		environment['FAKE_JOURNAL_SYSTEM'] = 'fail'

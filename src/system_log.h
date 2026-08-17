@@ -6,6 +6,7 @@
 #include <stdint.h>
 
 #include <atomic>
+#include <mutex>
 #include <string>
 #include <thread>
 #include <vector>
@@ -33,6 +34,7 @@ private:
 	struct probe_result
 	{
 		bool available = false;
+		std::string warning;
 		std::string error;
 	};
 
@@ -44,6 +46,8 @@ private:
 	void reader_main();
 	void read_pipe(int& fd, bool output_pipe);
 	bool append_output_lines();
+	void append_follower_warning(const std::string& detail);
+	void publish_follower_warning_lines();
 
 	FILE* mOutput = nullptr;
 	std::atomic<pid_t> mPid{ -1 };
@@ -52,8 +56,10 @@ private:
 	std::thread mThread;
 	std::atomic<collector_status> mStatus{ collector_status::stopped };
 	std::atomic_bool mStopRequested{ false };
+	mutable std::mutex mWarningMutex;
 	std::string mWarning;
 	std::string mError;
 	std::string mPendingOutput;
 	std::string mChildError;
+	std::string mPendingWarning;
 };
