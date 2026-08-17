@@ -69,6 +69,9 @@ void usage()
 	printf("    log update               Append new replay logs to the local host/port cache.\n");
 	printf("    log tail [REGEX] [limit=N] [since=LINE] [update=on|off]\n");
 	printf("                             Print matching cached lines; update=off still validates the replay session.\n");
+	printf("    syslog update            Append filtered system-journal entries to a separate local cache.\n");
+	printf("    syslog tail [REGEX] [limit=N] [since=LINE] [update=on|off]\n");
+	printf("                             Print matching cached system-journal lines.\n");
 	printf("\n");
 	printf("Call inspection:\n");
 	printf("    parameters               Print JSON parameters for the currently paused Vulkan call.\n");
@@ -85,7 +88,7 @@ void usage()
 	printf("    info memory              Print current Vulkan memory heap usage and budgets.\n");
 	printf("    info suballocator        Print current suballocator heap internals.\n");
 	printf("\n");
-	printf("    Long running commands keep 'status', 'log update', 'info trace', 'info threads', 'diagnose deadlock', and 'stop' responsive; other concurrent commands fail.\n");
+	printf("    Long running commands keep 'status', log updates, 'info trace', 'info threads', 'diagnose deadlock', and 'stop' responsive; other concurrent commands fail.\n");
 	exit(-1);
 }
 
@@ -149,14 +152,14 @@ static bool parse_log_tail_options(const std::vector<std::string>& command, log_
 		}
 		else if (argument.find('=') != std::string::npos)
 		{
-			fprintf(stderr, "ERROR unknown log tail option: %s\n", argument.c_str());
+			fprintf(stderr, "ERROR unknown %s tail option: %s\n", command[0].c_str(), argument.c_str());
 			return false;
 		}
 		else
 		{
 			if (have_expression)
 			{
-				fprintf(stderr, "ERROR log tail accepts only one regular expression\n");
+				fprintf(stderr, "ERROR %s tail accepts only one regular expression\n", command[0].c_str());
 				return false;
 			}
 			have_expression = true;
@@ -202,7 +205,7 @@ static uint64_t log_cache_hash(const std::string& hostname, int port)
 	return value;
 }
 
-static bool prepare_log_cache_path(const std::string& hostname, int port, std::string& path)
+static bool prepare_log_cache_path(const std::string& hostname, int port, const std::string& stream, std::string& path)
 {
 	std::string directory;
 	const char* runtime_directory = getenv("XDG_RUNTIME_DIR");
@@ -233,8 +236,8 @@ static bool prepare_log_cache_path(const std::string& hostname, int port, std::s
 		return false;
 	}
 
-	char filename[32];
-	snprintf(filename, sizeof(filename), "/%016" PRIx64 ".log", log_cache_hash(hostname, port));
+	char filename[40];
+	snprintf(filename, sizeof(filename), "/%016" PRIx64 ".%s", log_cache_hash(hostname, port), stream.c_str());
 	path = directory + filename;
 	return true;
 }
@@ -295,13 +298,37 @@ static bool parse_log_session_response(const std::string& response, std::string&
 	return header && status == "OK" && !session.empty() && !(header >> extra);
 }
 
-static bool validate_log_session(const std::string& hostname, int port, const std::string& path)
+static bool consume_response_warnings(std::string& response, bool& warning_reported)
 {
-	const std::string response = remote_command(hostname, port, "log session", 1024);
+	while (response.rfind("WARNING ", 0) == 0)
+	{
+		const size_t newline = response.find('\n');
+		if (newline == std::string::npos) return false;
+		if (!warning_reported) fprintf(stderr, "%s", response.substr(0, newline + 1).c_str());
+		warning_reported = true;
+		response.erase(0, newline + 1);
+	}
+	return true;
+}
+
+static bool validate_log_session(const std::string& hostname, int port, const std::string& stream, const std::string& path)
+{
+	std::string response = remote_command(hostname, port, stream + " session", 64 * 1024);
+	bool warning_reported = false;
+	if (!consume_response_warnings(response, warning_reported))
+	{
+		fprintf(stderr, "ERROR malformed %s warning response\n", stream.c_str());
+		return false;
+	}
+	if (response.rfind("ERROR", 0) == 0)
+	{
+		fprintf(stderr, "%s", response.c_str());
+		return false;
+	}
 	std::string session;
 	if (!parse_log_session_response(response, session))
 	{
-		fprintf(stderr, "ERROR malformed replay log session response\n");
+		fprintf(stderr, "ERROR malformed %s session response\n", stream.c_str());
 		return false;
 	}
 	return synchronize_log_session(path, session);
@@ -378,14 +405,20 @@ static bool append_log_chunk(const std::string& path, const std::string& respons
 	return true;
 }
 
-static bool update_log_cache(const std::string& hostname, int port, const std::string& path)
+static bool update_log_cache(const std::string& hostname, int port, const std::string& stream, const std::string& path)
 {
 	std::string expected_session;
 	uint64_t snapshot_end = 0;
 	uint64_t end = 0;
+	bool warning_reported = false;
 	do
 	{
-		const std::string response = remote_command(hostname, port, "log update", 512 * 1024 + 4096);
+		std::string response = remote_command(hostname, port, stream + " update", 512 * 1024 + 64 * 1024);
+		if (!consume_response_warnings(response, warning_reported))
+		{
+			fprintf(stderr, "ERROR malformed %s warning response\n", stream.c_str());
+			return false;
+		}
 		if (response.rfind("ERROR", 0) == 0)
 		{
 			fprintf(stderr, "%s", response.c_str());
@@ -397,7 +430,7 @@ static bool update_log_cache(const std::string& hostname, int port, const std::s
 		size_t payload_offset = 0;
 		if (!parse_log_update_response(response, session, start, end, snapshot_end, payload_offset))
 		{
-			fprintf(stderr, "ERROR malformed or truncated log update response; restart replay before retrying to avoid a log gap\n");
+			fprintf(stderr, "ERROR malformed or truncated %s update response; restart replay before retrying to avoid a log gap\n", stream.c_str());
 			return false;
 		}
 		if (expected_session.empty())
@@ -415,7 +448,7 @@ static bool update_log_cache(const std::string& hostname, int port, const std::s
 	return true;
 }
 
-static bool tail_log_cache(const std::string& path, const log_tail_options& options)
+static bool tail_log_cache(const std::string& path, const std::string& stream, const log_tail_options& options)
 {
 	re2::RE2 expression(options.expression);
 	if (!expression.ok())
@@ -427,7 +460,7 @@ static bool tail_log_cache(const std::string& path, const log_tail_options& opti
 	std::ifstream input(path);
 	if (!input)
 	{
-		fprintf(stderr, "ERROR no local log cache; run 'lava-cli log update' first\n");
+		fprintf(stderr, "ERROR no local %s cache; run 'lava-cli %s update' first\n", stream.c_str(), stream.c_str());
 		return false;
 	}
 
@@ -502,33 +535,34 @@ int main(int argc, char **argv)
 	}
 
 	if (command.empty()) usage();
-	const bool log_update = command.size() >= 2 && command[0] == "log" && command[1] == "update";
-	const bool log_tail = command.size() >= 2 && command[0] == "log" && command[1] == "tail";
+	const bool log_stream = !command.empty() && (command[0] == "log" || command[0] == "syslog");
+	const bool log_update = log_stream && command.size() >= 2 && command[1] == "update";
+	const bool log_tail = log_stream && command.size() >= 2 && command[1] == "tail";
 	if (log_update || log_tail)
 	{
 		if (log_update && command.size() != 2)
 		{
-			fprintf(stderr, "ERROR log update does not accept arguments\n");
+			fprintf(stderr, "ERROR %s update does not accept arguments\n", command[0].c_str());
 			return 1;
 		}
 
 		log_tail_options options;
 		if (log_tail && !parse_log_tail_options(command, options)) return 1;
 		std::string cache_path;
-		if (!prepare_log_cache_path(hostname, port, cache_path)) return 1;
+		if (!prepare_log_cache_path(hostname, port, command[0], cache_path)) return 1;
 
 		if (verbose) printf("Connecting to %s:%d\n", hostname.c_str(), port);
 		if (log_update || options.update)
 		{
-			if (!update_log_cache(hostname, port, cache_path)) return 1;
+			if (!update_log_cache(hostname, port, command[0], cache_path)) return 1;
 		}
-		else if (!validate_log_session(hostname, port, cache_path)) return 1;
+		else if (!validate_log_session(hostname, port, command[0], cache_path)) return 1;
 		if (log_update)
 		{
 			printf("DONE\n");
 			return 0;
 		}
-		return tail_log_cache(cache_path, options) ? 0 : 1;
+		return tail_log_cache(cache_path, command[0], options) ? 0 : 1;
 	}
 
 	if (verbose)

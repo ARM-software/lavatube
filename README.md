@@ -94,6 +94,13 @@ Then in order to verify that everything is working correctly:
 make test
 ```
 
+To make sure syslog access works correctly, on a Linux replay system first do:
+
+```
+sudo usermod -aG adm $USER
+newgrp adm
+```
+
 To build for android:
 --------------------
 

@@ -19,9 +19,6 @@ on this port. These instructions are sent from a new tool `lava-cli`.
 More instructions to implement:
 * `lava-cli validation update` - similar to `log update`, just get the latest validation warnings; if no validation layer enabled, just return 'ERROR'
 * `lava-cli validation tail [REGEX=*] [limit=10] [since=LINE] [update=on|off]` - similar to `log tail` above
-* `lava-cli syslog update` - similar to `log update`, just get the latest relevant system log entries; logcat on Android and syslog on Linux, we will want to pre-filter on some keywords ('lava', trace name, GPU names, etc.)
-	- we do not want to use re2 on the replay service (to avoid the extra dependency on android), just very basic keyword filtering should do
-* `lava-cli syslog tail [REGEX=*] [limit=10] [since=LINE] [update=on|off]` - similar to `log tail`
 * `lava-cli step frames X` - step the given number of frames ahead in the current thread, then pause again
 * `lava-cli goto frame X` - replay until we get to the given frame
 * `lava-cli repeat` - repeat the current call (without incrementing the packet count); not all calls are safe to repeat - use common sense

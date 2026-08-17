@@ -618,7 +618,7 @@ add_lavatube_test(write_test_5 COMMAND write5)
 
 # --- lava-replay ---
 
-add_executable(lava-replay src/replay.cpp src/replay_diagnostics.cpp src/replay_diagnostics.h src/trace_metadata.cpp src/trace_metadata.h)
+add_executable(lava-replay src/replay.cpp src/replay_diagnostics.cpp src/replay_diagnostics.h src/trace_metadata.cpp src/trace_metadata.h src/system_log.cpp src/system_log.h)
 target_include_directories(lava-replay ${COMMON_INCLUDE})
 target_link_libraries(lava-replay ${COMMON_LIBRARIES} lavatube)
 target_compile_options(lava-replay PRIVATE ${COMMON_FLAGS})
@@ -1045,6 +1045,12 @@ add_lavatube_test(lava_cli_log_test
 		$<TARGET_FILE:lava-cli>
 		${CMAKE_CURRENT_BINARY_DIR}/tracing_2.api)
 set_tests_properties(lava_cli_log_test PROPERTIES FIXTURES_REQUIRED tracing_2 TIMEOUT 60)
+add_lavatube_test(lava_cli_syslog_test
+	COMMAND ${PYTHON_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tests/lava_cli_syslog_test.py
+		$<TARGET_FILE:lava-replay>
+		$<TARGET_FILE:lava-cli>
+		${CMAKE_CURRENT_BINARY_DIR}/tracing_2.api)
+set_tests_properties(lava_cli_syslog_test PROPERTIES FIXTURES_REQUIRED tracing_2 TIMEOUT 60)
 endif()
 
 # --- lava-tui ---
