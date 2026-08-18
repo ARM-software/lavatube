@@ -1,4 +1,94 @@
 #include "memory.h"
+#include "util.h"
+
+// Android may export unsupported device commands as loader trampolines which
+// jump through a null device dispatch slot. Query the device dispatch directly.
+// TODO Remove all of this once Android gets fixed / assumes a recent enough Vulkan version.
+static void get_buffer_memory_requirements_compat(VkDevice device, const VkBufferCreateInfo& cinfo, VkMemoryRequirements2& req)
+{
+	PFN_vkGetDeviceBufferMemoryRequirements get_device_requirements = nullptr;
+	if (wrap_vkGetDeviceProcAddr)
+	{
+		get_device_requirements = reinterpret_cast<PFN_vkGetDeviceBufferMemoryRequirements>(wrap_vkGetDeviceProcAddr(device, "vkGetDeviceBufferMemoryRequirements"));
+		if (!get_device_requirements)
+		{
+			get_device_requirements = reinterpret_cast<PFN_vkGetDeviceBufferMemoryRequirements>(wrap_vkGetDeviceProcAddr(device, "vkGetDeviceBufferMemoryRequirementsKHR"));
+		}
+	}
+	if (get_device_requirements)
+	{
+		VkDeviceBufferMemoryRequirements info = { VK_STRUCTURE_TYPE_DEVICE_BUFFER_MEMORY_REQUIREMENTS, nullptr };
+		info.pCreateInfo = &cinfo;
+		get_device_requirements(device, &info, &req);
+		return;
+	}
+
+	VkBuffer buffer = VK_NULL_HANDLE;
+	VkResult result = wrap_vkCreateBuffer(device, &cinfo, nullptr, &buffer);
+	if (result != VK_SUCCESS)
+	{
+		ABORT("Failed to create temporary buffer for memory requirements: %s", errorString(result));
+	}
+	if (wrap_vkGetBufferMemoryRequirements2)
+	{
+		VkBufferMemoryRequirementsInfo2 info = { VK_STRUCTURE_TYPE_BUFFER_MEMORY_REQUIREMENTS_INFO_2, nullptr };
+		info.buffer = buffer;
+		wrap_vkGetBufferMemoryRequirements2(device, &info, &req);
+	}
+	else if (wrap_vkGetBufferMemoryRequirements)
+	{
+		wrap_vkGetBufferMemoryRequirements(device, buffer, &req.memoryRequirements);
+	}
+	else
+	{
+		wrap_vkDestroyBuffer(device, buffer, nullptr);
+		ABORT("Cannot query temporary buffer memory requirements");
+	}
+	wrap_vkDestroyBuffer(device, buffer, nullptr);
+}
+static void get_image_memory_requirements_compat(VkDevice device, const VkImageCreateInfo& cinfo, VkMemoryRequirements2& req)
+{
+	PFN_vkGetDeviceImageMemoryRequirements get_device_requirements = nullptr;
+	if (wrap_vkGetDeviceProcAddr)
+	{
+		get_device_requirements = reinterpret_cast<PFN_vkGetDeviceImageMemoryRequirements>(wrap_vkGetDeviceProcAddr(device, "vkGetDeviceImageMemoryRequirements"));
+		if (!get_device_requirements)
+		{
+			get_device_requirements = reinterpret_cast<PFN_vkGetDeviceImageMemoryRequirements>(wrap_vkGetDeviceProcAddr(device, "vkGetDeviceImageMemoryRequirementsKHR"));
+		}
+	}
+	if (get_device_requirements)
+	{
+		VkDeviceImageMemoryRequirements info = { VK_STRUCTURE_TYPE_DEVICE_IMAGE_MEMORY_REQUIREMENTS, nullptr };
+		info.pCreateInfo = &cinfo;
+		info.planeAspect = VK_IMAGE_ASPECT_NONE; // ignored unless tiling is DRM or DISJOINT, and we support neither for now
+		get_device_requirements(device, &info, &req);
+		return;
+	}
+
+	VkImage image = VK_NULL_HANDLE;
+	VkResult result = wrap_vkCreateImage(device, &cinfo, nullptr, &image);
+	if (result != VK_SUCCESS)
+	{
+		ABORT("Failed to create temporary image for memory requirements: %s", errorString(result));
+	}
+	if (wrap_vkGetImageMemoryRequirements2)
+	{
+		VkImageMemoryRequirementsInfo2 info = { VK_STRUCTURE_TYPE_IMAGE_MEMORY_REQUIREMENTS_INFO_2, nullptr };
+		info.image = image;
+		wrap_vkGetImageMemoryRequirements2(device, &info, &req);
+	}
+	else if (wrap_vkGetImageMemoryRequirements)
+	{
+		wrap_vkGetImageMemoryRequirements(device, image, &req.memoryRequirements);
+	}
+	else
+	{
+		wrap_vkDestroyImage(device, image, nullptr);
+		ABORT("Cannot query temporary image memory requirements");
+	}
+	wrap_vkDestroyImage(device, image, nullptr);
+}
 
 memory_requirements get_trackedtensor_memory_requirements(VkDevice device, const trackedtensor& data)
 {
@@ -41,11 +131,9 @@ memory_requirements get_trackedbuffer_memory_requirements(VkDevice device, const
 		buf2ci.usage = data.usage2;
 		cinfo.pNext = &buf2ci;
 	}
-	VkDeviceBufferMemoryRequirements info = { VK_STRUCTURE_TYPE_DEVICE_BUFFER_MEMORY_REQUIREMENTS, nullptr };
-	info.pCreateInfo = &cinfo;
 	VkMemoryRequirements2 req = { VK_STRUCTURE_TYPE_MEMORY_REQUIREMENTS_2, nullptr };
 	if (use_dedicated_allocation()) req.pNext = &reqs.dedicated;
-	wrap_vkGetDeviceBufferMemoryRequirements(device, &info, &req);
+	get_buffer_memory_requirements_compat(device, cinfo, req);
 	reqs.requirements = req.memoryRequirements;
 	reqs.memory_flags = data.memory_flags;
 	if (data.usage & VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT)
@@ -73,12 +161,9 @@ memory_requirements get_trackedimage_memory_requirements(VkDevice device, const 
 	cinfo.sharingMode = data.sharingMode;
 	cinfo.queueFamilyIndexCount = 0; // hopefully won't make any difference here
 	cinfo.initialLayout = data.initialLayout;
-	VkDeviceImageMemoryRequirements info = { VK_STRUCTURE_TYPE_DEVICE_IMAGE_MEMORY_REQUIREMENTS, nullptr };
-	info.pCreateInfo = &cinfo;
-	info.planeAspect = VK_IMAGE_ASPECT_NONE; // ignored unless tiling is DRM or DISJOINT, and we support neither for now
 	VkMemoryRequirements2 req = { VK_STRUCTURE_TYPE_MEMORY_REQUIREMENTS_2, nullptr };
 	if (use_dedicated_allocation()) req.pNext = &reqs.dedicated;
-	wrap_vkGetDeviceImageMemoryRequirements(device, &info, &req);
+	get_image_memory_requirements_compat(device, cinfo, req);
 	reqs.requirements = req.memoryRequirements;
 	reqs.memory_flags = data.memory_flags;
 	assert(reqs.requirements.alignment != 0);

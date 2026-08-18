@@ -308,6 +308,7 @@ def command_stop(arguments, repo):
 def create_parser():
 	parser = argparse.ArgumentParser(description="Build and run the lava-replay NativeActivity APK")
 	parser.add_argument("--adb", default=os.environ.get("ADB", "adb"))
+	parser.add_argument("--serial", help="adb device serial; defaults to ANDROID_SERIAL or the only connected device")
 	subparsers = parser.add_subparsers(dest="command", required=True)
 
 	build = subparsers.add_parser("build")
@@ -316,7 +317,7 @@ def create_parser():
 
 	run = subparsers.add_parser("run")
 	run.add_argument("trace")
-	run.add_argument("--serial")
+	run.add_argument("--serial", default=argparse.SUPPRESS, help="adb device serial")
 	run.add_argument("--abi", choices=("auto",) + SUPPORTED_ABIS, default="auto")
 	run.add_argument("--apk")
 	run.add_argument("--build-type", choices=("debug", "release"), default="debug")
@@ -329,7 +330,7 @@ def create_parser():
 	run.add_argument("replay_arguments", nargs=argparse.REMAINDER)
 
 	stop = subparsers.add_parser("stop")
-	stop.add_argument("--serial")
+	stop.add_argument("--serial", default=argparse.SUPPRESS, help="adb device serial")
 	stop.add_argument("--host-port", type=int, default=11901)
 	stop.add_argument("--lava-cli", default="build/lava-cli")
 	stop.add_argument("--timeout", type=float, default=30.0)

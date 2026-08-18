@@ -29,6 +29,26 @@ static trackedbuffer make_trackedbuffer(const VkBufferCreateInfo& info, uint32_t
 	return t;
 }
 
+static trackedimage make_trackedimage(const VkImageCreateInfo& info, uint32_t idx)
+{
+	trackedimage t;
+	t.index = idx;
+	t.flags = info.flags;
+	t.imageType = info.imageType;
+	t.format = info.format;
+	t.extent = info.extent;
+	t.mipLevels = info.mipLevels;
+	t.arrayLayers = info.arrayLayers;
+	t.samples = info.samples;
+	t.tiling = (lava_tiling)info.tiling;
+	t.usage = info.usage;
+	t.sharingMode = info.sharingMode;
+	t.initialLayout = info.initialLayout;
+	t.object_type = VK_OBJECT_TYPE_IMAGE;
+	t.enter_initialized();
+	return t;
+}
+
 static void trace()
 {
 	vulkan_req_t reqs;
@@ -66,14 +86,46 @@ static void trace()
 		assert(traced_req.alignment == raw_req.alignment);
 
 		trackedbuffer tracked = make_trackedbuffer(info, index);
+		PFN_vkGetDeviceProcAddr get_device_proc_addr = wrap_vkGetDeviceProcAddr;
+		wrap_vkGetDeviceProcAddr = nullptr;
 		memory_requirements replay_req = get_trackedbuffer_memory_requirements(vulkan.device, tracked);
+		wrap_vkGetDeviceProcAddr = get_device_proc_addr;
 		assert(replay_req.requirements.alignment == raw_req.alignment);
+		assert(replay_req.requirements.size == raw_req.size);
+		assert(replay_req.requirements.memoryTypeBits == raw_req.memoryTypeBits);
 
 		trace_alignments[index] = traced_req.alignment;
 		buffer_indices.push_back(index);
 		test_marker_mention(vulkan, std::to_string(i) + " : testing alignment " + std::to_string(raw_req.alignment), VK_OBJECT_TYPE_BUFFER, (uint64_t)buffer);
 		trace_vkDestroyBuffer(vulkan.device, buffer, nullptr);
 	}
+
+	VkImageCreateInfo image_info = { VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO, nullptr };
+	image_info.imageType = VK_IMAGE_TYPE_2D;
+	image_info.format = VK_FORMAT_R8G8B8A8_UNORM;
+	image_info.extent = { 16, 16, 1 };
+	image_info.mipLevels = 1;
+	image_info.arrayLayers = 1;
+	image_info.samples = VK_SAMPLE_COUNT_1_BIT;
+	image_info.tiling = VK_IMAGE_TILING_OPTIMAL;
+	image_info.usage = VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+	image_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+	image_info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+	VkImage image = VK_NULL_HANDLE;
+	result = trace_vkCreateImage(vulkan.device, &image_info, nullptr, &image);
+	check(result);
+	VkMemoryRequirements raw_image_req = {};
+	wrap_vkGetImageMemoryRequirements(vulkan.device, image, &raw_image_req);
+	const uint32_t image_index = trace_vkGetDeviceTracingObjectPropertyTRACETOOLTEST(vulkan.device, VK_OBJECT_TYPE_IMAGE, (uint64_t)image, VK_TRACING_OBJECT_PROPERTY_INDEX_TRACETOOLTEST);
+	trackedimage tracked_image = make_trackedimage(image_info, image_index);
+	PFN_vkGetDeviceProcAddr get_device_proc_addr = wrap_vkGetDeviceProcAddr;
+	wrap_vkGetDeviceProcAddr = nullptr;
+	memory_requirements replay_image_req = get_trackedimage_memory_requirements(vulkan.device, tracked_image);
+	wrap_vkGetDeviceProcAddr = get_device_proc_addr;
+	assert(replay_image_req.requirements.alignment == raw_image_req.alignment);
+	assert(replay_image_req.requirements.size == raw_image_req.size);
+	assert(replay_image_req.requirements.memoryTypeBits == raw_image_req.memoryTypeBits);
+	trace_vkDestroyImage(vulkan.device, image, nullptr);
 	test_done(vulkan);
 }
 
