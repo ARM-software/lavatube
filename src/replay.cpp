@@ -37,6 +37,7 @@
 #include "aftermath.h"
 #include "replay_instrumentation.h"
 #include "system_log.h"
+#include "replay_entry.h"
 
 static lava_reader replayer;
 static std::atomic<bool> done_var { false };
@@ -513,7 +514,11 @@ void usage()
 	printf("-C/--cpu               Use a CPU software rasterizer as your GPU, fails if not available\n");
 	printf("-V/--validate          Enable validation layers\n");
 	printf("-f/--frames start end  Select a measurement frame range\n");
-	printf("-w/--wsi wsi           Use the given windowing system [xcb, headless, none]\n");
+#ifdef VK_USE_PLATFORM_ANDROID_KHR
+	printf("-w/--wsi wsi           Use the given windowing system [android, headless, none]\n");
+#else
+	printf("-w/--wsi wsi           Use the given windowing system [xcb, wayland, headless, none]\n");
+#endif
 	printf("-i/--info              Output information about the trace file and exit (affected by debug level)\n");
 	printf("-p/--preload size      The size of our readahead buffer and amount of data to preload before starting replay (default %d)\n", (int)p__preload);
 	printf("-a/--allow-stalls      Allow stalls if we run out of input data from our readahead thread while in measurement frame range\n");
@@ -655,6 +660,17 @@ static void cli_cancel_pending_requests()
 	replayer.cli_params_ready.notify_all();
 }
 
+void lava_replay_request_stop()
+{
+	service_stop_requested.store(true, std::memory_order_release);
+	cli_cancel_pending_requests();
+	replayer.cli_running.store(true, std::memory_order_release);
+	replayer.cli_running.notify_all();
+	replayer.request_stop();
+	done_var.store(true, std::memory_order_release);
+	done_var.notify_all();
+}
+
 static std::string service_command_response(service_client_state* state, const std::vector<std::string>& command, off_t& log_cursor_commit, off_t& system_log_cursor_commit)
 {
 	std::string response;
@@ -696,13 +712,7 @@ static std::string service_command_response(service_client_state* state, const s
 	}
 	else if (command.size() == 1 && command[0] == "stop")
 	{
-		service_stop_requested.store(true, std::memory_order_release);
-		cli_cancel_pending_requests();
-		replayer.cli_running.store(true, std::memory_order_release);
-		replayer.cli_running.notify_all();
-		replayer.request_stop();
-		done_var.store(true, std::memory_order_release);
-		done_var.notify_all();
+		lava_replay_request_stop();
 		response = "OK\n";
 	}
 	else if (command.size() == 2 && command[0] == "log" && command[1] == "update")
@@ -1349,7 +1359,7 @@ static void cleanup_xcb_wsi_objects()
 	}
 }
 
-int main(int argc, char **argv)
+int lava_replay_main(int argc, char **argv)
 {
 	int start = 0;
 	int end = -1;
@@ -1538,7 +1548,11 @@ int main(int argc, char **argv)
 			{
 				p__noscreen = 1;
 			}
-			else if (wsi != "xcb" && wsi != "wayland" && wsi != "headless")
+			else if (wsi != "xcb" && wsi != "wayland" && wsi != "headless"
+#ifdef VK_USE_PLATFORM_ANDROID_KHR
+				&& wsi != "android"
+#endif
+			)
 			{
 				DIE("Non-supported window system: %s", wsi.c_str());
 			}
@@ -1601,7 +1615,11 @@ int main(int argc, char **argv)
 
 	if (service)
 	{
+#ifdef __ANDROID__
+		FILE* service_log = fopen("lava-replay-service.log", "w+");
+#else
 		FILE* service_log = tmpfile();
+#endif
 		if (!service_log) DIE("Failed to create replay service log: %s", strerror(errno));
 		p__debug_destination = service_log;
 		service_state.log_session = service_log_session_id();

@@ -631,7 +631,7 @@ void lava_reader::self_test() const
 	}
 }
 
-#if defined(__linux__) && defined(STATX_BTIME)
+#if defined(__linux__) && !defined(__ANDROID__) && defined(STATX_BTIME)
 static std::string trace_file_timestamp(int64_t seconds, uint32_t nanoseconds)
 {
 	const time_t timestamp = (time_t)seconds;
@@ -659,7 +659,7 @@ void lava_reader::collect_trace_file_info(const std::string& path)
 	mTraceFileSize = (uint64_t)status.st_size;
 	mTraceFileCreationTimestamp.clear();
 
-#if defined(__linux__) && defined(STATX_BTIME)
+#if defined(__linux__) && !defined(__ANDROID__) && defined(STATX_BTIME)
 	struct statx extended_status = {};
 	if (statx(AT_FDCWD, path.c_str(), AT_STATX_SYNC_AS_STAT, STATX_BTIME, &extended_status) == 0
 		&& (extended_status.stx_mask & STATX_BTIME) != 0)

@@ -619,7 +619,20 @@ add_lavatube_test(write_test_5 COMMAND write5)
 
 # --- lava-replay ---
 
-add_executable(lava-replay src/replay.cpp src/replay_diagnostics.cpp src/replay_diagnostics.h src/trace_metadata.cpp src/trace_metadata.h src/system_log.cpp src/system_log.h src/aftermath.cpp src/aftermath.h)
+set(LAVA_REPLAY_SOURCES
+	src/replay.cpp
+	src/replay_entry.h
+	src/replay_diagnostics.cpp
+	src/replay_diagnostics.h
+	src/trace_metadata.cpp
+	src/trace_metadata.h
+	src/system_log.cpp
+	src/system_log.h
+	src/aftermath.cpp
+	src/aftermath.h
+)
+
+add_executable(lava-replay src/replay_main.cpp ${LAVA_REPLAY_SOURCES})
 target_include_directories(lava-replay ${COMMON_INCLUDE})
 target_link_libraries(lava-replay ${COMMON_LIBRARIES} lavatube)
 target_compile_options(lava-replay PRIVATE ${COMMON_FLAGS})
@@ -647,6 +660,32 @@ else()
 	message(STATUS "Nsight Aftermath disabled; set NSIGHT_AFTERMATH_SDK_ROOT to enable it")
 endif()
 add_dependencies(lava-replay sync_generated)
+
+add_executable(android_replay_args_test tests/android_replay_args.cpp src/android_replay_args.cpp src/android_replay_args.h)
+target_include_directories(android_replay_args_test PRIVATE ${SRC_ROOT}/src)
+target_compile_options(android_replay_args_test PRIVATE ${COMMON_FLAGS})
+add_lavatube_test(android_replay_args_test COMMAND android_replay_args_test)
+add_test(NAME android_replay_launcher_test COMMAND ${PYTHON_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tests/lava_replay_android.py)
+
+if(ANDROID)
+	set(ANDROID_NATIVE_APP_GLUE_DIR "${ANDROID_NDK}/sources/android/native_app_glue")
+	add_library(lavatube_native_app_glue STATIC "${ANDROID_NATIVE_APP_GLUE_DIR}/android_native_app_glue.c")
+	target_include_directories(lavatube_native_app_glue PUBLIC "${ANDROID_NATIVE_APP_GLUE_DIR}")
+	set_target_properties(lavatube_native_app_glue PROPERTIES POSITION_INDEPENDENT_CODE ON)
+
+	add_library(lava-replay-android SHARED
+		src/replay_android.cpp
+		src/android_replay_args.cpp
+		src/android_replay_args.h
+		${LAVA_REPLAY_SOURCES}
+	)
+	target_include_directories(lava-replay-android ${COMMON_INCLUDE} PRIVATE "${ANDROID_NATIVE_APP_GLUE_DIR}")
+	target_link_libraries(lava-replay-android ${COMMON_LIBRARIES} lavatube lavatube_native_app_glue)
+	target_compile_options(lava-replay-android PRIVATE ${COMMON_FLAGS})
+	target_link_options(lava-replay-android PRIVATE "-uANativeActivity_onCreate" "-Wl,-z,max-page-size=16384")
+	set_target_properties(lava-replay-android PROPERTIES OUTPUT_NAME lava-replay)
+	add_dependencies(lava-replay-android sync_generated)
+endif()
 add_lavatube_test(replayer_info COMMAND lava-replay -i tracing_2.api)
 set_tests_properties(replayer_info PROPERTIES FIXTURES_REQUIRED tracing_2)
 add_lavatube_test(replayer_vulkan_demo COMMAND lava-replay -B -w none ${PROJECT_SOURCE_DIR}/traces/demo_computeraytracing.api)
@@ -1683,6 +1722,14 @@ markings_test(descriptor_buffer_double_copy ${CMAKE_BINARY_DIR}/vulkan_descripto
 if (ANDROID)
 	add_test(NAME android_emulator_trace COMMAND ${CMAKE_SOURCE_DIR}/tests/android_emulator_trace.sh ${CMAKE_BINARY_DIR}/libVkLayer_lavatube.so $<TARGET_FILE:lava-replay> ${CMAKE_SOURCE_DIR}/VkLayer_lavatube.json)
 	set_tests_properties(android_emulator_trace PROPERTIES SKIP_RETURN_CODE 77 FIXTURES_REQUIRED EmulatorFixture)
+	add_lavatube_test(android_replay_apk_smoke
+		COMMAND ${CMAKE_SOURCE_DIR}/cmake/run_android_replay_test.sh
+			${CMAKE_SOURCE_DIR}/scripts/lava-replay-android.py run
+			--serial emulator-5554
+			--output-dir /tmp/lavatube-android-replay-smoke
+			${CMAKE_BINARY_DIR}/tracing_headless2.api -- -B -w none)
+	set_property(TEST android_replay_apk_smoke APPEND PROPERTY FIXTURES_REQUIRED tracing_headless2)
+	set_tests_properties(android_replay_apk_smoke PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 300 RESOURCE_LOCK android_emulator)
 endif()
 
 # -- cleanup --

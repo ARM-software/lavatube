@@ -37,7 +37,7 @@ for ABI in "${ABIS[@]}"; do
         -DANDROID_PLATFORM="$PLATFORM" \
         -DNO_XCB=ON
 
-    make -j$(nproc)
+    make -j6
 
     # Proactively start the emulator for x86 builds to avoid CTest discovery timeouts
     if [[ "$ABI" =~ ^x86 ]]; then

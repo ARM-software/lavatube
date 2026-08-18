@@ -1,0 +1,24 @@
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        classpath 'com.android.tools.build:gradle:8.12.3'
+    }
+}
+
+allprojects {
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+
+ext {
+    abiFilters = [findProperty("lavatubeAbi") ?: "arm64-v8a"]
+    minSdkVersion = 29
+    targetSdkVersion = 36
+    compileSdkVersion = 36
+    ndkVersion = findProperty("lavatubeNdkVersion")
+}

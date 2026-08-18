@@ -1,0 +1,47 @@
+apply plugin: 'com.android.application'
+
+android {
+    namespace "org.arm.lavatube.replay"
+    compileSdkVersion rootProject.ext.compileSdkVersion
+
+    if (rootProject.ext.ndkVersion != null) {
+        ndkVersion rootProject.ext.ndkVersion
+    }
+
+    defaultConfig {
+        applicationId "org.arm.lavatube.replay"
+        minSdkVersion rootProject.ext.minSdkVersion
+        targetSdkVersion rootProject.ext.targetSdkVersion
+        versionCode 1
+        versionName "1.0"
+
+        ndk {
+            abiFilters(*rootProject.ext.abiFilters)
+        }
+
+        externalNativeBuild {
+            cmake {
+                targets "lava-replay-android"
+                arguments "-DANDROID_STL=c++_shared",
+                          "-DANDROID_TOOLCHAIN=clang",
+                          "-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON",
+                          "-DNO_XCB=ON",
+                          "-DNO_TRACETOOLTESTS=ON"
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            signingConfig signingConfigs.debug
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path file("../../CMakeLists.txt")
+        }
+    }
+}
