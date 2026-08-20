@@ -157,8 +157,10 @@ size_t random_access_file_reader::find_chunk(uint64_t position) const
 	}
 	assert(first > 0);
 	const size_t chunk_index = first - 1;
+#ifdef DEBUG
 	const random_access_chunk_info& info = mChunks[chunk_index];
 	assert(position < info.uncompressed_offset + info.uncompressed_size);
+#endif
 	return chunk_index;
 }
 

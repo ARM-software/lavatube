@@ -180,7 +180,8 @@ static void execute_null()
 		.descriptor_buffer_payloads = descriptor_buffer_payloads,
 	};
 
-	assert(execute_commands(data));
+	const bool executed = execute_commands(data);
+	assert(executed);
 	assert(cmdbuffer_data.commands.empty());
 	assert(data.stats.commands == 0);
 	assert(data.stats.execution_commands == 0);
@@ -287,13 +288,15 @@ static void execute_copy_buffer()
 		.descriptor_buffer_payloads = descriptor_buffer_payloads,
 	};
 
-	assert(execute_commands(data));
+	const bool executed = execute_commands(data);
+	assert(executed);
 	assert(std::memcmp(reinterpret_cast<char*>(dst.memory) + dst_offset, payload, sizeof(payload)) == 0);
 	assert(data.stats.commands == 1);
 	assert(data.stats.execution_commands == 0);
 
 	change_source copied_source;
-	assert(VkBuffer_index[1].source.try_get_source(dst_offset, copy_size, copied_source));
+	const bool found_source = VkBuffer_index[1].source.try_get_source(dst_offset, copy_size, copied_source);
+	assert(found_source);
 	assert(same_source(copied_source, source));
 	assert(global_output_rewrite_queue.empty());
 	assert(descriptor_buffer_payloads.empty());
@@ -459,7 +462,8 @@ static void execute_compute_shader()
 {
 	compute_shader_fixture fixture;
 
-	assert(execute_commands(fixture.data));
+	const bool executed = execute_commands(fixture.data);
+	assert(executed);
 	assert(fixture.output_value() == compute_shader_expected_output);
 	assert(fixture.stage().calls == 1);
 	assert(fixture.data.stats.commands == 2);
@@ -582,7 +586,8 @@ static void execute_compute_shader_mutable_descriptor_buffer()
 	add_descriptor_buffer_commands(fixture.cmdbuffer_data, descriptor_buffer_address, pipeline_layout);
 	add_dispatch(fixture.cmdbuffer_data, make_source(12));
 
-	assert(execute_commands(fixture.data));
+	const bool executed = execute_commands(fixture.data);
+	assert(executed);
 	assert(fixture.output_value() == compute_shader_expected_output);
 	assert(fixture.stage().calls == 1);
 	assert(fixture.data.stats.commands == 4);
@@ -646,7 +651,8 @@ static void execute_compute_shader_descriptor_buffer_array()
 	fixture.cmdbuffer_data.commands.clear();
 	add_descriptor_buffer_commands(fixture.cmdbuffer_data, descriptor_buffer_address, pipeline_layout);
 
-	assert(execute_commands(fixture.data));
+	const bool executed = execute_commands(fixture.data);
+	assert(executed);
 	const auto& binding = fixture.data.descriptor_sets.at(VK_PIPELINE_BIND_POINT_COMPUTE).at(0).at(0);
 	assert(binding.descriptor_type == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
 	assert(!binding.descriptor_buffer_backed);
@@ -712,7 +718,8 @@ static void execute_compute_shader_mixed_mutable_descriptor_buffer_array()
 	fixture.cmdbuffer_data.commands.clear();
 	add_descriptor_buffer_commands(fixture.cmdbuffer_data, descriptor_buffer_address, pipeline_layout);
 
-	assert(execute_commands(fixture.data));
+	const bool executed = execute_commands(fixture.data);
+	assert(executed);
 	const auto& binding = fixture.data.descriptor_sets.at(VK_PIPELINE_BIND_POINT_COMPUTE).at(0).at(0);
 	assert(!binding.descriptor_buffer_backed);
 	assert(binding.buffers.size() == 2);
@@ -782,7 +789,8 @@ static void execute_compute_shader_mutable_descriptor_buffer_array_boundary()
 	fixture.cmdbuffer_data.commands.clear();
 	add_descriptor_buffer_commands(fixture.cmdbuffer_data, descriptor_buffer_address, pipeline_layout);
 
-	assert(execute_commands(fixture.data));
+	const bool executed = execute_commands(fixture.data);
+	assert(executed);
 	const auto& binding = fixture.data.descriptor_sets.at(VK_PIPELINE_BIND_POINT_COMPUTE).at(0).at(0);
 	assert(!binding.descriptor_buffer_backed);
 	assert(binding.buffers.size() == 2);
@@ -841,7 +849,8 @@ static void execute_compute_shader_descriptor_buffer_array_fallback()
 	fixture.cmdbuffer_data.commands.clear();
 	add_descriptor_buffer_commands(fixture.cmdbuffer_data, descriptor_buffer_address, pipeline_layout);
 
-	assert(execute_commands(fixture.data));
+	const bool executed = execute_commands(fixture.data);
+	assert(executed);
 	const auto& binding = fixture.data.descriptor_sets.at(VK_PIPELINE_BIND_POINT_COMPUTE).at(0).at(0);
 	assert(binding.descriptor_buffer_backed);
 	assert(fixture.descriptor_buffer_payloads.size() == 1);
@@ -906,7 +915,8 @@ static void execute_compute_shader_push_descriptors()
 	}
 	fixture.cmdbuffer_data.commands.insert(++fixture.cmdbuffer_data.commands.begin(), graphics_push);
 
-	assert(execute_commands(fixture.data));
+	const bool executed = execute_commands(fixture.data);
+	assert(executed);
 	assert(fixture.output_value() == compute_shader_expected_output);
 	assert(fixture.stage().calls == 1);
 	assert(fixture.data.stats.commands == 4);
@@ -971,7 +981,8 @@ static void execute_compute_shader_copy_provenance()
 	set_storage_buffer_binding(data, 0, 0, &VkBuffer_index[0], 0, buffer_size);
 	set_storage_buffer_binding(data, 0, 1, &VkBuffer_index[1], 0, buffer_size);
 
-	assert(execute_commands(data));
+	const bool executed = execute_commands(data);
+	assert(executed);
 	assert(load_u32(output, 0) == first_value);
 	assert(load_u32(output, sizeof(uint32_t)) == second_value);
 	assert(VkPipeline_index[0].shader_stages[0].calls == 1);
@@ -979,7 +990,8 @@ static void execute_compute_shader_copy_provenance()
 	assert(data.stats.execution_commands == 1);
 
 	change_source copied_source;
-	assert(VkBuffer_index[1].source.try_get_source(0, buffer_size, copied_source));
+	const bool found_source = VkBuffer_index[1].source.try_get_source(0, buffer_size, copied_source);
+	assert(found_source);
 	assert(same_source(copied_source, source));
 	assert(global_output_rewrite_queue.empty());
 	assert(descriptor_buffer_payloads.empty());
@@ -1055,14 +1067,16 @@ static void execute_compute_shader_bda_unbound_input()
 	set_storage_buffer_binding(data, 0, 0, &VkBuffer_index[1], 0, output_buffer_size);
 
 	assert(!VkBuffer_index[0].is_state(trackedobject::states::bound));
-	assert(execute_commands(data));
+	const bool executed = execute_commands(data);
+	assert(executed);
 	assert(load_u32(output_buffer, 0) == input_value);
 	assert(VkPipeline_index[0].shader_stages[0].calls == 1);
 	assert(data.stats.commands == 3);
 	assert(data.stats.execution_commands == 1);
 
 	change_source copied_source;
-	assert(VkBuffer_index[1].source.try_get_source(0, output_buffer_size, copied_source));
+	const bool found_source = VkBuffer_index[1].source.try_get_source(0, output_buffer_size, copied_source);
+	assert(found_source);
 	assert(same_source(copied_source, source));
 	assert(global_output_rewrite_queue.size() == 1);
 	const address_rewrite& rewrite = global_output_rewrite_queue.front();
@@ -1165,7 +1179,8 @@ static void execute_compute_shader_bda_composite_array()
 	set_storage_buffer_binding(data, 0, 0, &VkBuffer_index[0], 0, nodes_size);
 	set_storage_buffer_binding(data, 0, 1, &VkBuffer_index[output_index], 0, sizeof(uint32_t));
 
-	assert(execute_commands(data));
+	const bool executed = execute_commands(data);
+	assert(executed);
 	assert(load_u32(output, 0) == 3);
 	assert(VkPipeline_index[0].shader_stages[0].calls == 1);
 	assert(global_output_rewrite_queue.size() == 1);
@@ -1275,7 +1290,8 @@ static void execute_compute_shader_bda_copied_address_chain()
 		.descriptor_buffer_payloads = descriptor_buffer_payloads,
 	};
 
-	assert(execute_commands(data));
+	const bool executed = execute_commands(data);
+	assert(executed);
 	VkDeviceAddress copied_value = 0;
 	std::memcpy(&copied_value, copied_address.memory, sizeof(copied_value));
 	assert(copied_value == target_address);
@@ -1286,7 +1302,8 @@ static void execute_compute_shader_bda_copied_address_chain()
 	assert(data.stats.execution_commands == 2);
 
 	change_source copied_source;
-	assert(VkBuffer_index[1].source.try_get_source(0, address_buffer_size, copied_source));
+	const bool found_source = VkBuffer_index[1].source.try_get_source(0, address_buffer_size, copied_source);
+	assert(found_source);
 	assert(same_source(copied_source, update_source));
 	assert(global_output_rewrite_queue.size() == 1);
 	const address_rewrite& rewrite = global_output_rewrite_queue.front();
@@ -1390,7 +1407,8 @@ static void execute_compute_shader_bda_two_lane_output_provenance()
 		.descriptor_buffer_payloads = descriptor_buffer_payloads,
 	};
 
-	assert(execute_commands(data));
+	const bool executed = execute_commands(data);
+	assert(executed);
 	assert(load_u32(output_buffer, 0) == color0_lo);
 	assert(load_u32(output_buffer, sizeof(uint32_t)) == color0_hi);
 	assert(load_u32(output_buffer, sizeof(uint32_t) * 2) == color1_lo);
@@ -1401,8 +1419,10 @@ static void execute_compute_shader_bda_two_lane_output_provenance()
 
 	change_source output_source0;
 	change_source output_source1;
-	assert(VkBuffer_index[2].source.try_get_source(0, sizeof(VkDeviceAddress), output_source0));
-	assert(VkBuffer_index[2].source.try_get_source(sizeof(VkDeviceAddress), sizeof(VkDeviceAddress), output_source1));
+	const bool found_output_source0 = VkBuffer_index[2].source.try_get_source(0, sizeof(VkDeviceAddress), output_source0);
+	const bool found_output_source1 = VkBuffer_index[2].source.try_get_source(sizeof(VkDeviceAddress), sizeof(VkDeviceAddress), output_source1);
+	assert(found_output_source0);
+	assert(found_output_source1);
 	assert(same_source(output_source0, color_source));
 	assert(same_source(output_source1, color_source));
 	assert(global_output_rewrite_queue.size() == 1);
@@ -1517,7 +1537,8 @@ static void execute_compute_shader_bda_interleave_copied_address_provenance()
 	set_storage_buffer_binding(interleave_data, 0, 1, &VkBuffer_index[1], 0, color_buffer_size);
 	set_storage_buffer_binding(interleave_data, 0, 2, &VkBuffer_index[2], 0, interleave_buffer_size);
 
-	assert(execute_commands(interleave_data));
+	const bool interleave_executed = execute_commands(interleave_data);
+	assert(interleave_executed);
 	assert(load_u32(interleave_buffer, 0) == color0_lo);
 	assert(load_u32(interleave_buffer, sizeof(uint32_t)) == color0_hi);
 	assert(load_u32(interleave_buffer, interleave_address_offset) == (uint32_t)address0);
@@ -1534,10 +1555,14 @@ static void execute_compute_shader_bda_interleave_copied_address_provenance()
 	change_source interleave_color_source1;
 	change_source interleave_address_source0;
 	change_source interleave_address_source1;
-	assert(VkBuffer_index[2].source.try_get_source(interleave_color_offset, sizeof(VkDeviceAddress), interleave_color_source0));
-	assert(VkBuffer_index[2].source.try_get_source(interleave_entry_size + interleave_color_offset, sizeof(VkDeviceAddress), interleave_color_source1));
-	assert(VkBuffer_index[2].source.try_get_source(interleave_address_offset, sizeof(VkDeviceAddress), interleave_address_source0));
-	assert(VkBuffer_index[2].source.try_get_source(interleave_entry_size + interleave_address_offset, sizeof(VkDeviceAddress), interleave_address_source1));
+	const bool found_interleave_color_source0 = VkBuffer_index[2].source.try_get_source(interleave_color_offset, sizeof(VkDeviceAddress), interleave_color_source0);
+	const bool found_interleave_color_source1 = VkBuffer_index[2].source.try_get_source(interleave_entry_size + interleave_color_offset, sizeof(VkDeviceAddress), interleave_color_source1);
+	const bool found_interleave_address_source0 = VkBuffer_index[2].source.try_get_source(interleave_address_offset, sizeof(VkDeviceAddress), interleave_address_source0);
+	const bool found_interleave_address_source1 = VkBuffer_index[2].source.try_get_source(interleave_entry_size + interleave_address_offset, sizeof(VkDeviceAddress), interleave_address_source1);
+	assert(found_interleave_color_source0);
+	assert(found_interleave_color_source1);
+	assert(found_interleave_address_source0);
+	assert(found_interleave_address_source1);
 	assert(same_source(interleave_color_source0, color_source));
 	assert(same_source(interleave_color_source1, color_source));
 	assert(same_source(interleave_address_source0, address_source));
@@ -1559,7 +1584,8 @@ static void execute_compute_shader_bda_interleave_copied_address_provenance()
 	};
 	set_storage_buffer_binding(output_data, 0, 0, &VkBuffer_index[2], 0, interleave_buffer_size);
 
-	assert(execute_commands(output_data));
+	const bool output_executed = execute_commands(output_data);
+	assert(output_executed);
 	assert(load_u32(output_buffer, 0) == color0_lo);
 	assert(load_u32(output_buffer, sizeof(uint32_t)) == color0_hi);
 	assert(load_u32(output_buffer, sizeof(uint32_t) * 2) == color1_lo);
@@ -1570,8 +1596,10 @@ static void execute_compute_shader_bda_interleave_copied_address_provenance()
 
 	change_source output_source0;
 	change_source output_source1;
-	assert(VkBuffer_index[3].source.try_get_source(0, sizeof(VkDeviceAddress), output_source0));
-	assert(VkBuffer_index[3].source.try_get_source(sizeof(VkDeviceAddress), sizeof(VkDeviceAddress), output_source1));
+	const bool found_output_source0 = VkBuffer_index[3].source.try_get_source(0, sizeof(VkDeviceAddress), output_source0);
+	const bool found_output_source1 = VkBuffer_index[3].source.try_get_source(sizeof(VkDeviceAddress), sizeof(VkDeviceAddress), output_source1);
+	assert(found_output_source0);
+	assert(found_output_source1);
 	assert(same_source(output_source0, color_source));
 	assert(same_source(output_source1, color_source));
 	assert(global_output_rewrite_queue.size() == 1);

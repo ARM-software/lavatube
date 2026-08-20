@@ -260,7 +260,11 @@ static void test_trace_remap_check_range(unsigned max)
 	assert(remapper.contains(9999) == false);
 	for (unsigned i = 1; i < max; i++) remapper.add(i, change_source{ 0, i * 4, 0, 0 });
 	for (unsigned i = 1; i < max; i++) assert((unsigned)remapper.at(i)->creation.frame == i * 4);
-	for (unsigned i = 1; i < max; i++) assert((unsigned)remapper.unset(i, change_source{ 0, i * 4, 0, 0 })->creation.frame == i * 4);
+	for (unsigned i = 1; i < max; i++)
+	{
+		our_trackable* entry = remapper.unset(i, change_source{ 0, i * 4, 0, 0 });
+		assert((unsigned)entry->creation.frame == i * 4);
+	}
 	for (unsigned i = 1; i < max; i++) assert(remapper.contains(i) == false);
 	remapper.clear();
 }

@@ -17,6 +17,9 @@
 #include "util.h"
 
 #pragma GCC diagnostic ignored "-Wunused-variable"
+#if (__clang_major__ > 12) || (!defined(__llvm__) && defined(__GNUC__))
+#pragma GCC diagnostic ignored "-Wunused-but-set-variable"
+#endif
 #pragma GCC diagnostic ignored "-Wunused-function"
 
 struct fake_service_state
@@ -32,17 +35,21 @@ static int make_fake_listener(int& port)
 	assert(fd != -1);
 
 	const int reuse = 1;
-	assert(setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse)) == 0);
+	int result = setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
+	assert(result == 0);
 
 	struct sockaddr_in addr = {};
 	addr.sin_family = AF_INET;
 	addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
 	addr.sin_port = 0;
-	assert(bind(fd, (struct sockaddr*)&addr, sizeof(addr)) == 0);
-	assert(listen(fd, 8) == 0);
+	result = bind(fd, (struct sockaddr*)&addr, sizeof(addr));
+	assert(result == 0);
+	result = listen(fd, 8);
+	assert(result == 0);
 
 	socklen_t len = sizeof(addr);
-	assert(getsockname(fd, (struct sockaddr*)&addr, &len) == 0);
+	result = getsockname(fd, (struct sockaddr*)&addr, &len);
+	assert(result == 0);
 	port = ntohs(addr.sin_port);
 	return fd;
 }
@@ -67,7 +74,8 @@ static void fake_service_thread(fake_service_state* state)
 		const std::string command = lava_tcp_receive_line(client_fd);
 		state->commands.push_back(command);
 		const std::string response = fake_response(command);
-		assert(lava_tcp_send_all(client_fd, response));
+		const bool sent = lava_tcp_send_all(client_fd, response);
+		assert(sent);
 		close(client_fd);
 	}
 	close(state->listen_fd);
@@ -105,7 +113,8 @@ static std::string make_trace()
 	write_file(directory + "/metadata.json", "{ \"threads\": 1, \"global_frames\": 2 }\n");
 	write_file(directory + "/frames_0.json", "{ \"frames\": [ { \"global_frame\": 0, \"position\": 0 }, { \"global_frame\": 1, \"position\": 10 } ], \"uncompressed_size\": 20, \"thread_name\": \"main\" }\n");
 
-	assert(pack_directory(pack, directory, false));
+	const int packed = pack_directory(pack, directory, false);
+	assert(packed);
 	return pack;
 }
 
@@ -125,7 +134,8 @@ static void test_validate_and_tools()
 	const std::string pack = make_trace();
 	tui_trace_tools tools(pack);
 	std::string error;
-	assert(tools.validate(error));
+	const bool valid = tools.validate(error);
+	assert(valid);
 
 	tui_tool_result result = tools.execute("list_objects_created", "{}");
 	assert(result.ok);
@@ -169,7 +179,8 @@ static void test_service_tools()
 	tui_trace_tools tools(options);
 
 	std::string error;
-	assert(tools.validate(error));
+	const bool valid = tools.validate(error);
+	assert(valid);
 
 	tui_tool_result result = tools.execute("list_objects_created", "{}");
 	assert(result.ok);

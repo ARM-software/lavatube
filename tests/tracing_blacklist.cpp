@@ -58,7 +58,8 @@ int main()
 	rejected_instance_info.enabledExtensionCount = 1;
 	rejected_instance_info.ppEnabledExtensionNames = &rejected_instance_extension;
 	VkInstance rejected_instance = VK_NULL_HANDLE;
-	assert(trace_vkCreateInstance(&rejected_instance_info, nullptr, &rejected_instance) == VK_ERROR_EXTENSION_NOT_PRESENT);
+	const VkResult instance_result = trace_vkCreateInstance(&rejected_instance_info, nullptr, &rejected_instance);
+	assert(instance_result == VK_ERROR_EXTENSION_NOT_PRESENT);
 	assert(rejected_instance == VK_NULL_HANDLE);
 
 	vulkan_req_t reqs;
@@ -71,7 +72,8 @@ int main()
 	rejected_device_info.enabledExtensionCount = 1;
 	rejected_device_info.ppEnabledExtensionNames = &rejected_device_extension;
 	VkDevice rejected_device = VK_NULL_HANDLE;
-	assert(trace_vkCreateDevice(vulkan.physical, &rejected_device_info, nullptr, &rejected_device) == VK_ERROR_EXTENSION_NOT_PRESENT);
+	const VkResult device_result = trace_vkCreateDevice(vulkan.physical, &rejected_device_info, nullptr, &rejected_device);
+	assert(device_result == VK_ERROR_EXTENSION_NOT_PRESENT);
 	assert(rejected_device == VK_NULL_HANDLE);
 
 	test_done(vulkan);

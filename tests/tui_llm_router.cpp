@@ -4,6 +4,8 @@
 
 #include "tui_llm_router.h"
 
+#pragma GCC diagnostic ignored "-Wunused-variable"
+
 static void test_defaults()
 {
 	const tui_llm_options options = tui_llm_default_options();
@@ -80,7 +82,8 @@ static void test_commands_and_switching()
 	tui_llm_router router(options);
 	assert(router.mode() == tui_llm_mode::cloud_model);
 	assert(router.active_options().model == "gpt-5.5");
-	assert(router.set_mode(tui_llm_mode::local_model, error));
+	const bool switched_to_local = router.set_mode(tui_llm_mode::local_model, error);
+	assert(switched_to_local);
 	assert(router.mode() == tui_llm_mode::local_model);
 	assert(router.active_options().model == "gemma4:latest");
 
@@ -88,7 +91,8 @@ static void test_commands_and_switching()
 	options.cloud.api_key = "cloud-key";
 	assert(tui_llm_resolve_options(options, error));
 	tui_llm_router cloud_only(options);
-	assert(!cloud_only.set_mode(tui_llm_mode::local_model, error));
+	const bool switched_cloud_only = cloud_only.set_mode(tui_llm_mode::local_model, error);
+	assert(!switched_cloud_only);
 	assert(cloud_only.mode() == tui_llm_mode::cloud_model);
 }
 

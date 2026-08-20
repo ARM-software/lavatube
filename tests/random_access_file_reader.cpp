@@ -14,6 +14,8 @@
 
 #include "tests/tests.h"
 
+#pragma GCC diagnostic ignored "-Wunused-variable"
+
 static std::vector<uint8_t> make_random_access_payload(size_t payload_size)
 {
 	std::vector<uint8_t> payload(payload_size);
@@ -66,7 +68,8 @@ static void test_direct_random_access(uint_fast8_t compression_algorithm)
 		reader.load_packet_checkpoints(legacy_frame_info);
 		assert(!reader.has_packet_checkpoints());
 		reader.seek(123);
-		assert(reader.seek_to_packet(1000) == 0);
+		const uint64_t packet = reader.seek_to_packet(1000);
+		assert(packet == 0);
 		assert(reader.position() == 0);
 		assert(reader.remaining() == payload.size());
 		assert(reader.compression_algorithm() == compression_algorithm);
@@ -89,7 +92,8 @@ static void test_direct_random_access(uint_fast8_t compression_algorithm)
 		assert(reader.decompression_count() == 1);
 
 		reader.seek(17);
-		assert(reader.read_uint8_t() == payload[17]);
+		const uint8_t value = reader.read_uint8_t();
+		assert(value == payload[17]);
 		assert(reader.decompression_count() == 2);
 
 		reader.seek(payload.size());
@@ -109,7 +113,8 @@ static void test_direct_random_access(uint_fast8_t compression_algorithm)
 
 		const uint64_t exact_boundary = reader.chunks().at(2).uncompressed_offset;
 		reader.seek(exact_boundary);
-		assert(reader.read_uint8_t() == payload[exact_boundary]);
+		const uint8_t value = reader.read_uint8_t();
+		assert(value == payload[exact_boundary]);
 		assert(reader.decompression_count() == 3);
 	}
 
@@ -129,7 +134,8 @@ static void test_packed_random_access()
 	const int mkdir_result = mkdir(directory.c_str(), 0777);
 	assert(mkdir_result == 0);
 	write_random_access_payload(filename, payload, LAVATUBE_COMPRESSION_LZ4, 128);
-	assert(pack_directory(pack, directory, true));
+	const int r = pack_directory(pack, directory, true);
+	assert(r);
 
 	{
 		random_access_file_reader reader(packed_open("thread_0.bin", pack));
@@ -139,7 +145,8 @@ static void test_packed_random_access()
 		reader.read_array(output.data(), output.size());
 		assert(std::equal(output.begin(), output.end(), payload.begin() + 1000));
 		reader.seek(3);
-		assert(reader.read_uint8_t() == payload[3]);
+		const unsigned v = reader.read_uint8_t();
+		assert(v == payload[3]);
 	}
 
 	unlink(pack.c_str());
@@ -150,7 +157,8 @@ static void copy_without_stream_header(const std::string& source, const std::str
 	const int source_fd = open(source.c_str(), O_RDONLY | default_file_flags);
 	assert(source_fd >= 0);
 	struct stat status;
-	assert(fstat(source_fd, &status) == 0);
+	int r = fstat(source_fd, &status);
+	assert(r == 0);
 	const size_t header_size = strlen("LAVABIN") + 32;
 	assert(status.st_size > static_cast<off_t>(header_size));
 	std::vector<char> contents(static_cast<size_t>(status.st_size) - header_size);
@@ -162,7 +170,8 @@ static void copy_without_stream_header(const std::string& source, const std::str
 		assert(result > 0);
 		consumed += result;
 	}
-	assert(close(source_fd) == 0);
+	r = close(source_fd);
+	assert(r == 0);
 
 	const int destination_fd = open(destination.c_str(), O_CREAT | O_TRUNC | O_WRONLY | default_file_flags, 0664);
 	assert(destination_fd >= 0);
@@ -174,7 +183,8 @@ static void copy_without_stream_header(const std::string& source, const std::str
 		assert(result > 0);
 		written += result;
 	}
-	assert(close(destination_fd) == 0);
+	r = close(destination_fd);
+	assert(r == 0);
 }
 
 static void test_legacy_headerless_density_stream()

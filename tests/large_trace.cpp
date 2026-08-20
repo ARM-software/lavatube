@@ -7,6 +7,8 @@
 #include "util.h"
 #include "write.h"
 
+#pragma GCC diagnostic ignored "-Wunused-variable"
+
 static uint32_t large_trace_payload_size(uint32_t packet, uint32_t chunk_size)
 {
 	if (packet % 31 == 0) return chunk_size * 3 + 17 + packet % 29;
@@ -90,14 +92,17 @@ int main()
 			else big_packet_count++;
 
 			assert(reader.position() == packet_positions.at(packet));
-			assert(reader.read_uint8_t() == PACKET_THREAD_BARRIER);
+			const uint8_t packet_type = reader.read_uint8_t();
+			assert(packet_type == PACKET_THREAD_BARRIER);
 			const uint64_t packet_end = packet_positions.at(packet) + reader.read_uint32_t();
 			if (packet_crosses_chunk_boundary(reader, packet_positions.at(packet), packet_end)) crossing_packet_count++;
 
-			assert(reader.read_uint8_t() == 0);
+			const uint8_t thread = reader.read_uint8_t();
+			assert(thread == 0);
 			for (uint32_t byte = 0; byte < payload_size; byte++)
 			{
-				assert(reader.read_uint8_t() == large_trace_payload_byte(packet, byte));
+				const uint8_t value = reader.read_uint8_t();
+				assert(value == large_trace_payload_byte(packet, byte));
 			}
 			assert(reader.position() == packet_end);
 		}
@@ -123,7 +128,8 @@ int main()
 			const packet_checkpoint& checkpoint = reader.packet_checkpoints().at(checkpoint_index);
 			assert(checkpoint.packet <= packet);
 			assert(checkpoint.position == packet_positions.at(checkpoint.packet));
-			assert(reader.seek_to_packet(packet) == checkpoint.packet);
+			const uint64_t found_packet = reader.seek_to_packet(packet);
+			assert(found_packet == checkpoint.packet);
 			assert(reader.position() == checkpoint.position);
 		}
 

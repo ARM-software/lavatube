@@ -80,12 +80,18 @@ void read_test_1()
 void read_test_2()
 {
 	file_reader t0("write_4_handle.bin", 0, 18, 18);
-	assert(t0.read_uint32_t() == 123);
-	assert(t0.read_int8_t() == 7);
-	assert(t0.read_uint32_t() == 70000);
-	assert(t0.read_uint32_t() == 321);
-	assert(t0.read_int8_t() == -1);
-	assert(t0.read_uint32_t() == 0);
+	const uint32_t v1 = t0.read_uint32_t();
+	const int8_t v2 = t0.read_int8_t();
+	const uint32_t v3 = t0.read_uint32_t();
+	const uint32_t v4 = t0.read_uint32_t();
+	const int8_t v5 = t0.read_int8_t();
+	const uint32_t v6 = t0.read_uint32_t();
+	assert(v1 == 123);
+	assert(v2 == 7);
+	assert(v3 == 70000);
+	assert(v4 == 321);
+	assert(v5 == -1);
+	assert(v6 == 0);
 }
 
 int main()

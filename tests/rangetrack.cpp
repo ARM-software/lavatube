@@ -7,6 +7,11 @@ static void assert_invalid(range r)
 	assert(!r.valid());
 }
 
+static void assert_equal(range actual, range expected)
+{
+	assert(actual == expected);
+}
+
 static void test_exposure()
 {
 	exposure r;
@@ -39,7 +44,7 @@ static void test_exposure()
 	r2.self_test();
 	assert(r.list().size() == 1);
 	assert(r.bytes() == 11);
-	assert((r.fetch(0, 10, false) == range{0, 10}));
+	assert_equal(r.fetch(0, 10, false), range{0, 10});
 	r.self_test();
 	assert(r.bytes() == 0);
 	assert(r.size() == 0);
@@ -53,7 +58,7 @@ static void test_exposure()
 	r.self_test();
 	assert(r.list().size() == 1);
 	assert(r.bytes() == 2);
-	assert((r.fetch(0, 10, false) == range{3, 4}));
+	assert_equal(r.fetch(0, 10, false), range{3, 4});
 	r.self_test();
 	assert(r.bytes() == 0);
 	assert(r.size() == 0);
@@ -67,7 +72,7 @@ static void test_exposure()
 	r.self_test();
 	assert(r.list().size() == 1);
 	assert(r.bytes() == 11);
-	assert((r.fetch(0, 10, true) == range{0, 10}));
+	assert_equal(r.fetch(0, 10, true), range{0, 10});
 	r.self_test();
 	r.add(5, 10);
 	r.self_test();
@@ -84,14 +89,14 @@ static void test_exposure()
 	r.add(3, 7);
 	r.self_test();
 	assert(r.list().size() == 1);
-	assert((r.fetch(5, 6, false) == range{5, 6})); // should result in two ranges of 3-4 and 7-7
+	assert_equal(r.fetch(5, 6, false), range{5, 6}); // should result in two ranges of 3-4 and 7-7
 	r.self_test();
 	assert(r.list().size() == 2);
 	assert(r.bytes() == 3);
-	assert((r.fetch(3, 7, true) == range{3,7}));
+	assert_equal(r.fetch(3, 7, true), range{3, 7});
 	r.self_test();
 	assert(r.list().size() == 2);
-	assert((r.fetch(3, 7, false) == range{3,7}));
+	assert_equal(r.fetch(3, 7, false), range{3, 7});
 	r.self_test();
 	assert(r.list().size() == 0);
 	r.clear();
@@ -153,18 +158,18 @@ static void test_single_byte_ranges()
 	assert(r.size() == 1);
 	assert(r.bytes() == 1);
 	assert((r.span() == range{0, 0}));
-	assert((r.fetch_os(0, 1, true) == range{0, 0}));
+	assert_equal(r.fetch_os(0, 1, true), range{0, 0});
 	assert(r.size() == 1);
-	assert((r.fetch_os(0, 1, false) == range{0, 0}));
+	assert_equal(r.fetch_os(0, 1, false), range{0, 0});
 	assert(r.size() == 0);
 	assert_invalid(r.fetch_os(0, 1, false));
 
 	r.add(5, 5);
 	assert(r.size() == 1);
 	assert(r.bytes() == 1);
-	assert((r.fetch(5, 5, true) == range{5, 5}));
+	assert_equal(r.fetch(5, 5, true), range{5, 5});
 	assert(r.size() == 1);
-	assert((r.fetch(5, 5, false) == range{5, 5}));
+	assert_equal(r.fetch(5, 5, false), range{5, 5});
 	assert(r.size() == 0);
 	assert_invalid(r.fetch(5, 5, false));
 }
@@ -174,14 +179,14 @@ static void test_partial_trim()
 	exposure r;
 
 	r.add(5, 10);
-	assert((r.fetch(0, 7, false) == range{5, 7}));
+	assert_equal(r.fetch(0, 7, false), range{5, 7});
 	assert(r.size() == 1);
 	assert((r.span() == range{8, 10}));
 	assert(r.bytes() == 3);
 
 	r.clear();
 	r.add(5, 10);
-	assert((r.fetch(7, 20, false) == range{7, 10}));
+	assert_equal(r.fetch(7, 20, false), range{7, 10});
 	assert(r.size() == 1);
 	assert((r.span() == range{5, 6}));
 	assert(r.bytes() == 2);
