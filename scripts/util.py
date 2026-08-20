@@ -2201,7 +2201,9 @@ def loadfunc(name, node, target, header):
 	elif retval == 'VkDeviceSize': z.do('cb_context.result.size = retval;')
 	elif retval == 'PFN_vkVoidFunction': z.do('cb_context.result.address = retval;')
 	else: assert False, 'Unhandled callback result type %s from %s' % (retval, name)
+	z.do('if (reader.parent->simulate && !%s_callbacks.empty()) sync_mutex.lock();' % name)
 	z.do('for (auto* c : %s_callbacks) c(%s);' % (name, 'cb_context, ' + ', '.join(call_list)))
+	z.do('if (reader.parent->simulate && !%s_callbacks.empty()) sync_mutex.unlock();' % name)
 	z.do('if (reader.parent->print_packets && print_params_requested(cb_context)) print_params_publish(cb_context, json_params_%s(%s));' % (name, 'cb_context, ' + ', '.join(call_list) if call_list else 'cb_context'))
 	if name == 'vkQueuePresentKHR':
 		z.do('if (stop_after_present) // if it returns true, then we have hit the end of our global frame range, so terminate everything')

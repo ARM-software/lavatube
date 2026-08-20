@@ -1179,7 +1179,6 @@ static void note_descriptor_payload(callback_context& cb, VkDevice device, const
 		payload.buffer_range = address_info->range;
 		payload.buffer_format = address_info->format;
 	}
-	lava::lock_guard lock(sync_mutex);
 	cb.reader.parent->pending_descriptor_rewrites.push_back(std::move(payload));
 }
 

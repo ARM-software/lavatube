@@ -18,7 +18,6 @@ static bool setup_execute_commands(lava_file_reader& reader, const trackeddevice
 	assert(reader.parent->simulate);
 	assert(!reader.write_output && reader.parent->pass == 0);
 	const uint32_t cmdbuffer_index = index_to_VkCommandBuffer.index(commandBuffer);
-	lava::lock_guard lock(sync_mutex);
 	command_execution_data data {
 		.device_data = device_data,
 		.cmdbuffer_data = VkCommandBuffer_index.at(cmdbuffer_index),
@@ -696,6 +695,7 @@ void postprocess_vkCmdBuildAccelerationStructuresIndirectKHR(callback_context& c
 
 void postprocess_draw_command(callback_context& cb, uint32_t commandbuffer_index, trackedcmdbuffer& commandbuffer_data)
 {
+	lava::lock_guard lock(sync_mutex);
 	trackedcommand cmd { VKCMDDRAW };
 	cmd.source = cb.reader.current;
 	commandbuffer_data.commands.push_back(cmd);
@@ -703,6 +703,7 @@ void postprocess_draw_command(callback_context& cb, uint32_t commandbuffer_index
 
 void postprocess_raytracing_command(callback_context& cb, uint32_t commandbuffer_index, trackedcmdbuffer& commandbuffer_data)
 {
+	lava::lock_guard lock(sync_mutex);
 	if (commandbuffer_data.pending_raytracing_marker)
 	{
 		commandbuffer_data.pending_raytracing_marker = false;
@@ -716,6 +717,7 @@ void postprocess_raytracing_command(callback_context& cb, uint32_t commandbuffer
 
 void postprocess_compute_command(callback_context& cb, uint32_t commandbuffer_index, trackedcmdbuffer& commandbuffer_data)
 {
+	lava::lock_guard lock(sync_mutex);
 	if (!commandbuffer_data.commands.empty())
 	{
 		const auto& last = commandbuffer_data.commands.back();
