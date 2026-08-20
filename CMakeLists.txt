@@ -1019,10 +1019,9 @@ install(TARGETS lava-print lava-print-fast RUNTIME)
 # --- lava-cli ---
 
 if(NOT ANDROID)
-pkg_check_modules(RE2 REQUIRED IMPORTED_TARGET re2)
 add_executable(lava-cli src/cli.cpp)
 target_include_directories(lava-cli ${COMMON_INCLUDE})
-target_link_libraries(lava-cli ${COMMON_LIBRARIES} lavatube PkgConfig::RE2)
+target_link_libraries(lava-cli ${COMMON_LIBRARIES} lavatube re2)
 target_compile_options(lava-cli PRIVATE ${COMMON_FLAGS})
 add_dependencies(lava-cli sync_generated)
 install(TARGETS lava-cli RUNTIME)
