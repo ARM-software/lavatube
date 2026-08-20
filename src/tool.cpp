@@ -31,10 +31,18 @@ extern lava::mutex sync_mutex;
 static bool simulate = false;
 static bool verbose = false;
 static bool report_unused = false;
-static bool dump_shaders = false;
+static int dump_shader_index = -1;
 static bool dump_host_write_stats = false;
 static bool write_output = false;
-static int invokation_count = 0;
+struct simulation_summary
+{
+	uint64_t invokation_count = 0;
+	uint64_t total_run_time_ns = 0;
+	uint64_t stage_invokation_count[32] = {};
+	uint64_t slowest_run_time_ns = 0;
+	uint32_t slowest_shader_module_index = CONTAINER_INVALID_INDEX;
+	VkShaderStageFlagBits slowest_stage = VK_SHADER_STAGE_FLAG_BITS_MAX_ENUM;
+};
 
 struct descriptor_output_marking_key
 {
@@ -1257,7 +1265,8 @@ void usage()
 	printf("-df/--debugfile FILE   Output debug output to the given file\n");
 	printf("-f/--frames start end  Select a frame range\n");
 	printf("-u/--unused            Find any found unused features and extensions in the trace file; remove them from the output file\n");
-	printf("-DS/--dump-shaders     Dump any shaders found to disk\n");
+	printf("-DS/--dump-shaders     Dump all shaders found to disk\n");
+	printf("-DSI/--dump-shader N   Dump shader module N to disk\n");
 	printf("-hw/--host-write-stats Dump host-side write tracking stats after replay\n");
 	printf("--skip-missing-input   Exit with code 77 if the input trace file does not exist\n");
 	printf("-s/--sandbox level     Set security sandbox level (from 1 to 3, with 3 the most strict, default %d)\n", (int)p__sandbox_level);
@@ -1521,10 +1530,10 @@ void postprocess_vkCreateShaderModule(callback_context& cb, VkDevice device, con
 
 	assert(pCreateInfo->sType == VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO);
 
-	if (dump_shaders)
+	if (dump_shader_index == -2 || dump_shader_index == count)
 	{
 		std::string filename = "shader_" + std::to_string(count) + ".spv";
-		FILE* fp = fopen(filename.c_str(), "w");
+		FILE* fp = fopen(filename.c_str(), "wb");
 		if (!fp) printf("Failed to open %s: %s\n", filename.c_str(), strerror(errno));
 		assert(fp);
 		int r = fwrite(pCreateInfo->pCode, pCreateInfo->codeSize, 1, fp);
@@ -1536,23 +1545,38 @@ void postprocess_vkCreateShaderModule(callback_context& cb, VkDevice device, con
 	count++;
 }
 
-void postprocess_vkDestroyDevice(callback_context& cb, VkDevice device, const VkAllocationCallbacks* pAllocator)
+static void add_stage_to_simulation_summary(simulation_summary& summary, const shader_stage& stage)
 {
-	uint32_t device_index = index_to_VkDevice.index(device);
-	const auto& device_data = VkDevice_index.at(device_index);
+	summary.invokation_count += stage.calls;
+	summary.total_run_time_ns += stage.total_run_time_ns;
+	for (uint32_t bit = 0; bit < 32; bit++)
+	{
+		if ((uint32_t)stage.stage == (1u << bit)) summary.stage_invokation_count[bit] += stage.calls;
+	}
+	if (stage.slowest_run_time_ns > summary.slowest_run_time_ns)
+	{
+		summary.slowest_run_time_ns = stage.slowest_run_time_ns;
+		summary.slowest_shader_module_index = stage.shader_module_index;
+		summary.slowest_stage = stage.stage;
+	}
+}
+
+static simulation_summary collect_simulation_summary()
+{
+	simulation_summary summary;
 	for (uint32_t i = 0; i < index_to_VkPipeline.size(); i++)
 	{
 		const auto& pipeline_data = VkPipeline_index.at(i);
 		for (const auto& stage : pipeline_data.shader_stages)
 		{
-			if (stage.device_index == device_data.index) invokation_count += stage.calls;
+			add_stage_to_simulation_summary(summary, stage);
 		}
 	}
 	for (uint32_t i = 0; i < index_to_VkShaderEXT.size(); i++)
 	{
-		const auto& shader_data = VkShaderEXT_index.at(i);
-		if (shader_data.stage.device_index == device_data.index) invokation_count += shader_data.stage.calls;
+		add_stage_to_simulation_summary(summary, VkShaderEXT_index.at(i).stage);
 	}
+	return summary;
 }
 
 // Main
@@ -1560,10 +1584,9 @@ void postprocess_vkDestroyDevice(callback_context& cb, VkDevice device, const Vk
 static void add_callbacks_for_first_round(bool enable_simulation, bool enable_submit_analysis)
 {
 #define CALLBACK(x) x ## _callbacks.push_back(postprocess_ ## x);
-	if (dump_shaders) CALLBACK(vkCreateShaderModule);
+	if (dump_shader_index != -1) CALLBACK(vkCreateShaderModule);
 	if (enable_simulation)
 	{
-		CALLBACK(vkDestroyDevice);
 		CALLBACK(vkSubmitDebugUtilsMessageEXT);
 		CALLBACK(vkCmdPushConstants);
 		CALLBACK(vkCmdPushConstants2KHR);
@@ -1634,6 +1657,7 @@ int main(int argc, char **argv)
 	std::string filename_output;
 	bool skip_missing_input = false;
 	bool simulate_requested = false;
+	simulation_summary simulation_stats;
 
 	if (p__sandbox_level >= 1) sandbox_level_one();
 
@@ -1662,7 +1686,12 @@ int main(int argc, char **argv)
 		}
 		else if (match(argv[i], "-DS", "--dump-shaders", remaining))
 		{
-			dump_shaders = true;
+			dump_shader_index = -2;
+		}
+		else if (match(argv[i], "-DSI", "--dump-shader", remaining))
+		{
+			dump_shader_index = get_int(argv[++i], remaining);
+			if (dump_shader_index < 0) DIE("Shader module index must be non-negative");
 		}
 		else if (match(argv[i], "-hw", "--host-write-stats", remaining))
 		{
@@ -1747,7 +1776,7 @@ int main(int argc, char **argv)
 		print_removed_feature_lists(device_removed_features_json);
 	}
 
-	const bool need_first_round = filename_output.empty() || simulate || dump_shaders || dump_host_write_stats;
+	const bool need_first_round = filename_output.empty() || simulate || dump_shader_index != -1 || dump_host_write_stats;
 
 	if (need_first_round)
 	{
@@ -1776,6 +1805,7 @@ int main(int argc, char **argv)
 		{
 			replayer.threads[i].join();
 		}
+		if (simulate) simulation_stats = collect_simulation_summary();
 
 		// Copy out the rewrite queue
 		sync_mutex.lock(); // threads are stopped here but let's avoid warnings
@@ -1913,7 +1943,19 @@ int main(int argc, char **argv)
 		replayer.finalize();
 	}
 
-	printf("%d shader invokations executed\n", invokation_count);
+	printf("%llu shader invokations executed in %.2fms\n", (unsigned long long)simulation_stats.invokation_count,
+		ns_to_ms(simulation_stats.total_run_time_ns));
+	for (uint32_t bit = 0; bit < 32; bit++)
+	{
+		if (simulation_stats.stage_invokation_count[bit] == 0) continue;
+		printf("  %s: %llu invokations\n", shader_stage_name((VkShaderStageFlagBits)(1u << bit)),
+			(unsigned long long)simulation_stats.stage_invokation_count[bit]);
+	}
+	if (simulation_stats.slowest_run_time_ns > 0)
+	{
+		printf("Slowest shader: shader_%u.spv (%s), %.2fms\n", simulation_stats.slowest_shader_module_index,
+			shader_stage_name(simulation_stats.slowest_stage), ns_to_ms(simulation_stats.slowest_run_time_ns));
+	}
 
 	close_debug_destination();
 	return 0;

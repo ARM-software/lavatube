@@ -467,6 +467,8 @@ struct shader_stage
 	uint32_t specialization_source_object_index = CONTAINER_NULL_VALUE;
 	uint32_t specialization_source_stage_index = CONTAINER_NULL_VALUE;
 	uint32_t calls = 0; // numbere of times this shader was called
+	uint64_t total_run_time_ns = 0;
+	uint64_t slowest_run_time_ns = 0;
 
 	void self_test() const // use with post-processing only
 	{

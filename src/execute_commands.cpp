@@ -555,7 +555,7 @@ static void collect_simulator_physical_address_markings(const std::vector<simula
 	}
 }
 
-static bool run_spirv(command_execution_data& data, const shader_stage& stage, const change_source& source,
+static bool run_spirv(command_execution_data& data, shader_stage& stage, const change_source& source,
 	VkPipelineBindPoint owner_bind_point, uint32_t owner_index, bool shader_object)
 {
 	SPIRVSimulator::SimulationData inputs;
@@ -751,6 +751,8 @@ static bool run_spirv(command_execution_data& data, const shader_stage& stage, c
 	const uint64_t simulator_run_start = gettime();
 	sim.Run();
 	const uint64_t simulator_run_time_ns = gettime() - simulator_run_start;
+	stage.total_run_time_ns += simulator_run_time_ns;
+	stage.slowest_run_time_ns = std::max(stage.slowest_run_time_ns, simulator_run_time_ns);
 	data.stats.total_spirv_run_time += simulator_run_time_ns;
 	data.stats.total_init_time += simulator_run_start - simulator_init_start;
 	if (simulator_run_time_ns > data.stats.slowest.run_time_ns)
