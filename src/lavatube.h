@@ -245,6 +245,8 @@ struct internal_buffer
 
 struct trackeddevice : trackable
 {
+	enum class device_fault_backend : uint8_t { none, ext, khr };
+
 	using trackable::trackable; // inherit constructor
 	struct command_pool_info
 	{
@@ -262,6 +264,8 @@ struct trackeddevice : trackable
 
 	std::unordered_set<std::string> requested_device_extensions; // from app to tool
 	std::unordered_set<std::string> enabled_device_extensions; // from replay tool to driver
+	device_fault_backend replay_device_fault_backend = device_fault_backend::none;
+	bool replay_device_fault_reported = false;
 	bool shader_instrumentation_enabled = false;
 	std::vector<VkShaderInstrumentationMetricDescriptionARM> shader_instrumentation_metrics;
 	std::unordered_map<uint32_t, command_pool_info> replay_command_pools;

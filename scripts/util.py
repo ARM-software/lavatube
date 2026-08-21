@@ -1689,6 +1689,9 @@ def load_add_tracking(name):
 				z.do('data.device = device;')
 			elif type == 'VkDevice':
 				z.do('data.physicalDevice = physicalDevice; // track parentage')
+				z.do('for (uint32_t i = 0; i < pCreateInfo->enabledExtensionCount; i++) data.enabled_device_extensions.insert(pCreateInfo->ppEnabledExtensionNames[i]);')
+				z.do('if (data.enabled_device_extensions.contains(VK_KHR_DEVICE_FAULT_EXTENSION_NAME)) data.replay_device_fault_backend = trackeddevice::device_fault_backend::khr;')
+				z.do('else if (data.enabled_device_extensions.contains(VK_EXT_DEVICE_FAULT_EXTENSION_NAME)) data.replay_device_fault_backend = trackeddevice::device_fault_backend::ext;')
 				z.do('data.shader_instrumentation_enabled = reader.parent->cli_shader_instrumentation_enabled.load(std::memory_order_acquire);')
 				z.do('const VkPhysicalDeviceInternallySynchronizedQueuesFeaturesKHR* pdisqf = (const VkPhysicalDeviceInternallySynchronizedQueuesFeaturesKHR*)find_extension(pCreateInfo, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_INTERNALLY_SYNCHRONIZED_QUEUES_FEATURES_KHR);')
 				z.do('data.internally_synchronized_queues = (pdisqf && pdisqf->internallySynchronizedQueues == VK_TRUE);')
@@ -2002,6 +2005,14 @@ def loadfunc(name, node, target, header):
 		z.brace_end()
 		z.do('check_retval(stored_retval, retval);')
 		z.brace_end()
+	elif name == "vkGetDeviceFaultReportsKHR":
+		z.do('VkResult stored_retval = static_cast<VkResult>(reader.read_uint32_t());')
+		z.do('VkResult retval = stored_retval;')
+		z.do('if (reader.is_replay()) retval = replay_vkGetDeviceFaultReportsKHR(device, timeout, pFaultCounts, pFaultInfo);')
+	elif name == "vkGetDeviceFaultDebugInfoKHR":
+		z.do('VkResult stored_retval = static_cast<VkResult>(reader.read_uint32_t());')
+		z.do('VkResult retval = stored_retval;')
+		z.do('if (reader.is_replay()) retval = replay_vkGetDeviceFaultDebugInfoKHR(device, pDebugInfo);')
 	elif name == "vkGetFenceStatus": # wait for success to restore original synchronization when call was originally successful
 		z.do('VkResult stored_retval = static_cast<VkResult>(reader.read_uint32_t());')
 		z.do('VkResult retval = stored_retval;')
@@ -2013,6 +2024,7 @@ def loadfunc(name, node, target, header):
 		z.do('if (reader.is_replay() && stored_retval == VK_SUCCESS) { timeout = UINT64_MAX; }')
 		z.do('else if (reader.is_replay() && stored_retval == VK_TIMEOUT) { timeout = 0; }')
 		z.do('if (reader.is_replay()) retval = wrap_vkWaitForFences(device, fenceCount, pFences, waitAll, timeout);')
+		z.do('if (reader.is_replay() && retval == VK_ERROR_DEVICE_LOST) replay_report_device_fault(device);')
 	elif name == "vkWaitSemaphores": # as above
 		z.do('VkResult stored_retval = static_cast<VkResult>(reader.read_uint32_t());')
 		z.do('VkResult retval = stored_retval;')
@@ -2125,6 +2137,10 @@ def loadfunc(name, node, target, header):
 				z.do('retval = wrap_%s(%s);' % (name, ', '.join(call_list)))
 
 			# comparison
+			if retval == 'VkResult' and any(param.type == 'VkDevice' and param.name == 'device' for param in params):
+				z.do('if (retval == VK_ERROR_DEVICE_LOST) replay_report_device_fault(device);')
+			elif retval == 'VkResult' and any(param.type == 'VkQueue' and param.name == 'queue' for param in params):
+				z.do('if (retval == VK_ERROR_DEVICE_LOST) replay_report_device_fault(queue_data.device);')
 			if retval == 'VkBool32':
 				z.do('assert(stored_retval == retval);')
 			elif retval == 'VkResult' and name != 'vkQueuePresentKHR':

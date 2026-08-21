@@ -318,6 +318,100 @@ static bool replay_device_extension_enabled(const VkDeviceCreateInfo* pCreateInf
 	return false;
 }
 
+static bool replay_physical_device_extension_supported(VkPhysicalDevice physical_device, const char* extension)
+{
+	uint32_t count = 0;
+	VkResult result = wrap_vkEnumerateDeviceExtensionProperties(physical_device, nullptr, &count, nullptr);
+	if (result != VK_SUCCESS) return false;
+	std::vector<VkExtensionProperties> properties(count);
+	result = wrap_vkEnumerateDeviceExtensionProperties(physical_device, nullptr, &count, properties.data());
+	if (result != VK_SUCCESS && result != VK_INCOMPLETE) return false;
+	for (uint32_t i = 0; i < count; i++)
+	{
+		if (strcmp(properties[i].extensionName, extension) == 0) return true;
+	}
+	return false;
+}
+
+static void replay_enable_device_fault_feature(lava_file_reader& reader, VkPhysicalDevice physical_device,
+	VkDeviceCreateInfo* pCreateInfo)
+{
+	const bool has_khr = replay_physical_device_extension_supported(physical_device, VK_KHR_DEVICE_FAULT_EXTENSION_NAME);
+	const bool has_ext = replay_physical_device_extension_supported(physical_device, VK_EXT_DEVICE_FAULT_EXTENSION_NAME);
+	if (!has_khr && !has_ext) return;
+
+	const bool requested_khr = replay_device_extension_enabled(pCreateInfo, VK_KHR_DEVICE_FAULT_EXTENSION_NAME);
+	const bool requested_ext = replay_device_extension_enabled(pCreateInfo, VK_EXT_DEVICE_FAULT_EXTENSION_NAME);
+	const bool use_khr = has_khr && (requested_khr || !requested_ext);
+	const char* selected_extension = use_khr ? VK_KHR_DEVICE_FAULT_EXTENSION_NAME : VK_EXT_DEVICE_FAULT_EXTENSION_NAME;
+	const char* rejected_extension = use_khr ? VK_EXT_DEVICE_FAULT_EXTENSION_NAME : VK_KHR_DEVICE_FAULT_EXTENSION_NAME;
+	const char** names = reader.pool.allocate<const char*>(pCreateInfo->enabledExtensionCount + 1);
+	uint32_t count = 0;
+	bool selected_present = false;
+	for (uint32_t i = 0; i < pCreateInfo->enabledExtensionCount; i++)
+	{
+		const char* name = pCreateInfo->ppEnabledExtensionNames[i];
+		if (strcmp(name, rejected_extension) == 0) continue;
+		if (strcmp(name, selected_extension) == 0) selected_present = true;
+		names[count++] = name;
+	}
+	if (!selected_present) names[count++] = selected_extension;
+	pCreateInfo->ppEnabledExtensionNames = names;
+	pCreateInfo->enabledExtensionCount = count;
+
+	if (use_khr)
+	{
+		purge_extension_parent(pCreateInfo, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FAULT_FEATURES_EXT);
+		VkPhysicalDeviceFaultFeaturesKHR supported = {
+			VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FAULT_FEATURES_KHR, nullptr, VK_FALSE, VK_FALSE, VK_FALSE, VK_FALSE
+		};
+		VkPhysicalDeviceFeatures2 features = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2, &supported };
+		wrap_vkGetPhysicalDeviceFeatures2(physical_device, &features);
+		if (!supported.deviceFault) return;
+		VkPhysicalDeviceFaultFeaturesKHR* enabled = reinterpret_cast<VkPhysicalDeviceFaultFeaturesKHR*>(
+			find_extension(pCreateInfo, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FAULT_FEATURES_KHR));
+		if (!enabled)
+		{
+			enabled = reader.pool.allocate<VkPhysicalDeviceFaultFeaturesKHR>(1);
+			*enabled = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FAULT_FEATURES_KHR,
+				const_cast<void*>(pCreateInfo->pNext), VK_TRUE, VK_FALSE, VK_FALSE, VK_FALSE };
+			pCreateInfo->pNext = enabled;
+		}
+		else
+		{
+			enabled->deviceFault = VK_TRUE;
+			enabled->deviceFaultVendorBinary &= supported.deviceFaultVendorBinary;
+			enabled->deviceFaultReportMasked &= supported.deviceFaultReportMasked;
+			enabled->deviceFaultDeviceLostOnMasked &= supported.deviceFaultDeviceLostOnMasked;
+		}
+		ILOG("Enabling replay device fault reporting with %s", selected_extension);
+		return;
+	}
+
+	purge_extension_parent(pCreateInfo, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FAULT_FEATURES_KHR);
+	VkPhysicalDeviceFaultFeaturesEXT supported = {
+		VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FAULT_FEATURES_EXT, nullptr, VK_FALSE, VK_FALSE
+	};
+	VkPhysicalDeviceFeatures2 features = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2, &supported };
+	wrap_vkGetPhysicalDeviceFeatures2(physical_device, &features);
+	if (!supported.deviceFault) return;
+	VkPhysicalDeviceFaultFeaturesEXT* enabled = reinterpret_cast<VkPhysicalDeviceFaultFeaturesEXT*>(
+		find_extension(pCreateInfo, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FAULT_FEATURES_EXT));
+	if (!enabled)
+	{
+		enabled = reader.pool.allocate<VkPhysicalDeviceFaultFeaturesEXT>(1);
+		*enabled = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FAULT_FEATURES_EXT,
+			const_cast<void*>(pCreateInfo->pNext), VK_TRUE, VK_FALSE };
+		pCreateInfo->pNext = enabled;
+	}
+	else
+	{
+		enabled->deviceFault = VK_TRUE;
+		enabled->deviceFaultVendorBinary &= supported.deviceFaultVendorBinary;
+	}
+	ILOG("Enabling replay device fault reporting with %s", selected_extension);
+}
+
 static void replay_enable_frame_boundary_feature(lava_file_reader& reader, VkDeviceCreateInfo* pCreateInfo)
 {
 	if (!host_has_frame_boundary || !replay_device_extension_enabled(pCreateInfo, VK_EXT_FRAME_BOUNDARY_EXTENSION_NAME)) return;
@@ -1046,6 +1140,170 @@ static VkResult replay_injected_queue_wait_idle(VkQueue queue, bool queue_access
 	return wrap_vkQueueWaitIdle(queue);
 }
 
+static void replay_report_device_fault(VkDevice device)
+{
+	const uint32_t device_index = index_to_VkDevice.index_or_invalid(device);
+	if (device_index == CONTAINER_INVALID_INDEX || device_index == CONTAINER_NULL_VALUE) return;
+	trackeddevice& device_data = VkDevice_index.at(device_index);
+	if (__atomic_exchange_n(&device_data.replay_device_fault_reported, true, __ATOMIC_ACQ_REL)) return;
+
+	if (device_data.replay_device_fault_backend == trackeddevice::device_fault_backend::ext)
+	{
+		if (!wrap_vkGetDeviceFaultInfoEXT)
+		{
+			ELOG("VK_EXT_device_fault was enabled, but vkGetDeviceFaultInfoEXT is unavailable");
+			return;
+		}
+		VkDeviceFaultCountsEXT counts = { VK_STRUCTURE_TYPE_DEVICE_FAULT_COUNTS_EXT, nullptr, 0, 0, 0 };
+		VkResult result = wrap_vkGetDeviceFaultInfoEXT(device, &counts, nullptr);
+		if (result != VK_SUCCESS)
+		{
+			ELOG("vkGetDeviceFaultInfoEXT count query failed: %s", errorString(result));
+			return;
+		}
+		std::vector<VkDeviceFaultAddressInfoEXT> addresses(counts.addressInfoCount);
+		std::vector<VkDeviceFaultVendorInfoEXT> vendor_info(counts.vendorInfoCount);
+		VkDeviceFaultInfoEXT info = { VK_STRUCTURE_TYPE_DEVICE_FAULT_INFO_EXT, nullptr, {},
+			addresses.empty() ? nullptr : addresses.data(), vendor_info.empty() ? nullptr : vendor_info.data(), nullptr };
+		counts.vendorBinarySize = 0;
+		result = wrap_vkGetDeviceFaultInfoEXT(device, &counts, &info);
+		if (result != VK_SUCCESS && result != VK_INCOMPLETE)
+		{
+			ELOG("vkGetDeviceFaultInfoEXT report query failed: %s", errorString(result));
+			return;
+		}
+		ELOG("Vulkan device fault: %s", info.description[0] ? info.description : "no description");
+		for (uint32_t i = 0; i < counts.addressInfoCount && i < addresses.size(); i++)
+		{
+			const VkDeviceFaultAddressInfoEXT& address = addresses[i];
+			ELOG("  address[%u]: type=%u reported=0x%llx precision=%llu", i, (unsigned)address.addressType,
+				(unsigned long long)address.reportedAddress, (unsigned long long)address.addressPrecision);
+		}
+		for (uint32_t i = 0; i < counts.vendorInfoCount && i < vendor_info.size(); i++)
+		{
+			const VkDeviceFaultVendorInfoEXT& vendor = vendor_info[i];
+			ELOG("  vendor[%u]: %s code=0x%llx data=0x%llx", i, vendor.description,
+				(unsigned long long)vendor.vendorFaultCode, (unsigned long long)vendor.vendorFaultData);
+		}
+		return;
+	}
+
+	if (device_data.replay_device_fault_backend == trackeddevice::device_fault_backend::khr)
+	{
+		if (!wrap_vkGetDeviceFaultReportsKHR)
+		{
+			ELOG("VK_KHR_device_fault was enabled, but vkGetDeviceFaultReportsKHR is unavailable");
+			return;
+		}
+		uint32_t count = 0;
+		VkResult result = wrap_vkGetDeviceFaultReportsKHR(device, 0, &count, nullptr);
+		if (result != VK_SUCCESS && result != VK_INCOMPLETE)
+		{
+			ELOG("vkGetDeviceFaultReportsKHR count query failed: %s", errorString(result));
+			return;
+		}
+		std::vector<VkDeviceFaultInfoKHR> reports(count);
+		for (VkDeviceFaultInfoKHR& report : reports)
+		{
+			report.sType = VK_STRUCTURE_TYPE_DEVICE_FAULT_INFO_KHR;
+			report.pNext = nullptr;
+		}
+		result = wrap_vkGetDeviceFaultReportsKHR(device, 0, &count, reports.empty() ? nullptr : reports.data());
+		if (result != VK_SUCCESS && result != VK_INCOMPLETE)
+		{
+			ELOG("vkGetDeviceFaultReportsKHR report query failed: %s", errorString(result));
+			return;
+		}
+		for (uint32_t i = 0; i < count && i < reports.size(); i++)
+		{
+			const VkDeviceFaultInfoKHR& report = reports[i];
+			ELOG("Vulkan device fault[%u]: flags=0x%x group=%llu %s", i, report.flags,
+				(unsigned long long)report.groupId, report.description);
+		}
+	}
+}
+
+static VkResult replay_vkGetDeviceFaultReportsKHR(VkDevice device, uint64_t timeout,
+	uint32_t* pFaultCounts, VkDeviceFaultInfoKHR* pFaultInfo)
+{
+	const uint32_t device_index = index_to_VkDevice.index_or_invalid(device);
+	if (device_index == CONTAINER_INVALID_INDEX || device_index == CONTAINER_NULL_VALUE) return VK_ERROR_DEVICE_LOST;
+	const trackeddevice& device_data = VkDevice_index.at(device_index);
+	if (device_data.replay_device_fault_backend == trackeddevice::device_fault_backend::khr)
+	{
+		if (!wrap_vkGetDeviceFaultReportsKHR) return VK_ERROR_EXTENSION_NOT_PRESENT;
+		return wrap_vkGetDeviceFaultReportsKHR(device, timeout, pFaultCounts, pFaultInfo);
+	}
+	if (device_data.replay_device_fault_backend != trackeddevice::device_fault_backend::ext || !wrap_vkGetDeviceFaultInfoEXT)
+	{
+		return VK_ERROR_EXTENSION_NOT_PRESENT;
+	}
+	if (!__atomic_load_n(&device_data.replay_device_fault_reported, __ATOMIC_ACQUIRE))
+	{
+		if (pFaultCounts) *pFaultCounts = 0;
+		return VK_TIMEOUT;
+	}
+
+	VkDeviceFaultCountsEXT counts = { VK_STRUCTURE_TYPE_DEVICE_FAULT_COUNTS_EXT, nullptr, 0, 0, 0 };
+	VkResult result = wrap_vkGetDeviceFaultInfoEXT(device, &counts, nullptr);
+	if (result != VK_SUCCESS) return result;
+	const uint32_t capacity = pFaultCounts ? *pFaultCounts : 0;
+	if (pFaultCounts) *pFaultCounts = 1;
+	if (!pFaultInfo || capacity == 0) return VK_SUCCESS;
+
+	std::vector<VkDeviceFaultAddressInfoEXT> addresses(counts.addressInfoCount);
+	std::vector<VkDeviceFaultVendorInfoEXT> vendor_info(counts.vendorInfoCount);
+	VkDeviceFaultInfoEXT ext_info = { VK_STRUCTURE_TYPE_DEVICE_FAULT_INFO_EXT, nullptr, {},
+		addresses.empty() ? nullptr : addresses.data(), vendor_info.empty() ? nullptr : vendor_info.data(), nullptr };
+	counts.vendorBinarySize = 0;
+	result = wrap_vkGetDeviceFaultInfoEXT(device, &counts, &ext_info);
+	if (result != VK_SUCCESS && result != VK_INCOMPLETE) return result;
+
+	VkDeviceFaultInfoKHR& info = pFaultInfo[0];
+	info.sType = VK_STRUCTURE_TYPE_DEVICE_FAULT_INFO_KHR;
+	info.flags = VK_DEVICE_FAULT_FLAG_DEVICE_LOST_KHR;
+	info.groupId = 0;
+	strncpy(info.description, ext_info.description, sizeof(info.description) - 1);
+	info.description[sizeof(info.description) - 1] = '\0';
+	if (!addresses.empty())
+	{
+		info.faultAddressInfo = addresses[0];
+		info.flags |= VK_DEVICE_FAULT_FLAG_MEMORY_ADDRESS_KHR;
+	}
+	if (addresses.size() > 1)
+	{
+		info.instructionAddressInfo = addresses[1];
+		info.flags |= VK_DEVICE_FAULT_FLAG_INSTRUCTION_ADDRESS_KHR;
+	}
+	if (!vendor_info.empty())
+	{
+		info.vendorInfo = vendor_info[0];
+		info.flags |= VK_DEVICE_FAULT_FLAG_VENDOR_KHR;
+	}
+	return capacity < 1 ? VK_INCOMPLETE : result;
+}
+
+static VkResult replay_vkGetDeviceFaultDebugInfoKHR(VkDevice device, VkDeviceFaultDebugInfoKHR* pDebugInfo)
+{
+	const uint32_t device_index = index_to_VkDevice.index_or_invalid(device);
+	if (device_index == CONTAINER_INVALID_INDEX || device_index == CONTAINER_NULL_VALUE) return VK_ERROR_DEVICE_LOST;
+	const trackeddevice& device_data = VkDevice_index.at(device_index);
+	if (device_data.replay_device_fault_backend == trackeddevice::device_fault_backend::khr)
+	{
+		if (!wrap_vkGetDeviceFaultDebugInfoKHR) return VK_ERROR_EXTENSION_NOT_PRESENT;
+		return wrap_vkGetDeviceFaultDebugInfoKHR(device, pDebugInfo);
+	}
+	if (device_data.replay_device_fault_backend != trackeddevice::device_fault_backend::ext)
+	{
+		return VK_ERROR_EXTENSION_NOT_PRESENT;
+	}
+	if (pDebugInfo)
+	{
+		pDebugInfo->vendorBinarySize = 0;
+	}
+	return VK_SUCCESS;
+}
+
 static void replay_wait_for_pending_commandbuffer(lava_file_reader& reader, uint32_t commandbuffer_index, trackedcmdbuffer& commandbuffer_data,
 	bool allow_simultaneous_use, bool queue_access_locked)
 {
@@ -1062,6 +1320,7 @@ static void replay_wait_for_pending_commandbuffer(lava_file_reader& reader, uint
 		replay_cli_clear_object_wait(reader, cli_thread_state::wait_fence);
 		if (result != VK_SUCCESS)
 		{
+			if (result == VK_ERROR_DEVICE_LOST) replay_report_device_fault(commandbuffer_data.device);
 			ABORT("Failed to wait for pending command buffer %u fence on replay: %s",
 				commandbuffer_index, errorString(result));
 		}
@@ -1077,6 +1336,7 @@ static void replay_wait_for_pending_commandbuffer(lava_file_reader& reader, uint
 		replay_cli_clear_object_wait(reader, cli_thread_state::wait_queue_idle);
 		if (result != VK_SUCCESS)
 		{
+			if (result == VK_ERROR_DEVICE_LOST) replay_report_device_fault(commandbuffer_data.device);
 			ABORT("Failed to wait for pending command buffer %u queue on replay: %s",
 				commandbuffer_index, errorString(result));
 		}
@@ -3380,6 +3640,7 @@ void replay_pre_vkCreateDevice(lava_file_reader& reader, VkPhysicalDevice physic
 	replay_enable_frame_boundary_feature(reader, pCreateInfo);
 	replay_enable_pipeline_executable_info_feature(reader, pCreateInfo);
 	replay_enable_shader_instrumentation_feature(reader, pCreateInfo);
+	replay_enable_device_fault_feature(reader, physicalDevice, pCreateInfo);
 
 	if (no_anisotropy())
 	{
