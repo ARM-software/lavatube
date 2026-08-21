@@ -273,6 +273,8 @@ struct trackeddevice : trackable
 	std::unordered_set<std::string> enabled_device_extensions; // from replay tool to driver
 	device_fault_backend replay_device_fault_backend = device_fault_backend::none;
 	bool replay_device_fault_reported = false;
+	bool replay_device_address_binding_report_enabled = false;
+	bool replay_aftermath_enabled = false;
 	std::vector<replay_submission> replay_recent_submissions;
 	bool shader_instrumentation_enabled = false;
 	std::vector<VkShaderInstrumentationMetricDescriptionARM> shader_instrumentation_metrics;

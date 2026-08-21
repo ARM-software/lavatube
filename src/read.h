@@ -275,10 +275,8 @@ public:
 	bool cli_shader_instrumentation_requested = false;
 	std::atomic_bool cli_shader_instrumentation_enabled{ false };
 	bool device_fault_report_requested = false;
-	bool aftermath_device_enabled = false;
 	void* aftermath_context = nullptr;
 	void (*aftermath_device_lost_callback)(void*) = nullptr;
-	std::atomic_bool device_address_binding_report_enabled{ false };
 	lava::mutex replay_submission_mutex;
 	struct replay_address_binding
 	{
@@ -287,6 +285,7 @@ public:
 		VkDeviceAddressBindingFlagsEXT flags = 0;
 	};
 	lava::mutex device_address_binding_mutex;
+	// TODO: The debug-utils callback has no device handle, so bindings cannot yet be attributed per device.
 	std::vector<replay_address_binding> replay_address_bindings;
 	VkDebugUtilsMessengerEXT device_address_binding_messenger = VK_NULL_HANDLE;
 	std::atomic<cli_instrument_mode> cli_instrument_requested{ cli_instrument_mode::none };
