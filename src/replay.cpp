@@ -484,6 +484,7 @@ void usage()
 	printf("--no-multithreaded-io  Do not do decompression and file read in a separate thread. May save some CPU load and memory.\n");
 	printf("-s/--sandbox level     Set security sandbox level (from 1 to 3, with 3 the most strict, default %d)\n", (int)p__sandbox_level);
 	printf("--skip-remove-unused   Do not attempt to cleverly remove unused features and extensions\n");
+	printf("--device-fault-report  Track more data for device fault diagnosis\n");
 	printf("Service specific options:\n");
 	printf("--service              Turn replay into a provided service listening on a network port\n");
 	printf("-P/--port PORT         Port number (default %d)\n", (int)p__port);
@@ -1448,6 +1449,10 @@ int main(int argc, char **argv)
 		else if (match(argv[i], nullptr, "--skip-remove-unused", remaining))
 		{
 			p__skip_remove_unused = 1;
+		}
+		else if (match(argv[i], nullptr, "--device-fault-report", remaining))
+		{
+			replayer.device_fault_report_requested = true;
 		}
 		else if (match(argv[i], "-B", "--blackhole", remaining))
 		{

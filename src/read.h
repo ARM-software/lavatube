@@ -274,6 +274,18 @@ public:
 	std::atomic_bool cli_memory_budget_enabled{ false };
 	bool cli_shader_instrumentation_requested = false;
 	std::atomic_bool cli_shader_instrumentation_enabled{ false };
+	bool device_fault_report_requested = false;
+	std::atomic_bool device_address_binding_report_enabled{ false };
+	lava::mutex replay_submission_mutex;
+	struct replay_address_binding
+	{
+		VkDeviceAddress base_address = 0;
+		VkDeviceSize size = 0;
+		VkDeviceAddressBindingFlagsEXT flags = 0;
+	};
+	lava::mutex device_address_binding_mutex;
+	std::vector<replay_address_binding> replay_address_bindings;
+	VkDebugUtilsMessengerEXT device_address_binding_messenger = VK_NULL_HANDLE;
 	std::atomic<cli_instrument_mode> cli_instrument_requested{ cli_instrument_mode::none };
 	std::atomic_bool cli_instrument_ready{ false };
 

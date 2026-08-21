@@ -412,6 +412,53 @@ static void replay_enable_device_fault_feature(lava_file_reader& reader, VkPhysi
 	ILOG("Enabling replay device fault reporting with %s", selected_extension);
 }
 
+static void replay_enable_device_address_binding_report(lava_file_reader& reader, VkPhysicalDevice physical_device,
+	VkDeviceCreateInfo* pCreateInfo)
+{
+	reader.parent->device_address_binding_report_enabled.store(false, std::memory_order_release);
+	if (!reader.parent->device_fault_report_requested || !has_debug_utils ||
+		reader.parent->device_address_binding_messenger == VK_NULL_HANDLE) return;
+	if (!replay_physical_device_extension_supported(physical_device, VK_EXT_DEVICE_ADDRESS_BINDING_REPORT_EXTENSION_NAME))
+	{
+		ILOG("Replay device does not support %s", VK_EXT_DEVICE_ADDRESS_BINDING_REPORT_EXTENSION_NAME);
+		return;
+	}
+	VkPhysicalDeviceAddressBindingReportFeaturesEXT supported = {
+		VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ADDRESS_BINDING_REPORT_FEATURES_EXT, nullptr, VK_FALSE
+	};
+	VkPhysicalDeviceFeatures2 features = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2, &supported };
+	wrap_vkGetPhysicalDeviceFeatures2(physical_device, &features);
+	if (!supported.reportAddressBinding)
+	{
+		ILOG("Replay device does not support device address binding reports");
+		return;
+	}
+	const char** names = reader.pool.allocate<const char*>(pCreateInfo->enabledExtensionCount + 1);
+	uint32_t count = 0;
+	bool present = false;
+	for (uint32_t i = 0; i < pCreateInfo->enabledExtensionCount; i++)
+	{
+		names[count++] = pCreateInfo->ppEnabledExtensionNames[i];
+		if (strcmp(names[count - 1], VK_EXT_DEVICE_ADDRESS_BINDING_REPORT_EXTENSION_NAME) == 0) present = true;
+	}
+	if (!present) names[count++] = VK_EXT_DEVICE_ADDRESS_BINDING_REPORT_EXTENSION_NAME;
+	pCreateInfo->ppEnabledExtensionNames = names;
+	pCreateInfo->enabledExtensionCount = count;
+	VkPhysicalDeviceAddressBindingReportFeaturesEXT* enabled =
+		reinterpret_cast<VkPhysicalDeviceAddressBindingReportFeaturesEXT*>(find_extension(
+			pCreateInfo, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ADDRESS_BINDING_REPORT_FEATURES_EXT));
+	if (!enabled)
+	{
+		enabled = reader.pool.allocate<VkPhysicalDeviceAddressBindingReportFeaturesEXT>(1);
+		*enabled = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ADDRESS_BINDING_REPORT_FEATURES_EXT,
+			const_cast<void*>(pCreateInfo->pNext), VK_TRUE };
+		pCreateInfo->pNext = enabled;
+	}
+	else enabled->reportAddressBinding = VK_TRUE;
+	reader.parent->device_address_binding_report_enabled.store(true, std::memory_order_release);
+	ILOG("Enabling replay device address binding reports");
+}
+
 static void replay_enable_frame_boundary_feature(lava_file_reader& reader, VkDeviceCreateInfo* pCreateInfo)
 {
 	if (!host_has_frame_boundary || !replay_device_extension_enabled(pCreateInfo, VK_EXT_FRAME_BOUNDARY_EXTENSION_NAME)) return;
@@ -1114,6 +1161,28 @@ static void replay_mark_pending_commandbuffer(lava_file_reader& reader, uint32_t
 	}
 }
 
+static void replay_record_submission(lava_file_reader& reader, uint32_t queue_index, VkFence fence,
+	const std::vector<uint32_t>& commandbuffer_indices)
+{
+	if (!reader.parent->device_fault_report_requested) return;
+	if (queue_index == CONTAINER_INVALID_INDEX || queue_index >= VkQueue_index.size()) return;
+	const trackedqueue& queue_data = VkQueue_index.at(queue_index);
+	if (queue_data.device_index == CONTAINER_INVALID_INDEX || queue_data.device_index >= VkDevice_index.size()) return;
+	trackeddevice& device_data = VkDevice_index.at(queue_data.device_index);
+	trackeddevice::replay_submission submission;
+	submission.source = reader.current;
+	submission.queue_index = queue_index;
+	submission.fence_index = fence == VK_NULL_HANDLE ? CONTAINER_INVALID_INDEX : index_to_VkFence.index_or_invalid(fence);
+	submission.commandbuffer_indices = commandbuffer_indices;
+	lava::lock_guard lock(reader.parent->replay_submission_mutex);
+	device_data.replay_recent_submissions.push_back(std::move(submission));
+	constexpr size_t max_submission_history = 8;
+	if (device_data.replay_recent_submissions.size() > max_submission_history)
+	{
+		device_data.replay_recent_submissions.erase(device_data.replay_recent_submissions.begin());
+	}
+}
+
 static void replay_clear_pending_fence(uint32_t fence_index)
 {
 	if (fence_index == CONTAINER_INVALID_INDEX || !index_to_VkFence.contains(fence_index)) return;
@@ -1140,7 +1209,87 @@ static VkResult replay_injected_queue_wait_idle(VkQueue queue, bool queue_access
 	return wrap_vkQueueWaitIdle(queue);
 }
 
-static void replay_report_device_fault(VkDevice device)
+static void replay_log_change_source(const char* label, const change_source& source)
+{
+	ELOG("    %s: thread=%u frame=%u packet=%u call=%s", label, source.thread, source.frame, source.packet,
+		source.call_id == UINT16_MAX ? "none" : get_function_name(source.call_id));
+}
+
+static bool replay_report_fault_address(VkDeviceAddress address, VkDeviceSize precision)
+{
+	(void)precision;
+	bool found = false;
+	VkDeviceSize offset = 0;
+	trackedbuffer* buffer = find_buffer_by_replay_address(address, 1, offset);
+	if (buffer)
+	{
+		found = true;
+		ELOG("    buffer[%u]+0x%llx replay=[0x%llx,0x%llx) size=%llu usage=%s", buffer->index,
+			(unsigned long long)offset, (unsigned long long)buffer->device_address,
+			(unsigned long long)(buffer->device_address + buffer->size), (unsigned long long)buffer->size,
+			VkBufferUsageFlags_to_string(buffer->usage).c_str());
+		if (buffer->capture_device_address)
+		{
+			ELOG("    capture address=0x%llx", (unsigned long long)(buffer->capture_device_address + offset));
+		}
+		if (buffer->backing_index != UINT32_MAX)
+		{
+			ELOG("    backing memory[%u]+0x%llx", buffer->backing_index,
+				(unsigned long long)(buffer->offset + offset));
+		}
+		replay_log_change_source("created", buffer->creation);
+		replay_log_change_source("last modified", buffer->last_modified);
+	}
+	for (const trackedaccelerationstructure& as : VkAccelerationStructureKHR_index)
+	{
+		if (as.device_address == 0 || as.size == 0 || address < as.device_address) continue;
+		const VkDeviceSize as_offset = address - as.device_address;
+		if (as_offset >= as.size) continue;
+		found = true;
+		ELOG("    acceleration structure[%u]+0x%llx replay=[0x%llx,0x%llx)", as.index,
+			(unsigned long long)as_offset, (unsigned long long)as.device_address,
+			(unsigned long long)(as.device_address + as.size));
+		if (as.capture_device_address)
+		{
+			ELOG("    capture acceleration-structure address=0x%llx",
+				(unsigned long long)(as.capture_device_address + as_offset));
+		}
+		replay_log_change_source("created", as.creation);
+		replay_log_change_source("last modified", as.last_modified);
+	}
+	return found;
+}
+
+static void replay_report_recent_submissions(const trackeddevice& device_data, lava_reader* reader)
+{
+	assert(reader);
+	if (!reader->device_fault_report_requested) return;
+	lava::lock_guard lock(reader->replay_submission_mutex);
+	if (device_data.replay_recent_submissions.empty()) return;
+	ELOG("Recent successful queue submissions (newest first):");
+	for (auto it = device_data.replay_recent_submissions.rbegin(); it != device_data.replay_recent_submissions.rend(); ++it)
+	{
+		const trackeddevice::replay_submission& submission = *it;
+		ELOG("  queue[%u] fence[%u] thread=%u frame=%u packet=%u command buffers=%zu", submission.queue_index,
+			submission.fence_index, submission.source.thread, submission.source.frame, submission.source.packet,
+			submission.commandbuffer_indices.size());
+		for (uint32_t commandbuffer_index : submission.commandbuffer_indices)
+		{
+			if (commandbuffer_index >= VkCommandBuffer_index.size()) continue;
+			const trackedcmdbuffer& commandbuffer = VkCommandBuffer_index.at(commandbuffer_index);
+			ELOG("    command buffer[%u]: tracked commands=%zu shader commands=%d render passes=%d", commandbuffer_index,
+				commandbuffer.commands.size(), commandbuffer.shader_command_count, commandbuffer.renderpass_count);
+			unsigned printed = 0;
+			for (auto command = commandbuffer.commands.rbegin(); command != commandbuffer.commands.rend() && printed < 6; ++command, ++printed)
+			{
+				ELOG("      %s at thread=%u frame=%u packet=%u", get_function_name(command->id), command->source.thread,
+					command->source.frame, command->source.packet);
+			}
+		}
+	}
+}
+
+static void replay_report_device_fault(VkDevice device, lava_reader* reader)
 {
 	const uint32_t device_index = index_to_VkDevice.index_or_invalid(device);
 	if (device_index == CONTAINER_INVALID_INDEX || device_index == CONTAINER_NULL_VALUE) return;
@@ -1173,11 +1322,33 @@ static void replay_report_device_fault(VkDevice device)
 			return;
 		}
 		ELOG("Vulkan device fault: %s", info.description[0] ? info.description : "no description");
+		if (reader && reader->device_address_binding_report_enabled.load(std::memory_order_acquire))
+		{
+			lava::lock_guard lock(reader->device_address_binding_mutex);
+			ELOG("Tracked live driver device-address bindings: %zu", reader->replay_address_bindings.size());
+		}
 		for (uint32_t i = 0; i < counts.addressInfoCount && i < addresses.size(); i++)
 		{
 			const VkDeviceFaultAddressInfoEXT& address = addresses[i];
 			ELOG("  address[%u]: type=%u reported=0x%llx precision=%llu", i, (unsigned)address.addressType,
 				(unsigned long long)address.reportedAddress, (unsigned long long)address.addressPrecision);
+			bool found = replay_report_fault_address(address.reportedAddress, address.addressPrecision);
+			if (reader && reader->device_address_binding_report_enabled.load(std::memory_order_acquire))
+			{
+				lava::lock_guard lock(reader->device_address_binding_mutex);
+				for (const lava_reader::replay_address_binding& binding : reader->replay_address_bindings)
+				{
+					if (address.reportedAddress < binding.base_address) continue;
+					const VkDeviceSize binding_offset = address.reportedAddress - binding.base_address;
+					if (binding_offset >= binding.size) continue;
+					found = true;
+					ELOG("    driver binding+0x%llx range=[0x%llx,0x%llx) flags=0x%x%s",
+						(unsigned long long)binding_offset, (unsigned long long)binding.base_address,
+						(unsigned long long)(binding.base_address + binding.size), binding.flags,
+						(binding.flags & VK_DEVICE_ADDRESS_BINDING_INTERNAL_OBJECT_BIT_EXT) ? " internal-object" : "");
+				}
+			}
+			if (!found) ELOG("    no tracked replay object or live driver binding contains this address");
 		}
 		for (uint32_t i = 0; i < counts.vendorInfoCount && i < vendor_info.size(); i++)
 		{
@@ -1185,6 +1356,7 @@ static void replay_report_device_fault(VkDevice device)
 			ELOG("  vendor[%u]: %s code=0x%llx data=0x%llx", i, vendor.description,
 				(unsigned long long)vendor.vendorFaultCode, (unsigned long long)vendor.vendorFaultData);
 		}
+		replay_report_recent_submissions(device_data, reader);
 		return;
 	}
 
@@ -1220,6 +1392,7 @@ static void replay_report_device_fault(VkDevice device)
 			ELOG("Vulkan device fault[%u]: flags=0x%x group=%llu %s", i, report.flags,
 				(unsigned long long)report.groupId, report.description);
 		}
+		replay_report_recent_submissions(device_data, reader);
 	}
 }
 
@@ -1320,7 +1493,7 @@ static void replay_wait_for_pending_commandbuffer(lava_file_reader& reader, uint
 		replay_cli_clear_object_wait(reader, cli_thread_state::wait_fence);
 		if (result != VK_SUCCESS)
 		{
-			if (result == VK_ERROR_DEVICE_LOST) replay_report_device_fault(commandbuffer_data.device);
+			if (result == VK_ERROR_DEVICE_LOST) replay_report_device_fault(commandbuffer_data.device, reader.parent);
 			ABORT("Failed to wait for pending command buffer %u fence on replay: %s",
 				commandbuffer_index, errorString(result));
 		}
@@ -1336,7 +1509,7 @@ static void replay_wait_for_pending_commandbuffer(lava_file_reader& reader, uint
 		replay_cli_clear_object_wait(reader, cli_thread_state::wait_queue_idle);
 		if (result != VK_SUCCESS)
 		{
-			if (result == VK_ERROR_DEVICE_LOST) replay_report_device_fault(commandbuffer_data.device);
+			if (result == VK_ERROR_DEVICE_LOST) replay_report_device_fault(commandbuffer_data.device, reader.parent);
 			ABORT("Failed to wait for pending command buffer %u queue on replay: %s",
 				commandbuffer_index, errorString(result));
 		}
@@ -1627,13 +1800,18 @@ void replay_callback_vkQueueSubmit(callback_context& cb, VkQueue queue, uint32_t
 	if (!cb.reader.is_replay() || cb.result.vkresult == VK_SUCCESS) replay_process_queued_frame_boundaries(cb.reader, queue_data, queue);
 	else queue_data.replay_frame_boundaries.clear();
 	if (!cb.reader.is_replay() || cb.result.vkresult != VK_SUCCESS) return;
+	const bool track_submission = cb.reader.parent->device_fault_report_requested;
+	std::vector<uint32_t> submitted_commandbuffers;
 	for (uint32_t i = 0; i < submitCount; i++)
 	{
 		for (uint32_t j = 0; j < pSubmits[i].commandBufferCount; j++)
 		{
-			replay_mark_pending_commandbuffer(cb.reader, index_to_VkCommandBuffer.index(pSubmits[i].pCommandBuffers[j]), queue, fence);
+			const uint32_t commandbuffer_index = index_to_VkCommandBuffer.index(pSubmits[i].pCommandBuffers[j]);
+			replay_mark_pending_commandbuffer(cb.reader, commandbuffer_index, queue, fence);
+			if (track_submission) submitted_commandbuffers.push_back(commandbuffer_index);
 		}
 	}
+	if (track_submission) replay_record_submission(cb.reader, queue_index, fence, submitted_commandbuffers);
 }
 
 void replay_callback_vkQueueSubmit2(callback_context& cb, VkQueue queue, uint32_t submitCount, const VkSubmitInfo2* pSubmits, VkFence fence)
@@ -1650,13 +1828,18 @@ void replay_callback_vkQueueSubmit2(callback_context& cb, VkQueue queue, uint32_
 	if (!cb.reader.is_replay() || cb.result.vkresult == VK_SUCCESS) replay_process_queued_frame_boundaries(cb.reader, queue_data, queue);
 	else queue_data.replay_frame_boundaries.clear();
 	if (!cb.reader.is_replay() || cb.result.vkresult != VK_SUCCESS) return;
+	const bool track_submission = cb.reader.parent->device_fault_report_requested;
+	std::vector<uint32_t> submitted_commandbuffers;
 	for (uint32_t i = 0; i < submitCount; i++)
 	{
 		for (uint32_t j = 0; j < pSubmits[i].commandBufferInfoCount; j++)
 		{
-			replay_mark_pending_commandbuffer(cb.reader, index_to_VkCommandBuffer.index(pSubmits[i].pCommandBufferInfos[j].commandBuffer), queue, fence);
+			const uint32_t commandbuffer_index = index_to_VkCommandBuffer.index(pSubmits[i].pCommandBufferInfos[j].commandBuffer);
+			replay_mark_pending_commandbuffer(cb.reader, commandbuffer_index, queue, fence);
+			if (track_submission) submitted_commandbuffers.push_back(commandbuffer_index);
 		}
 	}
+	if (track_submission) replay_record_submission(cb.reader, queue_index, fence, submitted_commandbuffers);
 }
 
 void replay_callback_vkQueueSubmit2KHR(callback_context& cb, VkQueue queue, uint32_t submitCount, const VkSubmitInfo2* pSubmits, VkFence fence)
@@ -3641,6 +3824,7 @@ void replay_pre_vkCreateDevice(lava_file_reader& reader, VkPhysicalDevice physic
 	replay_enable_pipeline_executable_info_feature(reader, pCreateInfo);
 	replay_enable_shader_instrumentation_feature(reader, pCreateInfo);
 	replay_enable_device_fault_feature(reader, physicalDevice, pCreateInfo);
+	replay_enable_device_address_binding_report(reader, physicalDevice, pCreateInfo);
 
 	if (no_anisotropy())
 	{
@@ -3664,8 +3848,9 @@ void replay_pre_vkCreateInstance(lava_file_reader& reader, VkInstanceCreateInfo*
 		purge_extension_parent(pCreateInfo, VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT);
 	}
 
-	const char** names = reader.pool.allocate<const char*>(pCreateInfo->enabledExtensionCount);
+	const char** names = reader.pool.allocate<const char*>(pCreateInfo->enabledExtensionCount + 1);
 	uint32_t newcount = 0;
+	bool has_debug_utils_name = false;
 	for (uint32_t i = 0; i < pCreateInfo->enabledExtensionCount; i++)
 	{
 		if (strcmp(pCreateInfo->ppEnabledExtensionNames[i], VK_GOOGLE_SURFACELESS_QUERY_EXTENSION_NAME) == 0)
@@ -3673,13 +3858,51 @@ void replay_pre_vkCreateInstance(lava_file_reader& reader, VkInstanceCreateInfo*
 			DLOG("    %s (faked by lavatube)", pCreateInfo->ppEnabledExtensionNames[i]);
 			continue;
 		}
+		if (strcmp(pCreateInfo->ppEnabledExtensionNames[i], VK_EXT_DEBUG_UTILS_EXTENSION_NAME) == 0) has_debug_utils_name = true;
 		names[newcount++] = pCreateInfo->ppEnabledExtensionNames[i];
+	}
+	if (reader.parent->device_fault_report_requested && has_debug_utils && !has_debug_utils_name)
+	{
+		names[newcount++] = VK_EXT_DEBUG_UTILS_EXTENSION_NAME;
 	}
 	if (newcount != pCreateInfo->enabledExtensionCount)
 	{
 		pCreateInfo->ppEnabledExtensionNames = names;
 		pCreateInfo->enabledExtensionCount = newcount;
 	}
+}
+
+static VkBool32 VKAPI_PTR replay_device_address_binding_callback(
+	VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
+	VkDebugUtilsMessageTypeFlagsEXT messageTypes,
+	const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
+	void* pUserData)
+{
+	(void)messageSeverity;
+	if (!(messageTypes & VK_DEBUG_UTILS_MESSAGE_TYPE_DEVICE_ADDRESS_BINDING_BIT_EXT) || !pCallbackData || !pUserData) return VK_FALSE;
+	const VkDeviceAddressBindingCallbackDataEXT* binding = reinterpret_cast<const VkDeviceAddressBindingCallbackDataEXT*>(
+		find_extension(pCallbackData, VK_STRUCTURE_TYPE_DEVICE_ADDRESS_BINDING_CALLBACK_DATA_EXT));
+	if (!binding) return VK_FALSE;
+	lava_reader* reader = static_cast<lava_reader*>(pUserData);
+	lava::lock_guard lock(reader->device_address_binding_mutex);
+	auto& bindings = reader->replay_address_bindings;
+	if (binding->bindingType == VK_DEVICE_ADDRESS_BINDING_TYPE_BIND_EXT)
+	{
+		lava_reader::replay_address_binding entry;
+		entry.base_address = binding->baseAddress;
+		entry.size = binding->size;
+		entry.flags = binding->flags;
+		bindings.push_back(entry);
+	}
+	else
+	{
+		for (auto it = bindings.begin(); it != bindings.end();)
+		{
+			if (it->base_address == binding->baseAddress && it->size == binding->size) it = bindings.erase(it);
+			else ++it;
+		}
+	}
+	return VK_FALSE;
 }
 
 void replay_callback_vkCreateInstance(callback_context& cb, const VkInstanceCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkInstance* pInstance)
@@ -3703,6 +3926,25 @@ void replay_callback_vkCreateInstance(callback_context& cb, const VkInstanceCrea
 	assert(result == VK_SUCCESS);
 	assert(num_phys_devices == physical_devices.size());
 	selected_physical_device = physical_devices[0]; // temporary assignment to make commands using physical devices work until we actually pick one
+	if (reader.parent->device_fault_report_requested && has_debug_utils && wrap_vkCreateDebugUtilsMessengerEXT)
+	{
+		VkDebugUtilsMessengerCreateInfoEXT info = {
+			VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT,
+			nullptr,
+			0,
+			VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
+				VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT,
+			VK_DEBUG_UTILS_MESSAGE_TYPE_DEVICE_ADDRESS_BINDING_BIT_EXT,
+			replay_device_address_binding_callback,
+			reader.parent
+		};
+		result = wrap_vkCreateDebugUtilsMessengerEXT(*pInstance, &info, pAllocator,
+			&reader.parent->device_address_binding_messenger);
+		if (result != VK_SUCCESS)
+		{
+			ELOG("Failed to create device address binding messenger: %s", errorString(result));
+		}
+	}
 
 	if (!callback_initialized && wrap_vkCreateDebugReportCallbackEXT && has_debug_report)
 	{
@@ -3761,6 +4003,11 @@ void replay_pre_vkDestroyDevice(lava_file_reader& reader, VkDevice device, const
 
 void replay_pre_vkDestroyInstance(lava_file_reader& reader, VkInstance instance, const VkAllocationCallbacks* pAllocator)
 {
+	if (reader.parent->device_address_binding_messenger != VK_NULL_HANDLE && wrap_vkDestroyDebugUtilsMessengerEXT)
+	{
+		wrap_vkDestroyDebugUtilsMessengerEXT(instance, reader.parent->device_address_binding_messenger, pAllocator);
+		reader.parent->device_address_binding_messenger = VK_NULL_HANDLE;
+	}
 	if (stored_callback != VK_NULL_HANDLE)
 	{
 		wrap_vkDestroyDebugReportCallbackEXT(instance, stored_callback, pAllocator);
