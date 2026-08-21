@@ -275,6 +275,9 @@ public:
 	bool cli_shader_instrumentation_requested = false;
 	std::atomic_bool cli_shader_instrumentation_enabled{ false };
 	bool device_fault_report_requested = false;
+	bool aftermath_device_enabled = false;
+	void* aftermath_context = nullptr;
+	void (*aftermath_device_lost_callback)(void*) = nullptr;
 	std::atomic_bool device_address_binding_report_enabled{ false };
 	lava::mutex replay_submission_mutex;
 	struct replay_address_binding

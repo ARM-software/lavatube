@@ -459,6 +459,53 @@ static void replay_enable_device_address_binding_report(lava_file_reader& reader
 	ILOG("Enabling replay device address binding reports");
 }
 
+static void replay_enable_aftermath(lava_file_reader& reader, VkPhysicalDevice physical_device,
+	VkDeviceCreateInfo* pCreateInfo)
+{
+	reader.parent->aftermath_device_enabled = false;
+	if (!reader.parent->aftermath_context) return;
+	const char* checkpoints = VK_NV_DEVICE_DIAGNOSTIC_CHECKPOINTS_EXTENSION_NAME;
+	const char* config = VK_NV_DEVICE_DIAGNOSTICS_CONFIG_EXTENSION_NAME;
+	if (!replay_physical_device_extension_supported(physical_device, checkpoints) ||
+		!replay_physical_device_extension_supported(physical_device, config))
+	{
+		ELOG("Nsight Aftermath requires %s and %s on the replay device", checkpoints, config);
+		return;
+	}
+	const char** names = reader.pool.allocate<const char*>(pCreateInfo->enabledExtensionCount + 2);
+	uint32_t count = 0;
+	bool has_checkpoints = false;
+	bool has_config = false;
+	for (uint32_t i = 0; i < pCreateInfo->enabledExtensionCount; i++)
+	{
+		names[count++] = pCreateInfo->ppEnabledExtensionNames[i];
+		if (strcmp(names[count - 1], checkpoints) == 0) has_checkpoints = true;
+		if (strcmp(names[count - 1], config) == 0) has_config = true;
+	}
+	if (!has_checkpoints) names[count++] = checkpoints;
+	if (!has_config) names[count++] = config;
+	pCreateInfo->ppEnabledExtensionNames = names;
+	pCreateInfo->enabledExtensionCount = count;
+
+	VkDeviceDiagnosticsConfigCreateInfoNV* diagnostics =
+		reinterpret_cast<VkDeviceDiagnosticsConfigCreateInfoNV*>(find_extension(
+			pCreateInfo, VK_STRUCTURE_TYPE_DEVICE_DIAGNOSTICS_CONFIG_CREATE_INFO_NV));
+	const VkDeviceDiagnosticsConfigFlagsNV flags =
+		VK_DEVICE_DIAGNOSTICS_CONFIG_ENABLE_SHADER_DEBUG_INFO_BIT_NV |
+		VK_DEVICE_DIAGNOSTICS_CONFIG_ENABLE_RESOURCE_TRACKING_BIT_NV |
+		VK_DEVICE_DIAGNOSTICS_CONFIG_ENABLE_SHADER_ERROR_REPORTING_BIT_NV;
+	if (!diagnostics)
+	{
+		diagnostics = reader.pool.allocate<VkDeviceDiagnosticsConfigCreateInfoNV>(1);
+		*diagnostics = { VK_STRUCTURE_TYPE_DEVICE_DIAGNOSTICS_CONFIG_CREATE_INFO_NV,
+			const_cast<void*>(pCreateInfo->pNext), flags };
+		pCreateInfo->pNext = diagnostics;
+	}
+	else diagnostics->flags |= flags;
+	reader.parent->aftermath_device_enabled = true;
+	ILOG("Enabling NVIDIA Nsight Aftermath device diagnostics");
+}
+
 static void replay_enable_frame_boundary_feature(lava_file_reader& reader, VkDeviceCreateInfo* pCreateInfo)
 {
 	if (!host_has_frame_boundary || !replay_device_extension_enabled(pCreateInfo, VK_EXT_FRAME_BOUNDARY_EXTENSION_NAME)) return;
@@ -1295,6 +1342,10 @@ static void replay_report_device_fault(VkDevice device, lava_reader* reader)
 	if (device_index == CONTAINER_INVALID_INDEX || device_index == CONTAINER_NULL_VALUE) return;
 	trackeddevice& device_data = VkDevice_index.at(device_index);
 	if (__atomic_exchange_n(&device_data.replay_device_fault_reported, true, __ATOMIC_ACQ_REL)) return;
+	if (reader && reader->aftermath_device_enabled && reader->aftermath_device_lost_callback)
+	{
+		reader->aftermath_device_lost_callback(reader->aftermath_context);
+	}
 
 	if (device_data.replay_device_fault_backend == trackeddevice::device_fault_backend::ext)
 	{
@@ -3825,6 +3876,7 @@ void replay_pre_vkCreateDevice(lava_file_reader& reader, VkPhysicalDevice physic
 	replay_enable_shader_instrumentation_feature(reader, pCreateInfo);
 	replay_enable_device_fault_feature(reader, physicalDevice, pCreateInfo);
 	replay_enable_device_address_binding_report(reader, physicalDevice, pCreateInfo);
+	replay_enable_aftermath(reader, physicalDevice, pCreateInfo);
 
 	if (no_anisotropy())
 	{

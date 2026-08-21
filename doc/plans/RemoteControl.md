@@ -58,6 +58,14 @@ Guarantees that we should give:
 * We run vkDeviceWaitIdle to ensure all issued GPU work has completed.
 * Either we return DEVICE_LOST or device is intact (we check return value of vkDeviceWaitIdle before returning).
 
+## Crashes
+
+We currently voluntarily abort from the replay in a number of scenarios, and this makes
+it unreachable from `lava-cli` - which is especially tricky if the replay happens on a
+remote device. We should consider going into an 'abort mode' rather than actually aborting
+when doing a replay service - from which we can still print out useful information like
+debug markers and device fault info.
+
 ## Binaries
 
 We can get binary data from a number of sources:

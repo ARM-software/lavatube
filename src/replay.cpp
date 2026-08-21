@@ -34,6 +34,7 @@
 #include "trace_metadata.h"
 #include "suballocator.h"
 #include "replay_diagnostics.h"
+#include "aftermath.h"
 #include "replay_instrumentation.h"
 #include "system_log.h"
 
@@ -1534,6 +1535,14 @@ int main(int argc, char **argv)
 		printf("SKIP: input trace file does not exist or is not readable: %s\n", filename.c_str());
 		return 77;
 	}
+	if (replayer.device_fault_report_requested)
+	{
+		replayer.aftermath_context = aftermath_initialize(filename.c_str());
+		if (replayer.aftermath_context)
+		{
+			replayer.aftermath_device_lost_callback = aftermath_handle_device_lost;
+		}
+	}
 	replayer.collect_trace_file_info(filename);
 
 	if (wsi.empty()) wsi_initialize(nullptr);
@@ -1583,6 +1592,8 @@ int main(int argc, char **argv)
 			replay_done.notify_all();
 			service_thread.join();
 			service_state.system_collector.stop();
+			aftermath_shutdown(replayer.aftermath_context);
+			replayer.aftermath_context = nullptr;
 			close_debug_destination();
 			return replayer.exit_status;
 		}
@@ -1605,6 +1616,8 @@ int main(int argc, char **argv)
 	if (p__custom_allocator) allocators_print(stdout);
 	if (!replayer.cleanup_after_stop()) cleanup_xcb_wsi_objects();
 	vkuDestroyWrapper(library);
+	aftermath_shutdown(replayer.aftermath_context);
+	replayer.aftermath_context = nullptr;
 	wsi_shutdown();
 	close_debug_destination();
 	return replayer.exit_status;

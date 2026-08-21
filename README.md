@@ -320,6 +320,14 @@ documentation for the exact meaning of this value.
 
 For uncompressed traces, set `LAVATUBE_COMPRESSION_TYPE` to 0.
 
+Vendor-specific support
+=======================
+
+You can enable NVIDIA Nsight Aftermath support. Download the SDK from
+[here](https://developer.nvidia.com/nsight-aftermath) and build with
+`-DNSIGHT_AFTERMATH_SDK_ROOT=<path>` passed to CMake. Aftermath diagnostics
+are collected only when replay is run with `--device-fault-report`.
+
 Further reading
 ===============
 
