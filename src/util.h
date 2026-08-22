@@ -203,7 +203,6 @@ const char* shader_stage_name(VkShaderStageFlagBits stage);
 
 struct memory_requirements;
 
-void check_retval(VkResult stored_retval, VkResult retval);
 uint64_t host_image_copy_size(VkFormat format, const VkImageSubresourceLayers* subresource, const VkExtent3D* extent, uint32_t memory_row_length, uint32_t memory_image_height);
 uint64_t tensor_data_size(const VkTensorDescriptionARM* description);
 void copy_recorded_memory_requirements(memory_requirements& dst, const VkMemoryRequirements2* src);

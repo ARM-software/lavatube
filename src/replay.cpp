@@ -204,6 +204,7 @@ static bool cli_thread_quiescent(lava_file_reader& reader)
 	const cli_thread_state state = reader.cli_state.load(std::memory_order_acquire);
 	return state == cli_thread_state::not_started
 	       || state == cli_thread_state::cli_paused
+	       || state == cli_thread_state::error_paused
 	       || state == cli_thread_state::wait_handle
 	       || state == cli_thread_state::wait_barrier
 	       || state == cli_thread_state::wait_fence
@@ -248,12 +249,34 @@ static std::string cli_wait_for_quiescence_and_idle()
 	return cli_wait_idle_devices();
 }
 
+static bool cli_thread_ready();
+static std::string cli_paused_command_response(lava_file_reader& reader);
+
 static std::string cli_wait_for_done_and_idle()
 {
 	while (!replay_done.load(std::memory_order_acquire))
 	{
-		replay_done.wait(false);
+		if (!replayer.cli_running.load(std::memory_order_acquire) && cli_thread_ready())
+		{
+			// The only way cli_running can go false during a full-speed continue is an error pause;
+			// a selected thread finishing just means we keep waiting for the whole replay.
+			const int thread_id = replayer.cli_thread.load(std::memory_order_acquire);
+			lava_file_reader& reader = replayer.file_reader(thread_id);
+			if (reader.cli_state.load(std::memory_order_acquire) == cli_thread_state::error_paused)
+			{
+				return cli_paused_command_response(reader);
+			}
+		}
+		if (replayer.cli_running.load(std::memory_order_acquire))
+		{
+			replayer.cli_running.wait(true, std::memory_order_acquire);
+		}
+		else
+		{
+			replay_done.wait(false);
+		}
 	}
+	if (replayer.abort_requested()) return "ABORTED " + replayer.abort_reason() + "\n";
 	const std::string idle_response = replayer.cli_idle_check.load(std::memory_order_acquire)
 		? cli_wait_idle_devices() : "OK\n";
 	if (idle_response != "OK\n") return idle_response;
@@ -309,10 +332,22 @@ static std::string cli_paused_command_response(lava_file_reader& reader)
 	const int thread_id = replayer.cli_thread.load(std::memory_order_acquire);
 	if (!cli_has_paused_command(reader)) return "PAUSED thread=" + std::to_string(thread_id) + "\n";
 	const char* packet_name = get_packet_name((packet_type)reader.current.packet_type, reader.current.call_id);
-	return "PAUSED @ packet=" + std::to_string(cli_current_packet_index(reader)) + " api_calls=" + std::to_string(cli_current_call(reader))
+	std::string response = "PAUSED @ packet=" + std::to_string(cli_current_packet_index(reader)) + " api_calls=" + std::to_string(cli_current_call(reader))
 	       + " name=" + packet_name + " frame="
 	       + std::to_string(replayer.global_frame) + "/" + std::to_string(replayer.global_frame_count)
-	       + " thread=" + std::to_string(thread_id) + "\n";
+	       + " thread=" + std::to_string(thread_id);
+	const int_fast32_t error = reader.cli_paused_error.load(std::memory_order_acquire);
+	if (error != 0) response += " error=" + std::string(errorString((VkResult)error));
+	return response + "\n";
+}
+
+/// Response for the currently selected thread. Re-resolves the selection because an error pause
+/// may have retargeted it while a control command was in flight.
+static std::string cli_selected_pause_response()
+{
+	if (!cli_thread_ready()) return "PAUSED\n";
+	const int thread_id = replayer.cli_thread.load(std::memory_order_acquire);
+	return cli_paused_command_response(replayer.file_reader(thread_id));
 }
 
 static std::string cli_blocked_command_response(lava_file_reader& reader, cli_thread_state state)
@@ -372,6 +407,7 @@ static std::string cli_wait_for_pause_or_block(lava_file_reader& reader)
 		}
 		usleep(50);
 	}
+	if (replayer.abort_requested()) return "ABORTED " + replayer.abort_reason() + "\n";
 	if (reader.terminated.load(std::memory_order_acquire))
 	{
 		return "THREAD_DONE thread=" + std::to_string(reader.current.thread) + "\n";
@@ -390,6 +426,10 @@ static std::string cli_select_thread(uint32_t thread_id)
 	if (current_thread == (int)thread_id)
 	{
 		const std::string idle_response = cli_wait_for_quiescence_and_idle();
+		if (replayer.abort_requested())
+		{
+			return "ABORTED " + replayer.abort_reason() + "\n";
+		}
 		return idle_response == "OK\n" ? cli_paused_command_response(reader) : idle_response;
 	}
 
@@ -406,11 +446,12 @@ static std::string cli_select_thread(uint32_t thread_id)
 	const std::string blocked_response = cli_wait_for_pause_or_block(reader);
 	if (!blocked_response.empty()) return blocked_response;
 
+	if (replayer.abort_requested()) return "ABORTED " + replayer.abort_reason() + "\n";
 	if (replay_done.load(std::memory_order_acquire)) return "DONE\n";
 
 	const std::string idle_response = cli_wait_for_quiescence_and_idle();
 	if (idle_response != "OK\n") return idle_response;
-	return cli_paused_command_response(reader);
+	return cli_selected_pause_response();
 }
 
 static void register_replay_callbacks()
@@ -623,7 +664,8 @@ static std::string service_command_response(service_client_state* state, const s
 	}
 	else if (command.size() == 1 && command[0] == "status")
 	{
-		if (replay_done.load(std::memory_order_acquire)) response = "DONE\n";
+		if (replayer.abort_requested()) response = "ABORTED " + replayer.abort_reason() + "\n";
+		else if (replay_done.load(std::memory_order_acquire)) response = "DONE\n";
 		else if (replayer.cli_running.load(std::memory_order_acquire)) response = "RUNNING\n";
 		else
 		{
@@ -862,7 +904,8 @@ static std::string service_command_response(service_client_state* state, const s
 					if (response.empty())
 					{
 						const std::string idle_response = cli_wait_for_quiescence_and_idle();
-						response = idle_response == "OK\n" ? cli_paused_command_response(reader) : idle_response;
+						if (replayer.abort_requested()) response = "ABORTED " + replayer.abort_reason() + "\n";
+						else response = idle_response == "OK\n" ? cli_selected_pause_response() : idle_response;
 					}
 				}
 			}
@@ -893,7 +936,8 @@ static std::string service_command_response(service_client_state* state, const s
 				else if (target_packet == current_packet && cli_has_paused_command(reader))
 				{
 					const std::string idle_response = cli_wait_for_quiescence_and_idle();
-					response = idle_response == "OK\n" ? cli_paused_command_response(reader) : idle_response;
+					if (replayer.abort_requested()) response = "ABORTED " + replayer.abort_reason() + "\n";
+					else response = idle_response == "OK\n" ? cli_selected_pause_response() : idle_response;
 				}
 				else
 				{
@@ -907,7 +951,8 @@ static std::string service_command_response(service_client_state* state, const s
 					{
 						const std::string idle_response = cli_wait_for_quiescence_and_idle();
 						if (idle_response != "OK\n") response = idle_response;
-						else response = replay_done.load(std::memory_order_acquire) ? "DONE\n" : cli_paused_command_response(reader);
+						else if (replayer.abort_requested()) response = "ABORTED " + replayer.abort_reason() + "\n";
+						else response = replay_done.load(std::memory_order_acquire) ? "DONE\n" : cli_selected_pause_response();
 					}
 				}
 			}
@@ -930,7 +975,8 @@ static std::string service_command_response(service_client_state* state, const s
 					{
 						const std::string idle_response = cli_wait_for_quiescence_and_idle();
 						if (idle_response != "OK\n") response = idle_response;
-						else response = replay_done.load(std::memory_order_acquire) ? "DONE\n" : cli_paused_command_response(reader);
+						else if (replayer.abort_requested()) response = "ABORTED " + replayer.abort_reason() + "\n";
+						else response = replay_done.load(std::memory_order_acquire) ? "DONE\n" : cli_selected_pause_response();
 					}
 				}
 			}
@@ -949,6 +995,11 @@ static std::string service_command_response(service_client_state* state, const s
 			if (!cli_has_paused_command(reader))
 			{
 				response = "ERROR\n";
+			}
+			else if (reader.terminated.load(std::memory_order_acquire))
+			{
+				// A dead thread (abort or THREAD_DONE) will never publish parameters
+				response = replayer.abort_requested() ? "ABORTED " + replayer.abort_reason() + "\n" : "ERROR\n";
 			}
 			else
 			{

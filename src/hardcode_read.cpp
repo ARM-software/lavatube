@@ -692,7 +692,7 @@ void retrace_vkGetSemaphoreFdKHR(lava_file_reader& reader)
 	{
 		retval = wrap_vkGetSemaphoreFdKHR(device, pGetFdInfo, pFd);
 		if (retval == VK_SUCCESS) replay_fd = *pFd;
-		check_retval(stored_retval, retval);
+		check_retval(reader, stored_retval, retval);
 	}
 
 	tmp_uuint8t = reader.read_uint8_t();
@@ -794,7 +794,7 @@ void retrace_vkImportSemaphoreFdKHR(lava_file_reader& reader)
 	if (reader.is_replay() && do_call)
 	{
 		retval = wrap_vkImportSemaphoreFdKHR(device, pImportSemaphoreFdInfo);
-		check_retval(stored_retval, retval);
+		check_retval(reader, stored_retval, retval);
 	}
 	if (recorded_fd >= 0) pImportSemaphoreFdInfo->fd = recorded_fd;
 
@@ -5615,7 +5615,7 @@ void retrace_vkGetAndroidHardwareBufferPropertiesANDROID(lava_file_reader& reade
 	// Execute
 	VkResult retval = VK_SUCCESS;
 	VkResult stored_retval = static_cast<VkResult>(reader.read_uint32_t());
-	check_retval(stored_retval, retval);
+	check_retval(reader, stored_retval, retval);
 	// Post
 	// single length struct follows
 	VkStructureType pProperties_sType = static_cast<VkStructureType>(reader.read_uint32_t());
@@ -5652,7 +5652,7 @@ void retrace_vkGetMemoryAndroidHardwareBufferANDROID(lava_file_reader& reader)
 	// Execute
 	VkResult retval = VK_SUCCESS;
 	VkResult stored_retval = static_cast<VkResult>(reader.read_uint32_t());
-	check_retval(stored_retval, retval);
+	check_retval(reader, stored_retval, retval);
 
 	// Unused metadata
 	const hardware_buffer_metadata buffer = read_hw_buffer(reader);

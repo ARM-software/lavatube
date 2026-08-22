@@ -1992,7 +1992,7 @@ def loadfunc(name, node, target, header):
 		z.do('reader.parent->request_stop();')
 		z.do('reader.throw_stop_requested();')
 		z.brace_end()
-		z.do('check_retval(stored_retval, retval);')
+		z.do('check_retval(reader, stored_retval, retval);')
 		z.brace_end()
 	elif name == "vkCreateDevice":
 		z.do('VkResult stored_retval = static_cast<VkResult>(reader.read_uint32_t());')
@@ -2007,7 +2007,7 @@ def loadfunc(name, node, target, header):
 		z.do('reader.parent->request_stop();')
 		z.do('reader.throw_stop_requested();')
 		z.brace_end()
-		z.do('check_retval(stored_retval, retval);')
+		z.do('check_retval(reader, stored_retval, retval);')
 		z.brace_end()
 	elif name == "vkGetDeviceFaultReportsKHR":
 		z.do('VkResult stored_retval = static_cast<VkResult>(reader.read_uint32_t());')
@@ -2022,6 +2022,7 @@ def loadfunc(name, node, target, header):
 		z.do('VkResult retval = stored_retval;')
 		z.do('if (stored_retval == VK_SUCCESS && reader.is_replay()) { retval = wrap_vkWaitForFences(device, 1, &fence, VK_TRUE, UINT64_MAX); }')
 		z.do('else if (reader.is_replay()) { retval = wrap_vkGetFenceStatus(device, fence); }')
+		z.do('if (reader.is_replay()) check_retval(reader, stored_retval, retval);')
 	elif name == "vkWaitForFences": # as above
 		z.do('VkResult stored_retval = static_cast<VkResult>(reader.read_uint32_t());')
 		z.do('VkResult retval = stored_retval;')
@@ -2029,17 +2030,20 @@ def loadfunc(name, node, target, header):
 		z.do('else if (reader.is_replay() && stored_retval == VK_TIMEOUT) { timeout = 0; }')
 		z.do('if (reader.is_replay()) retval = wrap_vkWaitForFences(device, fenceCount, pFences, waitAll, timeout);')
 		z.do('if (reader.is_replay() && retval == VK_ERROR_DEVICE_LOST) replay_report_device_fault(device, reader.parent);')
+		z.do('if (reader.is_replay()) check_retval(reader, stored_retval, retval);')
 	elif name == "vkWaitSemaphores": # as above
 		z.do('VkResult stored_retval = static_cast<VkResult>(reader.read_uint32_t());')
 		z.do('VkResult retval = stored_retval;')
 		z.do('if (reader.is_replay() && stored_retval == VK_SUCCESS) { timeout = UINT64_MAX; }')
 		z.do('else if (reader.is_replay() && stored_retval == VK_TIMEOUT) { timeout = 0; }')
 		z.do('if (reader.is_replay()) retval = wrap_vkWaitSemaphores(device, pWaitInfo, timeout);')
+		z.do('if (reader.is_replay()) check_retval(reader, stored_retval, retval);')
 	elif name == "vkGetEventStatus": # wait for SET, but a replay event that is already SET cannot return to a recorded RESET
 		z.do('VkResult stored_retval = static_cast<VkResult>(reader.read_uint32_t());')
 		z.do('VkResult retval = stored_retval;')
 		z.do('if (reader.is_replay() && !is_blackhole_mode() && stored_retval == VK_EVENT_SET) do { retval = wrap_vkGetEventStatus(device, event); } while (retval != VK_EVENT_SET && retval != VK_ERROR_DEVICE_LOST);')
 		z.do('else if (reader.is_replay() && !is_blackhole_mode() && stored_retval == VK_EVENT_RESET) { VkResult actual_retval = wrap_vkGetEventStatus(device, event); if (actual_retval == VK_ERROR_DEVICE_LOST) retval = actual_retval; }')
+		z.do('if (reader.is_replay() && !is_blackhole_mode()) check_retval(reader, stored_retval, retval);')
 	elif name == 'vkAcquireNextImageKHR':
 		z.do('VkResult stored_retval = static_cast<VkResult>(reader.read_uint32_t());')
 		z.do('VkResult retval = stored_retval;')
@@ -2048,6 +2052,7 @@ def loadfunc(name, node, target, header):
 		z.do('retval = wrap_vkAcquireNextImageKHR(device, swapchain, UINT64_MAX, semaphore, fence, pImageIndex); // overwriting the timeout')
 		z.do('auto& %s = VkSwapchainKHR_index.at(swapchainkhr_index);' % totrackable('VkSwapchainKHR'))
 		z.do('%s.next_swapchain_image = *pImageIndex; // do this before we overwrite this value with stored value from file below' % totrackable('VkSwapchainKHR'))
+		z.do('check_retval(reader, stored_retval, retval);')
 		z.brace_end()
 		z.do('else if (reader.is_replay())')
 		z.brace_begin()
@@ -2065,6 +2070,7 @@ def loadfunc(name, node, target, header):
 		z.do('retval = wrap_vkAcquireNextImage2KHR(device, pAcquireInfo, pImageIndex);')
 		z.do('auto& %s = VkSwapchainKHR_index.at(%s);' % (totrackable('VkSwapchainKHR'), toindex('VkSwapchainKHR')))
 		z.do('%s.next_swapchain_image = *pImageIndex;' % totrackable('VkSwapchainKHR')) # do this before we overwrite this value with stored value from file
+		z.do('check_retval(reader, stored_retval, retval);')
 		z.brace_end()
 		z.do('else if (reader.is_replay())')
 		z.brace_begin()
@@ -2078,6 +2084,7 @@ def loadfunc(name, node, target, header):
 		z.do('if (!is_noscreen() && reader.is_replay())')
 		z.brace_begin()
 		z.do('retval = wrap_%s(%s);' % (name, ', '.join(call_list)))
+		z.do('check_retval(reader, stored_retval, retval);')
 		z.brace_end()
 		z.do('else if (reader.is_replay()) cleanup_sync(queue, pPresentInfo->waitSemaphoreCount, pPresentInfo->pWaitSemaphores, 0, nullptr, VK_NULL_HANDLE);')
 	else:
@@ -2148,7 +2155,7 @@ def loadfunc(name, node, target, header):
 			if retval == 'VkBool32':
 				z.do('assert(stored_retval == retval);')
 			elif retval == 'VkResult' and name != 'vkQueuePresentKHR':
-				z.do('check_retval(stored_retval, retval);')
+				z.do('check_retval(reader, stored_retval, retval);')
 			elif retval in ['uint64_t', 'uint32_t'] and not name in vk.ignore_retval:
 				z.do('assert(stored_retval == retval);')
 			elif retval in ['VkDeviceAddress', 'VkDeviceSize']:

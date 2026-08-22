@@ -536,6 +536,80 @@ bool lava_reader::cleanup_after_stop()
 	return true;
 }
 
+/// Test-only: return the error code LAVATUBE_TEST_RETVAL_ERROR wants the current API call to
+/// report, once per replay. The environment value has the form "<function_name>,<negative code>".
+static VkResult replay_test_forced_retval(lava_file_reader& reader)
+{
+	lava_reader* parent = reader.parent;
+	if (parent->test_retval_error_call.empty()
+	    || parent->test_retval_error_call != get_function_name(reader.current.call_id))
+	{
+		return VK_SUCCESS;
+	}
+	const int_fast32_t forced = parent->test_retval_error_code.exchange(0, std::memory_order_acq_rel);
+	if (forced == 0) return VK_SUCCESS;
+	WLOG("LAVATUBE TEST: simulating unexpected API result %s in %s", errorString((VkResult)forced), parent->test_retval_error_call.c_str());
+	return (VkResult)forced;
+}
+
+void check_retval(lava_file_reader& reader, VkResult stored_retval, VkResult retval)
+{
+	if (retval == VK_SUCCESS) retval = replay_test_forced_retval(reader); // TBD replace later with chameleon / layer injection
+	if (retval == stored_retval || retval >= 0) return; // accept cases where capture failed but replay works -- although problematic
+	// timeout, incomplete and event_reset are negative but not errors as far as we are concerned
+	if (retval == VK_TIMEOUT || retval == VK_INCOMPLETE || retval == VK_EVENT_RESET
+	    || stored_retval == VK_TIMEOUT || stored_retval == VK_INCOMPLETE || stored_retval == VK_EVENT_RESET) return;
+
+	const char* err = errorString(retval);
+	const char* call_name = get_function_name(reader.current.call_id);
+	lava_reader* parent = reader.parent;
+	parent->cli_error_count.fetch_add(1, std::memory_order_relaxed);
+	if (!parent->cli_service.load(std::memory_order_acquire))
+	{
+		ABORT("LAVATUBE ERROR: Returncode does not match stored value in %s, got error: %s (code %d, stored %d)", call_name, err, (int)retval, (int)stored_retval);
+	}
+	if (retval == VK_ERROR_DEVICE_LOST)
+	{
+		// Fatal: the device cannot be relied on for further replay. Stop all replay threads but
+		// keep the service reachable so the final state can still be inspected (abort mode).
+		FELOG("LAVATUBE ERROR: fatal replay error in %s: %s (code %d), entering abort mode", call_name, err, (int)retval);
+		parent->request_abort(reader, retval);
+		reader.throw_stop_requested();
+	}
+	WLOG("LAVATUBE ERROR: Returncode does not match stored value in %s, got error: %s (code %d, stored %d), pausing replay", call_name, err, (int)retval, (int)stored_retval);
+	reader.cli_error_packet.store(reader.current.packet, std::memory_order_relaxed);
+	reader.cli_error_mark.store(retval, std::memory_order_release);
+}
+
+bool lava_reader::abort_requested() const
+{
+	lava::lock_guard guard(mAbortMutex);
+	return mAbortRequested;
+}
+
+std::string lava_reader::abort_reason() const
+{
+	lava::lock_guard guard(mAbortMutex);
+	return mAbortReason;
+}
+
+void lava_reader::request_abort(lava_file_reader& reader, VkResult retval)
+{
+	{
+		lava::lock_guard guard(mAbortMutex);
+		if (!mAbortRequested)
+		{
+			mAbortRequested = true;
+			mAbortReason = std::string("unexpected API result ") + errorString(retval) + " in "
+			             + get_function_name(reader.current.call_id)
+			             + " (thread " + std::to_string(reader.current.thread)
+			             + ", packet " + std::to_string(reader.current.packet) + ")";
+		}
+	}
+	exit_status.store(1, std::memory_order_relaxed);
+	request_stop();
+}
+
 lava_file_reader& lava_reader::file_reader(uint16_t thread_id)
 {
 	return *thread_streams.at(thread_id);
@@ -638,6 +712,27 @@ void lava_reader::init_metadata(const std::string& path)
 void lava_reader::init(const std::string& path)
 {
 	init_metadata(path);
+
+	// Test-only hook to exercise unexpected API result handling in service mode
+	const char* test_error = getenv("LAVATUBE_TEST_RETVAL_ERROR");
+	if (test_error)
+	{
+		const char* comma = strchr(test_error, ',');
+		if (comma && comma != test_error && comma[1] != '\0')
+		{
+			test_retval_error_call.assign(test_error, comma - test_error);
+			const long parsed = strtol(comma + 1, nullptr, 10);
+			if (parsed < 0 && parsed >= INT_FAST32_MIN)
+			{
+				test_retval_error_code.store((int_fast32_t)parsed, std::memory_order_relaxed);
+			}
+		}
+		if (test_retval_error_code.load(std::memory_order_relaxed) == 0)
+		{
+			WLOG("Ignoring invalid LAVATUBE_TEST_RETVAL_ERROR value: %s", test_error);
+		}
+	}
+
 	const int num_threads = threads.size();
 	thread_streams.resize(num_threads);
 

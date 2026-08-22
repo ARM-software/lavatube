@@ -60,11 +60,27 @@ Guarantees that we should give:
 
 ## Crashes
 
-We currently voluntarily abort from the replay in a number of scenarios, and this makes
-it unreachable from `lava-cli` - which is especially tricky if the replay happens on a
-remote device. We should consider going into an 'abort mode' rather than actually aborting
-when doing a replay service - from which we can still print out useful information like
-debug markers and device fault info.
+When we get an unexpected return value from the replayed API, a plain `lava-replay`
+run voluntarily aborts, and this makes it unreachable from `lava-cli` - which is
+especially tricky if the replay happens on a remote device. In replay service mode
+(`lava-replay --service`) we now go into an inspectable error state instead of
+aborting.
+
+This is now mostly implemented.
+
+Still to do:
+* An explicit 'ignore' command for selected non-fatal errors (not useful for device
+  lost, but maybe for some others).
+* Several special generated cases detect bad results with `assert` instead of
+  `check_retval()` (eg some swapchain and queue functions); those should route
+  through the same service-mode handling.
+* The environment mismatch aborts scattered through the replay code (memory types,
+  swapchain formats, queue families, ...) should also become `ABORTED` service
+  states rather than process aborts, while true invariant/trace corruption keeps
+  the hard abort.
+* The user of `lava-cli` needs to be clearly informed that we paused at a different
+  place than what was requested, and if the active thread was changed this also needs to
+  be communicated (the `error=` suffix and thread number are a first step).
 
 ## Binaries
 

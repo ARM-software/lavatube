@@ -35,6 +35,7 @@ const char* replay_diagnostics_thread_state_name(cli_thread_state state)
 		case cli_thread_state::wait_queue_idle: return "wait_queue_idle";
 		case cli_thread_state::wait_device_idle: return "wait_device_idle";
 		case cli_thread_state::terminated: return "terminated";
+		case cli_thread_state::error_paused: return "error_paused";
 		default: return "unknown";
 	}
 }

@@ -42,6 +42,7 @@ enum class cli_thread_state : uint8_t
 	wait_queue_idle = 6,
 	wait_device_idle = 7,
 	terminated = 8,
+	error_paused = 9,
 };
 
 enum class cli_instrument_mode : uint8_t
@@ -248,6 +249,19 @@ public:
 	/// Set our exit status here if we want to signal something special (eg a skip test value)
 	std::atomic_int exit_status { 0 };
 
+	/// A fatal replay error (eg device lost) has aborted the replay. The service stays up so the
+	/// final state can still be inspected, and 'status' reports ABORTED until 'stop' finishes.
+	bool abort_requested() const;
+	/// Human readable reason for a fatal replay abort, empty when not aborted.
+	std::string abort_reason() const;
+	/// Record a fatal replay error on the given reader and request stop of all replay threads.
+	void request_abort(lava_file_reader& reader, VkResult retval);
+
+	// Test-only: simulate the named API call returning this unexpected error once, to exercise
+	// error pause handling. Set with LAVATUBE_TEST_RETVAL_ERROR="<function>,<negative code>".
+	std::string test_retval_error_call;
+	std::atomic_int_fast32_t test_retval_error_code{ 0 };
+
 	/// Pruned extension lists stored in metadata.json after capture finalization.
 	bool has_stored_instance_requested_extensions = false;
 	bool has_stored_device_requested_extensions = false;
@@ -265,6 +279,8 @@ public:
 	std::atomic_bool cli_idle_check{ true };
 	std::atomic_bool cli_isolate_thread{ false };
 	std::atomic_bool cli_command_active{ false };
+	/// Number of replayed API calls that returned an unexpected error (error pauses and aborts)
+	std::atomic_uint_fast32_t cli_error_count{ 0 };
 	std::string cli_response; // response data from cli thread to control thread
 	std::atomic_bool cli_params_requested{ false };
 	std::atomic_bool cli_params_ready{ false };
@@ -296,6 +312,9 @@ private:
 	std::atomic_uint64_t mStartTime{ 0 };
 	std::atomic_bool mStopRequested{ false };
 	std::atomic_uintptr_t mCleanupDevice{ 0 };
+	mutable lava::mutex mAbortMutex;
+	bool mAbortRequested = false;
+	std::string mAbortReason;
 	/// Start CPU usage for whole process
 	struct timespec process_cpu_usage;
 	std::string mPackedFile;
@@ -458,6 +477,12 @@ public:
 	std::atomic_uint_fast32_t cli_wait_object_type{ VK_OBJECT_TYPE_UNKNOWN };
 	std::atomic_uint_fast32_t cli_wait_object_index{ CONTAINER_INVALID_INDEX };
 	std::atomic_uint_fast32_t cli_wait_aux_index{ CONTAINER_INVALID_INDEX };
+	/// Unexpected API result mark from check_retval: the packet where the error was seen and the
+	/// error code itself. Consumed by check_cli(), which turns it into an error pause.
+	std::atomic_uint_fast32_t cli_error_packet{ UINT32_MAX };
+	std::atomic_int_fast32_t cli_error_mark{ 0 };
+	/// Unexpected API result at the current pause point, reported by 'status' (0 = none)
+	std::atomic_int_fast32_t cli_paused_error{ 0 };
 
 	// Replay-only: per-thread queue for AS build sizes and internal AS buffers.
 	std::deque<VkAccelerationStructureBuildSizesInfoKHR> pending_as_build_sizes;
@@ -576,9 +601,48 @@ inline uint32_t lava_file_reader::read_handle(DEBUGPARAM(const char* name))
 static inline bool check_cli(const callback_context& cb)
 {
 	lava_reader* parent = cb.reader.parent;
-	const int req_thread = parent->cli_thread.load(std::memory_order_acquire);
+	int req_thread = parent->cli_thread.load(std::memory_order_acquire);
 	if (req_thread == -1) return false; // fast out if not running under CLI control
 	if (parent->stop_requested()) cb.reader.throw_stop_requested();
+	// A replayed API call on this thread returned an unexpected error: force an error pause so
+	// lava-cli can inspect the state. If the replay is already paused elsewhere, or another
+	// thread's error won the race, the error stays reported through the log and error count.
+	const int_fast32_t error_retval = cb.reader.cli_error_mark.load(std::memory_order_acquire);
+	if (error_retval != 0)
+	{
+		if (cb.reader.cli_error_packet.load(std::memory_order_acquire) != cb.reader.current.packet)
+		{
+			cb.reader.cli_error_mark.store(0, std::memory_order_release); // stale mark from a skipped epilogue
+		}
+		else
+		{
+			int expected = req_thread;
+			const bool takeover = parent->cli_running.load(std::memory_order_acquire)
+				&& (expected == (int)cb.reader.current.thread
+				    || parent->cli_thread.compare_exchange_strong(expected, (int)cb.reader.current.thread, std::memory_order_acq_rel, std::memory_order_acquire));
+			cb.reader.cli_error_mark.store(0, std::memory_order_release);
+			if (!takeover)
+			{
+				cb.reader.cli_state.store(cli_thread_state::running, std::memory_order_release);
+				return false;
+			}
+			uint32_t completed_call = 0;
+			const cli_step_mode step_mode = cb.reader.cli_step.load(std::memory_order_acquire);
+			if (step_mode == cli_step_mode::calls || step_mode == cli_step_mode::function) completed_call = cb.reader.api_call_count + 1;
+			else completed_call = cb.reader.cli_packet.load(std::memory_order_relaxed) + 1;
+			cb.reader.cli_paused_call.store(completed_call, std::memory_order_release);
+			cb.reader.cli_paused_error.store(error_retval, std::memory_order_release);
+			cb.reader.cli_state.store(cli_thread_state::error_paused, std::memory_order_release);
+			cb.reader.cli_pause_generation.fetch_add(1, std::memory_order_acq_rel);
+			cb.reader.cli_pause_generation.notify_all();
+			parent->cli_running.store(false, std::memory_order_release);
+			parent->cli_running.notify_all();
+			usleep(50);
+			return true; // loop in caller until lava-cli resolves the error pause
+		}
+	}
+	// An error on another thread may have retargeted the selected thread
+	req_thread = parent->cli_thread.load(std::memory_order_acquire);
 	bool selected_thread = req_thread == cb.reader.current.thread;
 	if (!selected_thread)
 	{
@@ -595,37 +659,41 @@ static inline bool check_cli(const callback_context& cb)
 		cb.reader.cli_state.store(cli_thread_state::running, std::memory_order_release);
 		return false;
 	}
-	uint32_t completed_call = 0;
-	const cli_step_mode step_mode = cb.reader.cli_step.load(std::memory_order_acquire);
-	if (step_mode == cli_step_mode::calls || step_mode == cli_step_mode::function)
-	{
-		if (cb.reader.current.packet_type != PACKET_VULKAN_API_CALL)
-		{
-			cb.reader.cli_state.store(cli_thread_state::running, std::memory_order_release);
-			return false;
-		}
-		if (step_mode == cli_step_mode::function && cb.reader.current.call_id != cb.reader.cli_function.load(std::memory_order_acquire))
-		{
-			cb.reader.cli_state.store(cli_thread_state::running, std::memory_order_release);
-			return false;
-		}
-		completed_call = cb.reader.api_call_count + 1;
-	}
-	else
-	{
-		completed_call = cb.reader.cli_packet.load(std::memory_order_relaxed) + 1;
-	}
+	const bool keep_error_pause = cb.reader.cli_state.load(std::memory_order_acquire) == cli_thread_state::error_paused;
 	if (parent->cli_running.load(std::memory_order_acquire))
 	{
+		uint32_t completed_call = 0;
+		const cli_step_mode step_mode = cb.reader.cli_step.load(std::memory_order_acquire);
+		if (step_mode == cli_step_mode::calls || step_mode == cli_step_mode::function)
+		{
+			if (cb.reader.current.packet_type != PACKET_VULKAN_API_CALL)
+			{
+				cb.reader.cli_state.store(cli_thread_state::running, std::memory_order_release);
+				return false;
+			}
+			if (step_mode == cli_step_mode::function && cb.reader.current.call_id != cb.reader.cli_function.load(std::memory_order_acquire))
+			{
+				cb.reader.cli_state.store(cli_thread_state::running, std::memory_order_release);
+				return false;
+			}
+			completed_call = cb.reader.api_call_count + 1;
+		}
+		else
+		{
+			completed_call = cb.reader.cli_packet.load(std::memory_order_relaxed) + 1;
+		}
 		const uint32_t req_call = cb.reader.cli_call.load(std::memory_order_acquire);
 		if (completed_call < req_call)
 		{
 			cb.reader.cli_state.store(cli_thread_state::running, std::memory_order_release);
 			return false;
 		}
+		cb.reader.cli_paused_call.store(completed_call, std::memory_order_release);
 	}
-	cb.reader.cli_paused_call.store(completed_call, std::memory_order_release);
-	cb.reader.cli_state.store(cli_thread_state::cli_paused, std::memory_order_release);
+	// An error pause is a normal pause that remembers its unexpected result; the epilogue's
+	// check_cli spin would otherwise clear it, so keep the state and error on re-entry.
+	if (!keep_error_pause) cb.reader.cli_paused_error.store(0, std::memory_order_release);
+	cb.reader.cli_state.store(keep_error_pause ? cli_thread_state::error_paused : cli_thread_state::cli_paused, std::memory_order_release);
 	cb.reader.cli_pause_generation.fetch_add(1, std::memory_order_acq_rel);
 	cb.reader.cli_pause_generation.notify_all();
 	parent->cli_running.store(false, std::memory_order_release);
@@ -643,3 +711,9 @@ bool print_params_requested(callback_context& cb);
 void print_params_publish(callback_context& cb, Json::Value v);
 void print_params_unavailable(callback_context& cb);
 void print_params_packet(callback_context& cb);
+
+/// Validate that a replayed API call returned the result the captured app saw. A mismatch is an
+/// abort outside replay service mode; in service mode a non-fatal error is reported to lava-cli
+/// as an error pause, and a fatal error (device lost) aborts the replay while keeping the service
+/// reachable.
+void check_retval(lava_file_reader& reader, VkResult stored_retval, VkResult retval);

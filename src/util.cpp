@@ -483,15 +483,6 @@ const char* errorString(const VkResult errorCode)
 	return "(unrecognized error code)";
 }
 
-void check_retval(VkResult stored_retval, VkResult retval)
-{
-	if (stored_retval == VK_SUCCESS && retval != VK_SUCCESS)
-	{
-		const char* err = errorString(retval);
-		ABORT("LAVATUBE ERROR: Returncode does not match stored value, got error: %s (code %u)", err, (unsigned)retval);
-	}
-}
-
 const std::vector<std::string> split(const std::string& str, const char& delimiter)
 {
 	std::vector<char> buffer;

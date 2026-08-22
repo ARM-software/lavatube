@@ -46,8 +46,8 @@ void usage()
 #endif
 	printf("\n");
 	printf("Replay control:\n");
-	printf("    status                   Show replay state. Outputs RUNNING, DONE, PAUSED, or current paused packet/call.\n");
-	printf("    continue                 Resume replay and wait until completion.\n");
+	printf("    status                   Show replay state. Outputs RUNNING, DONE, PAUSED, ABORTED, or current paused packet/call.\n");
+	printf("    continue                 Resume replay and wait until completion or an error pause.\n");
 	printf("    stop                     Stop the replay.\n");
 	printf("    diagnose deadlock        Detect replay thread wait cycles and blocking GPU waits.\n");
 	printf("    diagnose device          Wait for replay devices to become idle and report errors.\n");
@@ -572,7 +572,8 @@ int main(int argc, char **argv)
 
 	const std::string response = remote_command(hostname, port, command_string(command), 1024 * 1024);
 	printf("%s", response.c_str());
-	if (response.empty() || response.rfind("ERROR", 0) == 0 || response == "DEVICE_LOST\n" || response == "DEVICE_LOST") return 1;
+	if (response.empty() || response.rfind("ERROR", 0) == 0 || response.rfind("ABORTED", 0) == 0
+	    || response == "DEVICE_LOST\n" || response == "DEVICE_LOST") return 1;
 
 	return 0;
 }
