@@ -1634,6 +1634,9 @@ def load_add_pre(name):
 		z.decl(type, param)
 		z.decl('uint32_t', toindex(type))
 		z.do('%s = reader.read_handle(DEBUGPARAM("%s"));' % (toindex(type), type))
+		if name == 'vkCreateSwapchainKHR':
+			z.decl('VkSwapchainCreateInfoKHR', 'captured_create_info', struct=True)
+			z.do('captured_create_info = *pCreateInfo;')
 		if name in vk.ignore_on_read:
 			z.do('if (reader.write_output) %s = fake_handle<%s>(%s);' % (param, type, toindex(type)))
 	elif name in spec.functions_create: # multiple
@@ -1684,7 +1687,7 @@ def load_add_tracking(name):
 			z.do('data.creation = reader.current;')
 			z.do('data.last_modified = reader.current;')
 			if type == 'VkSwapchainKHR':
-				z.do('data.info = *pCreateInfo; // struct copy')
+				z.do('data.info = captured_create_info; // preserve the application-visible swapchain description')
 				z.do('data.index = %s;' % toindex(type))
 				z.do('data.device = device;')
 			elif type == 'VkDevice':
@@ -1931,7 +1934,10 @@ def loadfunc(name, node, target, header):
 	call_list = [ x.retrace_exec_param(name) for x in params ]
 	if name in vk.replay_pre_calls and name not in ['vkCreateInstance', 'vkCreateDevice']:
 		condition = 'reader.is_replay() || reader.write_output' if name in vk.replay_pre_tool_calls else 'reader.is_replay()'
-		z.do('if (%s) replay_pre_%s(reader, %s);' % (condition, name, ', '.join(call_list)))
+		if name == 'vkCreateSwapchainKHR':
+			pass # delayed until after stored_retval is available below
+		else:
+			z.do('if (%s) replay_pre_%s(reader, %s);' % (condition, name, ', '.join(call_list)))
 	if name in spec.pipeline_execute_commands:
 		z.do('if (reader.is_replay()) replay_instrumentation_pre_shader_command(reader, commandBuffer, commandbuffer_data);')
 
@@ -2104,7 +2110,10 @@ def loadfunc(name, node, target, header):
 			else:
 				prefix = 'if (wrap_%s && reader.is_replay()) ' % name
 		elif name in vk.noscreen_calls:
-			prefix = 'if (!is_noscreen() && reader.is_replay()) '
+			if name == 'vkCreateSwapchainKHR':
+				prefix = 'if (!is_noscreen() && reader.is_replay() && stored_retval == VK_SUCCESS) '
+			else:
+				prefix = 'if (!is_noscreen() && reader.is_replay()) '
 		elif name in spec.functions_create and spec.functions_create[name][1] != '1':
 			# Skip allocate functions that failed
 			prefix = 'if (reader.is_replay() && stored_retval == VK_SUCCESS) '
@@ -2124,6 +2133,8 @@ def loadfunc(name, node, target, header):
 				z.do('VkBool32 stored_retval = static_cast<VkBool32>(reader.read_uint32_t());')
 			elif retval in ['VkDeviceAddress', 'VkDeviceSize']:
 				z.do('%s stored_retval = reader.read_uint64_t();' % retval)
+			if name == 'vkCreateSwapchainKHR':
+				z.do('if (reader.is_replay() && stored_retval == VK_SUCCESS) replay_pre_%s(reader, %s, swapchainkhr_index);' % (name, ', '.join(call_list)))
 			# if query succeeded in trace, make it succeed in replay (TBD: we need better fix here;
 			# as this breaks dumping! yeah, it breaks if the app does this, too...)
 			if name == 'vkGetQueryPoolResults':

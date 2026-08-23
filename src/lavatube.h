@@ -633,8 +633,16 @@ struct trackedswapchain_replay : trackedswapchain
 	VkCommandPool virtual_cmdpool = VK_NULL_HANDLE;
 	std::vector<VkSemaphore> virtual_semaphores;
 	VkImageCopy virtual_image_copy_region = {};
+	VkImageBlit virtual_image_blit_region = {};
 	std::vector<VkFence> virtual_fences;
 	std::vector<bool> inflight; // is this entry in use already
+	VkFormat real_image_format = VK_FORMAT_UNDEFINED;
+	VkColorSpaceKHR real_image_color_space = VK_COLOR_SPACE_MAX_ENUM_KHR;
+	VkExtent2D real_image_extent = {};
+	VkImageUsageFlags real_image_usage = 0;
+	uint32_t real_min_image_count = 0;
+	VkPresentModeKHR real_present_mode = VK_PRESENT_MODE_MAX_ENUM_KHR;
+	bool virtual_present_uses_blit = false;
 	bool initialized = false;
 	VkDevice device = VK_NULL_HANDLE;
 
@@ -643,6 +651,11 @@ struct trackedswapchain_replay : trackedswapchain
 		static_assert(offsetof(trackedswapchain_replay, magic) == 0, "ICD loader magic must be at offset zero!");
 		if (!initialized) return;
 		assert(swapchain != VK_NULL_HANDLE);
+		assert(real_image_format != VK_FORMAT_UNDEFINED);
+		assert(real_image_color_space != VK_COLOR_SPACE_MAX_ENUM_KHR);
+		assert(real_image_extent.width > 0 && real_image_extent.height > 0);
+		assert(real_min_image_count > 0);
+		assert(real_present_mode != VK_PRESENT_MODE_MAX_ENUM_KHR);
 		if (p__virtualswap)
 		{
 			assert(virtual_cmdpool != VK_NULL_HANDLE);

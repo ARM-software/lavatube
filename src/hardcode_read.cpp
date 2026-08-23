@@ -3,6 +3,7 @@
 
 #include "markings.h"
 #include "replay_instrumentation.h"
+#include "swapchain_format_compatibility.h"
 
 #ifndef VK_ANDROID_FRAME_BOUNDARY_EXTENSION_NAME
 #define VK_ANDROID_FRAME_BOUNDARY_EXTENSION_NAME "VK_ANDROID_frame_boundary"
@@ -3378,32 +3379,75 @@ void replay_callback_vkAcquireNextImage2KHR(callback_context& cb, VkDevice devic
 }
 
 // make or remake swapchain images
+static void update_virtual_present_regions(trackedswapchain_replay& data)
+{
+	data.virtual_image_copy_region.srcSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 };
+	data.virtual_image_copy_region.srcOffset = { 0, 0, 0 };
+	data.virtual_image_copy_region.dstSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 };
+	data.virtual_image_copy_region.dstOffset = { 0, 0, 0 };
+	data.virtual_image_copy_region.extent.width = data.info.imageExtent.width;
+	data.virtual_image_copy_region.extent.height = data.info.imageExtent.height;
+	data.virtual_image_copy_region.extent.depth = 1;
+	data.virtual_image_blit_region.srcSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 };
+	data.virtual_image_blit_region.srcOffsets[0] = { 0, 0, 0 };
+	data.virtual_image_blit_region.srcOffsets[1] = {
+		static_cast<int32_t>(data.info.imageExtent.width), static_cast<int32_t>(data.info.imageExtent.height), 1 };
+	data.virtual_image_blit_region.dstSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 };
+	data.virtual_image_blit_region.dstOffsets[0] = { 0, 0, 0 };
+	data.virtual_image_blit_region.dstOffsets[1] = {
+		static_cast<int32_t>(data.real_image_extent.width), static_cast<int32_t>(data.real_image_extent.height), 1 };
+}
+
 static VkSwapchainKHR remake_swapchain(lava_file_reader& reader, VkQueue queue, VkSwapchainKHR old_swapchain, trackedswapchain_replay* data)
 {
 	assert(reader.is_replay());
-	// TBD check surface capabilities, these values may not be supported
+	const uint32_t device_index = index_to_VkDevice.index(data->device);
+	const VkPhysicalDevice physical_device = VkDevice_index.at(device_index).physicalDevice;
+	VkSurfaceCapabilitiesKHR surface_capabilities = {};
+	VkResult r = wrap_vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physical_device, data->info.surface, &surface_capabilities);
+	if (r != VK_SUCCESS) ABORT("Failed to query surface capabilities while remaking swapchain: %s", errorString(r));
+	if (surface_capabilities.currentExtent.width != UINT32_MAX)
+	{
+		if (surface_capabilities.currentExtent.width != data->info.imageExtent.width
+			|| surface_capabilities.currentExtent.height != data->info.imageExtent.height)
+		{
+			ABORT("Replay surface extent changed to %ux%u, but captured swapchain extent is %ux%u; swapchain presentation scaling is not supported",
+				surface_capabilities.currentExtent.width, surface_capabilities.currentExtent.height,
+				data->info.imageExtent.width, data->info.imageExtent.height);
+		}
+		data->real_image_extent = surface_capabilities.currentExtent;
+	}
+	update_virtual_present_regions(*data);
 	VkSwapchainCreateInfoKHR s = { VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR, nullptr };
 	s.flags = data->info.flags;
 	s.flags &= ~VK_SWAPCHAIN_CREATE_DEFERRED_MEMORY_ALLOCATION_BIT_KHR; // disable lazy swapchain image allocation
 	s.surface = data->info.surface;
-	if (p__realimages > 0) s.minImageCount = p__realimages;
-	else s.minImageCount = data->info.minImageCount;
-	s.imageFormat = data->info.imageFormat;
-	s.imageColorSpace = data->info.imageColorSpace;
-	s.imageExtent = data->info.imageExtent;
+	s.minImageCount = data->real_min_image_count;
+	s.imageFormat = data->real_image_format;
+	s.imageColorSpace = data->real_image_color_space;
+	s.imageExtent = data->real_image_extent;
 	s.imageArrayLayers = data->info.imageArrayLayers;
-	s.imageUsage = data->info.imageUsage;
+	s.imageUsage = data->real_image_usage;
 	s.imageSharingMode = data->info.imageSharingMode;
 	s.queueFamilyIndexCount = 0;
 	s.pQueueFamilyIndices = nullptr;
 	s.preTransform = data->info.preTransform;
 	s.compositeAlpha = data->info.compositeAlpha;
-	s.presentMode = data->info.presentMode;
+	s.presentMode = data->real_present_mode;
 	s.clipped = data->info.clipped;
 	s.oldSwapchain = old_swapchain;
+	VkFormat mutable_format_storage = VK_FORMAT_UNDEFINED;
+	VkImageFormatListCreateInfo mutable_format_list = { VK_STRUCTURE_TYPE_IMAGE_FORMAT_LIST_CREATE_INFO, nullptr };
+	if (s.flags & VK_SWAPCHAIN_CREATE_MUTABLE_FORMAT_BIT_KHR)
+	{
+		mutable_format_storage = s.imageFormat;
+		mutable_format_list.viewFormatCount = 1;
+		mutable_format_list.pViewFormats = &mutable_format_storage;
+		s.pNext = &mutable_format_list;
+	}
 	// make new one
 	VkSwapchainKHR swapchain;
-	VkResult r = wrap_vkCreateSwapchainKHR(data->device, &s, nullptr, &swapchain);
+	r = wrap_vkCreateSwapchainKHR(data->device, &s, nullptr, &swapchain);
 	assert(r == VK_SUCCESS);
 	r = wrap_vkQueueWaitIdle(queue);
 	assert(r == VK_SUCCESS);
@@ -3476,40 +3520,47 @@ void replay_pre_vkQueuePresentKHR(lava_file_reader& reader, VkQueue queue, VkPre
 			image_barrier_src.pNext = nullptr;
 			image_barrier_dst.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
 			image_barrier_dst.pNext = nullptr;
-			image_barrier_src.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-			image_barrier_src.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-			image_barrier_dst.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-			image_barrier_dst.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+			image_barrier_src.srcAccessMask = VK_ACCESS_MEMORY_WRITE_BIT;
+			image_barrier_src.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+			image_barrier_dst.srcAccessMask = 0;
+			image_barrier_dst.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
 			image_barrier_src.oldLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR; // TBD could also be VK_IMAGE_LAYOUT_SHARED_PRESENT_KHR
 			image_barrier_src.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
 			image_barrier_dst.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 			image_barrier_dst.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-			image_barrier_src.srcQueueFamilyIndex = selected_queue_family_index;
-			image_barrier_src.dstQueueFamilyIndex = selected_queue_family_index;
-			image_barrier_dst.srcQueueFamilyIndex = selected_queue_family_index;
-			image_barrier_dst.dstQueueFamilyIndex = selected_queue_family_index;
+			image_barrier_src.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+			image_barrier_src.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+			image_barrier_dst.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+			image_barrier_dst.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
 			image_barrier_src.image = data.virtual_images[stored_image_index];
 			image_barrier_dst.image = data.pSwapchainImages[swapchain_image_index];
 			image_barrier_src.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, VK_REMAINING_MIP_LEVELS, 0, VK_REMAINING_ARRAY_LAYERS };
 			image_barrier_dst.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, VK_REMAINING_MIP_LEVELS, 0, VK_REMAINING_ARRAY_LAYERS };
-			wrap_vkCmdPipelineBarrier(data.virtual_cmdbuffers[stored_image_index], VK_PIPELINE_STAGE_TRANSFER_BIT,
-				VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, 0, 0, NULL, 0, NULL, image_barriers.size(), image_barriers.data());
+			wrap_vkCmdPipelineBarrier(data.virtual_cmdbuffers[stored_image_index], VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+				VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, NULL, 0, NULL, image_barriers.size(), image_barriers.data());
 			if (!p__virtualperfmode) // actually do the copy if not in performance mode
 			{
-				VkMemoryBarrier memory_barrier = {};
-				memory_barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
-				memory_barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-				memory_barrier.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-				wrap_vkCmdCopyImage(data.virtual_cmdbuffers[stored_image_index], data.virtual_images[stored_image_index], VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-					data.pSwapchainImages[swapchain_image_index], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &data.virtual_image_copy_region);
+				if (data.virtual_present_uses_blit)
+				{
+					wrap_vkCmdBlitImage(data.virtual_cmdbuffers[stored_image_index], data.virtual_images[stored_image_index], VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+						data.pSwapchainImages[swapchain_image_index], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &data.virtual_image_blit_region, VK_FILTER_NEAREST);
+				}
+				else
+				{
+					wrap_vkCmdCopyImage(data.virtual_cmdbuffers[stored_image_index], data.virtual_images[stored_image_index], VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+						data.pSwapchainImages[swapchain_image_index], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &data.virtual_image_copy_region);
+				}
 			}
-			image_barrier_dst.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+			image_barrier_src.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+			image_barrier_src.dstAccessMask = 0;
+			image_barrier_dst.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+			image_barrier_dst.dstAccessMask = 0;
 			image_barrier_src.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
 			image_barrier_src.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR; // TBD could also be VK_IMAGE_LAYOUT_SHARED_PRESENT_KHR
 			image_barrier_dst.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
 			image_barrier_dst.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR; // TBD could also be VK_IMAGE_LAYOUT_SHARED_PRESENT_KHR
 			wrap_vkCmdPipelineBarrier(data.virtual_cmdbuffers[stored_image_index], VK_PIPELINE_STAGE_TRANSFER_BIT,
-				VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, 0, 0, NULL, 0, NULL, image_barriers.size(), image_barriers.data());
+				VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0, 0, NULL, 0, NULL, image_barriers.size(), image_barriers.data());
 			result = wrap_vkEndCommandBuffer(data.virtual_cmdbuffers[stored_image_index]);
 			assert(result == VK_SUCCESS);
 			DLOG("Presenting with virtual swapchain image index %u(0x%lx) instead of real swapchain image %u(0x%lx) on swapchain %lx", stored_image_index,
@@ -3669,38 +3720,110 @@ void replay_pre_vkCreateSharedSwapchainsKHR(lava_file_reader& reader, VkDevice d
 	}
 }
 
-void replay_pre_vkCreateSwapchainKHR(lava_file_reader& reader, VkDevice device, VkSwapchainCreateInfoKHR* pCreateInfo, VkAllocationCallbacks* pAllocator, VkSwapchainKHR* pSwapchain)
+static void abort_unsupported_swapchain_format(
+	const VkSurfaceFormatKHR& captured_format,
+	const std::vector<swapchain_surface_format_support>& surface_formats,
+	const swapchain_format_selection& selection)
 {
+	ELOG("Captured swapchain format is %s with color space %s",
+		VkFormat_to_string(captured_format.format).c_str(), VkColorSpaceKHR_to_string(captured_format.colorSpace).c_str());
+	for (const swapchain_surface_format_support& surface_format : surface_formats)
+	{
+		ELOG("Replay surface advertises format %s with color space %s",
+			VkFormat_to_string(surface_format.surface_format.format).c_str(),
+			VkColorSpaceKHR_to_string(surface_format.surface_format.colorSpace).c_str());
+	}
+	if (selection.candidate_considered)
+	{
+		ELOG("Compatible candidate was %s with color space %s",
+			VkFormat_to_string(selection.surface_format.format).c_str(),
+			VkColorSpaceKHR_to_string(selection.surface_format.colorSpace).c_str());
+	}
+	switch (selection.failure)
+	{
+		case swapchain_format_selection_failure::surface_transfer_dst_unsupported:
+			ABORT("Replay surface lacks VK_IMAGE_USAGE_TRANSFER_DST_BIT; only validated swapchain presentation conversions are supported");
+		case swapchain_format_selection_failure::source_blit_unsupported:
+			ABORT("Captured format lacks VK_FORMAT_FEATURE_BLIT_SRC_BIT; only validated swapchain presentation conversions are supported");
+		case swapchain_format_selection_failure::destination_blit_unsupported:
+			ABORT("Replay format lacks VK_FORMAT_FEATURE_BLIT_DST_BIT; only validated swapchain presentation conversions are supported");
+		case swapchain_format_selection_failure::no_compatible_format:
+			ABORT("No compatible format with the captured color space is available; only validated swapchain presentation conversions are supported");
+		case swapchain_format_selection_failure::none:
+			break;
+	}
+	ABORT("Swapchain format selection failed unexpectedly");
+}
+
+void replay_pre_vkCreateSwapchainKHR(lava_file_reader& reader, VkDevice device, VkSwapchainCreateInfoKHR* pCreateInfo, VkAllocationCallbacks* pAllocator,
+	VkSwapchainKHR* pSwapchain, uint32_t swapchain_index)
+{
+	trackedswapchain_replay& data = VkSwapchainKHR_index.at(swapchain_index);
+	data.real_image_format = pCreateInfo->imageFormat;
+	data.real_image_color_space = pCreateInfo->imageColorSpace;
+	data.real_image_extent = pCreateInfo->imageExtent;
+	data.real_image_usage = pCreateInfo->imageUsage;
+	data.virtual_present_uses_blit = false;
 	if (!is_noscreen())
 	{
 		const uint32_t device_index = index_to_VkDevice.index(device);
 		const VkPhysicalDevice physical_device = VkDevice_index.at(device_index).physicalDevice;
+		VkSurfaceCapabilitiesKHR surface_capabilities = {};
+		VkResult result = wrap_vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physical_device, pCreateInfo->surface, &surface_capabilities);
+		if (result != VK_SUCCESS)
+		{
+			ABORT("Failed to query replay surface capabilities before creating swapchain: %s", errorString(result));
+		}
 		uint32_t surface_format_count = 0;
-		VkResult result = wrap_vkGetPhysicalDeviceSurfaceFormatsKHR(physical_device, pCreateInfo->surface, &surface_format_count, nullptr);
+		result = wrap_vkGetPhysicalDeviceSurfaceFormatsKHR(physical_device, pCreateInfo->surface, &surface_format_count, nullptr);
 		if (result != VK_SUCCESS)
 		{
 			ABORT("Failed to query replay surface formats before creating swapchain: %s", errorString(result));
 		}
-		std::vector<VkSurfaceFormatKHR> surface_formats(surface_format_count);
-		result = wrap_vkGetPhysicalDeviceSurfaceFormatsKHR(physical_device, pCreateInfo->surface, &surface_format_count, surface_formats.data());
+		std::vector<VkSurfaceFormatKHR> queried_surface_formats(surface_format_count);
+		result = wrap_vkGetPhysicalDeviceSurfaceFormatsKHR(physical_device, pCreateInfo->surface, &surface_format_count, queried_surface_formats.data());
 		if (result != VK_SUCCESS)
 		{
 			ABORT("Failed to query %u replay surface formats before creating swapchain: %s", surface_format_count, errorString(result));
 		}
-		bool format_supported = false;
-		for (const VkSurfaceFormatKHR& surface_format : surface_formats)
+		VkFormatProperties captured_format_properties = {};
+		wrap_vkGetPhysicalDeviceFormatProperties(physical_device, pCreateInfo->imageFormat, &captured_format_properties);
+		std::vector<swapchain_surface_format_support> surface_formats(surface_format_count);
+		for (uint32_t i = 0; i < surface_format_count; i++)
 		{
-			if ((surface_format.format == pCreateInfo->imageFormat || surface_format.format == VK_FORMAT_UNDEFINED)
-				&& surface_format.colorSpace == pCreateInfo->imageColorSpace)
+			surface_formats[i].surface_format = queried_surface_formats[i];
+			VkFormatProperties format_properties = {};
+			const VkFormat query_format = queried_surface_formats[i].format == VK_FORMAT_UNDEFINED
+				? pCreateInfo->imageFormat : queried_surface_formats[i].format;
+			wrap_vkGetPhysicalDeviceFormatProperties(physical_device, query_format, &format_properties);
+			surface_formats[i].optimal_tiling_features = format_properties.optimalTilingFeatures;
+		}
+		const VkSurfaceFormatKHR captured_format = { pCreateInfo->imageFormat, pCreateInfo->imageColorSpace };
+		const swapchain_format_selection selection = select_swapchain_surface_format(captured_format, surface_formats,
+			captured_format_properties.optimalTilingFeatures, surface_capabilities.supportedUsageFlags,
+			is_virtualswapchain(), is_virtualswapchain());
+		if (!selection.supported())
+		{
+			abort_unsupported_swapchain_format(captured_format, surface_formats, selection);
+		}
+		pCreateInfo->imageFormat = selection.surface_format.format;
+		pCreateInfo->imageColorSpace = selection.surface_format.colorSpace;
+		if (selection.use_blit && (pCreateInfo->flags & VK_SWAPCHAIN_CREATE_MUTABLE_FORMAT_BIT_KHR))
+		{
+			VkFormat* mutable_format_storage = reader.pool.allocate<VkFormat>(1);
+			if (!rewrite_mutable_swapchain_format_list(pCreateInfo, mutable_format_storage))
 			{
-				format_supported = true;
-				break;
+				ABORT("Cannot rewrite mutable swapchain format list for replay format %s",
+					VkFormat_to_string(pCreateInfo->imageFormat).c_str());
 			}
 		}
-		if (!format_supported)
+		data.real_image_format = pCreateInfo->imageFormat;
+		data.real_image_color_space = pCreateInfo->imageColorSpace;
+		data.virtual_present_uses_blit = selection.use_blit;
+		if (selection.use_blit)
 		{
-			ABORT("Captured swapchain format %s with color space %s is not supported by the replay surface",
-				VkFormat_to_string(pCreateInfo->imageFormat).c_str(), VkColorSpaceKHR_to_string(pCreateInfo->imageColorSpace).c_str());
+			ILOG("Presenting virtual swapchain format %s through replay surface format %s using vkCmdBlitImage",
+				VkFormat_to_string(captured_format.format).c_str(), VkFormat_to_string(selection.surface_format.format).c_str());
 		}
 	}
 	if (is_virtualswapchain())
@@ -3709,6 +3832,9 @@ void replay_pre_vkCreateSwapchainKHR(lava_file_reader& reader, VkDevice device, 
 		if (p__realimages > 0) pCreateInfo->minImageCount = p__realimages;
 		pCreateInfo->imageUsage |= VK_IMAGE_USAGE_TRANSFER_DST_BIT; // make sure it has this
 	}
+	data.real_min_image_count = pCreateInfo->minImageCount;
+	data.real_present_mode = pCreateInfo->presentMode;
+	data.real_image_usage = pCreateInfo->imageUsage;
 }
 
 void replay_pre_vkGetPhysicalDeviceImageFormatProperties2(lava_file_reader& reader, VkPhysicalDevice physicalDevice, VkPhysicalDeviceImageFormatInfo2* pImageFormatInfo, VkImageFormatProperties2* pImageFormatProperties)
@@ -5224,14 +5350,8 @@ void retrace_vkGetSwapchainImagesKHR(lava_file_reader& reader)
 			device_data.allocator->virtualswap_images(data.pSwapchainImages);
 		}
 
-		// Setup image region for later copy
-		data.virtual_image_copy_region.srcSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 };
-		data.virtual_image_copy_region.srcOffset = { 0, 0, 0 };
-		data.virtual_image_copy_region.dstSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 };
-		data.virtual_image_copy_region.dstOffset = { 0, 0, 0 };
-		data.virtual_image_copy_region.extent.width = data.info.imageExtent.width;
-		data.virtual_image_copy_region.extent.height = data.info.imageExtent.height;
-		data.virtual_image_copy_region.extent.depth = 1;
+		// Setup image regions for later presentation.
+		update_virtual_present_regions(data);
 		// Make fences
 		data.inflight.resize(stored_image_count, false);
 		VkFenceCreateInfo fenceinfo = { VK_STRUCTURE_TYPE_FENCE_CREATE_INFO, nullptr, 0 };

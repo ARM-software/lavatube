@@ -261,6 +261,8 @@ set(LAVATUBE_SRC
     ${PROJECT_SOURCE_DIR}/src/pipeline_executable_stats.h
     ${PROJECT_SOURCE_DIR}/src/replay_instrumentation.cpp
     ${PROJECT_SOURCE_DIR}/src/replay_instrumentation.h
+    ${PROJECT_SOURCE_DIR}/src/swapchain_format_compatibility.cpp
+    ${PROJECT_SOURCE_DIR}/src/swapchain_format_compatibility.h
 
     ${PROJECT_SOURCE_DIR}/src/postprocess.cpp
     ${PROJECT_SOURCE_DIR}/src/postprocess.h
@@ -391,6 +393,13 @@ target_link_libraries(replay_screenshot_test ${COMMON_LIBRARIES} lavatube)
 target_compile_options(replay_screenshot_test PRIVATE ${COMMON_FLAGS})
 add_lavatube_test(replay_screenshot_test COMMAND replay_screenshot_test)
 add_dependencies(replay_screenshot_test sync_generated)
+
+add_executable(swapchain_format_compatibility_test tests/swapchain_format_compatibility.cpp src/swapchain_format_compatibility.cpp)
+target_include_directories(swapchain_format_compatibility_test ${COMMON_INCLUDE})
+target_link_libraries(swapchain_format_compatibility_test ${MOST_COMMON_LIBRARIES})
+target_compile_options(swapchain_format_compatibility_test PRIVATE ${COMMON_FLAGS})
+add_lavatube_test(swapchain_format_compatibility_test COMMAND swapchain_format_compatibility_test)
+add_dependencies(swapchain_format_compatibility_test sync_generated)
 
 add_executable(check_png tests/check_png.cpp)
 target_include_directories(check_png ${COMMON_INCLUDE})
