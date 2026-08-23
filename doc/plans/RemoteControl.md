@@ -80,7 +80,7 @@ Still to do:
   the hard abort.
 * The user of `lava-cli` needs to be clearly informed that we paused at a different
   place than what was requested, and if the active thread was changed this also needs to
-  be communicated (the `error=` suffix and thread number are a first step).
+  be communicated (the `result=` suffix and thread number are a first step).
 
 ## Binaries
 

@@ -34,6 +34,24 @@ int main()
 	check(result);
 	result = trace_vkBindBufferMemory(vulkan.device, buffer, memory, 0);
 	check(result);
+	VkFenceCreateInfo fence_info = { VK_STRUCTURE_TYPE_FENCE_CREATE_INFO, nullptr, VK_FENCE_CREATE_SIGNALED_BIT };
+	VkFence fence = VK_NULL_HANDLE;
+	result = trace_vkCreateFence(vulkan.device, &fence_info, nullptr, &fence);
+	check(result);
+	result = trace_vkWaitForFences(vulkan.device, 1, &fence, VK_TRUE, 0);
+	check(result);
+	result = trace_vkResetFences(vulkan.device, 1, &fence);
+	check(result);
+	result = trace_vkWaitForFences(vulkan.device, 1, &fence, VK_TRUE, 0);
+	assert(result == VK_TIMEOUT);
+	trace_vkDestroyFence(vulkan.device, fence, nullptr);
+	VkEventCreateInfo event_info = { VK_STRUCTURE_TYPE_EVENT_CREATE_INFO, nullptr };
+	VkEvent event = VK_NULL_HANDLE;
+	result = trace_vkCreateEvent(vulkan.device, &event_info, nullptr, &event);
+	check(result);
+	result = trace_vkGetEventStatus(vulkan.device, event);
+	assert(result == VK_EVENT_RESET);
+	trace_vkDestroyEvent(vulkan.device, event, nullptr);
 
 	trackeddevice* device_data = writer.records.VkDevice_index.at(vulkan.device);
 	trackedbuffer* buffer_data = writer.records.VkBuffer_index.at(buffer);

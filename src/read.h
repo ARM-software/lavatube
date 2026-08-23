@@ -257,10 +257,10 @@ public:
 	/// Record a fatal replay error on the given reader and request stop of all replay threads.
 	void request_abort(lava_file_reader& reader, VkResult retval);
 
-	// Test-only: simulate the named API call returning this unexpected error once, to exercise
-	// error pause handling. Set with LAVATUBE_TEST_RETVAL_ERROR="<function>,<negative code>".
-	std::string test_retval_error_call;
-	std::atomic_int_fast32_t test_retval_error_code{ 0 };
+	// Test-only: simulate the named API call returning this unexpected result once, to exercise
+	// result pause handling. Set with LAVATUBE_TEST_RETVAL_RESULT="<function>,<nonzero code>".
+	std::string test_retval_result_call;
+	std::atomic_int_fast32_t test_retval_result_code{ 0 };
 
 	/// Pruned extension lists stored in metadata.json after capture finalization.
 	bool has_stored_instance_requested_extensions = false;
@@ -712,8 +712,8 @@ void print_params_publish(callback_context& cb, Json::Value v);
 void print_params_unavailable(callback_context& cb);
 void print_params_packet(callback_context& cb);
 
-/// Validate that a replayed API call returned the result the captured app saw. A mismatch is an
-/// abort outside replay service mode; in service mode a non-fatal error is reported to lava-cli
-/// as an error pause, and a fatal error (device lost) aborts the replay while keeping the service
-/// reachable.
-void check_retval(lava_file_reader& reader, VkResult stored_retval, VkResult retval);
+/// Validate that a replayed API call returned a result compatible with what the captured app saw.
+/// A mismatch is an abort outside replay service mode; in service mode a non-fatal result is
+/// reported to lava-cli as an error pause, and a fatal error (device lost) aborts the replay while
+/// keeping the service reachable. The result is passed by reference for the test-only override.
+void check_retval(lava_file_reader& reader, VkResult stored_retval, VkResult& retval);

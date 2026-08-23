@@ -38,11 +38,15 @@ def wait_for_listener(replay, port, log_file):
 	raise RuntimeError('timed out waiting for lava-replay service')
 
 
-def start_service(replay, port, trace, retval_error, log_file):
+def start_service(replay, port, trace, forced_result, log_file, blackhole=True):
 	env = dict(os.environ)
-	env['LAVATUBE_TEST_RETVAL_ERROR'] = retval_error
+	env['LAVATUBE_TEST_RETVAL_RESULT'] = forced_result
+	command = [replay, '--service', '-H', '127.0.0.1', '-P', str(port), '-w', 'none']
+	if blackhole:
+		command.append('-B')
+	command.append(trace)
 	return subprocess.Popen(
-		[replay, '--service', '-H', '127.0.0.1', '-P', str(port), '-w', 'none', '-B', trace],
+		command,
 		stdout=log_file,
 		stderr=subprocess.STDOUT,
 		env=env,
@@ -87,11 +91,11 @@ def check_retval_error_pause(replay_path, cli_path, trace_path):
 			response = result.stdout
 			if not response.startswith('PAUSED @ packet='):
 				raise RuntimeError('expected error pause, got: %r' % response)
-			for expected in ('name=vkQueueSubmit ', 'thread=1', 'error=ERROR_OUT_OF_HOST_MEMORY'):
+			for expected in ('name=vkQueueSubmit ', 'thread=1', 'result=ERROR_OUT_OF_HOST_MEMORY'):
 				if expected not in response:
 					raise RuntimeError('error pause response missing %r: %r' % (expected, response))
 			status = check_command(cli_path, port, None, 'status').stdout
-			if 'name=vkQueueSubmit ' not in status or 'error=ERROR_OUT_OF_HOST_MEMORY' not in status:
+			if 'name=vkQueueSubmit ' not in status or 'result=ERROR_OUT_OF_HOST_MEMORY' not in status:
 				raise RuntimeError('status response missing error: %r' % status)
 			parameters = check_command(cli_path, port, None, 'parameters').stdout
 			if '"vkQueueSubmit"' not in parameters or '"thread" : 1' not in parameters:
@@ -111,12 +115,12 @@ def check_retval_error_selected_thread(replay_path, cli_path, trace_path):
 			check_command(cli_path, port, None, 'thread', '1')
 			result = check_command(cli_path, port, None, 'continue')
 			response = result.stdout
-			if 'name=vkQueueSubmit ' not in response or 'error=ERROR_OUT_OF_HOST_MEMORY' not in response:
+			if 'name=vkQueueSubmit ' not in response or 'result=ERROR_OUT_OF_HOST_MEMORY' not in response:
 				raise RuntimeError('expected error pause, got: %r' % response)
-			# Advancing past the error pauses normally again without the error suffix.
+			# Advancing past the error pauses normally again without the result suffix.
 			result = check_command(cli_path, port, None, 'step', 'packets', '1')
-			if 'error=' in result.stdout:
-				raise RuntimeError('stale error reported after step: %r' % result.stdout)
+			if 'result=' in result.stdout:
+				raise RuntimeError('stale result reported after step: %r' % result.stdout)
 			check_command(cli_path, port, 'DONE\n', 'continue')
 			check_command(cli_path, port, 'OK\n', 'stop')
 		finally:
@@ -133,15 +137,33 @@ def check_retval_error_goto_function(replay_path, cli_path, trace_path):
 			check_command(cli_path, port, None, 'thread', '1')
 			result = check_command(cli_path, port, None, 'goto', 'vkDestroyCommandPool')
 			response = result.stdout
-			if 'name=vkQueueSubmit ' not in response or 'error=ERROR_OUT_OF_HOST_MEMORY' not in response:
+			if 'name=vkQueueSubmit ' not in response or 'result=ERROR_OUT_OF_HOST_MEMORY' not in response:
 				raise RuntimeError('expected error pause during goto function, got: %r' % response)
 			# Verify error pause remains stable during queries and does not prematurely resume
 			status = check_command(cli_path, port, None, 'status').stdout
-			if 'name=vkQueueSubmit ' not in status or 'error=ERROR_OUT_OF_HOST_MEMORY' not in status:
+			if 'name=vkQueueSubmit ' not in status or 'result=ERROR_OUT_OF_HOST_MEMORY' not in status:
 				raise RuntimeError('status response missing error: %r' % status)
 			parameters = check_command(cli_path, port, None, 'parameters').stdout
 			if '"vkQueueSubmit"' not in parameters:
 				raise RuntimeError('unexpected parameters response: %r' % parameters)
+			check_command(cli_path, port, 'DONE\n', 'continue')
+			check_command(cli_path, port, 'OK\n', 'stop')
+		finally:
+			stop_replay(replay, cli_path, port, log_file)
+
+
+def check_retval_status_pause(replay_path, cli_path, trace_path):
+	port = reserve_port()
+	with tempfile.NamedTemporaryFile() as log_file:
+		replay = start_service(replay_path, port, trace_path, 'vkWaitForFences,2', log_file)
+		try:
+			wait_for_listener(replay, port, log_file)
+			result = check_command(cli_path, port, None, 'continue')
+			if 'name=vkWaitForFences ' not in result.stdout or 'result=TIMEOUT' not in result.stdout:
+				raise RuntimeError('expected status mismatch pause, got: %r' % result.stdout)
+			parameters = check_command(cli_path, port, None, 'parameters').stdout
+			if '"return" : "VK_TIMEOUT"' not in parameters:
+				raise RuntimeError('status mismatch not preserved in parameters: %r' % parameters)
 			check_command(cli_path, port, 'DONE\n', 'continue')
 			check_command(cli_path, port, 'OK\n', 'stop')
 		finally:
@@ -172,6 +194,22 @@ def check_retval_fatal_abort(replay_path, cli_path, trace_path):
 			stop_replay(replay, cli_path, port, log_file, expected_exit=1)
 
 
+def check_retval_fatal_abort_from_recorded_status(replay_path, cli_path, trace_path):
+	port = reserve_port()
+	with tempfile.NamedTemporaryFile() as log_file:
+		replay = start_service(replay_path, port, trace_path, 'vkGetEventStatus,-4', log_file, blackhole=False)
+		try:
+			wait_for_listener(replay, port, log_file)
+			result = check_command(cli_path, port, None, 'continue', expected_rc=1)
+			if not result.stdout.startswith('ABORTED '):
+				raise RuntimeError('expected abort from recorded status, got: %r' % result.stdout)
+			if 'ERROR_DEVICE_LOST in vkGetEventStatus' not in result.stdout:
+				raise RuntimeError('recorded-status abort response missing result: %r' % result.stdout)
+			check_command(cli_path, port, 'OK\n', 'stop')
+		finally:
+			stop_replay(replay, cli_path, port, log_file, expected_exit=1)
+
+
 def check_retval_fatal_abort_during_step(replay_path, cli_path, trace_path):
 	port = reserve_port()
 	with tempfile.NamedTemporaryFile() as log_file:
@@ -197,7 +235,9 @@ def main():
 	check_retval_error_pause(replay_path, cli_path, trace_path)
 	check_retval_error_selected_thread(replay_path, cli_path, trace_path)
 	check_retval_error_goto_function(replay_path, cli_path, trace_path)
+	check_retval_status_pause(replay_path, cli_path, trace_path)
 	check_retval_fatal_abort(replay_path, cli_path, trace_path)
+	check_retval_fatal_abort_from_recorded_status(replay_path, cli_path, trace_path)
 	check_retval_fatal_abort_during_step(replay_path, cli_path, trace_path)
 
 

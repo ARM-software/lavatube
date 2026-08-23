@@ -337,8 +337,8 @@ static std::string cli_paused_command_response(lava_file_reader& reader)
 	       + " name=" + packet_name + " frame="
 	       + std::to_string(replayer.global_frame) + "/" + std::to_string(replayer.global_frame_count)
 	       + " thread=" + std::to_string(thread_id);
-	const int_fast32_t error = reader.cli_paused_error.load(std::memory_order_acquire);
-	if (error != 0) response += " error=" + std::string(errorString((VkResult)error));
+	const int_fast32_t result = reader.cli_paused_error.load(std::memory_order_acquire);
+	if (result != 0) response += " result=" + std::string(errorString((VkResult)result));
 	return response + "\n";
 }
 
