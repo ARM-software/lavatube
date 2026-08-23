@@ -1,5 +1,6 @@
 #!/usr/bin/python3
 
+import glob
 import os
 import socket
 import subprocess
@@ -14,9 +15,10 @@ def reserve_port():
 		return sock.getsockname()[1]
 
 
-def run_cli(cli, port, *command, timeout=60):
+def run_cli(cli, port, *command, timeout=60, environment=None):
 	return subprocess.run(
 		[cli, '-H', '127.0.0.1', '-P', str(port)] + list(command),
+		env=environment,
 		text=True,
 		stdout=subprocess.PIPE,
 		stderr=subprocess.PIPE,
@@ -38,12 +40,17 @@ def wait_for_listener(replay, port, log_file):
 	raise RuntimeError('timed out waiting for lava-replay service')
 
 
-def start_service(replay, port, trace, forced_result, log_file, blackhole=True):
-	env = dict(os.environ)
-	env['LAVATUBE_TEST_RETVAL_RESULT'] = forced_result
+def start_service(replay, port, trace, forced_result, log_file, blackhole=True, environment=None, extra_args=None):
+	env = dict(os.environ if environment is None else environment)
+	if forced_result is None:
+		env.pop('LAVATUBE_TEST_RETVAL_RESULT', None)
+	else:
+		env['LAVATUBE_TEST_RETVAL_RESULT'] = forced_result
 	command = [replay, '--service', '-H', '127.0.0.1', '-P', str(port), '-w', 'none']
 	if blackhole:
 		command.append('-B')
+	if extra_args:
+		command.extend(extra_args)
 	command.append(trace)
 	return subprocess.Popen(
 		command,
@@ -53,10 +60,10 @@ def start_service(replay, port, trace, forced_result, log_file, blackhole=True):
 	)
 
 
-def stop_replay(replay, cli, port, log_file, expected_exit=0):
+def stop_replay(replay, cli, port, log_file, expected_exit=0, environment=None):
 	if replay.poll() is None:
 		try:
-			run_cli(cli, port, 'stop')
+			run_cli(cli, port, 'stop', environment=environment)
 		except (OSError, subprocess.TimeoutExpired):
 			pass
 	try:
@@ -70,8 +77,8 @@ def stop_replay(replay, cli, port, log_file, expected_exit=0):
 		                 + log_file.read().decode(errors='replace'))
 
 
-def check_command(cli, port, expected, *command, expected_rc=0):
-	result = run_cli(cli, port, *command)
+def check_command(cli, port, expected, *command, expected_rc=0, environment=None):
+	result = run_cli(cli, port, *command, environment=environment)
 	if result.returncode != expected_rc:
 		raise RuntimeError('%s failed (rc=%d): stdout=%r stderr=%r' % (command, result.returncode, result.stdout, result.stderr))
 	if expected is not None and result.stdout != expected:
@@ -227,11 +234,60 @@ def check_retval_fatal_abort_during_step(replay_path, cli_path, trace_path):
 			stop_replay(replay, cli_path, port, log_file, expected_exit=1)
 
 
-def main():
-	if len(sys.argv) != 4:
-		raise RuntimeError('usage: lava_cli_error_pause_test.py LAVA_REPLAY LAVA_CLI TRACE')
+def check_chameleon_device_loss(replay_path, cli_path, trace_path):
+	port = reserve_port()
+	with tempfile.TemporaryDirectory(prefix='lavatube-chameleon-device-loss-') as runtime_directory:
+		with tempfile.NamedTemporaryFile() as log_file:
+			environment = dict(os.environ)
+			environment['XDG_RUNTIME_DIR'] = runtime_directory
+			replay = start_service(
+				replay_path,
+				port,
+				trace_path,
+				None,
+				log_file,
+				blackhole=False,
+				environment=environment,
+				extra_args=['--device-fault-report'],
+			)
+			try:
+				wait_for_listener(replay, port, log_file)
+				result = check_command(cli_path, port, None, 'continue', expected_rc=1, environment=environment)
+				if not result.stdout.startswith('ABORTED '):
+					raise RuntimeError('expected Chameleon device-loss abort, got: %r' % result.stdout)
+				for expected in ('ERROR_DEVICE_LOST in vkQueueSubmit', 'thread 0'):
+					if expected not in result.stdout:
+						raise RuntimeError('Chameleon abort response missing %r: %r' % (expected, result.stdout))
 
-	replay_path, cli_path, trace_path = sys.argv[1:]
+				check_command(cli_path, port, 'DONE\n', 'log', 'update', environment=environment)
+				cache_files = glob.glob(os.path.join(runtime_directory, 'lavatube', '*.log'))
+				if len(cache_files) != 1:
+					raise RuntimeError('expected one replay log cache, got: %r' % cache_files)
+				with open(cache_files[0], encoding='utf-8') as cache:
+					replay_log = cache.read()
+				for expected in (
+					'Enabling replay device fault reporting with VK_KHR_device_fault',
+					'Chameleon injected device loss',
+					'Recent successful queue submissions (newest first):',
+					'queue[0] fence[4294967295] thread=0',
+				):
+					if expected not in replay_log:
+						raise RuntimeError('device-fault log missing %r:\n%s' % (expected, replay_log))
+				check_command(cli_path, port, 'OK\n', 'stop', environment=environment)
+			finally:
+				stop_replay(replay, cli_path, port, log_file, expected_exit=1, environment=environment)
+
+
+def main():
+	if len(sys.argv) not in (4, 5):
+		raise RuntimeError('usage: lava_cli_error_pause_test.py LAVA_REPLAY LAVA_CLI TRACE [--chameleon-device-loss]')
+
+	replay_path, cli_path, trace_path = sys.argv[1:4]
+	if len(sys.argv) == 5:
+		if sys.argv[4] != '--chameleon-device-loss':
+			raise RuntimeError('unknown mode: ' + sys.argv[4])
+		check_chameleon_device_loss(replay_path, cli_path, trace_path)
+		return
 	check_retval_error_pause(replay_path, cli_path, trace_path)
 	check_retval_error_selected_thread(replay_path, cli_path, trace_path)
 	check_retval_error_goto_function(replay_path, cli_path, trace_path)
