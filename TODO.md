@@ -1,20 +1,25 @@
-Things to do
-============
+# Things to do
 
-General:
+## General
+
 * More work needed on trace portability
 * More work on making buffer suballocations faster
-* Vulkan-SC support, look into on-the-fly conversion to and from normal Vulkan
 * Push descriptors support (partial support exists)
 * Inline uniform blocks support (partial suport exists)
 * Make VkLayer_lavatube.json truthful
 * Improved multi-device support
 	* Store internal Vulkan object metadata by Vulkan device
 
-Tools
-* Improve the python code generators
+## Tools
 
-Android
-* Replay
+* Improve the design of the python code generators
 
-Also see our [plans](doc/plans).
+## Other APIs
+
+* Vulkan-SC support, look into on-the-fly conversion to and from normal Vulkan
+* GLES inspired by patrace but with real multi-threading
+* OpenCL
+
+## Detailed plans
+
+See our [plan documents](doc/plans).

@@ -6,7 +6,7 @@ import xml.etree.ElementTree as ET
 import re
 import sys
 import collections
-import spec # from tracetooltests
+import vulkan_spec as spec # from tracetooltests
 spec.init()
 import vkconfig as vk # local
 

@@ -2,7 +2,7 @@
 
 import sys
 sys.path.append('external/tracetooltests/scripts')
-import spec
+import vulkan_spec as spec
 import re
 import sys
 import os

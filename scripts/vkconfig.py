@@ -1,7 +1,7 @@
 # This file contains Vulkan-specific code-generation information. It should not contain executed python code
 # unless it is for validating the data contained within. The `spec` library must be initialized before including.
 
-import spec
+import vulkan_spec as spec
 
 def validate_funcs(lst):
 	assert len(lst) == len(set(lst))
@@ -58,7 +58,7 @@ extra_optionals = {
 # Renderpass scope end commands
 cmd_renderpass_commands = [ 'vkCmdEndRenderPass', 'vkCmdEndRenderPass2', 'vkCmdEndRenderPass2KHR', 'vkCmdEndRendering', 'vkCmdEndRendering2EXT', 'vkCmdEndRendering2KHR', 'vkCmdEndRenderingKHR' ]
 validate_funcs(cmd_renderpass_commands)
-# Scope commands other than for renderpasses, TODO move these into tracetooltest's spec.py
+# Scope commands other than for renderpasses, TODO move these into tracetooltest's vulkan_spec.py
 cmd_scoped_begin_commands = [ 'vkCmdBeginConditionalRenderingEXT', 'vkCmdBeginDebugUtilsLabelEXT', 'vkCmdBeginQuery', 'vkCmdBeginQueryIndexedEXT',
 	'vkCmdBeginShaderInstrumentationARM', 'vkCmdBeginTransformFeedback2EXT', 'vkCmdBeginTransformFeedbackEXT', 'vkCmdBeginVideoCodingKHR' ]
 cmd_scoped_end_commands = [ 'vkCmdEndConditionalRenderingEXT', 'vkCmdEndDebugUtilsLabelEXT', 'vkCmdEndQuery', 'vkCmdEndQueryIndexedEXT',

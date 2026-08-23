@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 
-import spec
+import vulkan_spec as spec
 import util
 import sys
 
