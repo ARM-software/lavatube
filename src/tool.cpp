@@ -26,6 +26,9 @@
 #include "markings.h"
 #include "suballocator.h"
 
+// Default for this app
+#define DEFAULT_SANDBOX_LEVEL 1
+
 extern lava::mutex sync_mutex;
 
 static bool simulate = false;
@@ -1268,7 +1271,7 @@ void usage()
 	printf("-DSI/--dump-shader N   Dump shader module N to disk\n");
 	printf("-hw/--host-write-stats Dump host-side write tracking stats after replay\n");
 	printf("--skip-missing-input   Exit with code 77 if the input trace file does not exist\n");
-	printf("-s/--sandbox level     Set security sandbox level (from 1 to 3, with 3 the most strict, default %d)\n", (int)p__sandbox_level);
+	printf("-s/--sandbox level     Set security sandbox level (from 1 to 3, with 3 the most strict, default %d)\n", (int)DEFAULT_SANDBOX_LEVEL);
 	exit(-1);
 }
 
@@ -1418,7 +1421,7 @@ static uint32_t translate_output_packet(output_packet_mapping& packet_mapping, u
 
 static void replay_thread(lava_reader* replayer, int thread_id, output_packet_mapping* packet_mapping)
 {
-	if (p__sandbox_level >= 2) sandbox_level_three();
+	if (p__sandbox_level >= 3) sandbox_level_three();
 	lava_file_reader& t = replayer->file_reader(thread_id);
 	t.bind_runner_thread();
 	t.bind_trace_thread_name();
@@ -1658,6 +1661,7 @@ int main(int argc, char **argv)
 	bool simulate_requested = false;
 	simulation_summary simulation_stats;
 
+	if (p__sandbox_level == -1) p__sandbox_level = DEFAULT_SANDBOX_LEVEL;
 	if (p__sandbox_level >= 1) sandbox_level_one();
 
 	for (int i = 1; i < argc; i++)
@@ -1758,7 +1762,7 @@ int main(int argc, char **argv)
 		DIE("-S/--simulate requires an output filename; input-only simulation validation has been removed");
 	}
 
-	if (p__sandbox_level >= 3) sandbox_level_two();
+	if (p__sandbox_level >= 2) sandbox_level_two();
 
 	if (report_unused || dump_host_write_stats) simulate = true;
 

@@ -19,6 +19,10 @@
 #include <re2/re2.h>
 
 #include "lavatube.h"
+#include "sandbox.h"
+
+// Default for this app
+#define DEFAULT_SANDBOX_LEVEL 1
 
 static bool verbose = false;
 
@@ -40,6 +44,7 @@ void usage()
 	printf("    -v/--verbose             Verbose output\n");
 	printf("    -P/--port PORT           Port number (default %d)\n", (int)p__port);
 	printf("    -H/--host HOST           Host name\n");
+	printf("    -s/--sandbox level       Set security sandbox level (from 1 to 3, with 3 the most strict, default %d)\n", (int)DEFAULT_SANDBOX_LEVEL);
 #ifndef NDEBUG
 	printf("    -d/--debug level         Set debug level [0,1,2,3]\n");
 	printf("    -df/--debugfile FILE     Output debug output to the given file\n");
@@ -491,6 +496,9 @@ static bool tail_log_cache(const std::string& path, const std::string& stream, c
 
 int main(int argc, char **argv)
 {
+	if (p__sandbox_level == -1) p__sandbox_level = DEFAULT_SANDBOX_LEVEL;
+	if (p__sandbox_level >= 1) sandbox_level_one();
+
 	std::string hostname = "localhost";
 	std::vector<std::string> command;
 	int port = p__port;
@@ -518,6 +526,11 @@ int main(int argc, char **argv)
 		{
 			verbose = true;
 		}
+		else if (match(argv[i], "-s", "--sandbox", remaining))
+		{
+			p__sandbox_level = get_int(argv[++i], remaining);
+			if (p__sandbox_level <= 0 || p__sandbox_level > 3) DIE("Invalid sandbox level %d", (int)p__sandbox_level);
+		}
 		else if (match(argv[i], "-df", "--debugfile", remaining))
 		{
 			std::string val = get_str(argv[++i], remaining);
@@ -535,6 +548,9 @@ int main(int argc, char **argv)
 	}
 
 	if (command.empty()) usage();
+	if (p__sandbox_level >= 2) sandbox_level_two();
+	if (p__sandbox_level >= 3) sandbox_level_three();
+
 	const bool log_stream = !command.empty() && (command[0] == "log" || command[0] == "syslog");
 	const bool log_update = log_stream && command.size() >= 2 && command[1] == "update";
 	const bool log_tail = log_stream && command.size() >= 2 && command[1] == "tail";

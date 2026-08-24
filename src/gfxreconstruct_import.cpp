@@ -9,9 +9,13 @@
 #include <vector>
 
 #include "decode/vulkan_api_call_reader.h"
+#include "sandbox.h"
 #include "util.h"
 #include "write.h"
 #include "write_auto.h"
+
+// Default for this app
+#define DEFAULT_SANDBOX_LEVEL 1
 
 using gfxrecon::decode::VulkanApiCallReader;
 using gfxrecon::decode::VulkanNativeCallContext;
@@ -970,6 +974,7 @@ static void print_usage(const char* program)
 	printf("Usage: %s [options] input.gfxr output.api\n", program);
 	printf("-h/--help                          This help\n");
 	printf("--ignore-memory-marking-fixups     Ignore device-address and shader-group-handle fixup metacommands\n");
+	printf("-s/--sandbox level                 Set security sandbox level (from 1 to 3, with 3 the most strict, default %d)\n", (int)DEFAULT_SANDBOX_LEVEL);
 }
 
 void usage()
@@ -984,6 +989,10 @@ int main(int argc, char** argv)
 	std::string input_filename;
 	std::string output_filename;
 	gfxreconstruct_import_context import_context;
+
+	if (p__sandbox_level == -1) p__sandbox_level = DEFAULT_SANDBOX_LEVEL;
+	if (p__sandbox_level >= 1) sandbox_level_one();
+
 	for (int i = 1; i < argc; i++)
 	{
 		if (match(argv[i], "-h", "--help", remaining))
@@ -994,6 +1003,11 @@ int main(int argc, char** argv)
 		else if (match(argv[i], nullptr, "--ignore-memory-marking-fixups", remaining))
 		{
 			import_context.ignore_memory_marking_fixups = true;
+		}
+		else if (match(argv[i], "-s", "--sandbox", remaining))
+		{
+			p__sandbox_level = get_int(argv[++i], remaining);
+			if (p__sandbox_level <= 0 || p__sandbox_level > 3) DIE("Invalid sandbox level %d", (int)p__sandbox_level);
 		}
 		else if (strcmp(argv[i], "--") == 0)
 		{
@@ -1023,6 +1037,8 @@ int main(int argc, char** argv)
 		print_usage(argv[0]);
 		return 2;
 	}
+
+	if (p__sandbox_level >= 2) sandbox_level_two();
 
 	VulkanApiCallReader reader;
 	if (!register_callbacks(reader)) return 1;
@@ -1064,6 +1080,7 @@ int main(int argc, char** argv)
 		ELOG("Failed to enable strict gfxreconstruct callback checking");
 		return 1;
 	}
+	if (p__sandbox_level >= 3) sandbox_level_three();
 	if (!reader.Initialize(input_filename.c_str()))
 	{
 		ELOG("Failed to open gfxreconstruct capture %s", input_filename.c_str());

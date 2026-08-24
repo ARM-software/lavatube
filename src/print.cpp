@@ -16,6 +16,9 @@
 #include "sandbox.h"
 #include "util_auto.h"
 
+// Default for this app
+#define DEFAULT_SANDBOX_LEVEL 3
+
 static bool verbose = false;
 
 void usage()
@@ -33,7 +36,7 @@ void usage()
 	printf("-m/--max NUM           Stop after printing this many entries\n");
 	printf("--skip-missing-input   Exit with code 77 if the input trace file does not exist\n");
 	printf("--add-checksums        Include resulting update checksums (may be expensive)\n");
-	printf("-s/--sandbox level     Set security sandbox level (from 1 to 3, with 3 the most strict, default %d)\n", (int)p__sandbox_level);
+	printf("-s/--sandbox level     Set security sandbox level (from 1 to 3, with 3 the most strict, default %d)\n", (int)DEFAULT_SANDBOX_LEVEL);
 	exit(-1);
 }
 
@@ -115,7 +118,7 @@ static bool isolated_packet_selected(const lava_reader& replayer, const lava_fil
 
 static void replay_thread(lava_reader* replayer, int thread_id)
 {
-	if (p__sandbox_level >= 2) sandbox_level_three();
+	if (p__sandbox_level >= 3) sandbox_level_three();
 	lava_file_reader& t = replayer->file_reader(thread_id);
 	t.bind_runner_thread();
 	t.bind_trace_thread_name();
@@ -163,6 +166,7 @@ int main(int argc, char **argv)
 	bool add_checksums = false;
 	bool isolated = false;
 
+	if (p__sandbox_level == -1) p__sandbox_level = DEFAULT_SANDBOX_LEVEL;
 	if (p__debug_destination == stdout) p__debug_destination = stderr;
 	if (p__sandbox_level >= 1) sandbox_level_one();
 
@@ -285,7 +289,7 @@ int main(int argc, char **argv)
 		}
 	}
 
-	if (p__sandbox_level >= 3) sandbox_level_two();
+	if (p__sandbox_level >= 2) sandbox_level_two();
 
 	lava_reader replayer;
 	replayer.run_type = isolated ? reader_run_type::isolated : reader_run_type::stateful;

@@ -10,6 +10,10 @@
 
 #include "tui_app.h"
 #include "lavatube.h"
+#include "sandbox.h"
+
+// Default for this app
+#define DEFAULT_SANDBOX_LEVEL 1
 
 static bool verbose = false;
 
@@ -26,6 +30,7 @@ void usage()
 	printf("-v/--verbose           Verbose output\n");
 	printf("-P/--port PORT         Replay service port when no trace file is provided (default %d)\n", (int)p__port);
 	printf("-H/--host HOST         Replay service host when no trace file is provided (default localhost)\n");
+	printf("-s/--sandbox level     Set security sandbox level (from 1 to 3, with 3 the most strict, default %d)\n", (int)DEFAULT_SANDBOX_LEVEL);
 	printf("\n");
 	printf("With a trace file, lava-tui reads packed trace metadata directly. Without a trace file,\n");
 	printf("it connects to a running lava-replay --service, like lava-cli.\n");
@@ -40,6 +45,9 @@ void usage()
 
 int main(int argc, char **argv)
 {
+	if (p__sandbox_level == -1) p__sandbox_level = DEFAULT_SANDBOX_LEVEL;
+	if (p__sandbox_level >= 1) sandbox_level_one();
+
 	std::string filename;
 	std::string hostname = "localhost";
 	int port = p__port;
@@ -67,6 +75,11 @@ int main(int argc, char **argv)
 		{
 			hostname = get_str(argv[++i], remaining);
 		}
+		else if (match(argv[i], "-s", "--sandbox", remaining))
+		{
+			p__sandbox_level = get_int(argv[++i], remaining);
+			if (p__sandbox_level <= 0 || p__sandbox_level > 3) DIE("Invalid sandbox level %d", (int)p__sandbox_level);
+		}
 		else if (match(argv[i], "-df", "--debugfile", remaining))
 		{
 			std::string val = get_str(argv[++i], remaining);
@@ -82,6 +95,7 @@ int main(int argc, char **argv)
 			}
 		}
 	}
+	if (p__sandbox_level >= 2) sandbox_level_two();
 
 	if (!filename.empty() && access(filename.c_str(), R_OK) != 0)
 	{
@@ -126,5 +140,6 @@ int main(int argc, char **argv)
 		return 1;
 	}
 
+	if (p__sandbox_level >= 3) sandbox_level_three();
 	return run_tui(options);
 }

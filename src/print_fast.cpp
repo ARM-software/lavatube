@@ -17,6 +17,9 @@
 #include "sandbox.h"
 #include "util.h"
 
+// Default for this app
+#define DEFAULT_SANDBOX_LEVEL 3
+
 struct fast_frame_boundary
 {
 	uint64_t position = 0;
@@ -38,7 +41,7 @@ void usage()
 	printf("--select LIST          Print packet indices, comma-separated; optional :THREAD must match --thread\n");
 	printf("-m/--max NUM           Stop after printing this many entries\n");
 	printf("--skip-missing-input   Exit with code 77 if the input trace file does not exist\n");
-	printf("-s/--sandbox level     Set security sandbox level (from 1 to 3, with 3 the most strict, default %d)\n", (int)p__sandbox_level);
+	printf("-s/--sandbox level     Set security sandbox level (from 1 to 3, with 3 the most strict, default %d)\n", (int)DEFAULT_SANDBOX_LEVEL);
 	exit(-1);
 }
 
@@ -206,6 +209,7 @@ int main(int argc, char** argv)
 	bool skip_missing_input = false;
 	bool have_select = false;
 
+	if (p__sandbox_level == -1) p__sandbox_level = DEFAULT_SANDBOX_LEVEL;
 	if (p__debug_destination == stdout) p__debug_destination = stderr;
 	if (p__sandbox_level >= 1) sandbox_level_one();
 
@@ -295,6 +299,9 @@ int main(int argc, char** argv)
 	}
 	if (thread == UINT32_MAX) DIE("--thread is required");
 
+	if (p__sandbox_level >= 2) sandbox_level_two();
+	if (p__sandbox_level >= 3) sandbox_level_three();
+
 	normalize_selectors(selectors, thread);
 	const Json::Value metadata = packed_json("metadata.json", filename_input);
 	const uint32_t trace_threads = metadata["threads"].asUInt();
@@ -304,8 +311,6 @@ int main(int argc, char** argv)
 	}
 	const Json::Value frame_info = packed_json("frames_" + std::to_string(thread) + ".json", filename_input);
 	const std::vector<fast_frame_boundary> boundaries = load_frame_boundaries(frame_info);
-
-	if (p__sandbox_level >= 3) sandbox_level_two();
 
 	lava_reader replayer;
 	replayer.run_type = reader_run_type::isolated;

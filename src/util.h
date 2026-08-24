@@ -120,7 +120,7 @@ extern uint_fast8_t p__allow_stalls;
 extern uint_fast16_t p__preload;
 extern uint_fast8_t p__compression_type;
 extern uint_fast16_t p__compression_level;
-extern uint_fast8_t p__sandbox_level;
+extern int_fast8_t p__sandbox_level;
 extern uint_fast8_t p__trust_host_flushes;
 extern int_fast32_t p__suballocator_heap_size;
 extern uint_fast8_t p__delete_empty_trace;

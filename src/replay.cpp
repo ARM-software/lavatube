@@ -39,6 +39,9 @@
 #include "system_log.h"
 #include "replay_entry.h"
 
+// Default for this app
+#define DEFAULT_SANDBOX_LEVEL 1
+
 static lava_reader replayer;
 static std::atomic<bool> done_var { false };
 static std::atomic<bool> replay_done { false };
@@ -529,7 +532,7 @@ void usage()
 	printf("--screenshot-prefix p  Prefix for screenshot PNG names, producing p<frame>.png\n");
 	printf("--skip-missing-input   Exit with code 77 if the input trace file does not exist\n");
 	printf("--no-multithreaded-io  Do not do decompression and file read in a separate thread. May save some CPU load and memory.\n");
-	printf("-s/--sandbox level     Set security sandbox level (from 1 to 3, with 3 the most strict, default %d)\n", (int)p__sandbox_level);
+	printf("-s/--sandbox level     Set security sandbox level (from 1 to 3, with 3 the most strict, default %d)\n", (int)DEFAULT_SANDBOX_LEVEL);
 	printf("--skip-remove-unused   Do not attempt to cleverly remove unused features and extensions\n");
 	printf("--device-fault-report  Track more data for device fault diagnosis\n");
 	printf("Service specific options:\n");
@@ -1377,6 +1380,7 @@ int lava_replay_main(int argc, char **argv)
 	service_client_state service_state;
 
 	port = p__port;
+	if (p__sandbox_level == -1) p__sandbox_level = DEFAULT_SANDBOX_LEVEL;
 	if (p__sandbox_level >= 1) sandbox_level_one();
 
 	// override defaults
