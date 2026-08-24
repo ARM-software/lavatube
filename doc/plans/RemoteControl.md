@@ -21,7 +21,7 @@ More instructions to implement:
 * `lava-cli validation tail [REGEX=*] [limit=10] [since=LINE] [update=on|off]` - similar to `log tail` above
 * `lava-cli step frames X` - step the given number of frames ahead in the current thread, then pause again
 * `lava-cli goto frame X` - replay until we get to the given frame
-* `lava-cli repeat` - repeat the current call (without incrementing the packet count); not all calls are safe to repeat - use common sense
+* `lava-cli repeat` - repeat the current call (without incrementing the packet count); not all calls are safe to repeat - must use common sense
 * `lava-cli info <topic>` - show input parameters and important state
 	- 'objects' - show table of all non-zero-sized object types, with pending, created, bound (if applicable) and destroyed columns
 	- 'swapchains' - show image index numbers of real and fake swapchains and their status
@@ -82,7 +82,7 @@ Still to do:
   place than what was requested, and if the active thread was changed this also needs to
   be communicated (the `result=` suffix and thread number are a first step).
 
-## Binaries
+## Fetching binaries
 
 We can get binary data from a number of sources:
 * `lava-cli params` may reference a binary blob of data; we should give it an attachment
@@ -99,6 +99,13 @@ We can get binary data from a number of sources:
   command _before_ the target. Another option is to require the user to go to the command
   creation where we could add output target copy command into the commandbuffer without
   any re-creation.
+
+Whenever we specify a filename, we could instead specify 'network', at which point we
+should respond with a single word of text then in binary: uint64_t size + data blob;
+since we would be streaming this from memory bandwidth constrained devices, we need to
+work hard to avoid unnecessary memory copies. Also, read-back from non-cached VRAM is
+extremely slow, forcing the source memory into cached host memory may make it a lot
+faster. Single word 'SEND' or 'FAIL'.
 
 ## Manipulation
 
@@ -151,31 +158,16 @@ We already have the ability to stream debug output to file. We can use our contr
 to fetch the current contents of the file - possibly with an offset if we already fetched parts
 of it.
 
-## Output format
-
-## Tabular data
+## Output formats
 
 Allow choice of display of tabular data in either markdown or CSV (or TSV, tab separated).
 We have a new class in `src/datatable.h` for abstracting away the choice.
 
-We should also allow saving directly to file. JSON/JSONL is often recommended for accuracy
-for nested or mixed data, while CSV/TSV for strictly regular data.
-
-There is no perfect format for neither accuracy nor token efficiency, it all depends on the
-data.
-
-Output type may therefore depend on `--human-readable` vs `--machine-readable` or similar
-option. May also want `--always-ndjson`.
-
-## Nested / structured data
-
 We currently use NDJSON / json lines for nested data. We should consider a more human-readable
 format as well.
 
-### Image data
-
-Plan is to support both binary blobs and conversion to PNG. [This](doc/plans/CompressedAssetsFile.md)
-might be related.
+For image data, the plan is to support both binary blobs and conversion to PNG.
+[This](doc/plans/CompressedAssetsFile.md) might be related.
 
 ## Implementation
 
