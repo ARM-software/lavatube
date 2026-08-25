@@ -1188,6 +1188,86 @@ static Json::Value replay_as_handle_json(VkAccelerationStructureKHR handle)
 	return value;
 }
 
+static const trackedaccelerationstructure* find_as_by_device_address(VkDeviceAddress address, bool capture_address)
+{
+	if (address == 0) return nullptr;
+	for (const trackedaccelerationstructure& as : VkAccelerationStructureKHR_index)
+	{
+		const VkDeviceAddress candidate = capture_address ? as.capture_device_address : as.device_address;
+		if (candidate == address) return &as;
+	}
+	return nullptr;
+}
+
+static Json::Value replay_as_instance_references_json(const lava_file_reader& reader, VkDeviceAddress address,
+	uint32_t instance_count, bool array_of_pointers)
+{
+	Json::Value result;
+	result["count"] = instance_count;
+	if (array_of_pointers)
+	{
+		result["status"] = "array_of_pointers_unsupported";
+		return result;
+	}
+	const VkDeviceSize size = (VkDeviceSize)instance_count * sizeof(VkAccelerationStructureInstanceKHR);
+	VkDeviceSize buffer_offset = 0;
+	trackedbuffer* buffer = find_buffer_by_replay_address(address, size, buffer_offset);
+	if (!buffer || buffer->parent_device_index >= VkDevice_index.size())
+	{
+		result["status"] = "buffer_unresolved";
+		return result;
+	}
+	const trackeddevice& device = VkDevice_index.at(buffer->parent_device_index);
+	if (!device.allocator)
+	{
+		result["status"] = "allocator_unavailable";
+		return result;
+	}
+	const suballoc_location loc = device.allocator->find_buffer_memory(buffer->index);
+	if (!loc.mapped)
+	{
+		result["status"] = "memory_unmapped";
+		return result;
+	}
+	result["status"] = "available";
+	Json::Value references(Json::arrayValue);
+	const char* base = loc.mapped + buffer_offset;
+	for (uint32_t i = 0; i < instance_count; i++)
+	{
+		VkAccelerationStructureInstanceKHR instance;
+		memcpy(&instance, base + (VkDeviceSize)i * sizeof(instance), sizeof(instance));
+		const VkDeviceAddress stored = instance.accelerationStructureReference;
+		Json::Value value;
+		value["instance"] = i;
+		value["stored_address"] = (Json::UInt64)stored;
+		if (stored == 0)
+		{
+			value["status"] = "null";
+		}
+		else if (const trackedaccelerationstructure* replay_as = find_as_by_device_address(stored, false))
+		{
+			value["status"] = "replay_address";
+			value["as"] = replay_as->index;
+			value["capture_address"] = (Json::UInt64)replay_as->capture_device_address;
+		}
+		else if (const trackedaccelerationstructure* capture_as = find_as_by_device_address(stored, true))
+		{
+			value["status"] = "capture_address";
+			value["as"] = capture_as->index;
+			value["replay_address"] = (Json::UInt64)capture_as->device_address;
+		}
+		else
+		{
+			const VkDeviceAddress translated = reader.parent->acceleration_structure_address_remapping.translate_address(stored);
+			value["status"] = translated ? "capture_address_range" : "unresolved";
+			if (translated) value["replay_address"] = (Json::UInt64)translated;
+		}
+		references.append(value);
+	}
+	result["references"] = references;
+	return result;
+}
+
 std::string replay_as_build_diagnostic(const lava_file_reader& reader, uint32_t commandbuffer_index, uint32_t info_count,
 	const VkAccelerationStructureBuildGeometryInfoKHR* infos,
 	const VkAccelerationStructureBuildRangeInfoKHR* const* ranges)
@@ -1234,9 +1314,12 @@ std::string replay_as_build_diagnostic(const lava_file_reader& reader, uint32_t 
 			if (geometry->geometryType == VK_GEOMETRY_TYPE_INSTANCES_KHR)
 			{
 				const VkAccelerationStructureGeometryInstancesDataKHR& instances = geometry->geometry.instances;
-				const VkDeviceSize bytes = (VkDeviceSize)primitive_count * sizeof(VkAccelerationStructureInstanceKHR);
-				value["array_of_pointers"] = instances.arrayOfPointers != VK_FALSE;
-				value["instances"] = replay_as_address_json(instances.data.deviceAddress + primitive_offset, bytes);
+					const VkDeviceSize bytes = (VkDeviceSize)primitive_count * sizeof(VkAccelerationStructureInstanceKHR);
+					value["array_of_pointers"] = instances.arrayOfPointers != VK_FALSE;
+					const VkDeviceAddress address = instances.data.deviceAddress + primitive_offset;
+					value["instances"] = replay_as_address_json(address, bytes);
+					value["instance_references"] = replay_as_instance_references_json(reader, address, primitive_count,
+						instances.arrayOfPointers != VK_FALSE);
 			}
 			else if (geometry->geometryType == VK_GEOMETRY_TYPE_AABBS_KHR)
 			{
@@ -2850,6 +2933,24 @@ static void replay_fixup_commandbuffer_raytracing_instances(lava_file_reader& re
 		if (updated)
 		{
 			DLOG("Remapped %u acceleration structure instance references", (unsigned)use.primitive_count);
+		}
+		if (!commandbuffer_data.nvidia_marker_sessions.empty())
+		{
+			trackedcmdbuffer::nvidia_marker_session& session = commandbuffer_data.nvidia_marker_sessions.back();
+			if (!session.as_build_diagnostics.empty())
+			{
+				Json::Value diagnostic;
+				diagnostic["thread"] = reader.current.thread;
+				diagnostic["frame"] = reader.current.frame;
+				diagnostic["packet"] = reader.current.packet;
+				diagnostic["command"] = get_packet_name((packet_type)reader.current.packet_type, reader.current.call_id);
+				diagnostic["device_address"] = (Json::UInt64)base_address;
+				diagnostic["primitive_count"] = use.primitive_count;
+				diagnostic["references"] = replay_as_instance_references_json(reader, base_address,
+					use.primitive_count, false);
+				Json::FastWriter writer;
+				session.instance_fixup_diagnostics.push_back(writer.write(diagnostic));
+			}
 		}
 	}
 }

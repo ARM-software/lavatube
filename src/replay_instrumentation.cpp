@@ -335,6 +335,14 @@ std::string replay_as_build_show(uint32_t commandbuffer_index)
 			if (parser.parse(diagnostic, build)) builds.append(build);
 		}
 		value["snapshots"] = builds;
+		Json::Value fixups(Json::arrayValue);
+		for (const std::string& diagnostic : session.instance_fixup_diagnostics)
+		{
+			Json::Value fixup;
+			Json::Reader parser;
+			if (parser.parse(diagnostic, fixup)) fixups.append(fixup);
+		}
+		value["submission_instance_fixups"] = fixups;
 		sessions.append(value);
 	}
 	if (sessions.empty()) return "ERROR command buffer has no AS diagnostic snapshots\n";

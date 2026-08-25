@@ -10,6 +10,7 @@
 
 #include "decode/vulkan_api_call_reader.h"
 #include "sandbox.h"
+#include "tostring.h"
 #include "util.h"
 #include "write.h"
 #include "write_auto.h"
@@ -31,6 +32,7 @@ using gfxrecon::decode::VulkanImageInitialization;
 using gfxrecon::decode::VulkanResourceInitializationEnd;
 using gfxrecon::decode::VulkanDeviceAddressFixup;
 using gfxrecon::decode::VulkanDeviceAddressFixups;
+using gfxrecon::decode::VulkanOpaqueAddress;
 using gfxrecon::decode::VulkanShaderGroupHandleFixup;
 using gfxrecon::decode::VulkanShaderGroupHandleFixups;
 using gfxrecon::decode::VulkanUnhandledMetaCommand;
@@ -55,6 +57,7 @@ struct gfxreconstruct_import_context
 	std::unordered_set<VkDeviceMemory> warned_non_host_visible_memory;
 	uint64_t next_injected_handle = UINT64_MAX;
 	bool ignore_memory_marking_fixups = false;
+	bool log_opaque_addresses = false;
 	bool threadless_metacommands_active = false;
 };
 
@@ -477,10 +480,16 @@ static void import_memory_update(void* user_data, const VulkanMemoryUpdate& upda
 		{
 			for (const VulkanDeviceAddressFixup& fixup : address_it->second)
 			{
-				if (fixup.data_offset < overlap_start || fixup.data_offset + sizeof(VkDeviceAddress) > overlap_end) continue;
+				if (fixup.data_offset > update.data_size || sizeof(VkDeviceAddress) > update.data_size - fixup.data_offset)
+				{
+					WLOG("Ignoring out-of-range gfxreconstruct device-address fixup at offset %lu in %lu-byte memory update",
+						(unsigned long)fixup.data_offset, (unsigned long)update.data_size);
+					continue;
+				}
+				const uint64_t fixup_offset = update_start + fixup.data_offset;
+				if (fixup_offset < overlap_start || fixup_offset + sizeof(VkDeviceAddress) > overlap_end) continue;
 				VkDeviceAddress captured_address = 0;
-				memcpy(&captured_address, reinterpret_cast<const char*>(update.data) + fixup.data_offset - update_start,
-					sizeof(captured_address));
+				memcpy(&captured_address, reinterpret_cast<const char*>(update.data) + fixup.data_offset, sizeof(captured_address));
 				if (captured_address == 0) continue;
 				VkMarkingSubTypeARM subtype = {};
 				const VkAccelerationStructureKHR acceleration_structure =
@@ -489,7 +498,7 @@ static void import_memory_update(void* user_data, const VulkanMemoryUpdate& upda
 					? VK_DEVICE_ADDRESS_TYPE_ACCELERATION_STRUCTURE_ARM : VK_DEVICE_ADDRESS_TYPE_BUFFER_ARM;
 				marking_types.push_back(VK_MARKING_TYPE_DEVICE_ADDRESS_ARM);
 				marking_subtypes.push_back(subtype);
-				marking_offsets.push_back(fixup.data_offset - object_start);
+				marking_offsets.push_back(fixup_offset - object_start);
 			}
 		}
 		const auto shader_it = context->shader_group_handle_fixups.find(relation_id);
@@ -502,11 +511,18 @@ static void import_memory_update(void* user_data, const VulkanMemoryUpdate& upda
 					WLOG("Ignoring gfxreconstruct shader group handle fixup with unsupported size %u", fixup.group_size);
 					continue;
 				}
-				if (fixup.data_offset < overlap_start || fixup.data_offset + fixup.group_size > overlap_end) continue;
+				if (fixup.data_offset > update.data_size || fixup.group_size > update.data_size - fixup.data_offset)
+				{
+					WLOG("Ignoring out-of-range gfxreconstruct shader-group-handle fixup at offset %lu in %lu-byte memory update",
+						(unsigned long)fixup.data_offset, (unsigned long)update.data_size);
+					continue;
+				}
+				const uint64_t fixup_offset = update_start + fixup.data_offset;
+				if (fixup_offset < overlap_start || fixup_offset + fixup.group_size > overlap_end) continue;
 				VkMarkingSubTypeARM subtype = {};
 				marking_types.push_back(VK_MARKING_TYPE_SHADER_GROUP_HANDLE_ARM);
 				marking_subtypes.push_back(subtype);
-				marking_offsets.push_back(fixup.data_offset - object_start);
+				marking_offsets.push_back(fixup_offset - object_start);
 			}
 		}
 		VkMarkedOffsetsARM markings = { VK_STRUCTURE_TYPE_MARKED_OFFSETS_ARM, nullptr };
@@ -553,6 +569,26 @@ static void import_shader_group_handle_fixups(void* user_data, const VulkanShade
 	if (context->ignore_memory_marking_fixups) return;
 	context->shader_group_handle_fixups[fixups.relation_id] =
 		std::vector<VulkanShaderGroupHandleFixup>(fixups.fixups, fixups.fixups + fixups.fixup_count);
+}
+
+static std::string opaque_address_object_type_string(VkObjectType object_type)
+{
+	if (object_type == VK_OBJECT_TYPE_ACCELERATION_STRUCTURE_KHR) return "VK_OBJECT_TYPE_ACCELERATION_STRUCTURE_KHR";
+	if (object_type == VK_OBJECT_TYPE_MICROMAP_EXT) return "VK_OBJECT_TYPE_MICROMAP_EXT";
+	return VkObjectType_to_string(object_type);
+}
+
+static void import_opaque_address(void* user_data, const VulkanOpaqueAddress& opaque_address)
+{
+	auto* context = static_cast<gfxreconstruct_import_context*>(user_data);
+	if (!context->log_opaque_addresses) return;
+	const std::string object_type = opaque_address_object_type_string(opaque_address.object_type);
+	ILOG("gfxreconstruct opaque address at block %lu thread %lu: device=%p object=%lu type=%s(%d) handle=0x%lx address=0x%lx",
+		(unsigned long)opaque_address.block_index, (unsigned long)opaque_address.thread_id,
+		(void*)opaque_address.device, (unsigned long)opaque_address.object_id,
+		object_type.c_str(), (int)opaque_address.object_type,
+		(unsigned long)opaque_address.object_handle,
+		(unsigned long)opaque_address.address);
 }
 
 static void warn_unhandled_metacommand(void*, const VulkanUnhandledMetaCommand& command)
@@ -974,6 +1010,7 @@ static void print_usage(const char* program)
 	printf("Usage: %s [options] input.gfxr output.api\n", program);
 	printf("-h/--help                          This help\n");
 	printf("--ignore-memory-marking-fixups     Ignore device-address and shader-group-handle fixup metacommands\n");
+	printf("--log-opaque-addresses             Log every gfxreconstruct SetOpaqueAddressCommand\n");
 	printf("-s/--sandbox level                 Set security sandbox level (from 1 to 3, with 3 the most strict, default %d)\n", (int)DEFAULT_SANDBOX_LEVEL);
 }
 
@@ -1003,6 +1040,10 @@ int main(int argc, char** argv)
 		else if (match(argv[i], nullptr, "--ignore-memory-marking-fixups", remaining))
 		{
 			import_context.ignore_memory_marking_fixups = true;
+		}
+		else if (match(argv[i], nullptr, "--log-opaque-addresses", remaining))
+		{
+			import_context.log_opaque_addresses = true;
 		}
 		else if (match(argv[i], "-s", "--sandbox", remaining))
 		{
@@ -1067,6 +1108,7 @@ int main(int argc, char** argv)
 	}
 	if (!reader.SetDeviceAddressFixupCallback(import_device_address_fixups, &import_context) ||
 		!reader.SetShaderGroupHandleFixupCallback(import_shader_group_handle_fixups, &import_context) ||
+		!reader.SetOpaqueAddressCallback(import_opaque_address, &import_context) ||
 		!reader.SetAccelerationStructuresBuildCallback(import_acceleration_structures_build, &import_context) ||
 		!reader.SetAccelerationStructuresCopyCallback(import_acceleration_structures_copy, &import_context) ||
 		!reader.SetAccelerationStructureWritePropertiesCallback(import_acceleration_structure_write_properties, &import_context) ||

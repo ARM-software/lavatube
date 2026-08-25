@@ -927,6 +927,7 @@ struct trackedcmdbuffer : trackable
 		bool recording = false;
 		std::list<nvidia_checkpoint_marker> markers;
 		std::vector<std::string> as_build_diagnostics;
+		std::vector<std::string> instance_fixup_diagnostics;
 	};
 	std::vector<nvidia_marker_session> nvidia_marker_sessions;
 
