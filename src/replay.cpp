@@ -1188,11 +1188,12 @@ static void service_client(service_client_state* state, int client_fd)
 	if (response.empty() && !bypass_active)
 	{
 		bool expected = false;
-		command_active = replayer.cli_command_active.compare_exchange_strong(expected, true, std::memory_order_acq_rel);
-		if (!command_active)
+		while (!replayer.cli_command_active.compare_exchange_weak(expected, true, std::memory_order_acq_rel))
 		{
-			response = "ERROR\n";
+			replayer.cli_command_active.wait(true, std::memory_order_acquire);
+			expected = false;
 		}
+		command_active = true;
 	}
 
 	if (response.empty())
@@ -1203,6 +1204,7 @@ static void service_client(service_client_state* state, int client_fd)
 	if (command_active)
 	{
 		replayer.cli_command_active.store(false, std::memory_order_release);
+		replayer.cli_command_active.notify_one();
 	}
 
 	const bool sent = lava_tcp_send_all(client_fd, response);

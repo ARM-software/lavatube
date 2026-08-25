@@ -20,7 +20,6 @@ It requires:
 * A provided user prompt that tells it what to investigate
 * Check with `lava-cli info trace` that our local trace equals the running replay
 * Ability to look directly into a trace file similarly to `lava-print-fast`
-* Access to system logs (possibly through `lava-cli`)
 
 It will give you:
 * Structured JSON output
@@ -30,8 +29,6 @@ It must not:
   must not include options to do so.
 * Require any state or history. Any context it needs should be provided by
   the user or calling model.
-* Run concurrently with itself, `lava-tui` or `lava-cli` sessions targeted
-  at the same replay service, as it has no support for concurrent users.
 
 We do not want:
 - Persistent history
@@ -39,6 +36,7 @@ We do not want:
 - Arbitrary commands
 - Trace modification
 - Human chat UI
+- Model routing
 
 ## Interface
 

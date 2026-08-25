@@ -25,9 +25,10 @@ More instructions to implement:
 * `lava-cli info <topic>` - show input parameters and important state
 	- 'objects' - show table of all non-zero-sized object types, with pending, created, bound (if applicable) and destroyed columns
 	- 'swapchains' - show image index numbers of real and fake swapchains and their status
-	- 'device-fault' - use `VK_KHR_device_fault` to print device-lost info (only works on nvidia for now)
-	- 'device' - information about the current GPU physical devices through `vkGetPhysicalDeviceProperties2` to get `VkPhysicalDeviceProperties` and `VkPhysicalDeviceDriverProperties` for each, dump as ndjson
+	- 'devices' - list the available GPU physical devices
+	- 'device <device index>' - information about the given GPU device through `vkGetPhysicalDeviceProperties2` to get `VkPhysicalDeviceProperties` and `VkPhysicalDeviceDriverProperties` - dump key info from each as ndjson, mark the current one
 	- 'system' - information about the current system (non-GPU), report back Linux (kernel) version, Android version (or Windows) version, as ndjson
+	- 'extensions <device index>' - print supported and enabled extensions
 * `lava-cli list <object type> [filter=all|created|bound|destroyed] [limit=20]` - list all objects of given type tracked globally and their status
 * `lava-cli save buffer|image|tensor <index> <filename>` - write exact contents of object given by index to the given filename (if bound; possibly using staging)
 * `lava-cli convert image <index> <filename.png>` - transform to linear format and write contents of image data given by index to the given filename (if bound; possibly using staging; as PNG)
@@ -40,6 +41,7 @@ More instructions to implement:
 * `lava-cli backtrace` - generate a backtrace from the current position, could invoke gdb, need to figure out what to do for Android
 	- on same host, llm model could just fire up gdb, which is far more powerful, so of limited usefulness
 	- could we annotate the backtrace with extra info to increase usefulness?
+	- use case: could trigger a backtrace if the process is hanging (triggering it from pause position does not seem terribly useful)
 * `lava-cli inject <packet> <thread> device-wait <device index>` - inject a future wait for the given device before the given packet boundary; this only makes sense if we `continue` or `goto` past this point at full speed
 	- we should keep all inject operations in a sorted queue, one per thread, so we can quickly check the current packet against the top of the queue (we can have multiple injected packets pending on one packet)
 * `lava-cli inject <packet> <thread> fence-wait <device index> <fence index>` - similar to the above, inject a future wait for the given fence before the given packet boundary
