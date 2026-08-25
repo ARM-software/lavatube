@@ -1553,6 +1553,14 @@ static void replay_wait_for_pending_commandbuffer(lava_file_reader& reader, uint
 		if (result != VK_SUCCESS)
 		{
 			if (result == VK_ERROR_DEVICE_LOST) replay_report_device_fault(commandbuffer_data.device, reader.parent);
+			if (result == VK_ERROR_DEVICE_LOST && reader.parent->cli_service.load(std::memory_order_acquire))
+			{
+				FELOG("LAVATUBE ERROR: failed to wait for pending command buffer %u fence: %s, entering abort mode",
+					commandbuffer_index, errorString(result));
+				reader.parent->cli_error_count.fetch_add(1, std::memory_order_relaxed);
+				reader.parent->request_abort(reader, result);
+				reader.throw_stop_requested();
+			}
 			ABORT("Failed to wait for pending command buffer %u fence on replay: %s",
 				commandbuffer_index, errorString(result));
 		}
@@ -1569,6 +1577,14 @@ static void replay_wait_for_pending_commandbuffer(lava_file_reader& reader, uint
 		if (result != VK_SUCCESS)
 		{
 			if (result == VK_ERROR_DEVICE_LOST) replay_report_device_fault(commandbuffer_data.device, reader.parent);
+			if (result == VK_ERROR_DEVICE_LOST && reader.parent->cli_service.load(std::memory_order_acquire))
+			{
+				FELOG("LAVATUBE ERROR: failed to wait for pending command buffer %u queue: %s, entering abort mode",
+					commandbuffer_index, errorString(result));
+				reader.parent->cli_error_count.fetch_add(1, std::memory_order_relaxed);
+				reader.parent->request_abort(reader, result);
+				reader.throw_stop_requested();
+			}
 			ABORT("Failed to wait for pending command buffer %u queue on replay: %s",
 				commandbuffer_index, errorString(result));
 		}
