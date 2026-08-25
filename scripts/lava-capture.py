@@ -50,6 +50,7 @@ def args():
 	parser.add_argument('--automate', dest='automate', action='store_true', help='Try to automate the run as much as possible if app supports CBS')
 	parser.add_argument('--no-multithread', dest='nomp', action='store_true', help='Turn off multi-threaded compression and disk writeout (saves memory)')
 	parser.add_argument('--trust-flushing', dest='explicit', action='store_true', help='Trust app to flush modified host memory instead of tracking usage')
+	parser.add_argument('--skip-memorytype-splitting', dest='skip_splitting', action='store_true', help='Do not split up broad memory types')
 	parser.add_argument('--blacklist-extensions', dest='blacklist_extensions', metavar='<LIST>', help='Comma-separated Vulkan extensions to hide during capture')
 	parser.add_argument('programAndArgs', metavar='<program> [<program args>]', nargs=argparse.REMAINDER, help='Application to capture and any program arguments')
 	return parser
@@ -112,6 +113,7 @@ if __name__ == '__main__':
 	if args.log: os.environ['LAVATUBE_DEBUG_FILE'] = args.log
 	if args.compression_type: os.environ['LAVATUBE_COMPRESSION_TYPE'] = compression_types[args.compression_type]
 	if args.explicit: os.environ['LAVATUBE_TRUST_HOST_FLUSHING'] = '1'
+	if args.skip_splitting: os.environ['LAVATUBE_SKIP_MEMORY_TYPE_SPLITTING'] = '1'
 	if args.blacklist_extensions is not None: os.environ['LAVATUBE_BLACKLIST_EXTENSIONS'] = args.blacklist_extensions
 	if 'LAVATUBE_BLACKLIST_EXTENSIONS' in os.environ:
 		try:

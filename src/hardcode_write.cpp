@@ -1892,6 +1892,8 @@ void trace_post_vkDestroyInstance(lava_file_writer& writer, VkInstance instance,
 // TBD - nuke any PROTECTED_BIT memory types
 static void setup_virtual_memory(VkPhysicalDevice physicalDevice) REQUIRES(frame_mutex)
 {
+	bool skip = get_env_bool("LAVATUBE_SKIP_MEMORY_TYPE_SPLITTING", 0);
+
 	// Better call this one unconditionally here to avoid a bunch of checks later if
 	// it has actually been called before we need the info.
 	wrap_vkGetPhysicalDeviceMemoryProperties(physicalDevice, &real_memory_properties);
@@ -1903,6 +1905,9 @@ static void setup_virtual_memory(VkPhysicalDevice physicalDevice) REQUIRES(frame
 	for (uint32_t i = 0; i < real_memory_properties.memoryTypeCount; i++)
 	{
 		remap_memory_types_to_real[i] = i;
+
+		if (skip) continue;
+
 		if (virtual_memory_properties.memoryTypeCount < VK_MAX_MEMORY_TYPES
 		    && (real_memory_properties.memoryTypes[i].propertyFlags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)
 		    && (real_memory_properties.memoryTypes[i].propertyFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT))
