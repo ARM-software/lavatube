@@ -59,16 +59,15 @@ void usage()
 	printf("    set debug LEVEL          Set replay debug level (zero is the least verbose) [0,1,2,3].\n");
 	printf("    set blackhole BOOL       Set replay blackhole mode (submit empty commandbuffers) [true,false], default is false.\n");
 	printf("    set idle-check BOOL      Wait for GPU idle after control commands [true,false], default is true.\n");
-	printf("    set isolate-thread BOOL  Run only the selected replay thread [true,false], default is false.\n");
+	printf("    set isolate-thread BOOL  Run only the targeted replay thread [true,false], default is false.\n");
 #ifndef NDEBUG
 	printf("    self-test                Run internal consistency assert checks.\n");
 #endif
-	printf("    thread INDEX             Select which traced thread receives step and goto commands.\n");
-	printf("    step                     Advance one packet.\n");
-	printf("    step packets N           Advance N packets.\n");
-	printf("    step calls N             Advance N Vulkan API calls.\n");
-	printf("    goto PACKET              Continue until thread-relative packet number PACKET.\n");
-	printf("    goto NAME                Continue until next Vulkan command NAME, e.g. vkQueueSubmit.\n");
+	printf("    step THREAD              Advance THREAD by one packet.\n");
+	printf("    step THREAD packets N    Advance THREAD by N packets.\n");
+	printf("    step THREAD calls N      Advance THREAD by N Vulkan API calls.\n");
+	printf("    goto THREAD PACKET       Continue THREAD until thread-relative packet number PACKET.\n");
+	printf("    goto THREAD NAME         Continue THREAD until next Vulkan command NAME, e.g. vkQueueSubmit.\n");
 	printf("\n");
 	printf("Replay logs:\n");
 	printf("    log update               Append new replay logs to the local host/port cache.\n");
@@ -79,8 +78,9 @@ void usage()
 	printf("                             Print matching cached system-journal lines.\n");
 	printf("\n");
 	printf("Call inspection:\n");
-	printf("    parameters               Print JSON parameters for the currently paused Vulkan call.\n");
-	printf("    instrument [detailed]    Instrument the command buffer after a paused vkBeginCommandBuffer.\n");
+	printf("    parameters THREAD        Print JSON parameters for THREAD's currently paused Vulkan call.\n");
+	printf("    instrument THREAD [detailed]\n");
+	printf("                             Instrument THREAD after a paused vkBeginCommandBuffer.\n");
 	printf("    add-markers nvidia --call vkCmdBuildAccelerationStructuresKHR [--placement before|after|both]\n");
 	printf("                             Add NVIDIA diagnostic checkpoints to this command buffer recording.\n");
 	printf("    show as-build N          Print collected AS build diagnostics for command buffer N.\n");
@@ -96,7 +96,8 @@ void usage()
 	printf("    info memory              Print current Vulkan memory heap usage and budgets.\n");
 	printf("    info suballocator        Print current suballocator heap internals.\n");
 	printf("\n");
-	printf("    Long running commands keep 'status', log updates, 'info trace', 'info threads', 'diagnose deadlock', and 'stop' responsive; other concurrent commands wait.\n");
+	printf("    Observer commands may run concurrently. State-changing and live-state inspection commands wait for exclusive access.\n");
+	printf("    'stop' remains responsive while an exclusive command is running.\n");
 	exit(-1);
 }
 

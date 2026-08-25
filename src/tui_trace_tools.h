@@ -45,7 +45,7 @@ private:
 	tui_tool_result get_memory_info() const;
 	tui_tool_result get_suballocator_info() const;
 	tui_tool_result get_service_status() const;
-	tui_tool_result get_current_call_parameters() const;
+	tui_tool_result get_current_call_parameters(const Json::Value& args) const;
 	tui_tool_result continue_replay() const;
 	tui_tool_result stop_replay() const;
 	tui_tool_result step_replay(const Json::Value& args) const;

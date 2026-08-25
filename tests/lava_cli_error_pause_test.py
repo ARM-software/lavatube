@@ -86,6 +86,60 @@ def check_command(cli, port, expected, *command, expected_rc=0, environment=None
 	return result
 
 
+def thread_packet(cli, port, thread):
+	response = check_command(cli, port, None, 'info', 'threads').stdout
+	for line in response.splitlines():
+		columns = [column.strip() for column in line.strip().strip('|').split('|')]
+		if len(columns) >= 4 and columns[0] == str(thread):
+			return int(columns[3])
+	raise RuntimeError('thread %d missing from info response: %r' % (thread, response))
+
+
+def check_thread_targeted_step(replay_path, cli_path, trace_path):
+	port = reserve_port()
+	with tempfile.NamedTemporaryFile() as log_file:
+		replay = start_service(replay_path, port, trace_path, None, log_file)
+		try:
+			wait_for_listener(replay, port, log_file)
+			# Establish a stable pause before sampling the unselected thread's position.
+			check_command(cli_path, port, None, 'step', '0')
+			packet_before = thread_packet(cli_path, port, 1)
+			step = check_command(cli_path, port, None, 'step', '1')
+			if 'packet=%d ' % (packet_before + 1) not in step.stdout:
+				raise RuntimeError('thread-targeted step did not advance exactly one packet: before=%d response=%r'
+				                 % (packet_before, step.stdout))
+			api_calls_before = int(step.stdout.split('api_calls=', 1)[1].split()[0])
+			step = check_command(cli_path, port, None, 'step', '1', 'calls', '2')
+			if 'api_calls=%d ' % (api_calls_before + 2) not in step.stdout:
+				raise RuntimeError('thread-targeted call step did not advance exactly two calls: before=%d response=%r'
+				                 % (api_calls_before, step.stdout))
+			check_command(cli_path, port, 'OK\n', 'stop')
+		finally:
+			stop_replay(replay, cli_path, port, log_file)
+
+
+def check_atomic_thread_goto(replay_path, cli_path, trace_path):
+	port = reserve_port()
+	with tempfile.NamedTemporaryFile() as log_file:
+		replay = start_service(replay_path, port, trace_path, None, log_file)
+		try:
+			wait_for_listener(replay, port, log_file)
+			check_command(cli_path, port, 'ERROR\n', 'goto', '1', 'notACommand', expected_rc=1)
+			check_command(cli_path, port, 'PAUSED thread=0\n', 'status')
+
+			prepared = check_command(cli_path, port, None, 'goto', '1', '2')
+			if 'packet=2 ' not in prepared.stdout or 'name=vkQueueSubmit ' not in prepared.stdout:
+				raise RuntimeError('failed to prepare thread 1 on its first Vulkan call: %r' % prepared.stdout)
+			check_command(cli_path, port, 'OK\n', 'set', 'isolate-thread', 'true')
+			check_command(cli_path, port, None, 'step', '0')
+			result = check_command(cli_path, port, None, 'goto', '1', 'vkQueueSubmit')
+			if 'packet=2 ' not in result.stdout or 'name=vkQueueSubmit ' not in result.stdout:
+				raise RuntimeError('goto skipped the function reached while preparing thread 1: %r' % result.stdout)
+			check_command(cli_path, port, 'OK\n', 'stop')
+		finally:
+			stop_replay(replay, cli_path, port, log_file)
+
+
 def check_retval_error_pause(replay_path, cli_path, trace_path):
 	port = reserve_port()
 	with tempfile.NamedTemporaryFile() as log_file:
@@ -104,7 +158,7 @@ def check_retval_error_pause(replay_path, cli_path, trace_path):
 			status = check_command(cli_path, port, None, 'status').stdout
 			if 'name=vkQueueSubmit ' not in status or 'result=ERROR_OUT_OF_HOST_MEMORY' not in status:
 				raise RuntimeError('status response missing error: %r' % status)
-			parameters = check_command(cli_path, port, None, 'parameters').stdout
+			parameters = check_command(cli_path, port, None, 'parameters', '1').stdout
 			if '"vkQueueSubmit"' not in parameters or '"thread" : 1' not in parameters:
 				raise RuntimeError('unexpected parameters response: %r' % parameters)
 			check_command(cli_path, port, 'DONE\n', 'continue')
@@ -119,13 +173,13 @@ def check_retval_error_selected_thread(replay_path, cli_path, trace_path):
 		replay = start_service(replay_path, port, trace_path, 'vkQueueSubmit,-1', log_file)
 		try:
 			wait_for_listener(replay, port, log_file)
-			check_command(cli_path, port, None, 'thread', '1')
+			check_command(cli_path, port, None, 'step', '1')
 			result = check_command(cli_path, port, None, 'continue')
 			response = result.stdout
 			if 'name=vkQueueSubmit ' not in response or 'result=ERROR_OUT_OF_HOST_MEMORY' not in response:
 				raise RuntimeError('expected error pause, got: %r' % response)
 			# Advancing past the error pauses normally again without the result suffix.
-			result = check_command(cli_path, port, None, 'step', 'packets', '1')
+			result = check_command(cli_path, port, None, 'step', '1', 'packets', '1')
 			if 'result=' in result.stdout:
 				raise RuntimeError('stale result reported after step: %r' % result.stdout)
 			check_command(cli_path, port, 'DONE\n', 'continue')
@@ -140,9 +194,8 @@ def check_retval_error_goto_function(replay_path, cli_path, trace_path):
 		replay = start_service(replay_path, port, trace_path, 'vkQueueSubmit,-1', log_file)
 		try:
 			wait_for_listener(replay, port, log_file)
-			# Start on thread 1 and goto a function after vkQueueSubmit.
-			check_command(cli_path, port, None, 'thread', '1')
-			result = check_command(cli_path, port, None, 'goto', 'vkDestroyCommandPool')
+			# Atomically target thread 1 and goto a function after vkQueueSubmit.
+			result = check_command(cli_path, port, None, 'goto', '1', 'vkDestroyCommandPool')
 			response = result.stdout
 			if 'name=vkQueueSubmit ' not in response or 'result=ERROR_OUT_OF_HOST_MEMORY' not in response:
 				raise RuntimeError('expected error pause during goto function, got: %r' % response)
@@ -150,7 +203,7 @@ def check_retval_error_goto_function(replay_path, cli_path, trace_path):
 			status = check_command(cli_path, port, None, 'status').stdout
 			if 'name=vkQueueSubmit ' not in status or 'result=ERROR_OUT_OF_HOST_MEMORY' not in status:
 				raise RuntimeError('status response missing error: %r' % status)
-			parameters = check_command(cli_path, port, None, 'parameters').stdout
+			parameters = check_command(cli_path, port, None, 'parameters', '1').stdout
 			if '"vkQueueSubmit"' not in parameters:
 				raise RuntimeError('unexpected parameters response: %r' % parameters)
 			check_command(cli_path, port, 'DONE\n', 'continue')
@@ -168,7 +221,7 @@ def check_retval_status_pause(replay_path, cli_path, trace_path):
 			result = check_command(cli_path, port, None, 'continue')
 			if 'name=vkWaitForFences ' not in result.stdout or 'result=TIMEOUT' not in result.stdout:
 				raise RuntimeError('expected status mismatch pause, got: %r' % result.stdout)
-			parameters = check_command(cli_path, port, None, 'parameters').stdout
+			parameters = check_command(cli_path, port, None, 'parameters', '0').stdout
 			if '"return" : "VK_TIMEOUT"' not in parameters:
 				raise RuntimeError('status mismatch not preserved in parameters: %r' % parameters)
 			check_command(cli_path, port, 'DONE\n', 'continue')
@@ -223,8 +276,7 @@ def check_retval_fatal_abort_during_step(replay_path, cli_path, trace_path):
 		replay = start_service(replay_path, port, trace_path, 'vkQueueSubmit,-4', log_file)
 		try:
 			wait_for_listener(replay, port, log_file)
-			check_command(cli_path, port, None, 'thread', '1')
-			result = check_command(cli_path, port, None, 'step', 'packets', '10', expected_rc=1)
+			result = check_command(cli_path, port, None, 'step', '1', 'packets', '10', expected_rc=1)
 			if result.returncode != 1:
 				raise RuntimeError('step should exit nonzero on abort, got %d' % result.returncode)
 			if not result.stdout.startswith('ABORTED '):
@@ -288,6 +340,8 @@ def main():
 			raise RuntimeError('unknown mode: ' + sys.argv[4])
 		check_chameleon_device_loss(replay_path, cli_path, trace_path)
 		return
+	check_thread_targeted_step(replay_path, cli_path, trace_path)
+	check_atomic_thread_goto(replay_path, cli_path, trace_path)
 	check_retval_error_pause(replay_path, cli_path, trace_path)
 	check_retval_error_selected_thread(replay_path, cli_path, trace_path)
 	check_retval_error_goto_function(replay_path, cli_path, trace_path)

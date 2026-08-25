@@ -79,7 +79,7 @@ static Json::Value parameters_with_object()
 
 static Json::Value parameters_with_step()
 {
-	Json::Value parameters = empty_parameters();
+	Json::Value parameters = parameters_with_thread();
 	Json::Value unit;
 	unit["type"] = "string";
 	unit["description"] = "Step unit. Use packets for raw trace packets or calls for Vulkan API calls.";
@@ -94,7 +94,7 @@ static Json::Value parameters_with_step()
 
 static Json::Value parameters_with_target()
 {
-	Json::Value parameters = empty_parameters();
+	Json::Value parameters = parameters_with_thread();
 	parameters["properties"]["target"] = string_property("Absolute packet number or Vulkan command name, for example 300 or vkQueueSubmit.");
 	parameters["required"].append("target");
 	return parameters;
@@ -201,9 +201,9 @@ Json::Value tui_trace_tools::tool_definitions() const
 		tools.append(function_tool_schema("get_service_status", "Return the current replay service state: RUNNING, DONE, PAUSED, or the current paused packet/call.", empty_parameters()));
 		tools.append(function_tool_schema("continue_replay", "Resume replay until completion, stop, or the next target. Use only when the user wants replay to continue.", empty_parameters()));
 		tools.append(function_tool_schema("stop_replay", "Stop the replay service and replay. Use only when the user explicitly asks to stop the service.", empty_parameters()));
-		tools.append(function_tool_schema("step_replay", "Advance replay by packets or Vulkan API calls from the current pause point.", parameters_with_step()));
-		tools.append(function_tool_schema("goto_replay_target", "Continue replay until an absolute packet number or the next named Vulkan command.", parameters_with_target()));
-		tools.append(function_tool_schema("get_current_call_parameters", "Print JSON parameters for the currently paused Vulkan call.", empty_parameters()));
+		tools.append(function_tool_schema("step_replay", "Advance one replay thread by packets or Vulkan API calls from its current pause point.", parameters_with_step()));
+		tools.append(function_tool_schema("goto_replay_target", "Continue one replay thread until an absolute packet number or the next named Vulkan command.", parameters_with_target()));
+		tools.append(function_tool_schema("get_current_call_parameters", "Print JSON parameters for the currently paused Vulkan call in one replay thread.", parameters_with_thread()));
 		tools.append(function_tool_schema("list_threads", "List traced threads from the replay service.", empty_parameters()));
 		tools.append(function_tool_schema("get_memory_info", "Print current Vulkan memory heap usage and budgets from the replay service.", empty_parameters()));
 		tools.append(function_tool_schema("get_suballocator_info", "Print current suballocator heap internals from the replay service as a Markdown table.", empty_parameters()));
@@ -234,7 +234,7 @@ tui_tool_result tui_trace_tools::execute(const std::string& name, const std::str
 	if (mReplayService && name == "get_memory_info") return get_memory_info();
 	if (mReplayService && name == "get_suballocator_info") return get_suballocator_info();
 	if (mReplayService && name == "get_service_status") return get_service_status();
-	if (mReplayService && name == "get_current_call_parameters") return get_current_call_parameters();
+	if (mReplayService && name == "get_current_call_parameters") return get_current_call_parameters(args);
 	if (mReplayService && name == "continue_replay") return continue_replay();
 	if (mReplayService && name == "stop_replay") return stop_replay();
 	if (mReplayService && name == "step_replay") return step_replay(args);
@@ -398,9 +398,12 @@ tui_tool_result tui_trace_tools::get_service_status() const
 	return service_command("status");
 }
 
-tui_tool_result tui_trace_tools::get_current_call_parameters() const
+tui_tool_result tui_trace_tools::get_current_call_parameters(const Json::Value& args) const
 {
-	return service_command("parameters");
+	uint32_t thread = 0;
+	std::string error;
+	if (!read_u32_arg(args, "thread", thread, error)) return json_error(error);
+	return service_command("parameters " + _to_string(thread));
 }
 
 tui_tool_result tui_trace_tools::continue_replay() const
@@ -415,8 +418,11 @@ tui_tool_result tui_trace_tools::stop_replay() const
 
 tui_tool_result tui_trace_tools::step_replay(const Json::Value& args) const
 {
-	std::string unit;
+	uint32_t thread = 0;
 	std::string error;
+	if (!read_u32_arg(args, "thread", thread, error)) return json_error(error);
+
+	std::string unit;
 	if (!read_string_arg(args, "unit", unit, error)) return json_error(error);
 	if (unit != "packets" && unit != "calls") return json_error("Step unit must be packets or calls");
 
@@ -424,20 +430,22 @@ tui_tool_result tui_trace_tools::step_replay(const Json::Value& args) const
 	if (!read_u32_arg(args, "count", count, error)) return json_error(error);
 	if (count == 0) return json_error("Step count must be greater than zero");
 
-	if (count == 1) return service_command("step " + unit + " 1");
-	return service_command("step " + unit + " " + _to_string(count));
+	return service_command("step " + _to_string(thread) + " " + unit + " " + _to_string(count));
 }
 
 tui_tool_result tui_trace_tools::goto_replay_target(const Json::Value& args) const
 {
-	std::string target;
+	uint32_t thread = 0;
 	std::string error;
+	if (!read_u32_arg(args, "thread", thread, error)) return json_error(error);
+
+	std::string target;
 	if (!read_string_arg(args, "target", target, error)) return json_error(error);
 	if (target.find(' ') != std::string::npos || target.find('\n') != std::string::npos || target.find('\r') != std::string::npos)
 	{
 		return json_error("Goto target must not contain whitespace");
 	}
-	return service_command("goto " + target);
+	return service_command("goto " + _to_string(thread) + " " + target);
 }
 
 tui_tool_result tui_trace_tools::service_command(const std::string& command) const

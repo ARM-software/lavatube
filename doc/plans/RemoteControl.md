@@ -19,8 +19,8 @@ on this port. These instructions are sent from a new tool `lava-cli`.
 More instructions to implement:
 * `lava-cli validation update` - similar to `log update`, just get the latest validation warnings; if no validation layer enabled, just return 'ERROR'
 * `lava-cli validation tail [REGEX=*] [limit=10] [since=LINE] [update=on|off]` - similar to `log tail` above
-* `lava-cli step frames X` - step the given number of frames ahead in the current thread, then pause again
-* `lava-cli goto frame X` - replay until we get to the given frame
+* `lava-cli step THREAD frames X` - step the given number of frames ahead in THREAD, then pause again
+* `lava-cli goto THREAD frame X` - replay THREAD until it gets to the given frame
 * `lava-cli repeat` - repeat the current call (without incrementing the packet count); not all calls are safe to repeat - must use common sense
 * `lava-cli info <topic>` - show input parameters and important state
 	- 'objects' - show table of all non-zero-sized object types, with pending, created, bound (if applicable) and destroyed columns
@@ -260,3 +260,15 @@ otherwise retain its existing one-atomic fast exit from `check_cli()`. On normal
 the listener must stop automatically and `lava-replay` must exit as it does today. Explicit
 `--service` mode may continue to start paused and remain available after replay reaches
 `DONE` until the client asks it to stop.
+
+## Concurrent query caveats
+
+Only explicitly classified observer commands run concurrently. Commands such as
+`parameters THREAD` remain exclusive because parameter publication currently uses one
+global request flag and response buffer, even though fetching parameters is conceptually
+a query.
+
+Replay and system log updates also remain exclusive because streams currently share one
+service-owned cursor. Supporting independent concurrent log readers requires moving the
+cursor into the request, or otherwise storing it per client, so one reader cannot consume
+another reader's updates.

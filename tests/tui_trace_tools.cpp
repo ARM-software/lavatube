@@ -59,9 +59,9 @@ static std::string fake_response(const std::string& command)
 	if (command == "status") return "PAUSED\n";
 	if (command == "info objects") return "object_type\tcount\nVkBuffer\t2\n";
 	if (command == "info suballocator") return "| Device | Heap | Total Bytes |\n|--------|------|-------------|\n| 0      | 0    | 33554432    |\n";
-	if (command == "step calls 2") return "PAUSED packet=10 api_calls=4 vkQueueSubmit\n";
+	if (command == "step 0 calls 2") return "PAUSED packet=10 api_calls=4 vkQueueSubmit\n";
 	if (command == "show VkBuffer 1") return "{ \"size\" : 32 }\n";
-	if (command == "parameters") return "{ \"command\" : \"vkQueueSubmit\" }\n";
+	if (command == "parameters 0") return "{ \"command\" : \"vkQueueSubmit\" }\n";
 	return "ERROR\n";
 }
 
@@ -186,7 +186,7 @@ static void test_service_tools()
 	assert(result.ok);
 	assert(result.output.find("VkBuffer\t2") != std::string::npos);
 
-	result = tools.execute("step_replay", "{ \"unit\": \"calls\", \"count\": 2 }");
+	result = tools.execute("step_replay", "{ \"thread\": 0, \"unit\": \"calls\", \"count\": 2 }");
 	assert(result.ok);
 	assert(result.output.find("vkQueueSubmit") != std::string::npos);
 
@@ -198,7 +198,7 @@ static void test_service_tools()
 	assert(result.ok);
 	assert(result.output.find("Total Bytes") != std::string::npos);
 
-	result = tools.execute("get_current_call_parameters", "{}");
+	result = tools.execute("get_current_call_parameters", "{ \"thread\": 0 }");
 	assert(result.ok);
 	assert(result.output.find("vkQueueSubmit") != std::string::npos);
 
@@ -206,10 +206,10 @@ static void test_service_tools()
 	assert(state.commands.size() == 6);
 	assert(state.commands[0] == "status");
 	assert(state.commands[1] == "info objects");
-	assert(state.commands[2] == "step calls 2");
+	assert(state.commands[2] == "step 0 calls 2");
 	assert(state.commands[3] == "show VkBuffer 1");
 	assert(state.commands[4] == "info suballocator");
-	assert(state.commands[5] == "parameters");
+	assert(state.commands[5] == "parameters 0");
 }
 
 int main()

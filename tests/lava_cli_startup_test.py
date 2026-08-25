@@ -71,6 +71,10 @@ def check_startup(replay_path, cli_path, trace_path):
 			raise RuntimeError('info threads failed: stdout=' + repr(threads.stdout) + ' stderr=' + repr(threads.stderr))
 		if '| Thread | Name' not in threads.stdout or '| 0 ' not in threads.stdout:
 			raise RuntimeError('unexpected info threads output: ' + repr(threads.stdout))
+
+		legacy_selection = run_cli(cli_path, port, 'thread', '0')
+		if legacy_selection.returncode == 0 or legacy_selection.stdout != 'ERROR\n':
+			raise RuntimeError('standalone thread selection was accepted: ' + repr(legacy_selection.stdout))
 	finally:
 		stop_replay(replay, cli_path, port)
 

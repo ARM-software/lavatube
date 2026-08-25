@@ -42,7 +42,7 @@ Start a paused replay and forward the service port to the host:
 scripts/lava-replay-android.py run --service trace.api
 build/lava-cli -H 127.0.0.1 -P 11901 status
 build/lava-cli -H 127.0.0.1 -P 11901 info trace
-build/lava-cli -H 127.0.0.1 -P 11901 step calls 1
+build/lava-cli -H 127.0.0.1 -P 11901 step 0 calls 1
 scripts/lava-replay-android.py stop
 ```
 

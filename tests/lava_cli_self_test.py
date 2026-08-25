@@ -54,7 +54,7 @@ def main():
 		if result.stdout != 'OK\n':
 			raise RuntimeError('unexpected self-test response: ' + repr(result.stdout))
 
-		result = run_cli(cli_path, port, 'step', 'calls', '1')
+		result = run_cli(cli_path, port, 'step', '0', 'calls', '1')
 		if result.returncode != 0 or 'api_calls=1' not in result.stdout:
 			raise RuntimeError('failed to step one call before self-test: stdout=' + repr(result.stdout) + ' stderr=' + repr(result.stderr))
 		result = run_cli(cli_path, port, 'self-test')
