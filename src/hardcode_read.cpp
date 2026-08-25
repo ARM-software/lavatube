@@ -4,6 +4,7 @@
 #include "markings.h"
 #include "replay_instrumentation.h"
 #include "swapchain_format_compatibility.h"
+#include "jsoncpp/json/writer.h"
 
 #ifndef VK_ANDROID_FRAME_BOUNDARY_EXTENSION_NAME
 #define VK_ANDROID_FRAME_BOUNDARY_EXTENSION_NAME "VK_ANDROID_frame_boundary"
@@ -1139,6 +1140,139 @@ static trackedbuffer* find_buffer_by_replay_address(VkDeviceAddress address, VkD
 	return best;
 }
 
+static Json::Value replay_as_address_json(VkDeviceAddress address, VkDeviceSize size)
+{
+	Json::Value value;
+	value["address"] = (Json::UInt64)address;
+	value["size"] = (Json::UInt64)size;
+	if (address == 0)
+	{
+		value["status"] = "null";
+		return value;
+	}
+	VkDeviceSize offset = 0;
+	trackedbuffer* buffer = find_buffer_by_replay_address(address, size ? size : 1, offset);
+	if (!buffer)
+	{
+		value["status"] = "unresolved";
+		return value;
+	}
+	value["status"] = "resolved";
+	value["buffer"] = buffer->index;
+	value["buffer_offset"] = (Json::UInt64)offset;
+	value["buffer_size"] = (Json::UInt64)buffer->size;
+	value["buffer_device_address"] = (Json::UInt64)buffer->device_address;
+	value["memory"] = buffer->backing_index;
+	value["memory_offset"] = (Json::UInt64)(buffer->offset + offset);
+	value["memory_flags"] = (Json::UInt64)buffer->memory_flags;
+	value["capture_address"] = (Json::UInt64)(buffer->capture_device_address ? buffer->capture_device_address + offset : 0);
+	return value;
+}
+
+static Json::Value replay_as_handle_json(VkAccelerationStructureKHR handle)
+{
+	Json::Value value;
+	const uint32_t index = index_to_VkAccelerationStructureKHR.index_or_invalid(handle);
+	if (index == CONTAINER_INVALID_INDEX || index >= VkAccelerationStructureKHR_index.size())
+	{
+		value["index"] = Json::nullValue;
+		return value;
+	}
+	const trackedaccelerationstructure& data = VkAccelerationStructureKHR_index.at(index);
+	value["index"] = index;
+	value["type"] = (unsigned)data.type;
+	value["size"] = (Json::UInt64)data.size;
+	value["device_address"] = (Json::UInt64)data.device_address;
+	value["buffer"] = data.buffer_index;
+	value["buffer_offset"] = (Json::UInt64)data.offset;
+	return value;
+}
+
+std::string replay_as_build_diagnostic(const lava_file_reader& reader, uint32_t commandbuffer_index, uint32_t info_count,
+	const VkAccelerationStructureBuildGeometryInfoKHR* infos,
+	const VkAccelerationStructureBuildRangeInfoKHR* const* ranges)
+{
+	Json::Value root;
+	root["thread"] = reader.current.thread;
+	root["frame"] = reader.current.frame;
+	root["packet"] = reader.current.packet;
+	root["command_buffer"] = commandbuffer_index;
+	Json::Value build_infos(Json::arrayValue);
+	for (uint32_t i = 0; infos && i < info_count; i++)
+	{
+		const VkAccelerationStructureBuildGeometryInfoKHR& info = infos[i];
+		Json::Value build;
+		build["index"] = i;
+		build["type"] = (unsigned)info.type;
+		build["mode"] = (unsigned)info.mode;
+		build["flags"] = (Json::UInt64)info.flags;
+		build["src"] = replay_as_handle_json(info.srcAccelerationStructure);
+		build["dst"] = replay_as_handle_json(info.dstAccelerationStructure);
+		build["scratch"] = replay_as_address_json(info.scratchData.deviceAddress, 1);
+		Json::Value geometries(Json::arrayValue);
+		for (uint32_t g = 0; g < info.geometryCount; g++)
+		{
+			const VkAccelerationStructureGeometryKHR* geometry = info.pGeometries ? &info.pGeometries[g] :
+				(info.ppGeometries ? info.ppGeometries[g] : nullptr);
+			Json::Value value;
+			value["index"] = g;
+			if (!geometry)
+			{
+				value["status"] = "missing";
+				geometries.append(value);
+				continue;
+			}
+			value["type"] = (unsigned)geometry->geometryType;
+			value["flags"] = (Json::UInt64)geometry->flags;
+			const VkAccelerationStructureBuildRangeInfoKHR* range = ranges && ranges[i] ? &ranges[i][g] : nullptr;
+			const uint32_t primitive_count = range ? range->primitiveCount : 0;
+			const uint32_t primitive_offset = range ? range->primitiveOffset : 0;
+			value["primitive_count"] = primitive_count;
+			value["primitive_offset"] = primitive_offset;
+			value["first_vertex"] = range ? range->firstVertex : 0;
+			value["transform_offset"] = range ? range->transformOffset : 0;
+			if (geometry->geometryType == VK_GEOMETRY_TYPE_INSTANCES_KHR)
+			{
+				const VkAccelerationStructureGeometryInstancesDataKHR& instances = geometry->geometry.instances;
+				const VkDeviceSize bytes = (VkDeviceSize)primitive_count * sizeof(VkAccelerationStructureInstanceKHR);
+				value["array_of_pointers"] = instances.arrayOfPointers != VK_FALSE;
+				value["instances"] = replay_as_address_json(instances.data.deviceAddress + primitive_offset, bytes);
+			}
+			else if (geometry->geometryType == VK_GEOMETRY_TYPE_AABBS_KHR)
+			{
+				const VkAccelerationStructureGeometryAabbsDataKHR& aabbs = geometry->geometry.aabbs;
+				const VkDeviceSize bytes = (VkDeviceSize)primitive_count * aabbs.stride;
+				value["stride"] = (Json::UInt64)aabbs.stride;
+				value["aabbs"] = replay_as_address_json(aabbs.data.deviceAddress + primitive_offset, bytes);
+			}
+			else if (geometry->geometryType == VK_GEOMETRY_TYPE_TRIANGLES_KHR)
+			{
+				const VkAccelerationStructureGeometryTrianglesDataKHR& triangles = geometry->geometry.triangles;
+				const VkDeviceSize vertex_bytes = (VkDeviceSize)(triangles.maxVertex + 1) * triangles.vertexStride;
+				VkDeviceSize index_size = 0;
+				if (triangles.indexType == VK_INDEX_TYPE_UINT16) index_size = 2;
+				else if (triangles.indexType == VK_INDEX_TYPE_UINT32) index_size = 4;
+				else if (triangles.indexType == VK_INDEX_TYPE_UINT8_EXT) index_size = 1;
+				value["vertex_format"] = (unsigned)triangles.vertexFormat;
+				value["vertex_stride"] = (Json::UInt64)triangles.vertexStride;
+				value["max_vertex"] = triangles.maxVertex;
+				value["index_type"] = (unsigned)triangles.indexType;
+				value["vertices"] = replay_as_address_json(triangles.vertexData.deviceAddress, vertex_bytes);
+				value["indices"] = replay_as_address_json(triangles.indexData.deviceAddress + primitive_offset,
+					(VkDeviceSize)primitive_count * 3 * index_size);
+				value["transform"] = replay_as_address_json(triangles.transformData.deviceAddress +
+					(range ? range->transformOffset : 0), triangles.transformData.deviceAddress ? sizeof(VkTransformMatrixKHR) : 0);
+			}
+			geometries.append(value);
+		}
+		build["geometries"] = geometries;
+		build_infos.append(build);
+	}
+	root["builds"] = build_infos;
+	Json::FastWriter writer;
+	return writer.write(root);
+}
+
 static bool is_known_replay_as_address(VkDeviceAddress address)
 {
 	if (address == 0) return false;
@@ -1330,6 +1464,14 @@ static void replay_report_recent_submissions(const trackeddevice& device_data, l
 			{
 				ELOG("      %s at thread=%u frame=%u packet=%u", get_function_name(command->id), command->source.thread,
 					command->source.frame, command->source.packet);
+			}
+			if (!commandbuffer.nvidia_marker_sessions.empty())
+			{
+				const trackedcmdbuffer::nvidia_marker_session& session = commandbuffer.nvidia_marker_sessions.back();
+				for (const std::string& diagnostic : session.as_build_diagnostics)
+				{
+					ELOG("      AS build snapshot: %s", diagnostic.c_str());
+				}
 			}
 		}
 	}
@@ -2105,10 +2247,15 @@ void replay_pre_vkCmdBuildAccelerationStructuresKHR(lava_file_reader& reader, Vk
 
 	if (replay_can_preserve_as_scratch_addresses(infoCount, pInfos, scratch_sizes))
 	{
+		replay_nvidia_marker_as_build(reader, commandBuffer, infoCount, pInfos, ppBuildRangeInfos, true);
 		return;
 	}
 
-	if (total_scratch_size == 0) return;
+	if (total_scratch_size == 0)
+	{
+		replay_nvidia_marker_as_build(reader, commandBuffer, infoCount, pInfos, ppBuildRangeInfos, true);
+		return;
+	}
 
 	internal_buffer scratch_buffer;
 	const VkBufferUsageFlags usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
@@ -2127,6 +2274,15 @@ void replay_pre_vkCmdBuildAccelerationStructuresKHR(lava_file_reader& reader, Vk
 		pInfos[i].scratchData.deviceAddress = scratch_buffer.device_address + offset;
 		offset += scratch_sizes[i];
 	}
+	replay_nvidia_marker_as_build(reader, commandBuffer, infoCount, pInfos, ppBuildRangeInfos, true);
+}
+
+void replay_callback_vkCmdBuildAccelerationStructuresKHR(callback_context& cb, VkCommandBuffer commandBuffer, uint32_t infoCount,
+	const VkAccelerationStructureBuildGeometryInfoKHR* pInfos, const VkAccelerationStructureBuildRangeInfoKHR* const* ppBuildRangeInfos)
+{
+	(void)ppBuildRangeInfos;
+	if (!cb.reader.is_replay()) return;
+	replay_nvidia_marker_as_build(cb.reader, commandBuffer, infoCount, pInfos, ppBuildRangeInfos, false);
 }
 
 void replay_pre_vkCmdBuildAccelerationStructuresIndirectKHR(lava_file_reader& reader, VkCommandBuffer commandBuffer, uint32_t infoCount,

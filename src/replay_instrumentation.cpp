@@ -1,9 +1,11 @@
 #include "replay_instrumentation.h"
 
 #include <cstring>
+#include <sstream>
 #include <vector>
 
 #include "jsoncpp/json/value.h"
+#include "jsoncpp/json/reader.h"
 #include "jsoncpp/json/writer.h"
 #include "read_auto.h"
 #include "tostring.h"
@@ -12,6 +14,13 @@ static trackedcmdbuffer::shader_instrumentation_session* active_instrumentation_
 {
 	if (commandbuffer_data.shader_instrumentation_sessions.empty()) return nullptr;
 	trackedcmdbuffer::shader_instrumentation_session& session = commandbuffer_data.shader_instrumentation_sessions.back();
+	return session.recording ? &session : nullptr;
+}
+
+static trackedcmdbuffer::nvidia_marker_session* active_nvidia_marker_session(trackedcmdbuffer& commandbuffer_data)
+{
+	if (commandbuffer_data.nvidia_marker_sessions.empty()) return nullptr;
+	trackedcmdbuffer::nvidia_marker_session& session = commandbuffer_data.nvidia_marker_sessions.back();
 	return session.recording ? &session : nullptr;
 }
 
@@ -176,7 +185,9 @@ void cli_process_instrument_request(callback_context& cb, VkCommandBuffer comman
 {
 	lava_reader* parent = cb.reader.parent;
 	const cli_instrument_mode mode = parent->cli_instrument_requested.exchange(cli_instrument_mode::none, std::memory_order_acq_rel);
-	if (mode == cli_instrument_mode::none) return;
+	const cli_marker_placement marker_placement = parent->cli_marker_requested.exchange(cli_marker_placement::none,
+		std::memory_order_acq_rel);
+	if (mode == cli_instrument_mode::none && marker_placement == cli_marker_placement::none) return;
 
 	std::string response;
 	const uint32_t commandbuffer_index = index_to_VkCommandBuffer.index_or_invalid(command_buffer);
@@ -184,7 +195,7 @@ void cli_process_instrument_request(callback_context& cb, VkCommandBuffer comman
 	{
 		response = "ERROR vkBeginCommandBuffer did not succeed\n";
 	}
-	else if (!parent->cli_shader_instrumentation_enabled.load(std::memory_order_acquire))
+	else if (mode != cli_instrument_mode::none && !parent->cli_shader_instrumentation_enabled.load(std::memory_order_acquire))
 	{
 		response = "ERROR VK_ARM_shader_instrumentation is unsupported\n";
 	}
@@ -196,7 +207,23 @@ void cli_process_instrument_request(callback_context& cb, VkCommandBuffer comman
 	{
 		trackedcmdbuffer& commandbuffer_data = VkCommandBuffer_index.at(commandbuffer_index);
 		std::string error;
-		if (!command_buffer_supports_instrumentation(commandbuffer_data, error))
+		if (marker_placement != cli_marker_placement::none &&
+			(commandbuffer_data.device_index >= VkDevice_index.size() ||
+			!VkDevice_index.at(commandbuffer_data.device_index).replay_aftermath_enabled))
+		{
+			response = "ERROR NVIDIA diagnostic checkpoints are unavailable; use --device-fault-report on a supported NVIDIA device\n";
+		}
+		else if (marker_placement != cli_marker_placement::none)
+		{
+			trackedcmdbuffer::nvidia_marker_session session;
+			session.id = parent->cli_marker_next_session.fetch_add(1, std::memory_order_relaxed);
+			session.placement = (uint8_t)marker_placement;
+			session.recording = true;
+			commandbuffer_data.nvidia_marker_sessions.push_back(std::move(session));
+			response = std::to_string(commandbuffer_data.nvidia_marker_sessions.back().id) + " " +
+				std::to_string(commandbuffer_index) + "\n";
+		}
+		else if (!command_buffer_supports_instrumentation(commandbuffer_data, error))
 		{
 			response = "ERROR " + error + "\n";
 		}
@@ -224,8 +251,96 @@ void cli_process_instrument_request(callback_context& cb, VkCommandBuffer comman
 	}
 
 	parent->cli_response = response;
-	parent->cli_instrument_ready.store(true, std::memory_order_release);
-	parent->cli_instrument_ready.notify_all();
+	if (marker_placement != cli_marker_placement::none)
+	{
+		parent->cli_marker_ready.store(true, std::memory_order_release);
+		parent->cli_marker_ready.notify_all();
+	}
+	else
+	{
+		parent->cli_instrument_ready.store(true, std::memory_order_release);
+		parent->cli_instrument_ready.notify_all();
+	}
+}
+
+void replay_nvidia_marker_as_build(lava_file_reader& reader, VkCommandBuffer command_buffer, uint32_t info_count,
+	const VkAccelerationStructureBuildGeometryInfoKHR* infos,
+	const VkAccelerationStructureBuildRangeInfoKHR* const* ranges, bool before)
+{
+	const uint32_t commandbuffer_index = index_to_VkCommandBuffer.index_or_invalid(command_buffer);
+	if (commandbuffer_index == CONTAINER_INVALID_INDEX || commandbuffer_index >= VkCommandBuffer_index.size()) return;
+	trackedcmdbuffer& commandbuffer_data = VkCommandBuffer_index.at(commandbuffer_index);
+	trackedcmdbuffer::nvidia_marker_session* session = active_nvidia_marker_session(commandbuffer_data);
+	if (!session) return;
+	const uint8_t wanted = before ? (uint8_t)cli_marker_placement::before : (uint8_t)cli_marker_placement::after;
+	if ((session->placement & wanted) == 0) return;
+	if (before)
+	{
+		session->as_build_diagnostics.push_back(
+			replay_as_build_diagnostic(reader, commandbuffer_index, info_count, infos, ranges));
+	}
+
+	PFN_vkCmdSetCheckpointNV set_checkpoint = reinterpret_cast<PFN_vkCmdSetCheckpointNV>(
+		wrap_vkGetDeviceProcAddr(commandbuffer_data.device, "vkCmdSetCheckpointNV"));
+	if (!set_checkpoint) ABORT("vkCmdSetCheckpointNV is unavailable for an active NVIDIA marker session");
+
+	trackedcmdbuffer::nvidia_checkpoint_marker marker;
+	marker.source = reader.current;
+	marker.session_id = session->id;
+	marker.ordinal = session->next_ordinal++;
+	marker.before = before;
+	std::ostringstream label;
+	label << "lava session=" << marker.session_id << " marker=" << marker.ordinal
+		<< " placement=" << (before ? "before" : "after")
+		<< " call=vkCmdBuildAccelerationStructuresKHR"
+		<< " thread=" << (unsigned)reader.current.thread << " frame=" << reader.current.frame
+		<< " packet=" << reader.current.packet << " command_buffer=" << commandbuffer_index
+		<< " info_count=" << info_count;
+	for (uint32_t i = 0; infos && i < info_count; i++)
+	{
+		label << " info[" << i << "]={dst="
+			<< index_to_VkAccelerationStructureKHR.index_or_invalid(infos[i].dstAccelerationStructure)
+			<< ",src=" << index_to_VkAccelerationStructureKHR.index_or_invalid(infos[i].srcAccelerationStructure)
+			<< ",mode=" << (unsigned)infos[i].mode << ",geometries=" << infos[i].geometryCount
+			<< ",scratch=0x" << std::hex << infos[i].scratchData.deviceAddress << std::dec << "}";
+	}
+	marker.label = label.str();
+	session->markers.push_back(std::move(marker));
+	trackedcmdbuffer::nvidia_checkpoint_marker& stored = session->markers.back();
+	if (reader.parent->aftermath_register_marker_callback)
+	{
+		reader.parent->aftermath_register_marker_callback(reader.parent->aftermath_context, &stored, stored.label.c_str());
+	}
+	set_checkpoint(command_buffer, &stored);
+}
+
+std::string replay_as_build_show(uint32_t commandbuffer_index)
+{
+	if (commandbuffer_index >= VkCommandBuffer_index.size()) return "ERROR invalid command buffer index\n";
+	const trackedcmdbuffer& commandbuffer_data = VkCommandBuffer_index.at(commandbuffer_index);
+	if (commandbuffer_data.nvidia_marker_sessions.empty()) return "ERROR command buffer has no AS diagnostic snapshots\n";
+	Json::Value root;
+	root["command_buffer"] = commandbuffer_index;
+	Json::Value sessions(Json::arrayValue);
+	for (const trackedcmdbuffer::nvidia_marker_session& session : commandbuffer_data.nvidia_marker_sessions)
+	{
+		if (session.as_build_diagnostics.empty()) continue;
+		Json::Value value;
+		value["session"] = session.id;
+		Json::Value builds(Json::arrayValue);
+		for (const std::string& diagnostic : session.as_build_diagnostics)
+		{
+			Json::Value build;
+			Json::Reader parser;
+			if (parser.parse(diagnostic, build)) builds.append(build);
+		}
+		value["snapshots"] = builds;
+		sessions.append(value);
+	}
+	if (sessions.empty()) return "ERROR command buffer has no AS diagnostic snapshots\n";
+	root["sessions"] = sessions;
+	Json::StyledWriter writer;
+	return writer.write(root);
 }
 
 void replay_instrumentation_pre_shader_command(lava_file_reader& reader, VkCommandBuffer command_buffer, trackedcmdbuffer& commandbuffer_data)
@@ -254,9 +369,13 @@ void replay_instrumentation_end_command_buffer(lava_file_reader& reader, VkComma
 	if (commandbuffer_index == CONTAINER_INVALID_INDEX || commandbuffer_index >= VkCommandBuffer_index.size()) return;
 	trackedcmdbuffer& commandbuffer_data = VkCommandBuffer_index.at(commandbuffer_index);
 	trackedcmdbuffer::shader_instrumentation_session* session = active_instrumentation_session(commandbuffer_data);
-	if (!session) return;
-	if (!session->detailed) wrap_vkCmdEndShaderInstrumentationARM(command_buffer);
-	session->recording = false;
+	if (session)
+	{
+		if (!session->detailed) wrap_vkCmdEndShaderInstrumentationARM(command_buffer);
+		session->recording = false;
+	}
+	trackedcmdbuffer::nvidia_marker_session* marker_session = active_nvidia_marker_session(commandbuffer_data);
+	if (marker_session) marker_session->recording = false;
 }
 
 static void replay_instrumentation_mark_submitted_recursive(trackedcmdbuffer& commandbuffer_data,

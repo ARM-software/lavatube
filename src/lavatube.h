@@ -911,6 +911,24 @@ struct trackedcmdbuffer : trackable
 		std::vector<shader_instrumentation_probe> probes;
 	};
 	std::vector<shader_instrumentation_session> shader_instrumentation_sessions;
+	struct nvidia_checkpoint_marker
+	{
+		change_source source;
+		uint32_t session_id = 0;
+		uint32_t ordinal = 0;
+		bool before = false;
+		std::string label;
+	};
+	struct nvidia_marker_session
+	{
+		uint32_t id = 0;
+		uint8_t placement = 0;
+		uint32_t next_ordinal = 0;
+		bool recording = false;
+		std::list<nvidia_checkpoint_marker> markers;
+		std::vector<std::string> as_build_diagnostics;
+	};
+	std::vector<nvidia_marker_session> nvidia_marker_sessions;
 
 	void self_test() const
 	{

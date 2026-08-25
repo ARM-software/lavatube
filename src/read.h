@@ -51,6 +51,14 @@ enum class cli_instrument_mode : uint8_t
 	whole = 1,
 	detailed = 2,
 };
+
+enum class cli_marker_placement : uint8_t
+{
+	none = 0,
+	before = 1,
+	after = 2,
+	both = 3,
+};
 using lava_markings_observer = void (*)(const change_source&, const VkMarkedOffsetsARM*, void*);
 
 extern lava::mutex sync_mutex;
@@ -293,6 +301,7 @@ public:
 	bool device_fault_report_requested = false;
 	void* aftermath_context = nullptr;
 	void (*aftermath_device_lost_callback)(void*) = nullptr;
+	void (*aftermath_register_marker_callback)(void*, const void*, const char*) = nullptr;
 	lava::mutex replay_submission_mutex;
 	struct replay_address_binding
 	{
@@ -306,6 +315,9 @@ public:
 	VkDebugUtilsMessengerEXT device_address_binding_messenger = VK_NULL_HANDLE;
 	std::atomic<cli_instrument_mode> cli_instrument_requested{ cli_instrument_mode::none };
 	std::atomic_bool cli_instrument_ready{ false };
+	std::atomic<cli_marker_placement> cli_marker_requested{ cli_marker_placement::none };
+	std::atomic_bool cli_marker_ready{ false };
+	std::atomic_uint32_t cli_marker_next_session{ 1 };
 
 private:
 	/// Start time of frame range

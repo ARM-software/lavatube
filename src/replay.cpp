@@ -488,6 +488,7 @@ static void register_replay_callbacks()
 	CALLBACK(vkSubmitDebugUtilsMessageEXT);
 	CALLBACK(vkGetAccelerationStructureBuildSizesKHR);
 	CALLBACK(vkGetDescriptorEXT);
+	CALLBACK(vkCmdBuildAccelerationStructuresKHR);
 	CALLBACK(vkWriteSamplerDescriptorsEXT);
 	CALLBACK(vkWriteResourceDescriptorsEXT);
 	CALLBACK(vkCreateDescriptorUpdateTemplate);
@@ -655,6 +656,9 @@ static bool service_system_log_available(service_client_state* state, std::strin
 
 static void cli_cancel_pending_requests()
 {
+	replayer.cli_marker_requested.store(cli_marker_placement::none, std::memory_order_release);
+	replayer.cli_marker_ready.store(true, std::memory_order_release);
+	replayer.cli_marker_ready.notify_all();
 	replayer.cli_instrument_requested.store(cli_instrument_mode::none, std::memory_order_release);
 	replayer.cli_instrument_ready.store(true, std::memory_order_release);
 	replayer.cli_instrument_ready.notify_all();
@@ -875,6 +879,67 @@ static std::string service_command_response(service_client_state* state, const s
 			}
 		}
 	}
+	else if (command[0] == "add-markers")
+	{
+		cli_marker_placement placement = cli_marker_placement::both;
+		bool valid = command.size() >= 4 && command[1] == "nvidia";
+		bool has_call = false;
+		for (size_t i = 2; valid && i < command.size(); i++)
+		{
+			if (command[i] == "--call" && i + 1 < command.size())
+			{
+				has_call = command[++i] == "vkCmdBuildAccelerationStructuresKHR";
+				valid = has_call;
+			}
+			else if (command[i] == "--placement" && i + 1 < command.size())
+			{
+				const std::string& value = command[++i];
+				if (value == "before") placement = cli_marker_placement::before;
+				else if (value == "after") placement = cli_marker_placement::after;
+				else if (value == "both") placement = cli_marker_placement::both;
+				else valid = false;
+			}
+			else valid = false;
+		}
+		if (!valid || !has_call)
+		{
+			response = "ERROR expected 'add-markers nvidia --call vkCmdBuildAccelerationStructuresKHR [--placement before|after|both]'\n";
+		}
+		else if (!cli_thread_ready() || replayer.cli_running.load(std::memory_order_acquire))
+		{
+			response = "ERROR replay is not paused on a selected thread\n";
+		}
+		else
+		{
+			lava_file_reader& reader = replayer.file_reader(replayer.cli_thread.load(std::memory_order_acquire));
+			if (!cli_has_paused_command(reader) || reader.current.packet_type != PACKET_VULKAN_API_CALL || reader.current.call_id != VKBEGINCOMMANDBUFFER)
+			{
+				response = "ERROR add-markers requires a pause on vkBeginCommandBuffer\n";
+			}
+			else
+			{
+				const std::string idle_response = cli_wait_for_quiescence_and_idle();
+				if (idle_response != "OK\n") response = idle_response;
+				else
+				{
+					replayer.cli_response.clear();
+					replayer.cli_marker_ready.store(false, std::memory_order_release);
+					replayer.cli_marker_requested.store(placement, std::memory_order_release);
+					if (service_stop_requested.load(std::memory_order_acquire))
+					{
+						replayer.cli_marker_requested.store(cli_marker_placement::none, std::memory_order_release);
+						response = "ERROR replay stopped\n";
+					}
+					else
+					{
+						replayer.cli_marker_ready.wait(false);
+						if (service_stop_requested.load(std::memory_order_acquire)) response = "ERROR replay stopped\n";
+						else response = replayer.cli_response.empty() ? "ERROR marker request failed\n" : replayer.cli_response;
+					}
+				}
+			}
+		}
+	}
 	else if (command[0] == "step")
 	{
 		uint32_t count = 1;
@@ -1048,9 +1113,25 @@ static std::string service_command_response(service_client_state* state, const s
 		else if (!parse_u32(command[2], index)) response = "ERROR invalid command buffer index\n";
 		else
 		{
-			const std::string idle_response = cli_wait_for_quiescence_and_idle();
+			// These diagnostics are cached host data. Once the replay has aborted because the
+			// device was lost, do not issue another Vulkan idle wait before inspecting them.
+			const std::string idle_response = replayer.abort_requested() ? "OK\n" : cli_wait_for_quiescence_and_idle();
 			if (service_stop_requested.load(std::memory_order_acquire)) response = "ERROR replay stopped\n";
 			else response = idle_response == "OK\n" ? replay_instrumentation_show(index) : idle_response;
+		}
+	}
+	else if (command.size() == 3 && command[0] == "show" && command[1] == "as-build")
+	{
+		uint32_t index = 0;
+		if (service_stop_requested.load(std::memory_order_acquire)) response = "ERROR replay stopped\n";
+		else if (replayer.cli_running.load(std::memory_order_acquire)) response = "ERROR replay is running\n";
+		else if (!parse_u32(command[2], index)) response = "ERROR invalid command buffer index\n";
+		else
+		{
+			// AS build snapshots are cached host data and remain valid after device loss.
+			const std::string idle_response = replayer.abort_requested() ? "OK\n" : cli_wait_for_quiescence_and_idle();
+			if (service_stop_requested.load(std::memory_order_acquire)) response = "ERROR replay stopped\n";
+			else response = idle_response == "OK\n" ? replay_as_build_show(index) : idle_response;
 		}
 	}
 	else if (command.size() == 3 && command[0] == "show")
@@ -1612,6 +1693,7 @@ int lava_replay_main(int argc, char **argv)
 		if (replayer.aftermath_context)
 		{
 			replayer.aftermath_device_lost_callback = aftermath_handle_device_lost;
+			replayer.aftermath_register_marker_callback = aftermath_register_marker;
 		}
 	}
 	replayer.collect_trace_file_info(filename);

@@ -33,6 +33,8 @@ void replay_callback_vkSubmitDebugUtilsMessageEXT(callback_context& cb, VkInstan
 void replay_callback_vkGetAccelerationStructureBuildSizesKHR(callback_context& cb, VkDevice device, VkAccelerationStructureBuildTypeKHR buildType,
 	const VkAccelerationStructureBuildGeometryInfoKHR* pBuildInfo, const uint32_t* pMaxPrimitiveCounts, VkAccelerationStructureBuildSizesInfoKHR* pSizeInfo);
 void replay_callback_vkGetDescriptorEXT(callback_context& cb, VkDevice device, const VkDescriptorGetInfoEXT* pDescriptorInfo, size_t dataSize, void* pDescriptor);
+void replay_callback_vkCmdBuildAccelerationStructuresKHR(callback_context& cb, VkCommandBuffer commandBuffer, uint32_t infoCount,
+	const VkAccelerationStructureBuildGeometryInfoKHR* pInfos, const VkAccelerationStructureBuildRangeInfoKHR* const* ppBuildRangeInfos);
 void replay_callback_vkWriteSamplerDescriptorsEXT(callback_context& cb, VkDevice device, uint32_t samplerCount, const VkSamplerCreateInfo* pSamplers,
 	const VkHostAddressRangeEXT* pDescriptors);
 void replay_callback_vkWriteResourceDescriptorsEXT(callback_context& cb, VkDevice device, uint32_t resourceCount, const VkResourceDescriptorInfoEXT* pResources,

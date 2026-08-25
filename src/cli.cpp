@@ -81,6 +81,9 @@ void usage()
 	printf("Call inspection:\n");
 	printf("    parameters               Print JSON parameters for the currently paused Vulkan call.\n");
 	printf("    instrument [detailed]    Instrument the command buffer after a paused vkBeginCommandBuffer.\n");
+	printf("    add-markers nvidia --call vkCmdBuildAccelerationStructuresKHR [--placement before|after|both]\n");
+	printf("                             Add NVIDIA diagnostic checkpoints to this command buffer recording.\n");
+	printf("    show as-build N          Print collected AS build diagnostics for command buffer N.\n");
 	printf("    show instrumentation N   Print cached VK_ARM_shader_instrumentation data for command buffer N.\n");
 	printf("\n");
 	printf("Trace metadata:\n");

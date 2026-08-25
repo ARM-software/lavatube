@@ -10,6 +10,7 @@
 #include <cstring>
 #include <mutex>
 #include <string>
+#include <unordered_map>
 #include <unistd.h>
 #include <vector>
 
@@ -22,6 +23,7 @@ struct aftermath_context
 	std::string trace_filename;
 	std::atomic_uint dump_count{ 0 };
 	std::atomic_uint shader_debug_count{ 0 };
+	std::unordered_map<const void*, std::string> markers;
 };
 
 static bool aftermath_result_ok(GFSDK_Aftermath_Result result, const char* operation)
@@ -88,7 +90,6 @@ static void GFSDK_AFTERMATH_CALL aftermath_crash_dump_callback(const void* dump,
 {
 	aftermath_context* context = static_cast<aftermath_context*>(user_data);
 	if (!context || !dump || dump_size == 0) return;
-	std::lock_guard<std::mutex> lock(context->mutex);
 	const unsigned index = context->dump_count.fetch_add(1, std::memory_order_relaxed) + 1;
 	const std::string filename = aftermath_output_name(index, ".nv-gpudmp");
 	if (aftermath_write_file(filename, dump, dump_size))
@@ -122,6 +123,18 @@ static void GFSDK_AFTERMATH_CALL aftermath_description_callback(
 	}
 }
 
+static void GFSDK_AFTERMATH_CALL aftermath_resolve_marker_callback(const void* marker_data, uint32_t marker_data_size,
+	void* user_data, PFN_GFSDK_Aftermath_ResolveMarker resolve_marker)
+{
+	(void)marker_data_size;
+	aftermath_context* context = static_cast<aftermath_context*>(user_data);
+	if (!context || !marker_data || !resolve_marker) return;
+	std::lock_guard<std::mutex> lock(context->mutex);
+	const auto marker = context->markers.find(marker_data);
+	if (marker == context->markers.end()) return;
+	resolve_marker(marker->second.data(), (uint32_t)marker->second.size());
+}
+
 void* aftermath_initialize(const char* trace_filename)
 {
 	aftermath_context* context = new aftermath_context;
@@ -133,7 +146,7 @@ void* aftermath_initialize(const char* trace_filename)
 		aftermath_crash_dump_callback,
 		aftermath_shader_debug_callback,
 		aftermath_description_callback,
-		nullptr,
+		aftermath_resolve_marker_callback,
 		context);
 	if (!aftermath_result_ok(result, "initialization"))
 	{
@@ -142,6 +155,14 @@ void* aftermath_initialize(const char* trace_filename)
 	}
 	ILOG("Enabled NVIDIA Nsight Aftermath GPU crash dump collection");
 	return context;
+}
+
+void aftermath_register_marker(void* opaque_context, const void* marker, const char* label)
+{
+	aftermath_context* context = static_cast<aftermath_context*>(opaque_context);
+	if (!context || !marker || !label) return;
+	std::lock_guard<std::mutex> lock(context->mutex);
+	context->markers[marker] = label;
 }
 
 void aftermath_handle_device_lost(void* opaque_context)
@@ -187,6 +208,13 @@ void* aftermath_initialize(const char* trace_filename)
 void aftermath_handle_device_lost(void* context)
 {
 	(void)context;
+}
+
+void aftermath_register_marker(void* context, const void* marker, const char* label)
+{
+	(void)context;
+	(void)marker;
+	(void)label;
 }
 
 void aftermath_shutdown(void* context)
