@@ -1,3 +1,7 @@
+#if defined(__linux__) && !defined(_GNU_SOURCE)
+#define _GNU_SOURCE
+#endif
+
 #include <assert.h>
 #include <string.h>
 #include <stdint.h>
@@ -6,6 +10,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <inttypes.h>
+#include <sys/socket.h>
 #include <sys/stat.h>
 
 #include <deque>
@@ -95,6 +100,7 @@ void usage()
 	printf("    info frame THREAD FRAME  Print JSON metadata for FRAME in THREAD.\n");
 	printf("    info memory              Print current Vulkan memory heap usage and budgets.\n");
 	printf("    info suballocator        Print current suballocator heap internals.\n");
+	printf("    save buffer INDEX FILE   Save the exact contents of replay buffer INDEX to a local file.\n");
 	printf("\n");
 	printf("    Observer commands may run concurrently. State-changing and live-state inspection commands wait for exclusive access.\n");
 	printf("    'stop' remains responsive while an exclusive command is running.\n");
@@ -200,6 +206,223 @@ static std::string remote_command(const std::string& hostname, int port, const s
 	const std::string response = lava_tcp_receive_all(fd, max_response);
 	close(fd);
 	return response;
+}
+
+static bool write_all(int fd, const void* data, size_t size)
+{
+	const char* ptr = static_cast<const char*>(data);
+	while (size > 0)
+	{
+		const ssize_t written = write(fd, ptr, size);
+		if (written < 0)
+		{
+			if (errno == EINTR) continue;
+			return false;
+		}
+		if (written == 0) return false;
+		ptr += written;
+		size -= (size_t)written;
+	}
+	return true;
+}
+
+static bool receive_to_file_fallback(int socket_fd, int file_fd, uint64_t& remaining)
+{
+	char buffer[64 * 1024];
+	while (remaining > 0)
+	{
+		const size_t wanted = (size_t)std::min<uint64_t>(sizeof(buffer), remaining);
+		const ssize_t received = recv(socket_fd, buffer, wanted, 0);
+		if (received < 0)
+		{
+			if (errno == EINTR) continue;
+			return false;
+		}
+		if (received == 0) return false;
+		if (!write_all(file_fd, buffer, (size_t)received)) return false;
+		remaining -= (uint64_t)received;
+	}
+	return true;
+}
+
+static bool receive_to_file(int socket_fd, int file_fd, uint64_t size)
+{
+	uint64_t remaining = size;
+#if !defined(__linux__)
+	return receive_to_file_fallback(socket_fd, file_fd, remaining);
+#else
+	int pipe_fds[2] = { -1, -1 };
+	if (pipe(pipe_fds) != 0) return receive_to_file_fallback(socket_fd, file_fd, remaining);
+
+	bool splice_supported = true;
+	while (remaining > 0 && splice_supported)
+	{
+		const size_t wanted = (size_t)std::min<uint64_t>(1024 * 1024, remaining);
+		ssize_t received = splice(socket_fd, nullptr, pipe_fds[1], nullptr, wanted, 0);
+		if (received < 0)
+		{
+			if (errno == EINTR) continue;
+			if (errno == EINVAL || errno == ENOSYS || errno == EOPNOTSUPP)
+			{
+				splice_supported = false;
+				break;
+			}
+			close(pipe_fds[0]);
+			close(pipe_fds[1]);
+			return false;
+		}
+		if (received == 0)
+		{
+			close(pipe_fds[0]);
+			close(pipe_fds[1]);
+			return false;
+		}
+
+		ssize_t pending = received;
+		while (pending > 0)
+		{
+			const ssize_t written = splice(pipe_fds[0], nullptr, file_fd, nullptr, (size_t)pending, 0);
+			if (written < 0)
+			{
+				if (errno == EINTR) continue;
+				char buffer[64 * 1024];
+				while (pending > 0)
+				{
+					const ssize_t drained = read(pipe_fds[0], buffer, std::min<size_t>(sizeof(buffer), (size_t)pending));
+					if (drained < 0 && errno == EINTR) continue;
+					if (drained <= 0 || !write_all(file_fd, buffer, (size_t)drained))
+					{
+						close(pipe_fds[0]);
+						close(pipe_fds[1]);
+						return false;
+					}
+					pending -= drained;
+				}
+				splice_supported = false;
+				break;
+			}
+			if (written == 0)
+			{
+				close(pipe_fds[0]);
+				close(pipe_fds[1]);
+				return false;
+			}
+			pending -= written;
+		}
+		remaining -= (uint64_t)received;
+	}
+
+	close(pipe_fds[0]);
+	close(pipe_fds[1]);
+	return remaining == 0 || receive_to_file_fallback(socket_fd, file_fd, remaining);
+#endif
+}
+
+struct buffer_transfer_stats
+{
+	std::string path = "unknown";
+	uint64_t chunks = 0;
+	uint64_t replay_ns = 0;
+	uint64_t readback_ns = 0;
+	uint64_t send_ns = 0;
+};
+
+static bool parse_buffer_transfer_stats(const std::string& line, buffer_transfer_stats& stats)
+{
+	char path[16] = {};
+	const int matched = sscanf(line.c_str(),
+		"STATS path=%15s chunks=%" SCNu64 " replay_ns=%" SCNu64 " readback_ns=%" SCNu64 " send_ns=%" SCNu64,
+		path, &stats.chunks, &stats.replay_ns, &stats.readback_ns, &stats.send_ns);
+	if (matched != 5) return false;
+	stats.path = path;
+	return true;
+}
+
+static double buffer_mib_per_second(uint64_t bytes, uint64_t nanoseconds)
+{
+	if (nanoseconds == 0) return 0.0;
+	return ((double)bytes / (1024.0 * 1024.0)) / ((double)nanoseconds / 1000000000.0);
+}
+
+static double buffer_seconds(uint64_t nanoseconds)
+{
+	return (double)nanoseconds / 1000000000.0;
+}
+
+static bool remote_save_buffer(const std::string& hostname, int port, uint32_t index, const std::string& filename)
+{
+	const uint64_t total_start = gettime();
+	const int socket_fd = lava_tcp_connect(hostname, port);
+	const std::string request = "save buffer " + std::to_string(index) + "\n";
+	if (!lava_tcp_send_all(socket_fd, request))
+	{
+		close(socket_fd);
+		fprintf(stderr, "ERROR failed to send save request: %s\n", strerror(errno));
+		return false;
+	}
+
+	const std::string header = lava_tcp_receive_line(socket_fd, 4096);
+	if (header.rfind("ERROR", 0) == 0 || header == "DEVICE_LOST")
+	{
+		printf("%s\n", header.c_str());
+		close(socket_fd);
+		return false;
+	}
+	std::istringstream input(header);
+	std::string status;
+	std::string extra;
+	uint64_t size = 0;
+	if (!(input >> status >> size) || status != "OK" || (input >> extra))
+	{
+		fprintf(stderr, "ERROR malformed save response header\n");
+		close(socket_fd);
+		return false;
+	}
+
+	std::vector<char> temporary(filename.begin(), filename.end());
+	const char suffix[] = ".tmp.XXXXXX";
+	temporary.insert(temporary.end(), suffix, suffix + sizeof(suffix));
+	const int file_fd = mkstemp(temporary.data());
+	if (file_fd < 0)
+	{
+		fprintf(stderr, "ERROR failed to create temporary output for %s: %s\n", filename.c_str(), strerror(errno));
+		close(socket_fd);
+		return false;
+	}
+
+	const uint64_t controller_start = gettime();
+	const bool received = receive_to_file(socket_fd, file_fd, size);
+	const uint64_t controller_ns = gettime() - controller_start;
+	const std::string stats_line = received ? lava_tcp_receive_line(socket_fd, 4096) : std::string();
+	const int close_result = close(file_fd);
+	close(socket_fd);
+	if (!received || close_result != 0)
+	{
+		fprintf(stderr, "ERROR incomplete buffer download for %s\n", filename.c_str());
+		unlink(temporary.data());
+		return false;
+	}
+	if (rename(temporary.data(), filename.c_str()) != 0)
+	{
+		fprintf(stderr, "ERROR failed to install %s: %s\n", filename.c_str(), strerror(errno));
+		unlink(temporary.data());
+		return false;
+	}
+	const uint64_t total_ns = gettime() - total_start;
+	buffer_transfer_stats stats;
+	const bool have_replay_stats = parse_buffer_transfer_stats(stats_line, stats);
+	printf("DONE bytes=%" PRIu64 " path=%s chunks=%" PRIu64 "\n", size, stats.path.c_str(), stats.chunks);
+	if (have_replay_stats)
+	{
+		printf("replay=%.2f MiB/s time=%.6f s\n", buffer_mib_per_second(size, stats.replay_ns), buffer_seconds(stats.replay_ns));
+	}
+	else
+	{
+		printf("replay=unavailable\n");
+	}
+	printf("controller=%.2f MiB/s time=%.6f s\n", buffer_mib_per_second(size, controller_ns), buffer_seconds(controller_ns));
+	printf("total=%.2f MiB/s time=%.6f s\n", buffer_mib_per_second(size, total_ns), buffer_seconds(total_ns));
+	return true;
 }
 
 static uint64_t log_cache_hash(const std::string& hostname, int port)
@@ -583,6 +806,18 @@ int main(int argc, char **argv)
 			return 0;
 		}
 		return tail_log_cache(cache_path, command[0], options) ? 0 : 1;
+	}
+
+	if (command.size() == 4 && command[0] == "save" && command[1] == "buffer")
+	{
+		uint64_t index = 0;
+		if (!parse_u64(command[2], index) || index > UINT32_MAX)
+		{
+			fprintf(stderr, "ERROR invalid buffer index\n");
+			return 1;
+		}
+		if (verbose) printf("Connecting to %s:%d\n", hostname.c_str(), port);
+		return remote_save_buffer(hostname, port, (uint32_t)index, command[3]) ? 0 : 1;
 	}
 
 	if (verbose)

@@ -355,6 +355,7 @@ struct trackedbuffer : trackedobject
 	VkSharingMode sharingMode = VK_SHARING_MODE_MAX_ENUM;
 	VkBufferUsageFlags usage = VK_BUFFER_USAGE_FLAG_BITS_MAX_ENUM;
 	VkBufferUsageFlags2 usage2 = 0;
+	std::vector<uint32_t> queue_family_indices;
 
 	void self_test() const
 	{

@@ -17,6 +17,7 @@ struct suballoc_location
 	bool needs_init;
 	bool needs_flush;
 	char* mapped = nullptr;
+	VkMemoryPropertyFlags memory_flags = 0;
 };
 
 struct suballocator_private;
@@ -87,6 +88,9 @@ struct suballocator
 	/// is needed.
 	/// Note that the size returned is the (possibly padded) allocated size, not the size of the buffer inside the allocation.
 	suballoc_location find_buffer_memory(uint32_t buffer_index) const;
+	/// Return the replay allocation without changing its initialization state.
+	suballoc_location inspect_buffer_memory(uint32_t buffer_index) const;
+	VkResult invalidate_buffer_memory(uint32_t buffer_index, VkDeviceSize size) const;
 
 	suballoc_location find_tensor_memory(uint32_t tensor_index) const;
 

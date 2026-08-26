@@ -116,6 +116,7 @@ struct suballocator_private
 	bool run = true; // whether we actually run things or just fake it
 	std::vector<std::vector<std::unique_ptr<heap>>> heaps_by_thread;
 	VkPhysicalDeviceMemoryProperties memory_properties;
+	VkDeviceSize non_coherent_atom_size = 1;
 	std::vector<lookup> image_lookup;
 	std::vector<lookup> buffer_lookup;
 	std::vector<lookup> tensor_lookup;
@@ -572,6 +573,7 @@ void suballocator::create(VkPhysicalDevice physicaldevice, VkDevice device, uint
 		wrap_vkGetPhysicalDeviceMemoryProperties(physicaldevice, &priv->memory_properties);
 		VkPhysicalDeviceProperties pdprops = {};
 		wrap_vkGetPhysicalDeviceProperties(physicaldevice, &pdprops);
+		priv->non_coherent_atom_size = pdprops.limits.nonCoherentAtomSize;
 		priv->allow_mixed_tiling = (pdprops.limits.bufferImageGranularity == 1);
 		priv->max_allocations = pdprops.limits.maxMemoryAllocationCount - 64; // add space for some virtual swapchain images etc as well
 	}
@@ -1140,7 +1142,39 @@ suballoc_location suballocator::find_buffer_memory(uint32_t buffer_index) const
 	if (!l.home) SUBALLOC_ABORT(priv, "Buffer %u is missing its memory!", buffer_index);
 	const bool needs_init = !l.initialized;
 	l.initialized = true;
-	return { l.home->mem, l.offset, l.size, needs_init, priv->needs_flush(l.home->memoryTypeIndex), l.home->mapped ? l.home->mapped + l.offset : nullptr };
+	return { l.home->mem, l.offset, l.size, needs_init, priv->needs_flush(l.home->memoryTypeIndex), l.home->mapped ? l.home->mapped + l.offset : nullptr,
+		priv->memory_properties.memoryTypes[l.home->memoryTypeIndex].propertyFlags };
+}
+
+suballoc_location suballocator::inspect_buffer_memory(uint32_t buffer_index) const
+{
+	const lookup& l = priv->buffer_lookup.at(buffer_index);
+	if (!l.home) SUBALLOC_ABORT(priv, "Buffer %u is missing its memory!", buffer_index);
+	return { l.home->mem, l.offset, l.size, !l.initialized, priv->needs_flush(l.home->memoryTypeIndex), l.home->mapped ? l.home->mapped + l.offset : nullptr,
+		priv->memory_properties.memoryTypes[l.home->memoryTypeIndex].propertyFlags };
+}
+
+VkResult suballocator::invalidate_buffer_memory(uint32_t buffer_index, VkDeviceSize size) const
+{
+	lookup& l = priv->buffer_lookup.at(buffer_index);
+	if (!l.home || !l.home->mapped) return VK_ERROR_MEMORY_MAP_FAILED;
+	const VkMemoryPropertyFlags flags = priv->memory_properties.memoryTypes[l.home->memoryTypeIndex].propertyFlags;
+	if (flags & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT) return VK_SUCCESS;
+	if (size > l.size) return VK_ERROR_UNKNOWN;
+
+	const VkDeviceSize atom = std::max<VkDeviceSize>(1, priv->non_coherent_atom_size);
+	const VkDeviceSize start = l.offset - (l.offset % atom);
+	const VkDeviceSize requested_end = l.offset + size;
+	VkDeviceSize end = requested_end;
+	const VkDeviceSize remainder = end % atom;
+	if (remainder != 0 && end <= UINT64_MAX - (atom - remainder)) end += atom - remainder;
+	if (end > l.home->total) end = l.home->total;
+
+	VkMappedMemoryRange range = { VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE, nullptr };
+	range.memory = l.home->mem;
+	range.offset = start;
+	range.size = end == l.home->total ? VK_WHOLE_SIZE : end - start;
+	return wrap_vkInvalidateMappedMemoryRanges(priv->device, 1, &range);
 }
 
 suballoc_location suballocator::find_tensor_memory(uint32_t tensor_index) const

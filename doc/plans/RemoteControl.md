@@ -30,7 +30,7 @@ More instructions to implement:
 	- 'system' - information about the current system (non-GPU), report back Linux (kernel) version, Android version (or Windows) version, as ndjson
 	- 'extensions <device index>' - print supported and enabled extensions
 * `lava-cli list <object type> [filter=all|created|bound|destroyed] [limit=20]` - list all objects of given type tracked globally and their status
-* `lava-cli save buffer|image|tensor <index> <filename>` - write exact contents of object given by index to the given filename (if bound; possibly using staging)
+* `lava-cli save buffer|image|tensor <index> <filename>` - write exact contents of object given by index to the given filename (if not mapped - map it; possibly using staging to host-visible memory if not residing there already). Buffer saving is implemented; image and tensor saving remain to do.
 * `lava-cli convert image <index> <filename.png>` - transform to linear format and write contents of image data given by index to the given filename (if bound; possibly using staging; as PNG)
 * `lava-cli writeout buffer|image <index> <filename>` - inject a scheduled write-out at the current position in the current commandbuffer, it will be written after queue submit;
   push a callback on the queue submit so we can queuewaitidle -> write -> clear writeout queue

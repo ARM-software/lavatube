@@ -294,8 +294,13 @@ int lava_tcp_listen(const std::string& hostname, int port)
 
 bool lava_tcp_send_all(int fd, const std::string& message)
 {
-	const char* ptr = message.data();
-	size_t left = message.size();
+	return lava_tcp_send_all(fd, message.data(), message.size());
+}
+
+bool lava_tcp_send_all(int fd, const void* data, size_t size)
+{
+	const char* ptr = static_cast<const char*>(data);
+	size_t left = size;
 	while (left > 0)
 	{
 #ifdef MSG_NOSIGNAL

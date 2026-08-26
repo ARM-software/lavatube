@@ -1716,6 +1716,9 @@ def load_add_tracking(name):
 				z.do('data.usage = pCreateInfo->usage;')
 				z.do('const VkBufferUsageFlags2CreateInfo* usage_ext = (const VkBufferUsageFlags2CreateInfo*)find_extension(pCreateInfo, VK_STRUCTURE_TYPE_BUFFER_USAGE_FLAGS_2_CREATE_INFO);')
 				z.do('if (usage_ext) data.usage2 = usage_ext->usage;')
+				z.do('data.queue_family_indices.clear();')
+				z.do('if (pCreateInfo->sharingMode == VK_SHARING_MODE_CONCURRENT && pCreateInfo->pQueueFamilyIndices)')
+				z.do('    data.queue_family_indices.assign(pCreateInfo->pQueueFamilyIndices, pCreateInfo->pQueueFamilyIndices + pCreateInfo->queueFamilyIndexCount);')
 			elif type == 'VkImage':
 				z.do('data.tiling = (lava_tiling)pCreateInfo->tiling;')
 				z.do('data.usage = pCreateInfo->usage;')

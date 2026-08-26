@@ -4139,6 +4139,14 @@ void replay_pre_vkCreateImage(lava_file_reader& reader, VkDevice device, VkImage
 	}
 }
 
+void replay_pre_vkCreateBuffer(lava_file_reader& reader, VkDevice device, VkBufferCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkBuffer* pBuffer)
+{
+	if (!reader.parent->cli_service.load(std::memory_order_acquire) || !pCreateInfo) return;
+	pCreateInfo->usage |= VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+	VkBufferUsageFlags2CreateInfo* usage = (VkBufferUsageFlags2CreateInfo*)find_extension(pCreateInfo, VK_STRUCTURE_TYPE_BUFFER_USAGE_FLAGS_2_CREATE_INFO);
+	if (usage) usage->usage |= VK_BUFFER_USAGE_2_TRANSFER_SRC_BIT;
+}
+
 void replay_pre_vkAllocateMemory(lava_file_reader& reader, VkDevice device, VkMemoryAllocateInfo* pAllocateInfo, const VkAllocationCallbacks* pAllocator, VkDeviceMemory* pMemory)
 {
 	if (remove_ahb_import_memory_info(pAllocateInfo))

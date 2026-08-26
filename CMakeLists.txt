@@ -427,6 +427,7 @@ endfunction()
 if(NOT ANDROID)
 internal_test(tracing1 tracing_1_2_0.api)
 internal_test(tracing_injected_queue_sync tracing_injected_queue_sync.api)
+internal_test(tracing_cli_save_buffer tracing_cli_save_buffer.api)
 internal_test(tracing_device_loss tracing_device_loss.api)
 add_lavatube_test(trace_test_tracing_injected_queue_sync_validation
 	COMMAND ${CMAKE_COMMAND}
@@ -1125,6 +1126,12 @@ add_lavatube_test(lava_cli_error_pause_test
 		$<TARGET_FILE:lava-cli>
 		${CMAKE_CURRENT_BINARY_DIR}/tracing_injected_queue_sync.api)
 set_tests_properties(lava_cli_error_pause_test PROPERTIES FIXTURES_REQUIRED tracing_injected_queue_sync TIMEOUT 120)
+add_lavatube_test(lava_cli_save_buffer_test
+	COMMAND ${PYTHON_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tests/lava_cli_save_buffer_test.py
+		$<TARGET_FILE:lava-replay>
+		$<TARGET_FILE:lava-cli>
+		${CMAKE_CURRENT_BINARY_DIR}/tracing_cli_save_buffer.api)
+set_tests_properties(lava_cli_save_buffer_test PROPERTIES FIXTURES_REQUIRED tracing_cli_save_buffer TIMEOUT 120)
 if(NOT NO_TRACETOOLTESTS)
 	set(LAVATUBE_CHAMELEON_DEVICE_FAULT_GPU_PATH "${PROJECT_SOURCE_DIR}/external/tracetooltests/share/chameleon/devices/Mali-G1-Ultra")
 	add_lavatube_test(lava_cli_chameleon_device_loss_test

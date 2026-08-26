@@ -253,6 +253,361 @@ static std::string cli_wait_for_quiescence_and_idle()
 	return cli_wait_idle_devices();
 }
 
+static bool cli_send_error(int fd, const std::string& error)
+{
+	return lava_tcp_send_all(fd, "ERROR " + error + "\n");
+}
+
+static bool cli_send_memory(int fd, const void* data, VkDeviceSize size)
+{
+	const char* position = static_cast<const char*>(data);
+	while (size > 0)
+	{
+		const size_t chunk = (size_t)std::min<VkDeviceSize>(size, 4 * 1024 * 1024);
+		if (!lava_tcp_send_all(fd, position, chunk)) return false;
+		position += chunk;
+		size -= chunk;
+	}
+	return true;
+}
+
+static bool cli_send_buffer_stats(int fd, const char* path, uint64_t chunks, uint64_t replay_ns, uint64_t readback_ns, uint64_t send_ns)
+{
+	const std::string stats = "STATS path=" + std::string(path)
+		+ " chunks=" + std::to_string(chunks)
+		+ " replay_ns=" + std::to_string(replay_ns)
+		+ " readback_ns=" + std::to_string(readback_ns)
+		+ " send_ns=" + std::to_string(send_ns) + "\n";
+	return lava_tcp_send_all(fd, stats);
+}
+
+struct cli_buffer_readback
+{
+	VkDevice device = VK_NULL_HANDLE;
+	VkQueue queue = VK_NULL_HANDLE;
+	VkBuffer source = VK_NULL_HANDLE;
+	VkBuffer staging = VK_NULL_HANDLE;
+	VkDeviceMemory memory = VK_NULL_HANDLE;
+	VkCommandPool pool = VK_NULL_HANDLE;
+	VkCommandBuffer command_buffer = VK_NULL_HANDLE;
+	VkFence fence = VK_NULL_HANDLE;
+	void* mapped = nullptr;
+	VkDeviceSize allocation_size = 0;
+	VkMemoryPropertyFlags memory_flags = 0;
+
+	void destroy()
+	{
+		if (mapped) wrap_vkUnmapMemory(device, memory);
+		if (fence != VK_NULL_HANDLE) wrap_vkDestroyFence(device, fence, nullptr);
+		if (pool != VK_NULL_HANDLE) wrap_vkDestroyCommandPool(device, pool, nullptr);
+		if (staging != VK_NULL_HANDLE) wrap_vkDestroyBuffer(device, staging, nullptr);
+		if (memory != VK_NULL_HANDLE) wrap_vkFreeMemory(device, memory, nullptr);
+		mapped = nullptr;
+		fence = VK_NULL_HANDLE;
+		pool = VK_NULL_HANDLE;
+		staging = VK_NULL_HANDLE;
+		memory = VK_NULL_HANDLE;
+	}
+};
+
+static bool cli_readback_queue(const trackedbuffer& buffer_data, VkQueue& queue, uint32_t& queue_family, std::string& error)
+{
+	queue = VK_NULL_HANDLE;
+	queue_family = UINT32_MAX;
+	uint32_t exclusive_queue_family = UINT32_MAX;
+	for (const trackedqueue& queue_data : VkQueue_index)
+	{
+		if (queue_data.device_index != buffer_data.parent_device_index || queue_data.realQueue == VK_NULL_HANDLE) continue;
+		if (buffer_data.sharingMode == VK_SHARING_MODE_EXCLUSIVE)
+		{
+			// Without tracked ownership, staging is safe only when every queue used by this replay is in one family.
+			if (exclusive_queue_family == UINT32_MAX) exclusive_queue_family = queue_data.queueFamily;
+			else if (exclusive_queue_family != queue_data.queueFamily)
+			{
+				error = "exclusive buffer queue-family ownership is unknown";
+				return false;
+			}
+		}
+		if ((queue_data.queueFlags & VK_QUEUE_TRANSFER_BIT) == 0) continue;
+		if (buffer_data.sharingMode == VK_SHARING_MODE_CONCURRENT)
+		{
+			if (std::find(buffer_data.queue_family_indices.begin(), buffer_data.queue_family_indices.end(), queue_data.queueFamily)
+			    == buffer_data.queue_family_indices.end()) continue;
+		}
+		if (queue == VK_NULL_HANDLE)
+		{
+			queue = queue_data.realQueue;
+			queue_family = queue_data.queueFamily;
+		}
+	}
+	if (queue == VK_NULL_HANDLE)
+	{
+		error = "no compatible transfer queue is available";
+		return false;
+	}
+	return true;
+}
+
+static bool cli_readback_memory_type(VkPhysicalDevice physical_device, uint32_t type_bits, uint32_t& memory_type, VkMemoryPropertyFlags& flags)
+{
+	VkPhysicalDeviceMemoryProperties properties = {};
+	wrap_vkGetPhysicalDeviceMemoryProperties(physical_device, &properties);
+	const VkMemoryPropertyFlags preferred = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_CACHED_BIT;
+	for (uint32_t i = 0; i < properties.memoryTypeCount; i++)
+	{
+		if ((type_bits & (1u << i)) && (properties.memoryTypes[i].propertyFlags & preferred) == preferred)
+		{
+			memory_type = i;
+			flags = properties.memoryTypes[i].propertyFlags;
+			return true;
+		}
+	}
+	for (uint32_t i = 0; i < properties.memoryTypeCount; i++)
+	{
+		if ((type_bits & (1u << i)) && (properties.memoryTypes[i].propertyFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT))
+		{
+			memory_type = i;
+			flags = properties.memoryTypes[i].propertyFlags;
+			return true;
+		}
+	}
+	return false;
+}
+
+static bool cli_create_buffer_readback(const trackedbuffer& buffer_data, VkBuffer source, VkDeviceSize size,
+	cli_buffer_readback& readback, std::string& error)
+{
+	trackeddevice& device_data = VkDevice_index.at(buffer_data.parent_device_index);
+	readback.device = index_to_VkDevice.at(buffer_data.parent_device_index);
+	readback.source = source;
+	uint32_t queue_family = UINT32_MAX;
+	if (!cli_readback_queue(buffer_data, readback.queue, queue_family, error)) return false;
+
+	VkBufferCreateInfo buffer_info = { VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, nullptr };
+	buffer_info.size = size;
+	buffer_info.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+	buffer_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+	VkResult result = wrap_vkCreateBuffer(readback.device, &buffer_info, nullptr, &readback.staging);
+	if (result != VK_SUCCESS)
+	{
+		error = std::string("failed to create readback buffer: ") + errorString(result);
+		return false;
+	}
+
+	VkMemoryRequirements requirements = {};
+	wrap_vkGetBufferMemoryRequirements(readback.device, readback.staging, &requirements);
+	uint32_t memory_type = UINT32_MAX;
+	if (!cli_readback_memory_type(device_data.physicalDevice, requirements.memoryTypeBits, memory_type, readback.memory_flags))
+	{
+		error = "no host-visible staging memory type is available";
+		return false;
+	}
+	VkMemoryAllocateInfo allocation = { VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO, nullptr };
+	allocation.allocationSize = requirements.size;
+	allocation.memoryTypeIndex = memory_type;
+	result = wrap_vkAllocateMemory(readback.device, &allocation, nullptr, &readback.memory);
+	if (result != VK_SUCCESS)
+	{
+		error = std::string("failed to allocate readback memory: ") + errorString(result);
+		return false;
+	}
+	readback.allocation_size = requirements.size;
+	result = wrap_vkBindBufferMemory(readback.device, readback.staging, readback.memory, 0);
+	if (result != VK_SUCCESS)
+	{
+		error = std::string("failed to bind readback memory: ") + errorString(result);
+		return false;
+	}
+	result = wrap_vkMapMemory(readback.device, readback.memory, 0, readback.allocation_size, 0, &readback.mapped);
+	if (result != VK_SUCCESS || !readback.mapped)
+	{
+		error = std::string("failed to map readback memory: ") + errorString(result);
+		return false;
+	}
+
+	VkCommandPoolCreateInfo pool_info = { VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO, nullptr };
+	pool_info.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+	pool_info.queueFamilyIndex = queue_family;
+	result = wrap_vkCreateCommandPool(readback.device, &pool_info, nullptr, &readback.pool);
+	if (result != VK_SUCCESS)
+	{
+		error = std::string("failed to create readback command pool: ") + errorString(result);
+		return false;
+	}
+	VkCommandBufferAllocateInfo command_info = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO, nullptr };
+	command_info.commandPool = readback.pool;
+	command_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+	command_info.commandBufferCount = 1;
+	result = wrap_vkAllocateCommandBuffers(readback.device, &command_info, &readback.command_buffer);
+	if (result != VK_SUCCESS)
+	{
+		error = std::string("failed to allocate readback command buffer: ") + errorString(result);
+		return false;
+	}
+	VkFenceCreateInfo fence_info = { VK_STRUCTURE_TYPE_FENCE_CREATE_INFO, nullptr };
+	result = wrap_vkCreateFence(readback.device, &fence_info, nullptr, &readback.fence);
+	if (result != VK_SUCCESS)
+	{
+		error = std::string("failed to create readback fence: ") + errorString(result);
+		return false;
+	}
+	return true;
+}
+
+static VkResult cli_copy_buffer_readback(cli_buffer_readback& readback, VkDeviceSize source_offset, VkDeviceSize size)
+{
+	VkResult result = wrap_vkResetFences(readback.device, 1, &readback.fence);
+	if (result != VK_SUCCESS) return result;
+	result = wrap_vkResetCommandBuffer(readback.command_buffer, 0);
+	if (result != VK_SUCCESS) return result;
+	VkCommandBufferBeginInfo begin = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO, nullptr };
+	begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+	result = wrap_vkBeginCommandBuffer(readback.command_buffer, &begin);
+	if (result != VK_SUCCESS) return result;
+
+	VkBufferMemoryBarrier source_barrier = { VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER, nullptr };
+	source_barrier.srcAccessMask = VK_ACCESS_MEMORY_WRITE_BIT;
+	source_barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+	source_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	source_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	source_barrier.buffer = readback.source;
+	source_barrier.offset = source_offset;
+	source_barrier.size = size;
+	wrap_vkCmdPipelineBarrier(readback.command_buffer, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
+		0, 0, nullptr, 1, &source_barrier, 0, nullptr);
+	VkBufferCopy copy = { source_offset, 0, size };
+	wrap_vkCmdCopyBuffer(readback.command_buffer, readback.source, readback.staging, 1, &copy);
+	VkBufferMemoryBarrier staging_barrier = { VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER, nullptr };
+	staging_barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+	staging_barrier.dstAccessMask = VK_ACCESS_HOST_READ_BIT;
+	staging_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	staging_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	staging_barrier.buffer = readback.staging;
+	staging_barrier.offset = 0;
+	staging_barrier.size = size;
+	wrap_vkCmdPipelineBarrier(readback.command_buffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_HOST_BIT,
+		0, 0, nullptr, 1, &staging_barrier, 0, nullptr);
+	result = wrap_vkEndCommandBuffer(readback.command_buffer);
+	if (result != VK_SUCCESS) return result;
+
+	VkSubmitInfo submit = { VK_STRUCTURE_TYPE_SUBMIT_INFO, nullptr };
+	submit.commandBufferCount = 1;
+	submit.pCommandBuffers = &readback.command_buffer;
+	{
+		lava::lock_guard lock(sync_mutex);
+		result = wrap_vkQueueSubmit(readback.queue, 1, &submit, readback.fence);
+	}
+	if (result != VK_SUCCESS) return result;
+	result = wrap_vkWaitForFences(readback.device, 1, &readback.fence, VK_TRUE, UINT64_MAX);
+	if (result != VK_SUCCESS) return result;
+	if ((readback.memory_flags & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT) == 0)
+	{
+		VkMappedMemoryRange range = { VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE, nullptr };
+		range.memory = readback.memory;
+		range.offset = 0;
+		range.size = VK_WHOLE_SIZE;
+		result = wrap_vkInvalidateMappedMemoryRanges(readback.device, 1, &range);
+	}
+	return result;
+}
+
+static bool cli_stream_buffer(int fd, uint32_t buffer_index)
+{
+	if (replayer.cli_running.load(std::memory_order_acquire)) return cli_send_error(fd, "replay is running");
+	while (!replay_done.load(std::memory_order_acquire) && !cli_all_threads_quiescent()) usleep(50);
+	const std::string idle = cli_wait_idle_devices();
+	if (idle == "DEVICE_LOST\n") return lava_tcp_send_all(fd, idle);
+	if (idle != "OK\n") return cli_send_error(fd, "failed to wait for the replay device");
+	if (service_stop_requested.load(std::memory_order_acquire)) return cli_send_error(fd, "replay stopped");
+	if (replayer.abort_requested()) return cli_send_error(fd, "replay device is unavailable");
+	if (buffer_index >= VkBuffer_index.size()) return cli_send_error(fd, "invalid buffer index");
+	trackedbuffer& buffer_data = VkBuffer_index.at(buffer_index);
+	if (!buffer_data.is_state(trackedobject::states::bound)) return cli_send_error(fd, "buffer is not bound and live");
+	if (!index_to_VkBuffer.contains(buffer_index)) return cli_send_error(fd, "buffer has no replay handle");
+	if ((buffer_data.flags & VK_BUFFER_CREATE_PROTECTED_BIT) || (buffer_data.memory_flags & VK_MEMORY_PROPERTY_PROTECTED_BIT))
+	{
+		return cli_send_error(fd, "protected buffers cannot be saved");
+	}
+	if (buffer_data.flags & VK_BUFFER_CREATE_SPARSE_BINDING_BIT) return cli_send_error(fd, "sparse buffers cannot be saved");
+	if (buffer_data.parent_device_index >= VkDevice_index.size()) return cli_send_error(fd, "buffer device is unavailable");
+	trackeddevice& device_data = VkDevice_index.at(buffer_data.parent_device_index);
+	if (!device_data.allocator || !index_to_VkDevice.contains(buffer_data.parent_device_index)) return cli_send_error(fd, "buffer memory is unavailable");
+
+	const suballoc_location location = device_data.allocator->inspect_buffer_memory(buffer_index);
+	if (buffer_data.size > location.size) return cli_send_error(fd, "buffer size exceeds its replay allocation");
+	const std::string header = "OK " + std::to_string((uint64_t)buffer_data.size) + "\n";
+	if (location.mapped && (location.memory_flags & VK_MEMORY_PROPERTY_HOST_CACHED_BIT))
+	{
+		const uint64_t replay_start = gettime();
+		const uint64_t readback_start = replay_start;
+		const VkResult result = device_data.allocator->invalidate_buffer_memory(buffer_index, buffer_data.size);
+		if (result != VK_SUCCESS) return cli_send_error(fd, std::string("failed to invalidate buffer memory: ") + errorString(result));
+		const uint64_t readback_ns = gettime() - readback_start;
+		if (!lava_tcp_send_all(fd, header)) return false;
+		const uint64_t send_start = gettime();
+		const bool sent = cli_send_memory(fd, location.mapped, buffer_data.size);
+		const uint64_t send_ns = gettime() - send_start;
+		if (!sent) return false;
+		const uint64_t replay_ns = gettime() - replay_start;
+		const uint64_t chunks = (uint64_t)(buffer_data.size / (4 * 1024 * 1024))
+			+ (buffer_data.size % (4 * 1024 * 1024) != 0 ? 1 : 0);
+		return cli_send_buffer_stats(fd, "mapped", chunks, replay_ns, readback_ns, send_ns);
+	}
+
+	static constexpr VkDeviceSize maximum_staging_size = 4 * 1024 * 1024;
+	const VkDeviceSize staging_size = std::min(buffer_data.size, maximum_staging_size);
+	cli_buffer_readback readback;
+	std::string error;
+	if (!cli_create_buffer_readback(buffer_data, index_to_VkBuffer.at(buffer_index), staging_size, readback, error))
+	{
+		readback.destroy();
+		return cli_send_error(fd, error);
+	}
+	const uint64_t replay_start = gettime();
+	uint64_t readback_ns = 0;
+	uint64_t send_ns = 0;
+	uint64_t chunks = 0;
+	VkDeviceSize offset = 0;
+	VkDeviceSize chunk = std::min(staging_size, buffer_data.size - offset);
+	uint64_t operation_start = gettime();
+	VkResult result = cli_copy_buffer_readback(readback, offset, chunk);
+	readback_ns += gettime() - operation_start;
+	if (result != VK_SUCCESS)
+	{
+		readback.destroy();
+		return cli_send_error(fd, std::string("failed to read back buffer: ") + errorString(result));
+	}
+	bool sent = lava_tcp_send_all(fd, header);
+	while (sent && offset < buffer_data.size)
+	{
+		if (service_stop_requested.load(std::memory_order_acquire))
+		{
+			sent = false;
+			break;
+		}
+		if (offset != 0)
+		{
+			chunk = std::min(staging_size, buffer_data.size - offset);
+			operation_start = gettime();
+			result = cli_copy_buffer_readback(readback, offset, chunk);
+			readback_ns += gettime() - operation_start;
+			if (result != VK_SUCCESS)
+			{
+				sent = false;
+				break;
+			}
+		}
+		operation_start = gettime();
+		sent = lava_tcp_send_all(fd, readback.mapped, (size_t)chunk);
+		send_ns += gettime() - operation_start;
+		if (sent) chunks++;
+		offset += chunk;
+	}
+	const uint64_t replay_ns = gettime() - replay_start;
+	readback.destroy();
+	return sent && cli_send_buffer_stats(fd, "staging", chunks, replay_ns, readback_ns, send_ns);
+}
+
 static bool cli_thread_ready();
 static std::string cli_paused_command_response(lava_file_reader& reader);
 
@@ -1329,6 +1684,7 @@ static void service_client(service_client_state* state, int client_fd)
 	const bool bypass_active = cli_command_is_observer(command) || cli_command_is_interrupt(command);
 	const bool log_update = command.size() == 2 && command[0] == "log" && command[1] == "update";
 	const bool system_log_update = command.size() == 2 && command[0] == "syslog" && command[1] == "update";
+	const bool save_buffer = command.size() == 3 && command[0] == "save" && command[1] == "buffer";
 	bool command_active = false;
 	bool log_update_active = false;
 	bool system_log_update_active = false;
@@ -1367,7 +1723,13 @@ static void service_client(service_client_state* state, int client_fd)
 
 	if (response.empty())
 	{
-		response = service_command_response(state, command, log_cursor_commit, system_log_cursor_commit);
+		if (save_buffer)
+		{
+			uint32_t buffer_index = 0;
+			if (!parse_u32(command[2], buffer_index)) response = "ERROR invalid buffer index\n";
+			else if (!cli_stream_buffer(client_fd, buffer_index)) ELOG("Failed to stream replay buffer %u", buffer_index);
+		}
+		else response = service_command_response(state, command, log_cursor_commit, system_log_cursor_commit);
 	}
 
 	if (command_active)
@@ -1376,7 +1738,7 @@ static void service_client(service_client_state* state, int client_fd)
 		replayer.cli_command_active.notify_one();
 	}
 
-	const bool sent = lava_tcp_send_all(client_fd, response);
+	const bool sent = save_buffer && response.empty() ? true : lava_tcp_send_all(client_fd, response);
 	if (sent && log_cursor_commit >= 0)
 	{
 		state->replay_log.cursor = log_cursor_commit;
