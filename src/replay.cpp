@@ -911,10 +911,11 @@ static std::string service_command_response(service_client_state* state, const s
 	}
 	else if (command[0] == "add-markers")
 	{
+		uint32_t thread_id = 0;
 		cli_marker_placement placement = cli_marker_placement::both;
-		bool valid = command.size() >= 4 && command[1] == "nvidia";
+		bool valid = command.size() >= 5 && parse_u32(command[1], thread_id) && command[2] == "nvidia";
 		bool has_call = false;
-		for (size_t i = 2; valid && i < command.size(); i++)
+		for (size_t i = 3; valid && i < command.size(); i++)
 		{
 			if (command[i] == "--call" && i + 1 < command.size())
 			{
@@ -933,20 +934,32 @@ static std::string service_command_response(service_client_state* state, const s
 		}
 		if (!valid || !has_call)
 		{
-			response = "ERROR expected 'add-markers nvidia --call vkCmdBuildAccelerationStructuresKHR [--placement before|after|both]'\n";
+			response = "ERROR expected 'add-markers THREAD nvidia --call vkCmdBuildAccelerationStructuresKHR [--placement before|after|both]'\n";
 		}
-		else if (!cli_thread_ready() || replayer.cli_running.load(std::memory_order_acquire))
+		else if (thread_id >= replayer.threads.size())
 		{
-			response = "ERROR replay is not paused on a selected thread\n";
+			response = "ERROR invalid thread index\n";
 		}
 		else
 		{
-			lava_file_reader& reader = replayer.file_reader(replayer.cli_thread.load(std::memory_order_acquire));
-			if (!cli_has_paused_command(reader) || reader.current.packet_type != PACKET_VULKAN_API_CALL || reader.current.call_id != VKBEGINCOMMANDBUFFER)
+			bool selection_changed = false;
+			response = cli_prepare_thread(thread_id, selection_changed);
+			lava_file_reader& reader = replayer.file_reader(thread_id);
+			if (response.empty() && selection_changed
+			    && reader.cli_state.load(std::memory_order_acquire) == cli_thread_state::error_paused)
+			{
+				response = cli_paused_command_response(reader);
+			}
+			if (response.empty() && replayer.cli_running.load(std::memory_order_acquire))
+			{
+				response = "ERROR replay is not paused on the targeted thread\n";
+			}
+			if (response.empty() && (!cli_has_paused_command(reader) || reader.current.packet_type != PACKET_VULKAN_API_CALL
+			    || reader.current.call_id != VKBEGINCOMMANDBUFFER))
 			{
 				response = "ERROR add-markers requires a pause on vkBeginCommandBuffer\n";
 			}
-			else
+			else if (response.empty())
 			{
 				const std::string idle_response = cli_wait_for_quiescence_and_idle();
 				if (idle_response != "OK\n") response = idle_response;

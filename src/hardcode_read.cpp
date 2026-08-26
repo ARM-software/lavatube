@@ -1548,12 +1548,15 @@ static void replay_report_recent_submissions(const trackeddevice& device_data, l
 				ELOG("      %s at thread=%u frame=%u packet=%u", get_function_name(command->id), command->source.thread,
 					command->source.frame, command->source.packet);
 			}
-			if (!commandbuffer.nvidia_marker_sessions.empty())
 			{
-				const trackedcmdbuffer::nvidia_marker_session& session = commandbuffer.nvidia_marker_sessions.back();
-				for (const std::string& diagnostic : session.as_build_diagnostics)
+				lava::lock_guard marker_lock(*commandbuffer.nvidia_marker_mutex);
+				if (!commandbuffer.nvidia_marker_sessions.empty())
 				{
-					ELOG("      AS build snapshot: %s", diagnostic.c_str());
+					const trackedcmdbuffer::nvidia_marker_session& session = commandbuffer.nvidia_marker_sessions.back();
+					for (const std::string& diagnostic : session.as_build_diagnostics)
+					{
+						ELOG("      AS build snapshot: %s", diagnostic.c_str());
+					}
 				}
 			}
 		}
@@ -2934,22 +2937,25 @@ static void replay_fixup_commandbuffer_raytracing_instances(lava_file_reader& re
 		{
 			DLOG("Remapped %u acceleration structure instance references", (unsigned)use.primitive_count);
 		}
-		if (!commandbuffer_data.nvidia_marker_sessions.empty())
 		{
-			trackedcmdbuffer::nvidia_marker_session& session = commandbuffer_data.nvidia_marker_sessions.back();
-			if (!session.as_build_diagnostics.empty())
+			lava::lock_guard marker_lock(*commandbuffer_data.nvidia_marker_mutex);
+			if (!commandbuffer_data.nvidia_marker_sessions.empty())
 			{
-				Json::Value diagnostic;
-				diagnostic["thread"] = reader.current.thread;
-				diagnostic["frame"] = reader.current.frame;
-				diagnostic["packet"] = reader.current.packet;
-				diagnostic["command"] = get_packet_name((packet_type)reader.current.packet_type, reader.current.call_id);
-				diagnostic["device_address"] = (Json::UInt64)base_address;
-				diagnostic["primitive_count"] = use.primitive_count;
-				diagnostic["references"] = replay_as_instance_references_json(reader, base_address,
-					use.primitive_count, false);
-				Json::FastWriter writer;
-				session.instance_fixup_diagnostics.push_back(writer.write(diagnostic));
+				trackedcmdbuffer::nvidia_marker_session& session = commandbuffer_data.nvidia_marker_sessions.back();
+				if (!session.as_build_diagnostics.empty())
+				{
+					Json::Value diagnostic;
+					diagnostic["thread"] = reader.current.thread;
+					diagnostic["frame"] = reader.current.frame;
+					diagnostic["packet"] = reader.current.packet;
+					diagnostic["command"] = get_packet_name((packet_type)reader.current.packet_type, reader.current.call_id);
+					diagnostic["device_address"] = (Json::UInt64)base_address;
+					diagnostic["primitive_count"] = use.primitive_count;
+					diagnostic["references"] = replay_as_instance_references_json(reader, base_address,
+						use.primitive_count, false);
+					Json::FastWriter writer;
+					session.instance_fixup_diagnostics.push_back(writer.write(diagnostic));
+				}
 			}
 		}
 	}

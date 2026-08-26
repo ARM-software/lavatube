@@ -23,6 +23,7 @@
 #include <map>
 #include <unordered_set>
 #include <list>
+#include <memory>
 #include <vulkan/vk_icd.h>
 #include <type_traits>
 #include <cstddef>
@@ -929,6 +930,8 @@ struct trackedcmdbuffer : trackable
 		std::vector<std::string> as_build_diagnostics;
 		std::vector<std::string> instance_fixup_diagnostics;
 	};
+	// Command-buffer metadata is stored by value, so keep its diagnostic lock stable across moves.
+	std::shared_ptr<lava::mutex> nvidia_marker_mutex { std::make_shared<lava::mutex>() };
 	std::vector<nvidia_marker_session> nvidia_marker_sessions;
 
 	void self_test() const

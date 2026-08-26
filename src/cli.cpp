@@ -81,8 +81,8 @@ void usage()
 	printf("    parameters THREAD        Print JSON parameters for THREAD's currently paused Vulkan call.\n");
 	printf("    instrument THREAD [detailed]\n");
 	printf("                             Instrument THREAD after a paused vkBeginCommandBuffer.\n");
-	printf("    add-markers nvidia --call vkCmdBuildAccelerationStructuresKHR [--placement before|after|both]\n");
-	printf("                             Add NVIDIA diagnostic checkpoints to this command buffer recording.\n");
+	printf("    add-markers THREAD nvidia --call vkCmdBuildAccelerationStructuresKHR [--placement before|after|both]\n");
+	printf("                             Add NVIDIA diagnostic checkpoints to THREAD's command buffer recording.\n");
 	printf("    show as-build N          Print collected AS build diagnostics for command buffer N.\n");
 	printf("    show instrumentation N   Print cached VK_ARM_shader_instrumentation data for command buffer N.\n");
 	printf("\n");

@@ -215,6 +215,7 @@ void cli_process_instrument_request(callback_context& cb, VkCommandBuffer comman
 		}
 		else if (marker_placement != cli_marker_placement::none)
 		{
+			lava::lock_guard lock(*commandbuffer_data.nvidia_marker_mutex);
 			trackedcmdbuffer::nvidia_marker_session session;
 			session.id = parent->cli_marker_next_session.fetch_add(1, std::memory_order_relaxed);
 			session.placement = (uint8_t)marker_placement;
@@ -270,6 +271,7 @@ void replay_nvidia_marker_as_build(lava_file_reader& reader, VkCommandBuffer com
 	const uint32_t commandbuffer_index = index_to_VkCommandBuffer.index_or_invalid(command_buffer);
 	if (commandbuffer_index == CONTAINER_INVALID_INDEX || commandbuffer_index >= VkCommandBuffer_index.size()) return;
 	trackedcmdbuffer& commandbuffer_data = VkCommandBuffer_index.at(commandbuffer_index);
+	lava::lock_guard lock(*commandbuffer_data.nvidia_marker_mutex);
 	trackedcmdbuffer::nvidia_marker_session* session = active_nvidia_marker_session(commandbuffer_data);
 	if (!session) return;
 	const uint8_t wanted = before ? (uint8_t)cli_marker_placement::before : (uint8_t)cli_marker_placement::after;
@@ -318,11 +320,29 @@ std::string replay_as_build_show(uint32_t commandbuffer_index)
 {
 	if (commandbuffer_index >= VkCommandBuffer_index.size()) return "ERROR invalid command buffer index\n";
 	const trackedcmdbuffer& commandbuffer_data = VkCommandBuffer_index.at(commandbuffer_index);
-	if (commandbuffer_data.nvidia_marker_sessions.empty()) return "ERROR command buffer has no AS diagnostic snapshots\n";
+	struct marker_session_snapshot
+	{
+		uint32_t id = 0;
+		std::vector<std::string> as_build_diagnostics;
+		std::vector<std::string> instance_fixup_diagnostics;
+	};
+	std::vector<marker_session_snapshot> marker_sessions;
+	{
+		lava::lock_guard lock(*commandbuffer_data.nvidia_marker_mutex);
+		if (commandbuffer_data.nvidia_marker_sessions.empty()) return "ERROR command buffer has no AS diagnostic snapshots\n";
+		for (const trackedcmdbuffer::nvidia_marker_session& session : commandbuffer_data.nvidia_marker_sessions)
+		{
+			marker_session_snapshot snapshot;
+			snapshot.id = session.id;
+			snapshot.as_build_diagnostics = session.as_build_diagnostics;
+			snapshot.instance_fixup_diagnostics = session.instance_fixup_diagnostics;
+			marker_sessions.push_back(std::move(snapshot));
+		}
+	}
 	Json::Value root;
 	root["command_buffer"] = commandbuffer_index;
 	Json::Value sessions(Json::arrayValue);
-	for (const trackedcmdbuffer::nvidia_marker_session& session : commandbuffer_data.nvidia_marker_sessions)
+	for (const marker_session_snapshot& session : marker_sessions)
 	{
 		if (session.as_build_diagnostics.empty()) continue;
 		Json::Value value;
@@ -382,8 +402,11 @@ void replay_instrumentation_end_command_buffer(lava_file_reader& reader, VkComma
 		if (!session->detailed) wrap_vkCmdEndShaderInstrumentationARM(command_buffer);
 		session->recording = false;
 	}
-	trackedcmdbuffer::nvidia_marker_session* marker_session = active_nvidia_marker_session(commandbuffer_data);
-	if (marker_session) marker_session->recording = false;
+	{
+		lava::lock_guard lock(*commandbuffer_data.nvidia_marker_mutex);
+		trackedcmdbuffer::nvidia_marker_session* marker_session = active_nvidia_marker_session(commandbuffer_data);
+		if (marker_session) marker_session->recording = false;
+	}
 }
 
 static void replay_instrumentation_mark_submitted_recursive(trackedcmdbuffer& commandbuffer_data,

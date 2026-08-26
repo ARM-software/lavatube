@@ -36,7 +36,7 @@ More instructions to implement:
   push a callback on the queue submit so we can queuewaitidle -> write -> clear writeout queue
 * `lava-cli split-cmdbuf-by-renderpass` - only when on `vkBeginCommandBuffer` to split commandbuffers by renderpasses
 * `lava-cli split-cmdbuf-by-shader` - only when on `vkBeginCommandBuffer` to split commandbuffers by shader calls
-* `lava-cli add-markers` - only when on `vkBeginCommandBuffer` to sprinkle `vkCmdWriteBufferMarker2AMD()` calls after every command into the generated commandbuffer; returns index of target marker buffer (which is persistently mapped)
+* `lava-cli add-markers THREAD` - only when THREAD is on `vkBeginCommandBuffer` to sprinkle marker calls into the generated commandbuffer; returns the target marker session and command buffer
 * `lava-cli read-markers` - read out the last value of our markers, useful if we encountered a device lost error during execution of a marked up commandbuffer
 * `lava-cli backtrace` - generate a backtrace from the current position, could invoke gdb, need to figure out what to do for Android
 	- on same host, llm model could just fire up gdb, which is far more powerful, so of limited usefulness

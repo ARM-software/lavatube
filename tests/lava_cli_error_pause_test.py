@@ -140,6 +140,28 @@ def check_atomic_thread_goto(replay_path, cli_path, trace_path):
 			stop_replay(replay, cli_path, port, log_file)
 
 
+def check_atomic_add_markers(replay_path, cli_path, trace_path):
+	port = reserve_port()
+	with tempfile.NamedTemporaryFile() as log_file:
+		replay = start_service(replay_path, port, trace_path, None, log_file)
+		try:
+			wait_for_listener(replay, port, log_file)
+			check_command(cli_path, port, 'ERROR invalid thread index\n', 'add-markers', '99', 'nvidia',
+			              '--call', 'vkCmdBuildAccelerationStructuresKHR', expected_rc=1)
+			check_command(cli_path, port, 'PAUSED thread=0\n', 'status')
+
+			result = check_command(cli_path, port, None, 'add-markers', '1', 'nvidia',
+			                       '--call', 'vkCmdBuildAccelerationStructuresKHR', expected_rc=1)
+			if result.stdout != 'ERROR add-markers requires a pause on vkBeginCommandBuffer\n':
+				raise RuntimeError('add-markers did not atomically target thread 1: %r' % result.stdout)
+			status = check_command(cli_path, port, None, 'status').stdout
+			if 'thread=1' not in status:
+				raise RuntimeError('add-markers left the wrong thread selected: %r' % status)
+			check_command(cli_path, port, 'OK\n', 'stop')
+		finally:
+			stop_replay(replay, cli_path, port, log_file)
+
+
 def check_retval_error_pause(replay_path, cli_path, trace_path):
 	port = reserve_port()
 	with tempfile.NamedTemporaryFile() as log_file:
@@ -342,6 +364,7 @@ def main():
 		return
 	check_thread_targeted_step(replay_path, cli_path, trace_path)
 	check_atomic_thread_goto(replay_path, cli_path, trace_path)
+	check_atomic_add_markers(replay_path, cli_path, trace_path)
 	check_retval_error_pause(replay_path, cli_path, trace_path)
 	check_retval_error_selected_thread(replay_path, cli_path, trace_path)
 	check_retval_error_goto_function(replay_path, cli_path, trace_path)
