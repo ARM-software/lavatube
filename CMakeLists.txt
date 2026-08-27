@@ -686,6 +686,10 @@ target_compile_options(android_replay_args_test PRIVATE ${COMMON_FLAGS})
 add_lavatube_test(android_replay_args_test COMMAND android_replay_args_test)
 add_test(NAME android_replay_launcher_test COMMAND ${PYTHON_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tests/lava_replay_android.py)
 
+add_executable(usbconnection tests/usbconnection.cpp)
+target_include_directories(usbconnection PRIVATE ${SRC_ROOT}/src)
+target_compile_options(usbconnection PRIVATE ${COMMON_FLAGS})
+
 if(ANDROID)
 	set(ANDROID_NATIVE_APP_GLUE_DIR "${ANDROID_NDK}/sources/android/native_app_glue")
 	add_library(lavatube_native_app_glue STATIC "${ANDROID_NATIVE_APP_GLUE_DIR}/android_native_app_glue.c")
