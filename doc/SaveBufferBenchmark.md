@@ -3,8 +3,9 @@
 `tests/lava_cli_save_buffer_perf.py` measures repeated `lava-cli save buffer`
 operations and writes one CSV row per measured transfer. It generates a compact trace
 containing one GPU-filled buffer, starts `lava-replay --service`, runs one warm-up by
-default, and reports the median, minimum, and maximum total throughput on stderr.
-Performance values are observations rather than CTest pass criteria.
+default, and reports the median, minimum, and maximum total throughput plus median
+readback and send throughput on stderr. Performance values are observations rather
+than CTest pass criteria.
 
 Build the benchmark and its dependencies with:
 
@@ -76,13 +77,23 @@ The controls used by the runner are also available directly:
 
 * `LAVATUBE_CLI_STAGING_CHUNK_SIZE=BYTES` changes the replay staging allocation and
   copy chunk, from 1 byte through 1 GiB. It has no effect when `path=mapped`.
+* `LAVATUBE_CLI_STAGING_BUFFER_COUNT=1|2` selects serial staging or the default
+  two-slot pipeline. The runner exposes the same control as `--staging-buffers`.
 * `LAVATUBE_CLI_DISABLE_SPLICE=1` makes the Linux controller use the bounded
   `recv()`/`write()` fallback.
 
+For a multi-chunk staging transfer, the default two-slot pipeline submits the next
+GPU copy before sending the completed slot. It never sends a slot before its fence and
+required memory invalidation complete. The staging allocation is therefore bounded by
+twice the selected chunk size. In this mode, `readback_seconds` measures time spent
+submitting copies and waiting for data that was not hidden by socket sending; GPU work
+overlapped with a send is not counted a second time.
+
 The CSV includes requested memory class, actual replay path, size, chunk count,
-requested receive mode, actual controller receive path, staging chunk size, labels,
-raw trial and sequence numbers, and replay/controller/total rates and durations. The
-receive path is
+requested receive mode, actual controller receive path, staging chunk and buffer
+counts, labels, raw trial and sequence numbers, and replay/controller/total rates and
+durations. The CSV also records replay-side readback and socket-send rates and
+durations separately. The receive path is
 `splice`, `fallback`, or `mixed` when part of a transfer completed through each path.
 This distinguishes an unsupported splice request that transparently used the fallback.
 `--device-label`, `--driver-label`, and `--transport-label` attach experiment metadata

@@ -299,6 +299,20 @@ static bool cli_staging_chunk_size(VkDeviceSize& size, std::string& error)
 	return true;
 }
 
+static bool cli_staging_buffer_count(uint32_t& count, std::string& error)
+{
+	count = 2;
+	const char* text = getenv("LAVATUBE_CLI_STAGING_BUFFER_COUNT");
+	if (!text || text[0] == '\0') return true;
+	if (strcmp(text, "1") != 0 && strcmp(text, "2") != 0)
+	{
+		error = "invalid LAVATUBE_CLI_STAGING_BUFFER_COUNT";
+		return false;
+	}
+	count = (uint32_t)(text[0] - '0');
+	return true;
+}
+
 struct cli_buffer_readback
 {
 	VkDevice device = VK_NULL_HANDLE;
@@ -312,9 +326,15 @@ struct cli_buffer_readback
 	void* mapped = nullptr;
 	VkDeviceSize allocation_size = 0;
 	VkMemoryPropertyFlags memory_flags = 0;
+	bool pending = false;
 
 	void destroy()
 	{
+		if (pending && fence != VK_NULL_HANDLE)
+		{
+			wrap_vkWaitForFences(device, 1, &fence, VK_TRUE, UINT64_MAX);
+			pending = false;
+		}
 		if (mapped) wrap_vkUnmapMemory(device, memory);
 		if (fence != VK_NULL_HANDLE) wrap_vkDestroyFence(device, fence, nullptr);
 		if (pool != VK_NULL_HANDLE) wrap_vkDestroyCommandPool(device, pool, nullptr);
@@ -472,8 +492,9 @@ static bool cli_create_buffer_readback(const trackedbuffer& buffer_data, VkBuffe
 	return true;
 }
 
-static VkResult cli_copy_buffer_readback(cli_buffer_readback& readback, VkDeviceSize source_offset, VkDeviceSize size)
+static VkResult cli_submit_buffer_readback(cli_buffer_readback& readback, VkDeviceSize source_offset, VkDeviceSize size)
 {
+	assert(!readback.pending);
 	VkResult result = wrap_vkResetFences(readback.device, 1, &readback.fence);
 	if (result != VK_SUCCESS) return result;
 	result = wrap_vkResetCommandBuffer(readback.command_buffer, 0);
@@ -515,9 +536,16 @@ static VkResult cli_copy_buffer_readback(cli_buffer_readback& readback, VkDevice
 		lava::lock_guard lock(sync_mutex);
 		result = wrap_vkQueueSubmit(readback.queue, 1, &submit, readback.fence);
 	}
+	if (result == VK_SUCCESS) readback.pending = true;
+	return result;
+}
+
+static VkResult cli_wait_buffer_readback(cli_buffer_readback& readback)
+{
+	assert(readback.pending);
+	VkResult result = wrap_vkWaitForFences(readback.device, 1, &readback.fence, VK_TRUE, UINT64_MAX);
 	if (result != VK_SUCCESS) return result;
-	result = wrap_vkWaitForFences(readback.device, 1, &readback.fence, VK_TRUE, UINT64_MAX);
-	if (result != VK_SUCCESS) return result;
+	readback.pending = false;
 	if ((readback.memory_flags & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT) == 0)
 	{
 		VkMappedMemoryRange range = { VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE, nullptr };
@@ -575,12 +603,18 @@ static bool cli_stream_buffer(int fd, uint32_t buffer_index)
 	VkDeviceSize maximum_staging_size = 0;
 	std::string error;
 	if (!cli_staging_chunk_size(maximum_staging_size, error)) return cli_send_error(fd, error);
+	uint32_t maximum_readback_count = 0;
+	if (!cli_staging_buffer_count(maximum_readback_count, error)) return cli_send_error(fd, error);
 	const VkDeviceSize staging_size = std::min(buffer_data.size, maximum_staging_size);
-	cli_buffer_readback readback;
-	if (!cli_create_buffer_readback(buffer_data, index_to_VkBuffer.at(buffer_index), staging_size, readback, error))
+	cli_buffer_readback readbacks[2];
+	const uint32_t readback_count = buffer_data.size > staging_size ? maximum_readback_count : 1;
+	for (uint32_t i = 0; i < readback_count; i++)
 	{
-		readback.destroy();
-		return cli_send_error(fd, error);
+		if (!cli_create_buffer_readback(buffer_data, index_to_VkBuffer.at(buffer_index), staging_size, readbacks[i], error))
+		{
+			for (uint32_t j = 0; j <= i; j++) readbacks[j].destroy();
+			return cli_send_error(fd, error);
+		}
 	}
 	const uint64_t replay_start = gettime();
 	uint64_t readback_ns = 0;
@@ -589,14 +623,16 @@ static bool cli_stream_buffer(int fd, uint32_t buffer_index)
 	VkDeviceSize offset = 0;
 	VkDeviceSize chunk = std::min(staging_size, buffer_data.size - offset);
 	uint64_t operation_start = gettime();
-	VkResult result = cli_copy_buffer_readback(readback, offset, chunk);
+	VkResult result = cli_submit_buffer_readback(readbacks[0], offset, chunk);
+	if (result == VK_SUCCESS) result = cli_wait_buffer_readback(readbacks[0]);
 	readback_ns += gettime() - operation_start;
 	if (result != VK_SUCCESS)
 	{
-		readback.destroy();
+		for (uint32_t i = 0; i < readback_count; i++) readbacks[i].destroy();
 		return cli_send_error(fd, std::string("failed to read back buffer: ") + errorString(result));
 	}
 	bool sent = lava_tcp_send_all(fd, header);
+	uint32_t current_readback = 0;
 	while (sent && offset < buffer_data.size)
 	{
 		if (service_stop_requested.load(std::memory_order_acquire))
@@ -604,26 +640,52 @@ static bool cli_stream_buffer(int fd, uint32_t buffer_index)
 			sent = false;
 			break;
 		}
-		if (offset != 0)
+		const VkDeviceSize next_offset = offset + chunk;
+		const uint32_t next_readback = readback_count == 2 ? 1 - current_readback : current_readback;
+		VkDeviceSize next_chunk = 0;
+		bool next_pending = false;
+		if (next_offset < buffer_data.size)
 		{
-			chunk = std::min(staging_size, buffer_data.size - offset);
-			operation_start = gettime();
-			result = cli_copy_buffer_readback(readback, offset, chunk);
-			readback_ns += gettime() - operation_start;
-			if (result != VK_SUCCESS)
+			next_chunk = std::min(staging_size, buffer_data.size - next_offset);
+			if (readback_count == 2)
 			{
-				sent = false;
-				break;
+				operation_start = gettime();
+				result = cli_submit_buffer_readback(readbacks[next_readback], next_offset, next_chunk);
+				readback_ns += gettime() - operation_start;
+				if (result != VK_SUCCESS)
+				{
+					sent = false;
+					break;
+				}
+				next_pending = true;
 			}
 		}
 		operation_start = gettime();
-		sent = lava_tcp_send_all(fd, readback.mapped, (size_t)chunk);
+		sent = lava_tcp_send_all(fd, readbacks[current_readback].mapped, (size_t)chunk);
 		send_ns += gettime() - operation_start;
 		if (sent) chunks++;
-		offset += chunk;
+		if (sent && next_offset < buffer_data.size && readback_count == 1)
+		{
+			operation_start = gettime();
+			result = cli_submit_buffer_readback(readbacks[next_readback], next_offset, next_chunk);
+			readback_ns += gettime() - operation_start;
+			if (result == VK_SUCCESS) next_pending = true;
+			else sent = false;
+		}
+		if (next_pending)
+		{
+			operation_start = gettime();
+			result = cli_wait_buffer_readback(readbacks[next_readback]);
+			readback_ns += gettime() - operation_start;
+			if (result != VK_SUCCESS) sent = false;
+		}
+		if (!sent) break;
+		offset = next_offset;
+		current_readback = next_readback;
+		chunk = next_chunk;
 	}
 	const uint64_t replay_ns = gettime() - replay_start;
-	readback.destroy();
+	for (uint32_t i = 0; i < readback_count; i++) readbacks[i].destroy();
 	return sent && cli_send_buffer_stats(fd, "staging", chunks, replay_ns, readback_ns, send_ns);
 }
 

@@ -68,16 +68,19 @@ def check_save(cli, port, index, filename, size):
 		raise RuntimeError('save buffer failed: rc=%d stdout=%r stderr=%r' %
 		                   (result.returncode, result.stdout, result.stderr))
 	lines = result.stdout.splitlines()
-	if len(lines) != 4:
+	if len(lines) != 6:
 		raise RuntimeError('unexpected save statistics: %r' % result.stdout)
 	prefix = 'DONE bytes=%d path=' % size
-	if (not lines[0].startswith(prefix) or ' chunks=2 ' not in lines[0]
+	if (not lines[0].startswith(prefix)
 	    or not lines[0].endswith((' receive=splice', ' receive=fallback', ' receive=mixed'))):
 		raise RuntimeError('unexpected save summary: %r' % lines[0])
 	path = lines[0][len(prefix):].split()[0]
 	if path not in ('mapped', 'staging'):
 		raise RuntimeError('unexpected save path: %r' % path)
-	for label, line in zip(('replay', 'controller', 'total'), lines[1:]):
+	expected_chunks = 2 if path == 'mapped' else 5
+	if ' chunks=%d ' % expected_chunks not in lines[0]:
+		raise RuntimeError('unexpected chunk count: %r' % lines[0])
+	for label, line in zip(('replay', 'readback', 'send', 'controller', 'total'), lines[1:]):
 		parts = line.split()
 		if len(parts) != 4 or not parts[0].startswith(label + '=') or parts[1] != 'MiB/s' or not parts[2].startswith('time=') or parts[3] != 's':
 			raise RuntimeError('malformed %s statistics: %r' % (label, line))
@@ -91,10 +94,13 @@ def main():
 	replay_path, cli_path, trace_path = sys.argv[1:]
 	port = reserve_port()
 	with tempfile.NamedTemporaryFile() as log_file, tempfile.TemporaryDirectory() as output_dir:
+		replay_environment = dict(os.environ)
+		replay_environment['LAVATUBE_CLI_STAGING_CHUNK_SIZE'] = str(1024 * 1024)
 		replay = subprocess.Popen(
 			[replay_path, '--service', '-H', '127.0.0.1', '-P', str(port), '-w', 'none', trace_path],
 			stdout=log_file,
 			stderr=subprocess.STDOUT,
+			env=replay_environment,
 		)
 		try:
 			wait_for_listener(replay, port, log_file)

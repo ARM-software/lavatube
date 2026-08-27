@@ -435,10 +435,14 @@ static bool remote_save_buffer(const std::string& hostname, int port, uint32_t i
 	if (have_replay_stats)
 	{
 		printf("replay=%.2f MiB/s time=%.6f s\n", buffer_mib_per_second(size, stats.replay_ns), buffer_seconds(stats.replay_ns));
+		printf("readback=%.2f MiB/s time=%.6f s\n", buffer_mib_per_second(size, stats.readback_ns), buffer_seconds(stats.readback_ns));
+		printf("send=%.2f MiB/s time=%.6f s\n", buffer_mib_per_second(size, stats.send_ns), buffer_seconds(stats.send_ns));
 	}
 	else
 	{
 		printf("replay=unavailable\n");
+		printf("readback=unavailable\n");
+		printf("send=unavailable\n");
 	}
 	printf("controller=%.2f MiB/s time=%.6f s\n", buffer_mib_per_second(size, controller_ns), buffer_seconds(controller_ns));
 	printf("total=%.2f MiB/s time=%.6f s\n", buffer_mib_per_second(size, total_ns), buffer_seconds(total_ns));

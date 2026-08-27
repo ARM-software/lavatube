@@ -15,7 +15,7 @@ import time
 
 SIZE_PATTERN = re.compile(r'^(\d+)([KMGkmg]?)$')
 SUMMARY_PATTERN = re.compile(r'^DONE bytes=(\d+) path=([a-z]+) chunks=(\d+) receive=(splice|fallback|mixed)$')
-RATE_PATTERN = re.compile(r'^(replay|controller|total)=([0-9.]+) MiB/s time=([0-9.]+) s$')
+RATE_PATTERN = re.compile(r'^(replay|readback|send|controller|total)=([0-9.]+) MiB/s time=([0-9.]+) s$')
 
 
 def parse_size(text):
@@ -102,7 +102,7 @@ def stop_replay(replay, cli, port, log_file, environment, timeout):
 
 def parse_save_output(output, expected_size):
 	lines = output.splitlines()
-	if len(lines) != 4:
+	if len(lines) != 6:
 		raise RuntimeError('unexpected save output: %r' % output)
 	summary = SUMMARY_PATTERN.match(lines[0])
 	if not summary or int(summary.group(1)) != expected_size:
@@ -167,12 +167,17 @@ def run_trial(args, host, port, buffer_index, size, memory_class, staging_chunk,
 			'requested_receive_mode': receive_mode,
 			'receive_path': values['receive_path'],
 			'staging_chunk': staging_chunk,
+			'staging_buffers': args.staging_buffers,
 			'trial': trial,
 			'sequence': len(rows) + 1,
 			'replay_mib_s': values['replay_mib_s'],
+			'readback_mib_s': values['readback_mib_s'],
+			'send_mib_s': values['send_mib_s'],
 			'controller_mib_s': values['controller_mib_s'],
 			'total_mib_s': values['total_mib_s'],
 			'replay_seconds': values['replay_seconds'],
+			'readback_seconds': values['readback_seconds'],
+			'send_seconds': values['send_seconds'],
 			'controller_seconds': values['controller_seconds'],
 			'total_seconds': values['total_seconds'],
 		}
@@ -192,6 +197,7 @@ def start_benchmark_service(args, trace, staging_chunk):
 	port = reserve_port()
 	replay_env = dict(os.environ)
 	replay_env['LAVATUBE_CLI_STAGING_CHUNK_SIZE'] = str(staging_chunk)
+	replay_env['LAVATUBE_CLI_STAGING_BUFFER_COUNT'] = str(args.staging_buffers)
 	log_file = tempfile.TemporaryFile()
 	replay = subprocess.Popen(
 		[args.replay, '--service', '-H', '127.0.0.1', '-P', str(port), '-w', 'none', trace],
@@ -294,12 +300,17 @@ def benchmark_randomized(args, trace, size, memory_class, output_file, rows, wri
 def print_summary(rows):
 	groups = {}
 	for row in rows:
-		key = (row['size'], row['memory'], row['path'], row['requested_receive_mode'], row['receive_path'], row['staging_chunk'])
-		groups.setdefault(key, []).append(row['total_mib_s'])
+		key = (row['size'], row['memory'], row['path'], row['requested_receive_mode'], row['receive_path'],
+		       row['staging_chunk'], row['staging_buffers'])
+		groups.setdefault(key, []).append(row)
 	for key in sorted(groups):
-		values = groups[key]
-		print('size=%d memory=%s path=%s requested_receive=%s receive=%s staging=%d total_MiB/s median=%.2f min=%.2f max=%.2f' %
-		      (key[0], key[1], key[2], key[3], key[4], key[5], statistics.median(values), min(values), max(values)),
+		group = groups[key]
+		total_values = [row['total_mib_s'] for row in group]
+		readback_values = [row['readback_mib_s'] for row in group]
+		send_values = [row['send_mib_s'] for row in group]
+		print('size=%d memory=%s path=%s requested_receive=%s receive=%s staging=%d buffers=%d total_MiB/s median=%.2f min=%.2f max=%.2f readback=%.2f send=%.2f' %
+		      (key[0], key[1], key[2], key[3], key[4], key[5], key[6], statistics.median(total_values),
+		       min(total_values), max(total_values), statistics.median(readback_values), statistics.median(send_values)),
 		      file=sys.stderr)
 
 
@@ -318,6 +329,8 @@ def main():
 	                    help='comma-separated cached,uncached,device classes')
 	parser.add_argument('--staging-chunks', type=parse_size_list, default=parse_size_list('4M'),
 	                    help='comma-separated staging chunk sizes')
+	parser.add_argument('--staging-buffers', type=int, choices=(1, 2), default=2,
+	                    help='number of replay staging slots (default: 2)')
 	parser.add_argument('--receive-modes', default='splice',
 	                    help='comma-separated splice,fallback controller paths')
 	parser.add_argument('--warmups', type=int, default=1)
@@ -352,9 +365,9 @@ def main():
 
 	fieldnames = [
 		'device', 'driver', 'size', 'memory', 'path', 'chunks', 'transport', 'destination',
-		'requested_receive_mode', 'receive_path', 'staging_chunk', 'trial', 'sequence',
-		'replay_mib_s', 'controller_mib_s', 'total_mib_s',
-		'replay_seconds', 'controller_seconds', 'total_seconds',
+		'requested_receive_mode', 'receive_path', 'staging_chunk', 'staging_buffers', 'trial', 'sequence',
+		'replay_mib_s', 'readback_mib_s', 'send_mib_s', 'controller_mib_s', 'total_mib_s',
+		'replay_seconds', 'readback_seconds', 'send_seconds', 'controller_seconds', 'total_seconds',
 	]
 	csv_file = sys.stdout if args.csv == '-' else open(args.csv, 'w', newline='')
 	rows = []
