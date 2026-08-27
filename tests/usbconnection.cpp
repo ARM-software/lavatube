@@ -3,6 +3,7 @@
 #include <string.h>
 #include <dirent.h>
 #include <unistd.h>
+#include <fcntl.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <string>
@@ -30,6 +31,10 @@ struct usb_device_info
 	bool is_android = false;
 	std::string identification_reason;
 	std::string host_port_max_speed;
+	std::string dev_node_path;
+	bool udev_rw_accessible = false;
+	bool udev_has_uaccess = false;
+	bool udev_has_android_rule = false;
 };
 
 static std::string trim_string(const std::string& str)
@@ -119,6 +124,49 @@ static std::string detect_host_port_max_speed(const std::string& dev_path)
 		}
 	}
 	return "";
+}
+
+static void check_udev_permissions(usb_device_info* info)
+{
+	char dev_node[128];
+	snprintf(dev_node, sizeof(dev_node), "/dev/bus/usb/%03d/%03d", info->busnum, info->devnum);
+	info->dev_node_path = dev_node;
+
+	// Check if current unprivileged user can open read/write without root
+	int fd = open(dev_node, O_RDWR);
+	if (fd >= 0)
+	{
+		info->udev_rw_accessible = true;
+		close(fd);
+	}
+	else
+	{
+		info->udev_rw_accessible = false;
+	}
+
+	// Check the udev database entry in /run/udev/data/c<major>:<minor>
+	std::string maj_min = read_sysfs_attr(info->sysfs_path, "dev");
+	if (!maj_min.empty())
+	{
+		std::string udev_data_path = "/run/udev/data/c" + maj_min;
+		std::ifstream udev_file(udev_data_path.c_str());
+		if (udev_file.is_open())
+		{
+			std::string line;
+			while (std::getline(udev_file, line))
+			{
+				if (line == "G:uaccess" || line == "Q:uaccess" || line.find("TAGS=:uaccess:") != std::string::npos)
+				{
+					info->udev_has_uaccess = true;
+				}
+				if (line.find("android") != std::string::npos ||
+				    line.find("adb") != std::string::npos)
+				{
+					info->udev_has_android_rule = true;
+				}
+			}
+		}
+	}
 }
 
 static bool evaluate_android_device(usb_device_info* info)
@@ -290,6 +338,7 @@ static std::vector<usb_device_info> scan_usb_devices()
 		info.host_port_max_speed = detect_host_port_max_speed(dev_path);
 
 		evaluate_android_device(&info);
+		check_udev_permissions(&info);
 
 		devices.push_back(info);
 	}
@@ -362,6 +411,32 @@ int main(int argc, char** argv)
 		printf("\n");
 		printf("  >>> USB STANDARD    : %s <<<\n", standard.c_str());
 		printf("  >>> NEGOTIATED SPEED: %s (%s) <<<\n", throughput.c_str(), tier.c_str());
+		printf("\n");
+
+		printf("  * Host udev Rules   : ");
+		if (dev.udev_rw_accessible)
+		{
+			printf("CONFIGURED (Non-root user has Read/Write access)\n");
+			printf("    - Device Node     : %s\n", dev.dev_node_path.c_str());
+			if (dev.udev_has_uaccess)
+			{
+				printf("    - Desktop Seat    : uaccess tag ACTIVE (ACL granted to current user)\n");
+			}
+			if (dev.udev_has_android_rule)
+			{
+				printf("    - Rule Match      : Android rules active (e.g. android-udev-rules)\n");
+			}
+		}
+		else
+		{
+			printf("MISSING / PERMISSION DENIED\n");
+			printf("    - Device Node     : %s (Cannot open O_RDWR)\n", dev.dev_node_path.c_str());
+			printf("  [!] Raw USB / AOA Warning:\n");
+			printf("      Non-root processes cannot access this USB device directly.\n");
+			printf("      To allow non-root access, add this udev rule to /etc/udev/rules.d/51-android.rules:\n");
+			printf("        SUBSYSTEM==\"usb\", ATTR{idVendor}==\"%s\", MODE=\"0666\", TAG+=\"uaccess\"\n", dev.id_vendor.c_str());
+			printf("      Then reload with: sudo udevadm control --reload-rules && sudo udevadm trigger\n");
+		}
 		printf("\n");
 
 		if (dev.speed_mbps < 5000.0)
