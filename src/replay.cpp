@@ -281,6 +281,24 @@ static bool cli_send_buffer_stats(int fd, const char* path, uint64_t chunks, uin
 	return lava_tcp_send_all(fd, stats);
 }
 
+static bool cli_staging_chunk_size(VkDeviceSize& size, std::string& error)
+{
+	size = 4 * 1024 * 1024;
+	const char* text = getenv("LAVATUBE_CLI_STAGING_CHUNK_SIZE");
+	if (!text || text[0] == '\0') return true;
+	char* end = nullptr;
+	errno = 0;
+	const unsigned long long value = strtoull(text, &end, 10);
+	if (errno != 0 || end == text || *end != '\0' || value == 0
+	    || value > 1024ull * 1024ull * 1024ull || value > std::numeric_limits<size_t>::max())
+	{
+		error = "invalid LAVATUBE_CLI_STAGING_CHUNK_SIZE";
+		return false;
+	}
+	size = (VkDeviceSize)value;
+	return true;
+}
+
 struct cli_buffer_readback
 {
 	VkDevice device = VK_NULL_HANDLE;
@@ -554,10 +572,11 @@ static bool cli_stream_buffer(int fd, uint32_t buffer_index)
 		return cli_send_buffer_stats(fd, "mapped", chunks, replay_ns, readback_ns, send_ns);
 	}
 
-	static constexpr VkDeviceSize maximum_staging_size = 4 * 1024 * 1024;
+	VkDeviceSize maximum_staging_size = 0;
+	std::string error;
+	if (!cli_staging_chunk_size(maximum_staging_size, error)) return cli_send_error(fd, error);
 	const VkDeviceSize staging_size = std::min(buffer_data.size, maximum_staging_size);
 	cli_buffer_readback readback;
-	std::string error;
 	if (!cli_create_buffer_readback(buffer_data, index_to_VkBuffer.at(buffer_index), staging_size, readback, error))
 	{
 		readback.destroy();

@@ -71,7 +71,8 @@ def check_save(cli, port, index, filename, size):
 	if len(lines) != 4:
 		raise RuntimeError('unexpected save statistics: %r' % result.stdout)
 	prefix = 'DONE bytes=%d path=' % size
-	if not lines[0].startswith(prefix) or ' chunks=2' not in lines[0]:
+	if (not lines[0].startswith(prefix) or ' chunks=2 ' not in lines[0]
+	    or not lines[0].endswith((' receive=splice', ' receive=fallback', ' receive=mixed'))):
 		raise RuntimeError('unexpected save summary: %r' % lines[0])
 	path = lines[0][len(prefix):].split()[0]
 	if path not in ('mapped', 'staging'):

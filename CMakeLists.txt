@@ -425,6 +425,12 @@ function(internal_test test_name test_output)
 endfunction()
 
 if(NOT ANDROID)
+add_executable(tracing_cli_save_buffer_perf tests/tracing_cli_save_buffer_perf.cpp ${VULKAN_TESTS_SRC})
+target_include_directories(tracing_cli_save_buffer_perf ${COMMON_INCLUDE})
+target_link_libraries(tracing_cli_save_buffer_perf ${COMMON_LIBRARIES} lavatube)
+target_compile_options(tracing_cli_save_buffer_perf PRIVATE ${COMMON_FLAGS})
+add_dependencies(tracing_cli_save_buffer_perf sync_generated lava-replay)
+
 internal_test(tracing1 tracing_1_2_0.api)
 internal_test(tracing_injected_queue_sync tracing_injected_queue_sync.api)
 internal_test(tracing_cli_save_buffer tracing_cli_save_buffer.api)

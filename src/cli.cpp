@@ -245,16 +245,28 @@ static bool receive_to_file_fallback(int socket_fd, int file_fd, uint64_t& remai
 	return true;
 }
 
-static bool receive_to_file(int socket_fd, int file_fd, uint64_t size)
+static bool receive_to_file(int socket_fd, int file_fd, uint64_t size, std::string& path)
 {
 	uint64_t remaining = size;
 #if !defined(__linux__)
+	path = "fallback";
 	return receive_to_file_fallback(socket_fd, file_fd, remaining);
 #else
+	const char* disable_splice = getenv("LAVATUBE_CLI_DISABLE_SPLICE");
+	if (disable_splice && disable_splice[0] != '\0' && strcmp(disable_splice, "0") != 0)
+	{
+		path = "fallback";
+		return receive_to_file_fallback(socket_fd, file_fd, remaining);
+	}
 	int pipe_fds[2] = { -1, -1 };
-	if (pipe(pipe_fds) != 0) return receive_to_file_fallback(socket_fd, file_fd, remaining);
+	if (pipe(pipe_fds) != 0)
+	{
+		path = "fallback";
+		return receive_to_file_fallback(socket_fd, file_fd, remaining);
+	}
 
 	bool splice_supported = true;
+	uint64_t spliced_to_file = 0;
 	while (remaining > 0 && splice_supported)
 	{
 		const size_t wanted = (size_t)std::min<uint64_t>(1024 * 1024, remaining);
@@ -307,6 +319,7 @@ static bool receive_to_file(int socket_fd, int file_fd, uint64_t size)
 				close(pipe_fds[1]);
 				return false;
 			}
+			spliced_to_file += (uint64_t)written;
 			pending -= written;
 		}
 		remaining -= (uint64_t)received;
@@ -314,7 +327,12 @@ static bool receive_to_file(int socket_fd, int file_fd, uint64_t size)
 
 	close(pipe_fds[0]);
 	close(pipe_fds[1]);
-	return remaining == 0 || receive_to_file_fallback(socket_fd, file_fd, remaining);
+	const bool received = remaining == 0 || receive_to_file_fallback(socket_fd, file_fd, remaining);
+	if (!received) return false;
+	if (spliced_to_file == size) path = "splice";
+	else if (spliced_to_file == 0) path = "fallback";
+	else path = "mixed";
+	return true;
 #endif
 }
 
@@ -391,7 +409,8 @@ static bool remote_save_buffer(const std::string& hostname, int port, uint32_t i
 	}
 
 	const uint64_t controller_start = gettime();
-	const bool received = receive_to_file(socket_fd, file_fd, size);
+	std::string receive_path;
+	const bool received = receive_to_file(socket_fd, file_fd, size, receive_path);
 	const uint64_t controller_ns = gettime() - controller_start;
 	const std::string stats_line = received ? lava_tcp_receive_line(socket_fd, 4096) : std::string();
 	const int close_result = close(file_fd);
@@ -411,7 +430,8 @@ static bool remote_save_buffer(const std::string& hostname, int port, uint32_t i
 	const uint64_t total_ns = gettime() - total_start;
 	buffer_transfer_stats stats;
 	const bool have_replay_stats = parse_buffer_transfer_stats(stats_line, stats);
-	printf("DONE bytes=%" PRIu64 " path=%s chunks=%" PRIu64 "\n", size, stats.path.c_str(), stats.chunks);
+	printf("DONE bytes=%" PRIu64 " path=%s chunks=%" PRIu64 " receive=%s\n",
+	       size, stats.path.c_str(), stats.chunks, receive_path.c_str());
 	if (have_replay_stats)
 	{
 		printf("replay=%.2f MiB/s time=%.6f s\n", buffer_mib_per_second(size, stats.replay_ns), buffer_seconds(stats.replay_ns));
