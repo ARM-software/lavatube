@@ -136,7 +136,7 @@ if (NOT LZ4_FOUND)
     FetchContent_Declare(
         lz4
         GIT_REPOSITORY https://github.com/lz4/lz4.git
-        GIT_TAG v1.9.4
+        GIT_TAG v1.10.0
         SOURCE_SUBDIR build/cmake
     )
     set(LZ4_BUILD_CLI OFF CACHE BOOL "Build lz4 CLI" FORCE)
