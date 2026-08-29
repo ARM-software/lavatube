@@ -554,7 +554,8 @@ static VkResult replay_test_forced_retval(lava_file_reader& reader)
 
 static bool compatible_replay_status(uint16_t call_id, VkResult stored_retval, VkResult retval)
 {
-	if (stored_retval != VK_SUCCESS || retval != VK_SUBOPTIMAL_KHR) return false;
+	if ((stored_retval != VK_SUCCESS && stored_retval != VK_SUBOPTIMAL_KHR)
+	    || (retval != VK_SUBOPTIMAL_KHR && retval != VK_ERROR_OUT_OF_DATE_KHR)) return false;
 	return call_id == VKACQUIRENEXTIMAGEKHR || call_id == VKACQUIRENEXTIMAGE2KHR || call_id == VKQUEUEPRESENTKHR;
 }
 

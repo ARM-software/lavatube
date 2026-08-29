@@ -3677,7 +3677,64 @@ static void update_virtual_present_regions(trackedswapchain_replay& data)
 		static_cast<int32_t>(data.real_image_extent.width), static_cast<int32_t>(data.real_image_extent.height), 1 };
 }
 
-static VkSwapchainKHR remake_swapchain(lava_file_reader& reader, VkQueue queue, VkSwapchainKHR old_swapchain, trackedswapchain_replay* data)
+static void adjust_virtual_swapchain_parameters(VkPhysicalDevice physical_device, const VkSurfaceCapabilitiesKHR& surface_capabilities,
+	trackedswapchain_replay& data, VkSwapchainCreateInfoKHR& s)
+{
+	if (surface_capabilities.currentExtent.width != UINT32_MAX)
+	{
+		data.real_image_extent = surface_capabilities.currentExtent;
+		if (data.real_image_extent.width != data.info.imageExtent.width || data.real_image_extent.height != data.info.imageExtent.height)
+		{
+			data.virtual_present_uses_blit = true;
+		}
+		s.imageExtent = data.real_image_extent;
+	}
+	s.preTransform = (surface_capabilities.supportedTransforms & surface_capabilities.currentTransform)
+		? surface_capabilities.currentTransform : s.preTransform;
+	s.compositeAlpha = (surface_capabilities.supportedCompositeAlpha & s.compositeAlpha)
+		? s.compositeAlpha : (surface_capabilities.supportedCompositeAlpha & VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR)
+		? VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR : (surface_capabilities.supportedCompositeAlpha & VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR)
+		? VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR : (surface_capabilities.supportedCompositeAlpha & VK_COMPOSITE_ALPHA_PRE_MULTIPLIED_BIT_KHR)
+		? VK_COMPOSITE_ALPHA_PRE_MULTIPLIED_BIT_KHR : static_cast<VkCompositeAlphaFlagBitsKHR>(surface_capabilities.supportedCompositeAlpha);
+
+	if (p__realimages > 0) s.minImageCount = p__realimages;
+	s.minImageCount = std::max(s.minImageCount, surface_capabilities.minImageCount);
+	if (surface_capabilities.maxImageCount > 0 && s.minImageCount > surface_capabilities.maxImageCount)
+	{
+		s.minImageCount = surface_capabilities.maxImageCount;
+	}
+	data.real_min_image_count = s.minImageCount;
+
+	if (p__realpresentmode != VK_PRESENT_MODE_MAX_ENUM_KHR) s.presentMode = p__realpresentmode;
+	uint32_t present_mode_count = 0;
+	VkResult result = wrap_vkGetPhysicalDeviceSurfacePresentModesKHR(physical_device, s.surface, &present_mode_count, nullptr);
+	if (result == VK_SUCCESS && present_mode_count > 0)
+	{
+		std::vector<VkPresentModeKHR> present_modes(present_mode_count);
+		wrap_vkGetPhysicalDeviceSurfacePresentModesKHR(physical_device, s.surface, &present_mode_count, present_modes.data());
+		bool present_mode_supported = false;
+		for (VkPresentModeKHR mode : present_modes)
+		{
+			if (mode == s.presentMode)
+			{
+				present_mode_supported = true;
+				break;
+			}
+		}
+		if (!present_mode_supported)
+		{
+			ILOG("Present mode %s not supported by replay surface, falling back to VK_PRESENT_MODE_FIFO_KHR",
+				VkPresentModeKHR_to_string(s.presentMode).c_str());
+			s.presentMode = VK_PRESENT_MODE_FIFO_KHR;
+		}
+	}
+	data.real_present_mode = s.presentMode;
+
+	s.imageUsage |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+	data.real_image_usage = s.imageUsage;
+}
+
+static VkSwapchainKHR remake_swapchain(lava_file_reader& reader, VkSwapchainKHR old_swapchain, trackedswapchain_replay* data)
 {
 	assert(reader.is_replay());
 	const uint32_t device_index = index_to_VkDevice.index(data->device);
@@ -3685,18 +3742,13 @@ static VkSwapchainKHR remake_swapchain(lava_file_reader& reader, VkQueue queue, 
 	VkSurfaceCapabilitiesKHR surface_capabilities = {};
 	VkResult r = wrap_vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physical_device, data->info.surface, &surface_capabilities);
 	if (r != VK_SUCCESS) ABORT("Failed to query surface capabilities while remaking swapchain: %s", errorString(r));
-	if (surface_capabilities.currentExtent.width != UINT32_MAX)
-	{
-		if (surface_capabilities.currentExtent.width != data->info.imageExtent.width
-			|| surface_capabilities.currentExtent.height != data->info.imageExtent.height)
-		{
-			ABORT("Replay surface extent changed to %ux%u, but captured swapchain extent is %ux%u; swapchain presentation scaling is not supported",
-				surface_capabilities.currentExtent.width, surface_capabilities.currentExtent.height,
-				data->info.imageExtent.width, data->info.imageExtent.height);
-		}
-		data->real_image_extent = surface_capabilities.currentExtent;
-	}
-	update_virtual_present_regions(*data);
+	DLOG("remake_swapchain: caps currentExtent=%ux%u, minExtent=%ux%u, maxExtent=%ux%u, currentTransform=%u, supportedTransforms=0x%x, supportedCompositeAlpha=0x%x, minImageCount=%u, maxImageCount=%u",
+		surface_capabilities.currentExtent.width, surface_capabilities.currentExtent.height,
+		surface_capabilities.minImageExtent.width, surface_capabilities.minImageExtent.height,
+		surface_capabilities.maxImageExtent.width, surface_capabilities.maxImageExtent.height,
+		surface_capabilities.currentTransform, surface_capabilities.supportedTransforms,
+		surface_capabilities.supportedCompositeAlpha, surface_capabilities.minImageCount, surface_capabilities.maxImageCount);
+
 	VkSwapchainCreateInfoKHR s = { VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR, nullptr };
 	s.flags = data->info.flags;
 	s.flags &= ~VK_SWAPCHAIN_CREATE_DEFERRED_MEMORY_ALLOCATION_BIT_KHR; // disable lazy swapchain image allocation
@@ -3715,6 +3767,12 @@ static VkSwapchainKHR remake_swapchain(lava_file_reader& reader, VkQueue queue, 
 	s.presentMode = data->real_present_mode;
 	s.clipped = data->info.clipped;
 	s.oldSwapchain = old_swapchain;
+
+	adjust_virtual_swapchain_parameters(physical_device, surface_capabilities, *data, s);
+	update_virtual_present_regions(*data);
+
+	DLOG("remake_swapchain: creating new swapchain with extent=%ux%u, format=%u, colorSpace=%u, preTransform=%u, compositeAlpha=%u, minImages=%u",
+		s.imageExtent.width, s.imageExtent.height, s.imageFormat, s.imageColorSpace, s.preTransform, s.compositeAlpha, s.minImageCount);
 	VkFormat mutable_format_storage = VK_FORMAT_UNDEFINED;
 	VkImageFormatListCreateInfo mutable_format_list = { VK_STRUCTURE_TYPE_IMAGE_FORMAT_LIST_CREATE_INFO, nullptr };
 	if (s.flags & VK_SWAPCHAIN_CREATE_MUTABLE_FORMAT_BIT_KHR)
@@ -3724,15 +3782,29 @@ static VkSwapchainKHR remake_swapchain(lava_file_reader& reader, VkQueue queue, 
 		mutable_format_list.pViewFormats = &mutable_format_storage;
 		s.pNext = &mutable_format_list;
 	}
-	// make new one
-	VkSwapchainKHR swapchain;
+#if VK_USE_PLATFORM_ANDROID_KHR
+	// On Android, destroy old swapchain first so ANativeWindow is cleanly reconnected to the new swapchain
+	wrap_vkDeviceWaitIdle(data->device);
+	const uint32_t old_swapchainkhr_index = index_to_VkSwapchainKHR.index(old_swapchain);
+	if (old_swapchain != VK_NULL_HANDLE)
+	{
+		wrap_vkDestroySwapchainKHR(data->device, old_swapchain, nullptr);
+	}
+	s.oldSwapchain = VK_NULL_HANDLE;
+	VkSwapchainKHR swapchain = VK_NULL_HANDLE;
 	r = wrap_vkCreateSwapchainKHR(data->device, &s, nullptr, &swapchain);
-	assert(r == VK_SUCCESS);
-	r = wrap_vkQueueWaitIdle(queue);
+	if (r != VK_SUCCESS) ABORT("remake_swapchain: vkCreateSwapchainKHR failed: %s", errorString(r));
+#else
+	// make new one
+	VkSwapchainKHR swapchain = VK_NULL_HANDLE;
+	r = wrap_vkCreateSwapchainKHR(data->device, &s, nullptr, &swapchain);
+	if (r != VK_SUCCESS) ABORT("remake_swapchain: vkCreateSwapchainKHR failed: %s", errorString(r));
+	r = wrap_vkDeviceWaitIdle(data->device);
 	assert(r == VK_SUCCESS);
 	// delete old one
 	const uint32_t old_swapchainkhr_index = index_to_VkSwapchainKHR.index(old_swapchain);
 	wrap_vkDestroySwapchainKHR(data->device, old_swapchain, nullptr);
+#endif
 	// replace old->new
 	index_to_VkSwapchainKHR.replace(old_swapchainkhr_index, swapchain);
 	// replace swapchain images
@@ -3964,11 +4036,11 @@ void replay_callback_vkQueuePresentKHR(callback_context& cb, VkQueue queue, cons
 		uint32_t* pImageIndices = reader.pool.allocate<uint32_t>(pPresentInfo->swapchainCount);
 		for (uint32_t i = 0; i < pPresentInfo->swapchainCount; i++)
 		{
-			if (pPresentInfo->pResults[i] != VK_SUCCESS)
+			if (pPresentInfo->pResults == nullptr || pPresentInfo->pResults[i] != VK_SUCCESS || result == VK_ERROR_OUT_OF_DATE_KHR)
 			{
 				const uint32_t swapchainkhr_index = index_to_VkSwapchainKHR.index(pPresentInfo->pSwapchains[i]);
 				auto& data = VkSwapchainKHR_index.at(swapchainkhr_index);
-				pSwapchains[swapchainCount] = remake_swapchain(reader, queue, pPresentInfo->pSwapchains[i], &data);
+				pSwapchains[swapchainCount] = remake_swapchain(reader, pPresentInfo->pSwapchains[i], &data);
 				pImageIndices[swapchainCount] = pPresentInfo->pImageIndices[i];
 				swapchainCount++;
 			}
@@ -3981,7 +4053,7 @@ void replay_callback_vkQueuePresentKHR(callback_context& cb, VkQueue queue, cons
 		assert(swapchainCount > 0);
 		replay_pre_vkQueuePresentKHR(reader, queue, pPresentInfo);
 		result = wrap_vkQueuePresentKHR(queue, pPresentInfo);
-		assert(result == VK_SUCCESS);
+		assert(result == VK_SUCCESS || result == VK_SUBOPTIMAL_KHR);
 	}
 	else if (!is_virtualswapchain()) assert(result == VK_SUCCESS || result == VK_SUBOPTIMAL_KHR);
 }
@@ -4099,17 +4171,21 @@ void replay_pre_vkCreateSwapchainKHR(lava_file_reader& reader, VkDevice device, 
 		data.real_image_format = pCreateInfo->imageFormat;
 		data.real_image_color_space = pCreateInfo->imageColorSpace;
 		data.virtual_present_uses_blit = selection.use_blit;
-		if (selection.use_blit)
+		if (is_virtualswapchain())
+		{
+			adjust_virtual_swapchain_parameters(physical_device, surface_capabilities, data, *pCreateInfo);
+		}
+		if (data.virtual_present_uses_blit)
 		{
 			ILOG("Presenting virtual swapchain format %s through replay surface format %s using vkCmdBlitImage",
 				VkFormat_to_string(captured_format.format).c_str(), VkFormat_to_string(selection.surface_format.format).c_str());
 		}
 	}
-	if (is_virtualswapchain())
+	else if (is_virtualswapchain())
 	{
 		if (p__realpresentmode != VK_PRESENT_MODE_MAX_ENUM_KHR) pCreateInfo->presentMode = p__realpresentmode;
 		if (p__realimages > 0) pCreateInfo->minImageCount = p__realimages;
-		pCreateInfo->imageUsage |= VK_IMAGE_USAGE_TRANSFER_DST_BIT; // make sure it has this
+		pCreateInfo->imageUsage |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
 	}
 	data.real_min_image_count = pCreateInfo->minImageCount;
 	data.real_present_mode = pCreateInfo->presentMode;
