@@ -39,3 +39,47 @@ make -C build usbconnection
   (USB 2) or ~80-140 MB/s (USB 3).
 - **Raw USB / AOA Composite Mode**: Android supports composite mode `VID 0x18D1, PID 0x2D01` (Interface 0 = Raw Bulk Stream,
   Interface 1 = ADB). This enables high throughput (>350 MB/s) while keeping ADB active for control commands.
+
+## Measuring Device Data Transfer Performance
+
+To verify real-world transfer throughput and memory readback performance from an Android device, use
+`tests/lava_cli_save_buffer_test.py` or `tests/lava_cli_save_buffer_perf.py`.
+
+### 1. Quick Automated Save Buffer Test
+
+Run the end-to-end device test against a connected Android device:
+```bash
+python3 tests/lava_cli_save_buffer_test.py \
+  --serial <SERIAL> \
+  --apk android/replay/build/outputs/apk/debug/replay-debug.apk \
+  --verbose
+```
+This launches the replay service via ADB, waits for the Vulkan checkpoint, saves both mapped and device-local
+buffers, verifies content patterns, and prints throughput metrics.
+
+### 2. Multi-Iteration Performance Benchmarks
+
+To run repeated measurements across sizes and receive modes:
+```bash
+# 1. Start replay service on Android
+python3 scripts/lava-replay-android.py run \
+  --serial <SERIAL> \
+  --service \
+  --host-port 12345 --device-port 12345 \
+  --apk android/replay/build/outputs/apk/debug/replay-debug.apk \
+  <trace_file.api>
+
+# 2. Benchmark throughput against the forwarded port
+python3 tests/lava_cli_save_buffer_perf.py \
+  --external 127.0.0.1:12345 \
+  --sizes 16M,64M \
+  --receive-modes splice,fallback \
+  --csv android-perf.csv
+```
+
+### 3. Expected Throughput Baselines (Pixel 9a / Mali-G715 on USB 3 SuperSpeed)
+
+- **GPU Staging Readback**: ~1.2 – 2.4 GB/s (Vulkan staging copy on device)
+- **Device TCP Socket Send**: ~300 – 450 MiB/s (device network socket egress)
+- **End-to-End ADB Throughput (USB 3)**: **~140 – 160 MiB/s** for buffers $\ge$ 16 MB
+- **End-to-End ADB Throughput (USB 2)**: **~35 – 40 MiB/s** (bottlenecked by 480 Mbps link)
