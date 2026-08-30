@@ -765,6 +765,10 @@ add_lavatube_test(trace_test_tracing1_tool_rewrite
 		-DINPUT_TRACE=${CMAKE_CURRENT_BINARY_DIR}/tracing_1_1.api
 		-DOUTPUT_TRACE=/tmp/tracing_1_1_tool_rewrite.api
 		-P ${PROJECT_SOURCE_DIR}/tests/lava_tool_rewrite.cmake)
+add_lavatube_test(lava_tool_space_usage
+	COMMAND $<TARGET_FILE:lava-tool> --space-usage ${PROJECT_SOURCE_DIR}/traces/sample_texture_mipmap_generation.api)
+add_lavatube_test(lava_tool_space_usage_tsv
+	COMMAND $<TARGET_FILE:lava-tool> --space-usage --tsv ${PROJECT_SOURCE_DIR}/traces/sample_texture_mipmap_generation.api)
 install(TARGETS lava-tool RUNTIME)
 
 # --- lava-gfxr-import ---

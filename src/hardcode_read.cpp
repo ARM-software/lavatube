@@ -6548,6 +6548,11 @@ static void initialize_buffer_packet(lava_file_reader& reader)
 	const uint32_t device_index = reader.read_handle(DEBUGPARAM("VkDevice"));
 	const uint32_t buffer_index = reader.read_handle(DEBUGPARAM("VkBuffer"));
 	const uint64_t data_size = reader.read_uint64_t();
+	reader.current_update_packet.valid = true;
+	reader.current_update_packet.instrtype = PACKET_BUFFER_INITIALIZATION;
+	reader.current_update_packet.device_index = device_index;
+	reader.current_update_packet.object_index = buffer_index;
+	reader.current_update_packet.size = data_size;
 	std::vector<uint8_t> data(data_size);
 	reader.read_array(data.data(), data_size);
 	if (!reader.is_replay()) return;
@@ -6615,6 +6620,11 @@ static void initialize_image_packet(lava_file_reader& reader)
 	std::vector<uint64_t> level_sizes(level_count);
 	reader.read_array(level_sizes.data(), level_count);
 	const uint64_t data_size = reader.read_uint64_t();
+	reader.current_update_packet.valid = true;
+	reader.current_update_packet.instrtype = PACKET_IMAGE_INITIALIZATION;
+	reader.current_update_packet.device_index = device_index;
+	reader.current_update_packet.object_index = image_index;
+	reader.current_update_packet.size = data_size;
 	std::vector<uint8_t> data(data_size);
 	reader.read_array(data.data(), data_size);
 	if (!reader.is_replay()) return;

@@ -356,6 +356,9 @@ struct trackedbuffer : trackedobject
 	VkBufferUsageFlags usage = VK_BUFFER_USAGE_FLAG_BITS_MAX_ENUM;
 	VkBufferUsageFlags2 usage2 = 0;
 	std::vector<uint32_t> queue_family_indices;
+	bool is_image_source = false;
+	uint64_t update_bytes = 0;
+	std::vector<uint32_t> copied_to_buffers;
 
 	void self_test() const
 	{

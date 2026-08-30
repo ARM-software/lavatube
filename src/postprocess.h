@@ -18,6 +18,9 @@ void postprocess_vkCmdUpdateBuffer(callback_context& cb, VkCommandBuffer command
 void postprocess_vkCmdCopyBuffer(callback_context& cb, VkCommandBuffer commandBuffer, VkBuffer srcBuffer, VkBuffer dstBuffer, uint32_t regionCount, const VkBufferCopy* pRegions);
 void postprocess_vkCmdCopyBuffer2(callback_context& cb, VkCommandBuffer commandBuffer, const VkCopyBufferInfo2* pCopyBufferInfo);
 void postprocess_vkCmdCopyBuffer2KHR(callback_context& cb, VkCommandBuffer commandBuffer, const VkCopyBufferInfo2* pCopyBufferInfo);
+void postprocess_vkCmdCopyBufferToImage(callback_context& cb, VkCommandBuffer commandBuffer, VkBuffer srcBuffer, VkImage dstImage, VkImageLayout dstImageLayout, uint32_t regionCount, const VkBufferImageCopy* pRegions);
+void postprocess_vkCmdCopyBufferToImage2(callback_context& cb, VkCommandBuffer commandBuffer, const VkCopyBufferToImageInfo2* pCopyBufferInfo);
+void postprocess_vkCmdCopyBufferToImage2KHR(callback_context& cb, VkCommandBuffer commandBuffer, const VkCopyBufferToImageInfo2* pCopyBufferInfo);
 void postprocess_vkCmdBindDescriptorSets(callback_context& cb, VkCommandBuffer commandBuffer, VkPipelineBindPoint pipelineBindPoint, VkPipelineLayout layout,
 	uint32_t firstSet, uint32_t descriptorSetCount, const VkDescriptorSet* pDescriptorSets, uint32_t dynamicOffsetCount, const uint32_t* pDynamicOffsets);
 void postprocess_vkCmdBindDescriptorSets2KHR(callback_context& cb, VkCommandBuffer commandBuffer, const VkBindDescriptorSetsInfoKHR* pBindDescriptorSetsInfo);

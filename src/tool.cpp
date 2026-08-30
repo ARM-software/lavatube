@@ -25,6 +25,7 @@
 #include "replay_trace_adapter.h"
 #include "markings.h"
 #include "suballocator.h"
+#include "datatable.h"
 
 // Default for this app
 #define DEFAULT_SANDBOX_LEVEL 1
@@ -34,9 +35,21 @@ extern lava::mutex sync_mutex;
 static bool simulate = false;
 static bool verbose = false;
 static bool report_unused = false;
+static bool space_usage = false;
+static bool output_tsv = false;
 static int dump_shader_index = -1;
 static bool dump_host_write_stats = false;
 static bool write_output = false;
+
+struct space_usage_stats
+{
+	std::atomic<uint64_t> direct_image_bytes{ 0 };
+	std::atomic<uint64_t> shader_bytes{ 0 };
+	std::atomic<uint64_t> call_serialization_bytes{ 0 };
+	std::atomic<uint64_t> unclassified_buffer_bytes{ 0 };
+	std::atomic<uint64_t> tensor_bytes{ 0 };
+};
+static space_usage_stats g_space_stats;
 struct simulation_summary
 {
 	uint64_t invokation_count = 0;
@@ -1267,12 +1280,132 @@ void usage()
 	printf("-df/--debugfile FILE   Output debug output to the given file\n");
 	printf("-f/--frames start end  Select a frame range\n");
 	printf("-u/--unused            Find any found unused features and extensions in the trace file; remove them from the output file\n");
+	printf("-su/--space-usage      Analyze trace file space usage\n");
+	printf("--tsv                  Output table formatted as TSV instead of markdown\n");
 	printf("-DS/--dump-shaders     Dump all shaders found to disk\n");
 	printf("-DSI/--dump-shader N   Dump shader module N to disk\n");
 	printf("-hw/--host-write-stats Dump host-side write tracking stats after replay\n");
 	printf("--skip-missing-input   Exit with code 77 if the input trace file does not exist\n");
 	printf("-s/--sandbox level     Set security sandbox level (from 1 to 3, with 3 the most strict, default %d)\n", (int)DEFAULT_SANDBOX_LEVEL);
 	exit(-1);
+}
+
+static std::string format_bytes(uint64_t bytes)
+{
+	char buf[64];
+	if (bytes >= 1024ULL * 1024 * 1024)
+	{
+		snprintf(buf, sizeof(buf), "%.2f GB", (double)bytes / (1024.0 * 1024.0 * 1024.0));
+	}
+	else if (bytes >= 1024ULL * 1024)
+	{
+		snprintf(buf, sizeof(buf), "%.2f MB", (double)bytes / (1024.0 * 1024.0));
+	}
+	else if (bytes >= 1024)
+	{
+		snprintf(buf, sizeof(buf), "%.2f KB", (double)bytes / 1024.0);
+	}
+	else
+	{
+		snprintf(buf, sizeof(buf), "%llu B", (unsigned long long)bytes);
+	}
+	return std::string(buf);
+}
+
+static void add_space_usage_row(data_table& table, uint64_t total_stream_bytes, const std::string& cat, uint64_t bytes, const std::string& desc)
+{
+	char pct_buf[32];
+	double pct = (total_stream_bytes > 0) ? ((double)bytes * 100.0 / (double)total_stream_bytes) : 0.0;
+	snprintf(pct_buf, sizeof(pct_buf), "%.2f%%", pct);
+	table.add_row({ cat, std::to_string(bytes), format_bytes(bytes), std::string(pct_buf), desc });
+}
+
+static void dump_space_usage_report(bool tsv)
+{
+	// Propagate is_image_source across buffer copies
+	bool changed = true;
+	while (changed)
+	{
+		changed = false;
+		for (auto& buf : VkBuffer_index)
+		{
+			if (buf.is_image_source) continue;
+			for (uint32_t dst_idx : buf.copied_to_buffers)
+			{
+				if (dst_idx < VkBuffer_index.size() && VkBuffer_index.at(dst_idx).is_image_source)
+				{
+					buf.is_image_source = true;
+					changed = true;
+					break;
+				}
+			}
+		}
+	}
+
+	uint64_t image_staging_bytes = 0;
+	uint64_t as_bytes = 0;
+	uint64_t other_buffer_bytes = g_space_stats.unclassified_buffer_bytes.load() + g_space_stats.tensor_bytes.load();
+
+	for (const auto& buf : VkBuffer_index)
+	{
+		if (buf.update_bytes == 0) continue;
+		const VkBufferUsageFlags2 total_usage = (buf.usage != VK_BUFFER_USAGE_FLAG_BITS_MAX_ENUM ? (VkBufferUsageFlags2)buf.usage : 0) | buf.usage2;
+		if (buf.is_image_source)
+		{
+			image_staging_bytes += buf.update_bytes;
+		}
+		else if (total_usage & (VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR |
+		                        VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR |
+		                        VK_BUFFER_USAGE_SHADER_BINDING_TABLE_BIT_KHR))
+		{
+			as_bytes += buf.update_bytes;
+		}
+		else
+		{
+			bool is_as = false;
+			for (const auto& as : VkAccelerationStructureKHR_index)
+			{
+				if (as.buffer_index == buf.index)
+				{
+					is_as = true;
+					break;
+				}
+			}
+			if (is_as)
+			{
+				as_bytes += buf.update_bytes;
+			}
+			else
+			{
+				other_buffer_bytes += buf.update_bytes;
+			}
+		}
+	}
+
+	uint64_t direct_image_bytes = g_space_stats.direct_image_bytes.load();
+	uint64_t shader_bytes = g_space_stats.shader_bytes.load();
+	uint64_t call_serialization_bytes = g_space_stats.call_serialization_bytes.load();
+	uint64_t total_stream_bytes = image_staging_bytes + direct_image_bytes + as_bytes + other_buffer_bytes + shader_bytes + call_serialization_bytes;
+
+	data_table table;
+	table.set_headers({ "Category", "Bytes", "Size", "% of Stream", "Description" });
+
+	add_space_usage_row(table, total_stream_bytes, "Image sources in buffers", image_staging_bytes, "Staging buffers copied to images");
+	add_space_usage_row(table, total_stream_bytes, "Direct image updates", direct_image_bytes, "Direct vkImage update packets");
+	add_space_usage_row(table, total_stream_bytes, "Acceleration structures", as_bytes, "AS storage, build inputs, and SBT buffers");
+	add_space_usage_row(table, total_stream_bytes, "Other buffer content", other_buffer_bytes, "Vertex, index, uniform, and storage buffers");
+	add_space_usage_row(table, total_stream_bytes, "Shaders", shader_bytes, "SPIR-V modules and shader objects");
+	add_space_usage_row(table, total_stream_bytes, "Call and packet serialization", call_serialization_bytes, "API calls, barriers, and packet framing");
+	add_space_usage_row(table, total_stream_bytes, "Total uncompressed stream", total_stream_bytes, "Total uncompressed stream bytes across all threads");
+
+	if (tsv)
+	{
+		printf("%s", table.to_tsv().c_str());
+	}
+	else
+	{
+		printf("%s", table.to_markdown().c_str());
+	}
 }
 
 static void discard_ignored_flush_rewrites(std::list<address_rewrite>& queue)
@@ -1478,7 +1611,40 @@ static void replay_thread(lava_reader* replayer, int thread_id, output_packet_ma
 					output_packet = output_writer->current.packet;
 				}
 			}
+			const uint32_t packet_size = t.packet_size();
 			switchboard_packet(instrtype, t);
+			if (space_usage)
+			{
+				if (instrtype == PACKET_IMAGE_UPDATE || instrtype == PACKET_IMAGE_UPDATE2 || instrtype == PACKET_IMAGE_INITIALIZATION)
+				{
+					g_space_stats.direct_image_bytes.fetch_add(packet_size);
+				}
+				else if (instrtype == PACKET_BUFFER_UPDATE || instrtype == PACKET_BUFFER_UPDATE2 || instrtype == PACKET_BUFFER_INITIALIZATION)
+				{
+					if (t.current_update_packet.valid && t.current_update_packet.object_index < VkBuffer_index.size())
+					{
+						lava::lock_guard lock(sync_mutex);
+						VkBuffer_index.at(t.current_update_packet.object_index).update_bytes += packet_size;
+					}
+					else
+					{
+						g_space_stats.unclassified_buffer_bytes.fetch_add(packet_size);
+					}
+				}
+				else if (instrtype == PACKET_TENSOR_UPDATE)
+				{
+					g_space_stats.tensor_bytes.fetch_add(packet_size);
+				}
+				else if ((instrtype == PACKET_VULKAN_API_CALL || instrtype == PACKET_VULKANSC_API_CALL)
+					&& (t.current.call_id == VKCREATESHADERMODULE || t.current.call_id == VKCREATESHADERSEXT))
+				{
+					g_space_stats.shader_bytes.fetch_add(packet_size);
+				}
+				else
+				{
+					g_space_stats.call_serialization_bytes.fetch_add(packet_size);
+				}
+			}
 			if (write_output && instrtype == PACKET_THREAD_BARRIER)
 			{
 				const std::vector<unsigned>& input_indices = t.barrier_packet_indices();
@@ -1583,10 +1749,22 @@ static simulation_summary collect_simulation_summary()
 
 // Main
 
-static void add_callbacks_for_first_round(bool enable_simulation, bool enable_submit_analysis)
+static void add_callbacks_for_first_round(bool enable_simulation, bool enable_submit_analysis, bool enable_space_usage)
 {
 #define CALLBACK(x) x ## _callbacks.push_back(postprocess_ ## x);
 	if (dump_shader_index != -1) CALLBACK(vkCreateShaderModule);
+	if (enable_space_usage)
+	{
+		CALLBACK(vkCmdCopyBufferToImage);
+		CALLBACK(vkCmdCopyBufferToImage2);
+		CALLBACK(vkCmdCopyBufferToImage2KHR);
+		if (!enable_simulation)
+		{
+			CALLBACK(vkCmdCopyBuffer);
+			CALLBACK(vkCmdCopyBuffer2);
+			CALLBACK(vkCmdCopyBuffer2KHR);
+		}
+	}
 	if (enable_simulation)
 	{
 		CALLBACK(vkSubmitDebugUtilsMessageEXT);
@@ -1687,6 +1865,14 @@ int main(int argc, char **argv)
 		{
 			report_unused = true;
 		}
+		else if (match(argv[i], "-su", "--space-usage", remaining))
+		{
+			space_usage = true;
+		}
+		else if (match(argv[i], nullptr, "--tsv", remaining))
+		{
+			output_tsv = true;
+		}
 		else if (match(argv[i], "-DS", "--dump-shaders", remaining))
 		{
 			dump_shader_index = -2;
@@ -1779,7 +1965,7 @@ int main(int argc, char **argv)
 		print_removed_feature_lists(device_removed_features_json);
 	}
 
-	const bool need_first_round = filename_output.empty() || simulate || dump_shader_index != -1 || dump_host_write_stats;
+	const bool need_first_round = filename_output.empty() || simulate || dump_shader_index != -1 || dump_host_write_stats || space_usage;
 
 	if (need_first_round)
 	{
@@ -1791,7 +1977,7 @@ int main(int argc, char **argv)
 		replayer.set_frames(start, end);
 		replayer.init(filename_input);
 
-		add_callbacks_for_first_round(simulate, simulate);
+		add_callbacks_for_first_round(simulate, simulate, space_usage);
 
 		for (unsigned i = 0; i < replayer.threads.size(); i++)
 		{
@@ -1817,8 +2003,15 @@ int main(int argc, char **argv)
 		sync_mutex.unlock();
 
 		if (dump_host_write_stats) dump_host_write_stats_report("pass1");
+		if (space_usage) dump_space_usage_report(output_tsv);
 		reset_for_tools();
 		replayer.finalize();
+	}
+
+	if (space_usage)
+	{
+		close_debug_destination();
+		return 0;
 	}
 
 	if (!filename_output.empty())
