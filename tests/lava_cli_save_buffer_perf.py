@@ -14,7 +14,7 @@ import time
 
 
 SIZE_PATTERN = re.compile(r'^(\d+)([KMGkmg]?)$')
-SUMMARY_PATTERN = re.compile(r'^DONE bytes=(\d+) path=([a-z]+) chunks=(\d+) receive=(splice|fallback|mixed)$')
+SUMMARY_PATTERN = re.compile(r'^DONE bytes=(\d+) path=([a-z]+) chunks=(\d+)$')
 RATE_PATTERN = re.compile(r'^(replay|readback|send|controller|total)=([0-9.]+) MiB/s time=([0-9.]+) s$')
 
 
@@ -110,7 +110,6 @@ def parse_save_output(output, expected_size):
 	values = {
 		'path': summary.group(2),
 		'chunks': int(summary.group(3)),
-		'receive_path': summary.group(4),
 	}
 	for line in lines[1:]:
 		match = RATE_PATTERN.match(line)
@@ -143,13 +142,8 @@ def create_trace(generator, trace_base, size, memory_class, environment, timeout
 	return trace
 
 def run_trial(args, host, port, buffer_index, size, memory_class, staging_chunk,
-              receive_mode, trial, output_file, rows, writer):
-	cli_env = dict(os.environ)
-	if receive_mode == 'fallback':
-		cli_env['LAVATUBE_CLI_DISABLE_SPLICE'] = '1'
-	else:
-		cli_env.pop('LAVATUBE_CLI_DISABLE_SPLICE', None)
-	result = run_cli(args.cli, host, port, ['save', 'buffer', str(buffer_index), output_file], cli_env, args.timeout)
+              trial, output_file, rows, writer):
+	result = run_cli(args.cli, host, port, ['save', 'buffer', str(buffer_index), output_file], os.environ, args.timeout)
 	if result.returncode != 0:
 		raise RuntimeError('save failed: rc=%d stdout=%r stderr=%r' %
 		                   (result.returncode, result.stdout, result.stderr))
@@ -164,8 +158,6 @@ def run_trial(args, host, port, buffer_index, size, memory_class, staging_chunk,
 			'chunks': values['chunks'],
 			'transport': args.transport_label,
 			'destination': args.destination_label,
-			'requested_receive_mode': receive_mode,
-			'receive_path': values['receive_path'],
 			'staging_chunk': staging_chunk,
 			'staging_buffers': args.staging_buffers,
 			'trial': trial,
@@ -186,11 +178,10 @@ def run_trial(args, host, port, buffer_index, size, memory_class, staging_chunk,
 
 
 def run_trials(args, host, port, buffer_index, size, memory_class, staging_chunk, output_file, rows, writer):
-	for receive_mode in args.receive_modes:
-		for trial in range(args.warmups + args.iterations):
-			measured_trial = None if trial < args.warmups else trial - args.warmups + 1
-			run_trial(args, host, port, buffer_index, size, memory_class, staging_chunk,
-			          receive_mode, measured_trial, output_file, rows, writer)
+	for trial in range(args.warmups + args.iterations):
+		measured_trial = None if trial < args.warmups else trial - args.warmups + 1
+		run_trial(args, host, port, buffer_index, size, memory_class, staging_chunk,
+		          measured_trial, output_file, rows, writer)
 
 
 def start_benchmark_service(args, trace, staging_chunk):
@@ -228,16 +219,11 @@ def stop_benchmark_service(args, service):
 		log_file.close()
 
 
-def benchmark_service(args, trace, size, memory_class, staging_chunk, output_file, rows, writer, trial_plan=None):
+def benchmark_service(args, trace, size, memory_class, staging_chunk, output_file, rows, writer):
 	service = start_benchmark_service(args, trace, staging_chunk)
 	try:
 		port = service[1]
-		if trial_plan is None:
-			run_trials(args, '127.0.0.1', port, 0, size, memory_class, staging_chunk, output_file, rows, writer)
-		else:
-			for receive_mode, trial in trial_plan:
-				run_trial(args, '127.0.0.1', port, 0, size, memory_class, staging_chunk,
-				          receive_mode, trial, output_file, rows, writer)
+		run_trials(args, '127.0.0.1', port, 0, size, memory_class, staging_chunk, output_file, rows, writer)
 	finally:
 		stop_benchmark_service(args, service)
 
@@ -255,11 +241,7 @@ def balanced_orders(values, count, randomizer):
 
 def randomized_rounds(args, count, randomizer):
 	chunk_orders = balanced_orders(args.staging_chunks, count, randomizer)
-	receive_orders = {}
-	for staging_chunk in args.staging_chunks:
-		receive_orders[staging_chunk] = balanced_orders(args.receive_modes, count, randomizer)
-	return [(chunk_orders[index], {chunk: receive_orders[chunk][index] for chunk in args.staging_chunks})
-	        for index in range(count)]
+	return [chunk_orders[index] for index in range(count)]
 
 
 def benchmark_randomized(args, trace, size, memory_class, output_file, rows, writer):
@@ -271,7 +253,7 @@ def benchmark_randomized(args, trace, size, memory_class, output_file, rows, wri
 	try:
 		for staging_chunk in args.staging_chunks:
 			services[staging_chunk] = start_benchmark_service(args, trace, staging_chunk)
-		for round_index, (staging_chunks, receive_orders) in enumerate(rounds):
+		for round_index, staging_chunks in enumerate(rounds):
 			measured_trial = None if round_index < args.warmups else round_index - args.warmups + 1
 			if measured_trial is None:
 				label = 'warmup %d/%d' % (round_index + 1, args.warmups)
@@ -281,9 +263,8 @@ def benchmark_randomized(args, trace, size, memory_class, output_file, rows, wri
 			      (label, ','.join(str(value) for value in staging_chunks)), file=sys.stderr)
 			for staging_chunk in staging_chunks:
 				port = services[staging_chunk][1]
-				for receive_mode in receive_orders[staging_chunk]:
-					run_trial(args, '127.0.0.1', port, 0, size, memory_class, staging_chunk,
-					          receive_mode, measured_trial, output_file, rows, writer)
+				run_trial(args, '127.0.0.1', port, 0, size, memory_class, staging_chunk,
+				          measured_trial, output_file, rows, writer)
 	except Exception as error:
 		failure = error
 	finally:
@@ -300,16 +281,15 @@ def benchmark_randomized(args, trace, size, memory_class, output_file, rows, wri
 def print_summary(rows):
 	groups = {}
 	for row in rows:
-		key = (row['size'], row['memory'], row['path'], row['requested_receive_mode'], row['receive_path'],
-		       row['staging_chunk'], row['staging_buffers'])
+		key = (row['size'], row['memory'], row['path'], row['staging_chunk'], row['staging_buffers'])
 		groups.setdefault(key, []).append(row)
 	for key in sorted(groups):
 		group = groups[key]
 		total_values = [row['total_mib_s'] for row in group]
 		readback_values = [row['readback_mib_s'] for row in group]
 		send_values = [row['send_mib_s'] for row in group]
-		print('size=%d memory=%s path=%s requested_receive=%s receive=%s staging=%d buffers=%d total_MiB/s median=%.2f min=%.2f max=%.2f readback=%.2f send=%.2f' %
-		      (key[0], key[1], key[2], key[3], key[4], key[5], key[6], statistics.median(total_values),
+		print('size=%d memory=%s path=%s staging=%d buffers=%d total_MiB/s median=%.2f min=%.2f max=%.2f readback=%.2f send=%.2f' %
+		      (key[0], key[1], key[2], key[3], key[4], statistics.median(total_values),
 		       min(total_values), max(total_values), statistics.median(readback_values), statistics.median(send_values)),
 		      file=sys.stderr)
 
@@ -331,8 +311,6 @@ def main():
 	                    help='comma-separated staging chunk sizes')
 	parser.add_argument('--staging-buffers', type=int, choices=(1, 2), default=2,
 	                    help='number of replay staging slots (default: 2)')
-	parser.add_argument('--receive-modes', default='splice',
-	                    help='comma-separated splice,fallback controller paths')
 	parser.add_argument('--warmups', type=int, default=1)
 	parser.add_argument('--iterations', type=int, default=7)
 	parser.add_argument('--random-seed', type=int,
@@ -347,7 +325,6 @@ def main():
 	args = parser.parse_args()
 	try:
 		args.memory = parse_choice_list(args.memory, ('cached', 'uncached', 'device'), 'memory')
-		args.receive_modes = parse_choice_list(args.receive_modes, ('splice', 'fallback'), 'receive modes')
 	except argparse.ArgumentTypeError as error:
 		parser.error(str(error))
 	if not args.sizes or not args.staging_chunks:
@@ -365,7 +342,7 @@ def main():
 
 	fieldnames = [
 		'device', 'driver', 'size', 'memory', 'path', 'chunks', 'transport', 'destination',
-		'requested_receive_mode', 'receive_path', 'staging_chunk', 'staging_buffers', 'trial', 'sequence',
+		'staging_chunk', 'staging_buffers', 'trial', 'sequence',
 		'replay_mib_s', 'readback_mib_s', 'send_mib_s', 'controller_mib_s', 'total_mib_s',
 		'replay_seconds', 'readback_seconds', 'send_seconds', 'controller_seconds', 'total_seconds',
 	]

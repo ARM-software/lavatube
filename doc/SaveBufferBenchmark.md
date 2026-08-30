@@ -39,37 +39,31 @@ The requested memory class does not guarantee a transfer path on every replay de
 For example, device-local memory can also be host-visible on unified-memory systems.
 Always group results using the reported `path` column.
 
-Two optional A/B dimensions are available:
+An optional staging-chunk sweep is available:
 
 ```sh
 python3 tests/lava_cli_save_buffer_perf.py \
   --sizes 64M --memory device \
   --staging-chunks 1M,4M,16M,64M \
-  --receive-modes splice,fallback \
   --output-dir /dev/shm --destination-label tmpfs \
-  --csv save-buffer-ab.csv
+  --csv save-buffer-staging.csv
 ```
 
 For comparisons intended to guide tuning, run shuffled rounds so system load and
 thermal drift do not affect every configuration in the same fixed order. The runner
-uses randomized balanced rotations of the staging-chunk and receive-mode orders. With
-30 rounds, every chunk occupies each position ten times and each receive mode runs
-first fifteen times per chunk. The seed makes the execution order reproducible, and
-the CSV `sequence` column records the measured order:
+uses randomized balanced rotations of the staging-chunk orders. The seed makes the
+execution order reproducible, and the CSV `sequence` column records the measured order:
 
 ```sh
 python3 tests/lava_cli_save_buffer_perf.py \
   --sizes 64M --memory device \
   --staging-chunks 1M,4M,16M \
-  --receive-modes splice,fallback \
   --warmups 1 --iterations 30 --random-seed 20260827 \
   --output-dir /dev/shm --destination-label tmpfs \
   --csv save-buffer-randomized.csv
 ```
 
 One replay service is kept paused for each staging-chunk value throughout the test.
-Both receive modes are measured against that service in randomized order, pairing
-their results while still interleaving the staging configurations across the run.
 This also keeps one replayed source buffer live per staging-chunk value, so reduce the
 sweep on memory-constrained benchmark hosts.
 
@@ -79,8 +73,6 @@ The controls used by the runner are also available directly:
   copy chunk, from 1 byte through 1 GiB. It has no effect when `path=mapped`.
 * `LAVATUBE_CLI_STAGING_BUFFER_COUNT=1|2` selects serial staging or the default
   two-slot pipeline. The runner exposes the same control as `--staging-buffers`.
-* `LAVATUBE_CLI_DISABLE_SPLICE=1` makes the Linux controller use the bounded
-  `recv()`/`write()` fallback.
 
 For a multi-chunk staging transfer, the default two-slot pipeline submits the next
 GPU copy before sending the completed slot. It never sends a slot before its fence and
@@ -90,12 +82,10 @@ submitting copies and waiting for data that was not hidden by socket sending; GP
 overlapped with a send is not counted a second time.
 
 The CSV includes requested memory class, actual replay path, size, chunk count,
-requested receive mode, actual controller receive path, staging chunk and buffer
-counts, labels, raw trial and sequence numbers, and replay/controller/total rates and
-durations. The CSV also records replay-side readback and socket-send rates and
-durations separately. The receive path is
-`splice`, `fallback`, or `mixed` when part of a transfer completed through each path.
-This distinguishes an unsupported splice request that transparently used the fallback.
+staging chunk and buffer counts, labels, raw trial and sequence numbers, and
+replay/controller/total rates and durations. The CSV also records replay-side readback
+and socket-send rates and durations separately.
+
 `--device-label`, `--driver-label`, and `--transport-label` attach experiment metadata
 without changing device or network selection.
 

@@ -73,7 +73,6 @@ python3 scripts/lava-replay-android.py run \
 python3 tests/lava_cli_save_buffer_perf.py \
   --external 127.0.0.1:12345 \
   --sizes 16M,64M \
-  --receive-modes splice,fallback \
   --csv android-perf.csv
 ```
 

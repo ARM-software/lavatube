@@ -74,8 +74,7 @@ def check_save(cli, host, port, index, filename, size, staging_chunk=None):
 	if len(lines) != 6:
 		raise RuntimeError('unexpected save statistics: %r' % result.stdout)
 	prefix = 'DONE bytes=%d path=' % size
-	if (not lines[0].startswith(prefix)
-	    or not lines[0].endswith((' receive=splice', ' receive=fallback', ' receive=mixed'))):
+	if not lines[0].startswith(prefix):
 		raise RuntimeError('unexpected save summary: %r' % lines[0])
 	path = lines[0][len(prefix):].split()[0]
 	if path not in ('mapped', 'staging'):
@@ -88,10 +87,10 @@ def check_save(cli, host, port, index, filename, size, staging_chunk=None):
 		expected_chunks = None
 
 	if expected_chunks is not None:
-		if ' chunks=%d ' % expected_chunks not in lines[0]:
+		if 'chunks=%d' % expected_chunks not in lines[0]:
 			raise RuntimeError('unexpected chunk count (expected %d): %r' % (expected_chunks, lines[0]))
 	else:
-		match = re.search(r' chunks=(\d+) ', lines[0])
+		match = re.search(r'chunks=(\d+)', lines[0])
 		if not match or int(match.group(1)) <= 0:
 			raise RuntimeError('unexpected chunk count: %r' % lines[0])
 	stats = {}
