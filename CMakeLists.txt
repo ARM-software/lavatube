@@ -769,6 +769,19 @@ add_lavatube_test(lava_tool_space_usage
 	COMMAND $<TARGET_FILE:lava-tool> --space-usage ${PROJECT_SOURCE_DIR}/traces/sample_texture_mipmap_generation.api)
 add_lavatube_test(lava_tool_space_usage_tsv
 	COMMAND $<TARGET_FILE:lava-tool> --space-usage --tsv ${PROJECT_SOURCE_DIR}/traces/sample_texture_mipmap_generation.api)
+add_lavatube_test(lava_tool_image_usage
+	COMMAND ${CMAKE_COMMAND}
+		-DLAVA_TOOL=$<TARGET_FILE:lava-tool>
+		-DINPUT_TRACE=${PROJECT_SOURCE_DIR}/traces/sample_texture_mipmap_generation.api
+		-DIMAGE_USAGE_OPTION=--image-usage
+		-P ${PROJECT_SOURCE_DIR}/tests/lava_tool_image_usage.cmake)
+add_lavatube_test(lava_tool_image_usage_short_tsv
+	COMMAND ${CMAKE_COMMAND}
+		-DLAVA_TOOL=$<TARGET_FILE:lava-tool>
+		-DINPUT_TRACE=${PROJECT_SOURCE_DIR}/traces/sample_texture_mipmap_generation.api
+		-DIMAGE_USAGE_OPTION=-iu
+		-DOUTPUT_TSV=ON
+		-P ${PROJECT_SOURCE_DIR}/tests/lava_tool_image_usage.cmake)
 install(TARGETS lava-tool RUNTIME)
 
 # --- lava-gfxr-import ---

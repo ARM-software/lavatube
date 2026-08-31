@@ -357,6 +357,7 @@ struct trackedbuffer : trackedobject
 	VkBufferUsageFlags2 usage2 = 0;
 	std::vector<uint32_t> queue_family_indices;
 	bool is_image_source = false;
+	std::vector<VkFormat> image_source_formats;
 	uint64_t update_bytes = 0;
 	std::vector<uint32_t> copied_to_buffers;
 

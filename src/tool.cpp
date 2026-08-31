@@ -26,6 +26,7 @@
 #include "markings.h"
 #include "suballocator.h"
 #include "datatable.h"
+#include "tostring.h"
 
 // Default for this app
 #define DEFAULT_SANDBOX_LEVEL 1
@@ -36,6 +37,7 @@ static bool simulate = false;
 static bool verbose = false;
 static bool report_unused = false;
 static bool space_usage = false;
+static bool image_usage = false;
 static bool output_tsv = false;
 static int dump_shader_index = -1;
 static bool dump_host_write_stats = false;
@@ -1281,6 +1283,7 @@ void usage()
 	printf("-f/--frames start end  Select a frame range\n");
 	printf("-u/--unused            Find any found unused features and extensions in the trace file; remove them from the output file\n");
 	printf("-su/--space-usage      Analyze trace file space usage\n");
+	printf("-iu/--image-usage      Break down image sources in buffers by image format\n");
 	printf("--tsv                  Output table formatted as TSV instead of markdown\n");
 	printf("-DS/--dump-shaders     Dump all shaders found to disk\n");
 	printf("-DSI/--dump-shader N   Dump shader module N to disk\n");
@@ -1320,27 +1323,111 @@ static void add_space_usage_row(data_table& table, uint64_t total_stream_bytes, 
 	table.add_row({ cat, std::to_string(bytes), format_bytes(bytes), std::string(pct_buf), desc });
 }
 
-static void dump_space_usage_report(bool tsv)
+static bool add_image_source_format(trackedbuffer& buffer, VkFormat format)
 {
-	// Propagate is_image_source across buffer copies
+	if (std::find(buffer.image_source_formats.begin(), buffer.image_source_formats.end(), format) != buffer.image_source_formats.end()) return false;
+	buffer.image_source_formats.push_back(format);
+	return true;
+}
+
+static void propagate_image_source_usage()
+{
 	bool changed = true;
 	while (changed)
 	{
 		changed = false;
 		for (auto& buf : VkBuffer_index)
 		{
-			if (buf.is_image_source) continue;
 			for (uint32_t dst_idx : buf.copied_to_buffers)
 			{
-				if (dst_idx < VkBuffer_index.size() && VkBuffer_index.at(dst_idx).is_image_source)
+				if (dst_idx >= VkBuffer_index.size()) continue;
+				const auto& destination = VkBuffer_index.at(dst_idx);
+				if (destination.is_image_source && !buf.is_image_source)
 				{
 					buf.is_image_source = true;
 					changed = true;
-					break;
+				}
+				for (VkFormat format : destination.image_source_formats)
+				{
+					if (add_image_source_format(buf, format)) changed = true;
 				}
 			}
 		}
 	}
+}
+
+static std::string image_source_format_label(const trackedbuffer& buffer)
+{
+	if (buffer.image_source_formats.empty()) return "Unknown";
+	std::vector<VkFormat> formats = buffer.image_source_formats;
+	std::sort(formats.begin(), formats.end());
+	std::string label;
+	for (VkFormat format : formats)
+	{
+		if (!label.empty()) label += " + ";
+		label += VkFormat_to_string(format);
+	}
+	return label;
+}
+
+struct image_usage_entry
+{
+	std::string format;
+	uint64_t bytes = 0;
+};
+
+static bool image_usage_entry_less(const image_usage_entry& a, const image_usage_entry& b)
+{
+	if (a.bytes != b.bytes) return a.bytes > b.bytes;
+	return a.format < b.format;
+}
+
+static void dump_image_usage_report(bool tsv)
+{
+	propagate_image_source_usage();
+	std::vector<image_usage_entry> entries;
+	uint64_t total_bytes = 0;
+	for (const auto& buffer : VkBuffer_index)
+	{
+		if (!buffer.is_image_source || buffer.update_bytes == 0) continue;
+		const std::string label = image_source_format_label(buffer);
+		auto found = entries.end();
+		for (auto it = entries.begin(); it != entries.end(); ++it)
+		{
+			if (it->format == label)
+			{
+				found = it;
+				break;
+			}
+		}
+		if (found == entries.end())
+		{
+			image_usage_entry entry;
+			entry.format = label;
+			entry.bytes = buffer.update_bytes;
+			entries.push_back(entry);
+		}
+		else
+		{
+			found->bytes += buffer.update_bytes;
+		}
+		total_bytes += buffer.update_bytes;
+	}
+	std::sort(entries.begin(), entries.end(), image_usage_entry_less);
+
+	data_table table;
+	table.set_headers({ "Format", "Bytes", "Size", "% of Image Sources", "Description" });
+	for (const auto& entry : entries)
+	{
+		add_space_usage_row(table, total_bytes, entry.format, entry.bytes, "Updated buffers copied to images using this format");
+	}
+	add_space_usage_row(table, total_bytes, "Total image sources in buffers", total_bytes, "Total serialized update bytes for image source buffers");
+	printf("%s", tsv ? table.to_tsv().c_str() : table.to_markdown().c_str());
+}
+
+static void dump_space_usage_report(bool tsv)
+{
+	propagate_image_source_usage();
 
 	uint64_t image_staging_bytes = 0;
 	uint64_t as_bytes = 0;
@@ -1613,7 +1700,7 @@ static void replay_thread(lava_reader* replayer, int thread_id, output_packet_ma
 			}
 			const uint32_t packet_size = t.packet_size();
 			switchboard_packet(instrtype, t);
-			if (space_usage)
+			if (space_usage || image_usage)
 			{
 				if (instrtype == PACKET_IMAGE_UPDATE || instrtype == PACKET_IMAGE_UPDATE2 || instrtype == PACKET_IMAGE_INITIALIZATION)
 				{
@@ -1869,6 +1956,10 @@ int main(int argc, char **argv)
 		{
 			space_usage = true;
 		}
+		else if (match(argv[i], "-iu", "--image-usage", remaining))
+		{
+			image_usage = true;
+		}
 		else if (match(argv[i], nullptr, "--tsv", remaining))
 		{
 			output_tsv = true;
@@ -1939,6 +2030,12 @@ int main(int argc, char **argv)
 		printf("SKIP: input trace file does not exist or is not readable: %s\n", filename_input.c_str());
 		return 77;
 	}
+
+	if (report_unused || dump_host_write_stats) simulate = true;
+	if (simulate && (space_usage || image_usage))
+	{
+		DIE("-su/--space-usage and -iu/--image-usage cannot be combined with simulation enabled by -S/--simulate, -u/--report-unused, or -hw/--host-write-stats");
+	}
 	if (!filename_output.empty() && (end != -1 || report_unused))
 	{
 		DIE("Output mode currently only supports no-op rewriting; frame selection and unused-feature removal are not supported");
@@ -1949,8 +2046,6 @@ int main(int argc, char **argv)
 	}
 
 	if (p__sandbox_level >= 2) sandbox_level_two();
-
-	if (report_unused || dump_host_write_stats) simulate = true;
 
 	std::list<address_rewrite> output_rewrite_queue_copy;
 
@@ -1965,7 +2060,7 @@ int main(int argc, char **argv)
 		print_removed_feature_lists(device_removed_features_json);
 	}
 
-	const bool need_first_round = filename_output.empty() || simulate || dump_shader_index != -1 || dump_host_write_stats || space_usage;
+	const bool need_first_round = filename_output.empty() || simulate || dump_shader_index != -1 || dump_host_write_stats || space_usage || image_usage;
 
 	if (need_first_round)
 	{
@@ -1977,7 +2072,7 @@ int main(int argc, char **argv)
 		replayer.set_frames(start, end);
 		replayer.init(filename_input);
 
-		add_callbacks_for_first_round(simulate, simulate, space_usage);
+		add_callbacks_for_first_round(simulate, simulate, space_usage || image_usage);
 
 		for (unsigned i = 0; i < replayer.threads.size(); i++)
 		{
@@ -2004,11 +2099,12 @@ int main(int argc, char **argv)
 
 		if (dump_host_write_stats) dump_host_write_stats_report("pass1");
 		if (space_usage) dump_space_usage_report(output_tsv);
+		if (image_usage) dump_image_usage_report(output_tsv);
 		reset_for_tools();
 		replayer.finalize();
 	}
 
-	if (space_usage)
+	if (space_usage || image_usage)
 	{
 		close_debug_destination();
 		return 0;

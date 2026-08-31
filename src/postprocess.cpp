@@ -810,34 +810,49 @@ void postprocess_vkCmdCopyBuffer2KHR(callback_context& cb, VkCommandBuffer comma
 	postprocess_vkCmdCopyBuffer2(cb, commandBuffer, pCopyBufferInfo);
 }
 
+static void postprocess_buffer_to_image_locked(VkBuffer srcBuffer, VkImage dstImage)
+{
+	const uint32_t buffer_index = index_to_VkBuffer.index(srcBuffer);
+	if (buffer_index == CONTAINER_INVALID_INDEX || buffer_index >= VkBuffer_index.size()) return;
+
+	auto& buffer_data = VkBuffer_index.at(buffer_index);
+	buffer_data.is_image_source = true;
+	const uint32_t image_index = index_to_VkImage.index(dstImage);
+	if (image_index == CONTAINER_INVALID_INDEX || image_index >= VkImage_index.size()) return;
+	const VkFormat format = VkImage_index.at(image_index).format;
+	if (std::find(buffer_data.image_source_formats.begin(), buffer_data.image_source_formats.end(), format) == buffer_data.image_source_formats.end())
+	{
+		buffer_data.image_source_formats.push_back(format);
+	}
+}
+
+static void postprocess_buffer_to_image(callback_context& cb, VkBuffer srcBuffer, VkImage dstImage)
+{
+	if (cb.reader.parent->simulate)
+	{
+		postprocess_buffer_to_image_locked(srcBuffer, dstImage);
+		return;
+	}
+
+	lava::lock_guard lock(sync_mutex);
+	postprocess_buffer_to_image_locked(srcBuffer, dstImage);
+}
+
 void postprocess_vkCmdCopyBufferToImage(callback_context& cb, VkCommandBuffer commandBuffer, VkBuffer srcBuffer, VkImage dstImage, VkImageLayout dstImageLayout, uint32_t regionCount, const VkBufferImageCopy* pRegions)
 {
-	(void)cb;
 	(void)commandBuffer;
-	(void)dstImage;
 	(void)dstImageLayout;
 	(void)regionCount;
 	(void)pRegions;
-	const uint32_t buffer_index = index_to_VkBuffer.index(srcBuffer);
-	if (buffer_index != CONTAINER_INVALID_INDEX && buffer_index < VkBuffer_index.size())
-	{
-		lava::lock_guard lock(sync_mutex);
-		VkBuffer_index.at(buffer_index).is_image_source = true;
-	}
+	postprocess_buffer_to_image(cb, srcBuffer, dstImage);
 }
 
 void postprocess_vkCmdCopyBufferToImage2(callback_context& cb, VkCommandBuffer commandBuffer, const VkCopyBufferToImageInfo2* pCopyBufferInfo)
 {
-	(void)cb;
 	(void)commandBuffer;
 	if (pCopyBufferInfo && pCopyBufferInfo->srcBuffer != VK_NULL_HANDLE)
 	{
-		const uint32_t buffer_index = index_to_VkBuffer.index(pCopyBufferInfo->srcBuffer);
-		if (buffer_index != CONTAINER_INVALID_INDEX && buffer_index < VkBuffer_index.size())
-		{
-			lava::lock_guard lock(sync_mutex);
-			VkBuffer_index.at(buffer_index).is_image_source = true;
-		}
+		postprocess_buffer_to_image(cb, pCopyBufferInfo->srcBuffer, pCopyBufferInfo->dstImage);
 	}
 }
 

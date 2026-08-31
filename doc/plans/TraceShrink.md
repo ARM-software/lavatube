@@ -11,6 +11,13 @@ trace file's file size goes into. We should at least identify images,
 acceleration structures, image sources (in buffers), other buffer content,
 and call/packet serialization. Then we know how to best shrink them.
 
+This is now done.
+
+For a more detailed view of the image-source category, use
+`lava-tool -iu/--image-usage <trace file>`. This reports the serialized buffer
+update bytes by destination `VkFormat`. If one buffer supplies images with more
+than one format, its bytes are shown once under a combined format label.
+
 ## 2. Shrink images
 
 I suspect textures are the number one consumer of space. We can identify where
