@@ -31,6 +31,8 @@
 // Default for this app
 #define DEFAULT_SANDBOX_LEVEL 1
 
+#pragma GCC diagnostic ignored "-Wunused-variable"
+
 extern lava::mutex sync_mutex;
 
 static bool simulate = false;
@@ -1163,7 +1165,6 @@ static void output_vkGetDescriptorEXT(callback_context& cb, VkDevice device, con
 static void note_descriptor_payload(callback_context& cb, VkDevice device, const VkDescriptorGetInfoEXT* pDescriptorInfo,
 	size_t dataSize, void* pDescriptor)
 {
-	(void)device;
 	if (!pDescriptorInfo || !pDescriptor || dataSize == 0) return;
 	descriptor_rewrite payload;
 	payload.type = pDescriptorInfo->type;
@@ -1723,7 +1724,7 @@ static void replay_thread(lava_reader* replayer, int thread_id, output_packet_ma
 					g_space_stats.tensor_bytes.fetch_add(packet_size);
 				}
 				else if ((instrtype == PACKET_VULKAN_API_CALL || instrtype == PACKET_VULKANSC_API_CALL)
-					&& (t.current.call_id == VKCREATESHADERMODULE || t.current.call_id == VKCREATESHADERSEXT))
+					&& (t.current.call_id == VKCREATESHADERMODULE || t.current.call_id == VKCREATESHADERSEXT || t.current_packet_contains_shader_data))
 				{
 					g_space_stats.shader_bytes.fetch_add(packet_size);
 				}
@@ -1791,9 +1792,8 @@ void postprocess_vkCreateShaderModule(callback_context& cb, VkDevice device, con
 		FILE* fp = fopen(filename.c_str(), "wb");
 		if (!fp) printf("Failed to open %s: %s\n", filename.c_str(), strerror(errno));
 		assert(fp);
-		int r = fwrite(pCreateInfo->pCode, pCreateInfo->codeSize, 1, fp);
+		const int r = fwrite(pCreateInfo->pCode, pCreateInfo->codeSize, 1, fp);
 		assert(r == 1);
-		(void)r;
 		fclose(fp);
 	}
 
@@ -1836,12 +1836,59 @@ static simulation_summary collect_simulation_summary()
 
 // Main
 
+static bool shader_stage_contains_embedded_module(const VkPipelineShaderStageCreateInfo& stage)
+{
+	return find_extension(&stage, VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO) != nullptr;
+}
+
+static void space_usage_vkCreateComputePipelines(callback_context& cb, VkDevice device, VkPipelineCache pipelineCache, uint32_t createInfoCount,
+	const VkComputePipelineCreateInfo* pCreateInfos, const VkAllocationCallbacks* pAllocator, VkPipeline* pPipelines)
+{
+	if (!pCreateInfos) return;
+	for (uint32_t i = 0; i < createInfoCount; i++)
+	{
+		if (shader_stage_contains_embedded_module(pCreateInfos[i].stage)) cb.reader.current_packet_contains_shader_data = true;
+	}
+}
+
+static void space_usage_vkCreateGraphicsPipelines(callback_context& cb, VkDevice device, VkPipelineCache pipelineCache, uint32_t createInfoCount,
+	const VkGraphicsPipelineCreateInfo* pCreateInfos, const VkAllocationCallbacks* pAllocator, VkPipeline* pPipelines)
+{
+	if (!pCreateInfos) return;
+	for (uint32_t i = 0; i < createInfoCount; i++)
+	{
+		if (!pCreateInfos[i].pStages) continue;
+		for (uint32_t stage = 0; stage < pCreateInfos[i].stageCount; stage++)
+		{
+			if (shader_stage_contains_embedded_module(pCreateInfos[i].pStages[stage])) cb.reader.current_packet_contains_shader_data = true;
+		}
+	}
+}
+
+static void space_usage_vkCreateRayTracingPipelinesKHR(callback_context& cb, VkDevice device, VkDeferredOperationKHR deferredOperation,
+	VkPipelineCache pipelineCache, uint32_t createInfoCount, const VkRayTracingPipelineCreateInfoKHR* pCreateInfos,
+	const VkAllocationCallbacks* pAllocator, VkPipeline* pPipelines)
+{
+	if (!pCreateInfos) return;
+	for (uint32_t i = 0; i < createInfoCount; i++)
+	{
+		if (!pCreateInfos[i].pStages) continue;
+		for (uint32_t stage = 0; stage < pCreateInfos[i].stageCount; stage++)
+		{
+			if (shader_stage_contains_embedded_module(pCreateInfos[i].pStages[stage])) cb.reader.current_packet_contains_shader_data = true;
+		}
+	}
+}
+
 static void add_callbacks_for_first_round(bool enable_simulation, bool enable_submit_analysis, bool enable_space_usage)
 {
 #define CALLBACK(x) x ## _callbacks.push_back(postprocess_ ## x);
 	if (dump_shader_index != -1) CALLBACK(vkCreateShaderModule);
 	if (enable_space_usage)
 	{
+		vkCreateComputePipelines_callbacks.push_back(space_usage_vkCreateComputePipelines);
+		vkCreateGraphicsPipelines_callbacks.push_back(space_usage_vkCreateGraphicsPipelines);
+		vkCreateRayTracingPipelinesKHR_callbacks.push_back(space_usage_vkCreateRayTracingPipelinesKHR);
 		CALLBACK(vkCmdCopyBufferToImage);
 		CALLBACK(vkCmdCopyBufferToImage2);
 		CALLBACK(vkCmdCopyBufferToImage2KHR);

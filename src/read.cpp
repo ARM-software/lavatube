@@ -199,6 +199,7 @@ uint8_t lava_file_reader::step()
 	}
 	current_packet_end = current_packet_start + current_packet_size;
 	current.packet_type = r;
+	current_packet_contains_shader_data = false;
 	if (r != PACKET_VULKAN_API_CALL) current.call_id = UINT16_MAX;
 	printed_current_packet = false;
 	print_packet_frame = current.frame;

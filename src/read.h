@@ -506,6 +506,7 @@ public:
 	/// Rewrite queue for the second pass, re-sorted and split by thread.
 	std::list<address_rewrite> rewrite_queue;
 	output_update_packet current_update_packet;
+	bool current_packet_contains_shader_data = false;
 
 	change_source current;
 
