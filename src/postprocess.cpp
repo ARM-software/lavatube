@@ -762,22 +762,37 @@ static void postprocess_copy_buffer(callback_context& cb, VkCommandBuffer comman
 	cmdbuffer_data.commands.push_back(cmd);
 }
 
+static void postprocess_copy_buffer_relationship_locked(VkBuffer srcBuffer, VkBuffer dstBuffer)
+{
+	const uint32_t src_index = index_to_VkBuffer.index(srcBuffer);
+	const uint32_t dst_index = index_to_VkBuffer.index(dstBuffer);
+	if (src_index == CONTAINER_INVALID_INDEX || dst_index == CONTAINER_INVALID_INDEX ||
+	    src_index >= VkBuffer_index.size() || dst_index >= VkBuffer_index.size()) return;
+
+	auto& copied = VkBuffer_index.at(src_index).copied_to_buffers;
+	if (std::find(copied.begin(), copied.end(), dst_index) == copied.end())
+	{
+		copied.push_back(dst_index);
+	}
+}
+
+static void postprocess_copy_buffer_relationship(callback_context& cb, VkBuffer srcBuffer, VkBuffer dstBuffer)
+{
+	if (cb.reader.parent->simulate)
+	{
+		postprocess_copy_buffer_relationship_locked(srcBuffer, dstBuffer);
+		return;
+	}
+
+	lava::lock_guard lock(sync_mutex);
+	postprocess_copy_buffer_relationship_locked(srcBuffer, dstBuffer);
+}
+
 void postprocess_vkCmdCopyBuffer(callback_context& cb, VkCommandBuffer commandBuffer, VkBuffer srcBuffer, VkBuffer dstBuffer, uint32_t regionCount, const VkBufferCopy* pRegions)
 {
 	postprocess_copy_buffer(cb, commandBuffer, srcBuffer, dstBuffer, regionCount);
 	if (regionCount) memcpy(VkCommandBuffer_index.at(index_to_VkCommandBuffer.index(commandBuffer)).commands.back().data.copy_buffer.pRegions, pRegions, regionCount * sizeof(VkBufferCopy));
-	const uint32_t src_index = index_to_VkBuffer.index(srcBuffer);
-	const uint32_t dst_index = index_to_VkBuffer.index(dstBuffer);
-	if (src_index != CONTAINER_INVALID_INDEX && dst_index != CONTAINER_INVALID_INDEX &&
-	    src_index < VkBuffer_index.size() && dst_index < VkBuffer_index.size())
-	{
-		lava::lock_guard lock(sync_mutex);
-		auto& copied = VkBuffer_index.at(src_index).copied_to_buffers;
-		if (std::find(copied.begin(), copied.end(), dst_index) == copied.end())
-		{
-			copied.push_back(dst_index);
-		}
-	}
+	postprocess_copy_buffer_relationship(cb, srcBuffer, dstBuffer);
 }
 
 void postprocess_vkCmdCopyBuffer2(callback_context& cb, VkCommandBuffer commandBuffer, const VkCopyBufferInfo2* pCopyBufferInfo)
@@ -791,18 +806,7 @@ void postprocess_vkCmdCopyBuffer2(callback_context& cb, VkCommandBuffer commandB
 		pRegions[i].dstOffset = pCopyBufferInfo->pRegions[i].dstOffset;
 		pRegions[i].size = pCopyBufferInfo->pRegions[i].size;
 	}
-	const uint32_t src_index = index_to_VkBuffer.index(pCopyBufferInfo->srcBuffer);
-	const uint32_t dst_index = index_to_VkBuffer.index(pCopyBufferInfo->dstBuffer);
-	if (src_index != CONTAINER_INVALID_INDEX && dst_index != CONTAINER_INVALID_INDEX &&
-	    src_index < VkBuffer_index.size() && dst_index < VkBuffer_index.size())
-	{
-		lava::lock_guard lock(sync_mutex);
-		auto& copied = VkBuffer_index.at(src_index).copied_to_buffers;
-		if (std::find(copied.begin(), copied.end(), dst_index) == copied.end())
-		{
-			copied.push_back(dst_index);
-		}
-	}
+	postprocess_copy_buffer_relationship(cb, pCopyBufferInfo->srcBuffer, pCopyBufferInfo->dstBuffer);
 }
 
 void postprocess_vkCmdCopyBuffer2KHR(callback_context& cb, VkCommandBuffer commandBuffer, const VkCopyBufferInfo2* pCopyBufferInfo)
