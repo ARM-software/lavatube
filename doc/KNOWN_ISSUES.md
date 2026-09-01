@@ -7,3 +7,7 @@ For mutable descriptors:
 - src/tool.cpp reconstructs array offsets from all historical payload observations for that buffer range. If the region was previously used with another layout/stride, matching stale offsets are sorted and truncated to descriptorCount,
   potentially excluding a currently valid later element.
 
+For lava-cli:
+
+- `lava-cli parameters THREAD` when current thread != THREAD may unlock and progress the replay. This is not intended.
+- Looks like we could have multiple ways of mixing old and new logs; we probably should have an explicit `log clear` command
