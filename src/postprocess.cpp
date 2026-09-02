@@ -242,6 +242,24 @@ static VkWriteDescriptorSet* copy_push_descriptor_writes(uint32_t descriptorWrit
 			assert(writes[i].pTexelBufferView);
 			memcpy((void*)writes[i].pTexelBufferView, pDescriptorWrites[i].pTexelBufferView, writes[i].descriptorCount * sizeof(VkBufferView));
 			break;
+		case VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR:
+			{
+				auto* src = (VkWriteDescriptorSetAccelerationStructureKHR*)find_extension(pDescriptorWrites[i].pNext,
+					VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR);
+				assert(src);
+				assert(src->accelerationStructureCount == writes[i].descriptorCount);
+				auto* dst = (VkWriteDescriptorSetAccelerationStructureKHR*)calloc(1, sizeof(VkWriteDescriptorSetAccelerationStructureKHR));
+				assert(dst);
+				*dst = *src;
+				dst->pNext = nullptr;
+				dst->pAccelerationStructures = (VkAccelerationStructureKHR*)malloc(
+					dst->accelerationStructureCount * sizeof(VkAccelerationStructureKHR));
+				assert(dst->pAccelerationStructures);
+				memcpy((void*)dst->pAccelerationStructures, src->pAccelerationStructures,
+					dst->accelerationStructureCount * sizeof(VkAccelerationStructureKHR));
+				writes[i].pNext = dst;
+			}
+			break;
 		default:
 			ABORT("Push descriptor type %s is not supported by SPIR-V simulation", VkDescriptorType_to_string(writes[i].descriptorType).c_str());
 		}

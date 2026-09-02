@@ -1378,6 +1378,25 @@ static void apply_push_descriptor_writes(command_execution_data& data, VkPipelin
 					dst.buffers[array_index] = access;
 				}
 				break;
+			case VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR:
+				{
+					auto* acceleration_structures = (const VkWriteDescriptorSetAccelerationStructureKHR*)find_extension(write.pNext,
+						VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR);
+					assert(acceleration_structures);
+					assert(acceleration_structures->accelerationStructureCount == write.descriptorCount);
+					if (dst.opaques.size() <= array_index) dst.opaques.resize(array_index + 1);
+					uint64_t opaque_value = 0;
+					if (acceleration_structures->pAccelerationStructures[j] != VK_NULL_HANDLE)
+					{
+						const uint32_t as_index = index_to_VkAccelerationStructureKHR.index(
+							acceleration_structures->pAccelerationStructures[j]);
+						auto& as_data = VkAccelerationStructureKHR_index.at(as_index);
+						opaque_value = as_data.capture_device_address;
+						if (opaque_value == 0) opaque_value = (uint64_t)acceleration_structures->pAccelerationStructures[j];
+					}
+					dst.opaques[array_index] = opaque_value;
+				}
+				break;
 			default:
 				assert(false);
 				break;
@@ -1393,6 +1412,12 @@ static void free_push_descriptor_writes(uint32_t descriptorWriteCount, VkWriteDe
 		free((void*)pDescriptorWrites[i].pImageInfo);
 		free((void*)pDescriptorWrites[i].pBufferInfo);
 		free((void*)pDescriptorWrites[i].pTexelBufferView);
+		if (pDescriptorWrites[i].descriptorType == VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR)
+		{
+			auto* acceleration_structures = (VkWriteDescriptorSetAccelerationStructureKHR*)pDescriptorWrites[i].pNext;
+			free((void*)acceleration_structures->pAccelerationStructures);
+			free(acceleration_structures);
+		}
 	}
 	free(pDescriptorWrites);
 }
