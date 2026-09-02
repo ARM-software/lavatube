@@ -26,7 +26,7 @@
 #include "markings.h"
 #include "suballocator.h"
 #include "datatable.h"
-#include "tostring.h"
+#include "tracetooltests/tostring.h"
 
 // Default for this app
 #define DEFAULT_SANDBOX_LEVEL 1

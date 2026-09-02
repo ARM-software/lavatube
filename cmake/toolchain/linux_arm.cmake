@@ -11,6 +11,5 @@ set(NO_XCB TRUE)
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -mfloat-abi=hard -Wno-maybe-uninitialized" CACHE STRING "c flags")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mfloat-abi=hard -Wno-maybe-uninitialized" CACHE STRING "c++ flags")
 set(WINDOWSYSTEM "fbdev") # for tracetooltests...
-set(NO_TRACETOOLTESTS TRUE) # but usually do not want this to make cross-compiles easier
 set(TBB_TEST FALSE)
 set(CMAKE_SYSROOT_COMPILE /usr/arm-linux-gnueabihf)

@@ -12,7 +12,7 @@
 
 #include "lavatube.h"
 #include "memory.h"
-#include "tostring.h"
+#include "tracetooltests/tostring.h"
 
 // --* Vulkan memory suballocator *--
 // Each thread has its own set of heaps.

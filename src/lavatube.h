@@ -18,7 +18,7 @@
 
 #include "generated/util_auto.h"
 #include "generated/vk_wrapper_auto.h"
-#include "generated/tostring.h"
+#include "tracetooltests/tostring.h"
 
 #include <map>
 #include <unordered_set>

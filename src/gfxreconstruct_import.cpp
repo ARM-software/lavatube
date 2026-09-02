@@ -10,7 +10,7 @@
 
 #include "decode/vulkan_api_call_reader.h"
 #include "sandbox.h"
-#include "tostring.h"
+#include "tracetooltests/tostring.h"
 #include "util.h"
 #include "write.h"
 #include "write_auto.h"

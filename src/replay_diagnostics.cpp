@@ -6,7 +6,7 @@
 
 #include "datatable.h"
 #include "read_auto.h"
-#include "tostring.h"
+#include "tracetooltests/tostring.h"
 
 struct replay_thread_snapshot
 {

@@ -30,7 +30,7 @@
 #include "datatable.h"
 #include "pipeline_executable_stats.h"
 #include "helpers_read.h"
-#include "tostring.h"
+#include "tracetooltests/tostring.h"
 #include "trace_metadata.h"
 #include "suballocator.h"
 #include "replay_diagnostics.h"

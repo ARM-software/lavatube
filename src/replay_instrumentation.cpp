@@ -8,7 +8,7 @@
 #include "jsoncpp/json/reader.h"
 #include "jsoncpp/json/writer.h"
 #include "read_auto.h"
-#include "tostring.h"
+#include "tracetooltests/tostring.h"
 
 static trackedcmdbuffer::shader_instrumentation_session* active_instrumentation_session(trackedcmdbuffer& commandbuffer_data)
 {

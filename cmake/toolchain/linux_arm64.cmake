@@ -9,6 +9,5 @@ set(CMAKE_CXX_COMPILER_WORKS TRUE)
 set(CMAKE_C_COMPILER_WORKS TRUE)
 set(NO_XCB TRUE)
 set(WINDOWSYSTEM "fbdev") # for tracetooltests...
-set(NO_TRACETOOLTESTS TRUE) # but usually do not want this to make cross-compiles easier
 set(TBB_TEST FALSE)
 set(CMAKE_SYSROOT_COMPILE /usr/aarch64-linux-gnu)
