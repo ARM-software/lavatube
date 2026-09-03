@@ -6546,7 +6546,7 @@ uint32_t update_image_packet(uint8_t instrtype, lava_file_reader& reader)
 	reader.current_update_packet.sptr = sptr;
 	if (reader.is_isolated())
 	{
-		reader.current_update_packet.changed_bytes = reader.read_patch(nullptr, size);
+		reader.current_update_packet.changed_bytes = reader.read_patch(nullptr, 0);
 		return image_index;
 	}
 	image_update(reader, device_index, image_index, size, sptr);
@@ -6572,7 +6572,7 @@ uint32_t update_buffer_packet(uint8_t instrtype, lava_file_reader& reader)
 	reader.current_update_packet.sptr = sptr;
 	if (reader.is_isolated())
 	{
-		reader.current_update_packet.changed_bytes = reader.read_patch(nullptr, size);
+		reader.current_update_packet.changed_bytes = reader.read_patch(nullptr, 0);
 		return buffer_index;
 	}
 	buffer_update(reader, device_index, buffer_index, size, sptr);
@@ -6771,7 +6771,7 @@ uint32_t update_tensor_packet(uint8_t instrtype, lava_file_reader& reader)
 	reader.current_update_packet.sptr = sptr;
 	if (reader.is_isolated())
 	{
-		reader.current_update_packet.changed_bytes = reader.read_patch(nullptr, size);
+		reader.current_update_packet.changed_bytes = reader.read_patch(nullptr, 0);
 		return tensor_index;
 	}
 	tensor_update(reader, device_index, tensor_index, size, sptr);
