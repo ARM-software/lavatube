@@ -149,7 +149,7 @@ endif()
 # --- common ---
 
 # Debug Release RelWithDebInfo MinSizeRel
-set(COMMON_FLAGS ${SANITIZER} -Werror -Wall -fvisibility=hidden ${XCB_ENABLE} -Wshadow)
+set(COMMON_FLAGS ${SANITIZER} -Werror -Wall -fvisibility=hidden ${XCB_ENABLE} -Wshadow -DCL_TARGET_OPENCL_VERSION=310)
 if(CMAKE_BUILD_TYPE STREQUAL "Debug" OR NOT CMAKE_BUILD_TYPE)
 	set(COMMON_FLAGS ${COMMON_FLAGS} -ggdb -O0 -fno-omit-frame-pointer -DDEBUG -DRELTYPE="debug")
 	message(STATUS "Debug build")
@@ -179,6 +179,7 @@ set(COMMON_INCLUDE
     PUBLIC ${SRC_ROOT}/external
     PUBLIC ${SRC_ROOT}/external/tracetooltests/include
     PUBLIC ${SRC_ROOT}/external/tracetooltests/external/Vulkan-Headers/include
+    PUBLIC ${SRC_ROOT}/external/tracetooltests/external/OpenCL-Headers
     PUBLIC ${SRC_ROOT}/external/tracetooltests/external/SPIRV-Headers/include
     PRIVATE ${SRC_ROOT}/external/jsoncpp
     PRIVATE ${SRC_ROOT}/external/zipcontainer
