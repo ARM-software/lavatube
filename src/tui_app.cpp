@@ -1,6 +1,8 @@
 #include "tui_app.h"
 
 #include <algorithm>
+#include <chrono>
+#include <cstdint>
 
 #include "ftxui/component/event.hpp"
 #include "ftxui/component/mouse.hpp"
@@ -12,6 +14,7 @@ struct transcript_entry
 {
 	std::string speaker;
 	std::string text;
+	int64_t response_time_ms = -1;
 };
 
 struct markdown_char
@@ -174,14 +177,27 @@ static void append_wrapped_text(Elements& lines, const std::string& value, int w
 	}
 }
 
-static Element speaker_label(const std::string& speaker)
+static std::string format_response_time(int64_t milliseconds)
 {
-	Element out = text(speaker + ":") | bold;
-	if (speaker == "user") return out | color(Color::GreenLight);
-	if (speaker == "assistant") return out | color(Color::BlueLight);
-	if (speaker == "tool") return out | color(Color::MagentaLight);
-	if (speaker == "error") return out | color(Color::RedLight);
-	if (speaker == "status") return out | color(Color::GrayLight);
+	if (milliseconds < 1000) return std::to_string(milliseconds) + " ms";
+
+	const int64_t deciseconds = (milliseconds + 50) / 100;
+	return std::to_string(deciseconds / 10) + "." + std::to_string(deciseconds % 10) + " s";
+}
+
+static Element speaker_label(const transcript_entry& entry)
+{
+	std::string label = entry.speaker;
+	if (entry.speaker == "assistant" && entry.response_time_ms >= 0)
+	{
+		label += " (" + format_response_time(entry.response_time_ms) + ")";
+	}
+	Element out = text(label + ":") | bold;
+	if (entry.speaker == "user") return out | color(Color::GreenLight);
+	if (entry.speaker == "assistant") return out | color(Color::BlueLight);
+	if (entry.speaker == "tool") return out | color(Color::MagentaLight);
+	if (entry.speaker == "error") return out | color(Color::RedLight);
+	if (entry.speaker == "status") return out | color(Color::GrayLight);
 	return out;
 }
 
@@ -239,7 +255,7 @@ public:
 		Elements lines;
 		for (const transcript_entry& entry : transcript)
 		{
-			lines.push_back(speaker_label(entry.speaker));
+			lines.push_back(speaker_label(entry));
 			append_wrapped_text(lines, entry.text, view_width);
 			lines.push_back(text(""));
 		}
@@ -338,9 +354,9 @@ private:
 		return out;
 	}
 
-	static void worker_main(tui_component* self, std::string prompt)
+	static void worker_main(tui_component* self, std::chrono::steady_clock::time_point request_started)
 	{
-		self->run_prompt(prompt);
+		self->run_prompt(request_started);
 	}
 
 	void submit_input()
@@ -355,9 +371,11 @@ private:
 			return;
 		}
 
+		std::chrono::steady_clock::time_point request_started;
 		{
 			std::lock_guard<std::mutex> lock(mMutex);
 			if (mBusy) return;
+			request_started = std::chrono::steady_clock::now();
 			scroll_to_bottom_locked();
 			add_transcript_locked("user", prompt);
 			if (!mReady)
@@ -376,7 +394,7 @@ private:
 
 		mInput.clear();
 		if (mWorker.joinable()) mWorker.join();
-		mWorker = std::thread(&tui_component::worker_main, this, prompt);
+		mWorker = std::thread(&tui_component::worker_main, this, request_started);
 	}
 
 	void handle_llm_command(tui_llm_command command)
@@ -412,9 +430,8 @@ private:
 		add_transcript_locked("status", mStatus);
 	}
 
-	void run_prompt(const std::string& prompt)
+	void run_prompt(std::chrono::steady_clock::time_point request_started)
 	{
-		(void)prompt;
 		std::vector<tui_chat_message> history;
 		{
 			std::lock_guard<std::mutex> lock(mMutex);
@@ -431,7 +448,9 @@ private:
 			}
 			if (result.ok)
 			{
-				add_transcript_locked("assistant", result.text);
+				const int64_t response_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+					std::chrono::steady_clock::now() - request_started).count();
+				add_transcript_locked("assistant", result.text, response_time_ms);
 				tui_chat_message message;
 				message.role = "assistant";
 				message.content = result.text;
@@ -450,11 +469,12 @@ private:
 		mScreen->Post(Event::Custom);
 	}
 
-	void add_transcript_locked(const std::string& speaker, const std::string& text)
+	void add_transcript_locked(const std::string& speaker, const std::string& text, int64_t response_time_ms = -1)
 	{
 		transcript_entry entry;
 		entry.speaker = speaker;
 		entry.text = text;
+		entry.response_time_ms = response_time_ms;
 		mTranscript.push_back(entry);
 		if (mTranscript.size() > 80)
 		{
