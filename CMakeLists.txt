@@ -1327,7 +1327,8 @@ trace_test(geometryshader traces/demo_geometryshader.api)
 trace_test(inputattachments traces/demo_inputattachments.api)
 trace_test(multithreading traces/demo_multithreading.api)
 trace_test(anki_simple traces/anki_simple.api)
-trace_test(anki_simple_raw traces/anki_simple_raw.api) # this will fail as it cannot be hot-fixed during replay and requires postprocessing
+#trace_test_with_simulator(anki_simple_raw_sim traces/anki_simple_raw.api)
+trace_test(anki_simple_raw traces/anki_simple_raw.api) # this is meant to fail as it cannot be hot-fixed during replay and requires postprocessing
 set_tests_properties(trace_file_test_anki_simple_raw_replay trace_file_test_anki_simple_raw_write_out_replay PROPERTIES WILL_FAIL TRUE)
 trace_test(wicked_imgui traces/wicked_imgui.api)
 trace_test(conservative_rasterization traces/sample_conservative_rasterization.api)
@@ -1759,7 +1760,10 @@ layer_test(compute_descriptor_heap compute_descriptor_heap)
 layer_test(compute_bda_sc_shader_object compute_bda_sc_shader_object)
 layer_test(compute_bda_sc_shader_object_multi compute_bda_sc_shader_object --multi-create-info)
 layer_test(aztec_simulator_slow_compute aztec_simulator_slow_compute)
-layer_test(as_populate_instance_buffer as_populate_instance_buffer)
+layer_test(as_populate_instance_buffer as_populate_instance_buffer -cb 1)
+layer_test(as_populate_instance_buffer_device_local as_populate_instance_buffer -dl -cb 1)
+layer_test(as_populate_instance_buffer_cb16 as_populate_instance_buffer -cb 16)
+layer_test(as_populate_instance_buffer_device_local_cb16 as_populate_instance_buffer -dl -cb 16)
 layer_test(compute_wait_completion_event compute_wait -fb --wait-type completion-event)
 add_lavatube_test(layer_test_compute_wait_completion_event_raw_screenshots
 	COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/cmake/run_if_exists.sh ${CMAKE_CURRENT_BINARY_DIR}/vulkan_compute_wait_completion_event_raw.api
@@ -1853,6 +1857,10 @@ markings_test(address_remap_test_1 ${CMAKE_BINARY_DIR}/vulkan_address_remap_test
 markings_test(demo_descriptor_buffer_minimal ${CMAKE_BINARY_DIR}/vulkan_demo_descriptor_buffer_minimal)
 markings_test(descriptor_buffer_double_copy ${CMAKE_BINARY_DIR}/vulkan_descriptor_buffer_double_copy)
 #markings_test(anki_simple ${CMAKE_CURRENT_SOURCE_DIR}/traces/anki_simple)
+markings_test(as_populate_instance_buffer ${CMAKE_BINARY_DIR}/vulkan_as_populate_instance_buffer)
+markings_test(as_populate_instance_buffer_device_local ${CMAKE_BINARY_DIR}/vulkan_as_populate_instance_buffer_device_local)
+#markings_test(as_populate_instance_buffer_cb16 ${CMAKE_BINARY_DIR}/vulkan_as_populate_instance_buffer_cb16)
+#markings_test(as_populate_instance_buffer_device_local_c16 ${CMAKE_BINARY_DIR}/vulkan_as_populate_instance_buffer_device_local_cb16)
 
 # --- Android emulator tracing test ---
 
