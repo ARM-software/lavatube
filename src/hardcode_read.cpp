@@ -5531,10 +5531,7 @@ static void mem_unmap(lava_file_reader& reader, VkDevice device, const suballoc_
 {
 	if (loc.needs_flush && reader.is_replay())
 	{
-		VkMappedMemoryRange flush = { VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE, nullptr };
-		flush.memory = loc.memory;
-		flush.offset = loc.offset;
-		flush.size = loc.size;
+		VkMappedMemoryRange flush = loc.mapped_memory_range();
 		wrap_vkFlushMappedMemoryRanges(device, 1, &flush);
 	}
 }

@@ -25,6 +25,28 @@
 
 #define SUBALLOC_ABORT(_priv, _format, ...) do { _priv->suballoc_print(p__debug_destination); fprintf(p__debug_destination, "%s:%d " _format "\n", __FILE__, __LINE__, ## __VA_ARGS__); fflush(p__debug_destination); abort(); } while(0)
 
+VkMappedMemoryRange suballoc_location::mapped_memory_range() const
+{
+	assert(allocation_size > 0);
+	assert(size > 0);
+	assert(offset <= allocation_size);
+	assert(size <= allocation_size - offset);
+
+	const VkDeviceSize atom = std::max<VkDeviceSize>(1, non_coherent_atom_size);
+	const VkDeviceSize start = offset - (offset % atom);
+	VkDeviceSize end = offset + size;
+	const VkDeviceSize remainder = end % atom;
+	if (remainder != 0 && end <= UINT64_MAX - (atom - remainder)) end += atom - remainder;
+	else if (remainder != 0) end = allocation_size;
+	if (end > allocation_size) end = allocation_size;
+
+	VkMappedMemoryRange range = { VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE, nullptr };
+	range.memory = memory;
+	range.offset = start;
+	range.size = end == allocation_size ? VK_WHOLE_SIZE : end - start;
+	return range;
+}
+
 struct suballocation
 {
 	VkObjectType type = VK_OBJECT_TYPE_UNKNOWN;
@@ -775,7 +797,8 @@ suballoc_location suballocator_private::allocate(uint16_t tid, uint32_t memoryTy
 	thread_heaps(tid).push_back(std::move(h));
 	s.offset = 0;
 	if (!alias_group) bind(*heap_ptr, s);
-	return { heap_ptr->mem, 0, s.size, true, needs_flush(memoryTypeIndex), heap_ptr->mapped };
+	return { heap_ptr->mem, 0, s.size, true, needs_flush(memoryTypeIndex), heap_ptr->mapped,
+		heap_ptr->flags, heap_ptr->total, non_coherent_atom_size };
 }
 
 suballoc_location suballocator_private::suballocate(uint16_t tid, uint32_t memoryTypeIndex, suballocation &s, VkMemoryPropertyFlags flags, lava_tiling tiling, VkMemoryAllocateFlags allocflags)
@@ -843,7 +866,8 @@ suballoc_location suballocator_private::suballocate(uint16_t tid, uint32_t memor
 				h.subs.push_front(s);
 				h.free -= s.size;
 				DLOG3("inserting object into memory at the front size=%lu, alignment=%u, free is %lu", (unsigned long)s.size, (unsigned)s.alignment, (unsigned long)h.free);
-				return { h.mem, 0, s.size, true, needs_flush(h.memoryTypeIndex), h.mapped };
+				return { h.mem, 0, s.size, true, needs_flush(h.memoryTypeIndex), h.mapped,
+					h.flags, h.total, non_coherent_atom_size };
 			}
 			// Third case: scan for unused memory segment of the correct size. We need to make sure it is aligned correctly.
 			for (auto it = h.subs.begin(); it != h.subs.end(); ++it)
@@ -860,7 +884,8 @@ suballoc_location suballocator_private::suballocate(uint16_t tid, uint32_t memor
 						s.offset = (VkDeviceSize)start;
 						bind(h, s); // call to vkBind{Buffer|Image}Memory
 						h.subs.push_back(s);
-						return { h.mem, s.offset, s.size, true, needs_flush(h.memoryTypeIndex), h.mapped ? h.mapped + s.offset : nullptr };
+						return { h.mem, s.offset, s.size, true, needs_flush(h.memoryTypeIndex), h.mapped ? h.mapped + s.offset : nullptr,
+							h.flags, h.total, non_coherent_atom_size };
 					}
 					break; // no space found
 				}
@@ -873,7 +898,8 @@ suballoc_location suballocator_private::suballocate(uint16_t tid, uint32_t memor
 					h.free -= s.size;
 					DLOG3("inserting object into memory in existing hole offset=%lu size=%lu, alignment=%u, free is %lu", (unsigned long)s.offset,
 					      (unsigned long)s.size, (unsigned)s.alignment, (unsigned long)h.free);
-					return { h.mem, s.offset, s.size, true, needs_flush(h.memoryTypeIndex), h.mapped ? h.mapped + s.offset : nullptr };
+					return { h.mem, s.offset, s.size, true, needs_flush(h.memoryTypeIndex), h.mapped ? h.mapped + s.offset : nullptr,
+						h.flags, h.total, non_coherent_atom_size };
 				}
 			}
 		}
@@ -983,7 +1009,8 @@ suballoc_location suballocator::add_trackedobject(uint16_t tid, uint64_t native,
 		DLOG2("binding aliased %s %u at replay offset %lu in captured memory group %u", pretty_print_VkObjectType(data.object_type),
 			data.index, (unsigned long)member.offset, group.capture_memory_index);
 		return { group.home->mem, member.offset, member.size, true, priv->needs_flush(group.home->memoryTypeIndex),
-			group.home->mapped ? group.home->mapped + member.offset : nullptr };
+			group.home->mapped ? group.home->mapped + member.offset : nullptr, group.home->flags, group.home->total,
+			priv->non_coherent_atom_size };
 	}
 	const VkMemoryPropertyFlags memory_flags = prune_memory_flags(data.memory_flags);
 	const uint32_t memoryTypeIndex = priv->get_device_memory_type(data.reqs.requirements.memoryTypeBits, memory_flags);
@@ -1133,7 +1160,8 @@ suballoc_location suballocator::find_image_memory(uint32_t image_index) const
 	if (!l.home) SUBALLOC_ABORT(priv, "Image %u is missing its memory!", image_index);
 	const bool needs_init = !l.initialized;
 	l.initialized = true;
-	return { l.home->mem, l.offset, l.size, needs_init, priv->needs_flush(l.home->memoryTypeIndex), l.home->mapped ? l.home->mapped + l.offset : nullptr };
+	return { l.home->mem, l.offset, l.size, needs_init, priv->needs_flush(l.home->memoryTypeIndex), l.home->mapped ? l.home->mapped + l.offset : nullptr,
+		l.home->flags, l.home->total, priv->non_coherent_atom_size };
 }
 
 suballoc_location suballocator::find_buffer_memory(uint32_t buffer_index) const
@@ -1143,7 +1171,7 @@ suballoc_location suballocator::find_buffer_memory(uint32_t buffer_index) const
 	const bool needs_init = !l.initialized;
 	l.initialized = true;
 	return { l.home->mem, l.offset, l.size, needs_init, priv->needs_flush(l.home->memoryTypeIndex), l.home->mapped ? l.home->mapped + l.offset : nullptr,
-		priv->memory_properties.memoryTypes[l.home->memoryTypeIndex].propertyFlags };
+		priv->memory_properties.memoryTypes[l.home->memoryTypeIndex].propertyFlags, l.home->total, priv->non_coherent_atom_size };
 }
 
 suballoc_location suballocator::inspect_buffer_memory(uint32_t buffer_index) const
@@ -1151,7 +1179,7 @@ suballoc_location suballocator::inspect_buffer_memory(uint32_t buffer_index) con
 	const lookup& l = priv->buffer_lookup.at(buffer_index);
 	if (!l.home) SUBALLOC_ABORT(priv, "Buffer %u is missing its memory!", buffer_index);
 	return { l.home->mem, l.offset, l.size, !l.initialized, priv->needs_flush(l.home->memoryTypeIndex), l.home->mapped ? l.home->mapped + l.offset : nullptr,
-		priv->memory_properties.memoryTypes[l.home->memoryTypeIndex].propertyFlags };
+		priv->memory_properties.memoryTypes[l.home->memoryTypeIndex].propertyFlags, l.home->total, priv->non_coherent_atom_size };
 }
 
 VkResult suballocator::invalidate_buffer_memory(uint32_t buffer_index, VkDeviceSize size) const
@@ -1183,7 +1211,8 @@ suballoc_location suballocator::find_tensor_memory(uint32_t tensor_index) const
 	if (!l.home) SUBALLOC_ABORT(priv, "Tensor %u is missing its memory!", tensor_index);
 	const bool needs_init = !l.initialized;
 	l.initialized = true;
-	return { l.home->mem, l.offset, l.size, needs_init, priv->needs_flush(l.home->memoryTypeIndex), l.home->mapped ? l.home->mapped + l.offset : nullptr };
+	return { l.home->mem, l.offset, l.size, needs_init, priv->needs_flush(l.home->memoryTypeIndex), l.home->mapped ? l.home->mapped + l.offset : nullptr,
+		l.home->flags, l.home->total, priv->non_coherent_atom_size };
 }
 
 suballoc_location suballocator::find_datagraphpipelinesession_memory(uint32_t session_index, VkDataGraphPipelineSessionBindPointARM bind_point, uint32_t object_index) const
@@ -1197,7 +1226,8 @@ suballoc_location suballocator::find_datagraphpipelinesession_memory(uint32_t se
 			session_index, (unsigned)bind_point, object_index);
 		const bool needs_init = !l.initialized;
 		l.initialized = true;
-		return { l.home->mem, l.offset, l.size, needs_init, priv->needs_flush(l.home->memoryTypeIndex), l.home->mapped ? l.home->mapped + l.offset : nullptr };
+		return { l.home->mem, l.offset, l.size, needs_init, priv->needs_flush(l.home->memoryTypeIndex), l.home->mapped ? l.home->mapped + l.offset : nullptr,
+			l.home->flags, l.home->total, priv->non_coherent_atom_size };
 	}
 	SUBALLOC_ABORT(priv, "Failed to find data graph pipeline session %u bindPoint=%u objectIndex=%u", session_index, (unsigned)bind_point, object_index);
 	return {};

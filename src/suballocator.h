@@ -18,6 +18,10 @@ struct suballoc_location
 	bool needs_flush;
 	char* mapped = nullptr;
 	VkMemoryPropertyFlags memory_flags = 0;
+	VkDeviceSize allocation_size = 0;
+	VkDeviceSize non_coherent_atom_size = 1;
+
+	VkMappedMemoryRange mapped_memory_range() const;
 };
 
 struct suballocator_private;

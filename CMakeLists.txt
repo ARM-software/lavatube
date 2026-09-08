@@ -360,6 +360,13 @@ target_compile_options(command_execution_test PRIVATE ${COMMON_FLAGS})
 add_lavatube_test(command_execution_test COMMAND command_execution_test)
 add_dependencies(command_execution_test sync_generated)
 
+add_executable(suballocator_test tests/suballocator_test.cpp)
+target_include_directories(suballocator_test ${COMMON_INCLUDE})
+target_link_libraries(suballocator_test ${COMMON_LIBRARIES} lavatube)
+target_compile_options(suballocator_test PRIVATE ${COMMON_FLAGS})
+add_lavatube_test(suballocator_test COMMAND suballocator_test)
+add_dependencies(suballocator_test sync_generated)
+
 add_executable(rangetrack tests/rangetrack.cpp)
 target_include_directories(rangetrack ${COMMON_INCLUDE})
 target_link_libraries(rangetrack ${MOST_COMMON_LIBRARIES})
