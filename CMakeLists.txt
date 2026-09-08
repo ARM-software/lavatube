@@ -1284,6 +1284,11 @@ trace_test(vkcube_xcb traces/lunarg_vkcube_xcb.api)
 trace_test(vkcube_xlib traces/lunarg_vkcube_xlib.api)
 trace_test(vkcube_wayland traces/lunarg_vkcube_wayland.api)
 trace_test(calendar traces/calendar.api)
+trace_test(dynamic_uniform_buffers traces/sample_dynamic_uniform_buffers.api)
+trace_test(gshader_to_mshader traces/sample_gshader_to_mshader.api)
+trace_test(mesh_shader_culling traces/sample_mesh_shader_culling.api)
+trace_test(synchronization_2 traces/sample_synchronization_2.api)
+trace_test(timeline_semaphore traces/sample_timeline_semaphore.api)
 
 # --- packtool ---
 
