@@ -24,29 +24,21 @@ bool same_change_source(const change_source& a, const change_source& b)
 	return a.packet == b.packet && a.frame == b.frame && a.thread == b.thread && a.call_id == b.call_id;
 }
 
-static bool same_rewrite_target(const address_rewrite& entry, VkObjectType object_type, uint32_t object_index, uint32_t stage_index)
-{
-	return entry.object_type == object_type && entry.object_index == object_index && entry.stage_index == stage_index;
-}
-
-void merge_rewrite_markings(std::list<address_rewrite>& queue, const change_source& source, const VkMarkedOffsetsARM* markings)
-{
-	merge_rewrite_markings(queue, source, markings, VK_OBJECT_TYPE_UNKNOWN, CONTAINER_NULL_VALUE, CONTAINER_NULL_VALUE);
-}
-
-void merge_rewrite_markings(std::list<address_rewrite>& queue, const change_source& source, const VkMarkedOffsetsARM* markings, VkObjectType object_type, uint32_t object_index)
-{
-	merge_rewrite_markings(queue, source, markings, object_type, object_index, CONTAINER_NULL_VALUE);
-}
-
-void merge_rewrite_markings(std::list<address_rewrite>& queue, const change_source& source, const VkMarkedOffsetsARM* markings, VkObjectType object_type, uint32_t object_index, uint32_t stage_index)
+void address_rewrite_accumulator::merge(const change_source& source, const VkMarkedOffsetsARM* markings,
+	VkObjectType object_type, uint32_t object_index, uint32_t stage_index)
 {
 	assert(markings);
-	auto it = std::find_if(queue.begin(), queue.end(), [&](const address_rewrite& entry)
-	{
-		return same_change_source(entry.source, source) && same_rewrite_target(entry, object_type, object_index, stage_index);
-	});
-	if (it == queue.end())
+	const address_rewrite_key key = {
+		.packet = source.packet,
+		.frame = source.frame,
+		.thread = source.thread,
+		.call_id = source.call_id,
+		.object_type = object_type,
+		.object_index = object_index,
+		.stage_index = stage_index,
+	};
+	const auto found = index.find(key);
+	if (found == index.end())
 	{
 		address_rewrite entry;
 		entry.markings = clone_marked_offsets(markings);
@@ -55,13 +47,38 @@ void merge_rewrite_markings(std::list<address_rewrite>& queue, const change_sour
 		entry.object_type = object_type;
 		entry.object_index = object_index;
 		entry.stage_index = stage_index;
-		queue.push_back(entry);
+		entries.push_back(entry);
+		index.emplace(key, entries.size() - 1);
 		return;
 	}
 
-	VkMarkedOffsetsARM* merged = merge_marked_offsets(it->markings, markings);
-	free_marked_offsets(it->markings);
-	it->markings = merged;
+	address_rewrite& entry = entries.at(found->second);
+	VkMarkedOffsetsARM* merged = merge_marked_offsets(entry.markings, markings);
+	free_marked_offsets(entry.markings);
+	entry.markings = merged;
+}
+
+std::vector<address_rewrite> address_rewrite_accumulator::take_entries()
+{
+	std::vector<address_rewrite> result;
+	entries.swap(result);
+	index.clear();
+	return result;
+}
+
+void merge_rewrite_markings(address_rewrite_accumulator& queue, const change_source& source, const VkMarkedOffsetsARM* markings)
+{
+	merge_rewrite_markings(queue, source, markings, VK_OBJECT_TYPE_UNKNOWN, CONTAINER_NULL_VALUE, CONTAINER_NULL_VALUE);
+}
+
+void merge_rewrite_markings(address_rewrite_accumulator& queue, const change_source& source, const VkMarkedOffsetsARM* markings, VkObjectType object_type, uint32_t object_index)
+{
+	merge_rewrite_markings(queue, source, markings, object_type, object_index, CONTAINER_NULL_VALUE);
+}
+
+void merge_rewrite_markings(address_rewrite_accumulator& queue, const change_source& source, const VkMarkedOffsetsARM* markings, VkObjectType object_type, uint32_t object_index, uint32_t stage_index)
+{
+	queue.merge(source, markings, object_type, object_index, stage_index);
 }
 
 static void load_requested_extensions(const Json::Value& root, bool& has_extensions, std::vector<std::string>& extensions)

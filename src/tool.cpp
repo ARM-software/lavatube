@@ -259,24 +259,29 @@ static std::list<address_rewrite>::iterator find_output_rewrite_entry(lava_file_
 {
 	const output_update_packet& update = reader.current_update_packet;
 	const VkObjectType object_type = update_packet_object_type(update.instrtype);
-	return std::find_if(reader.rewrite_queue.begin(), reader.rewrite_queue.end(), [&](const address_rewrite& entry)
+	for (auto it = reader.rewrite_queue.begin(); it != reader.rewrite_queue.end(); ++it)
 	{
-		if (!same_change_source(entry.source, reader.current)) return false;
-		if (entry.object_type == VK_OBJECT_TYPE_UNKNOWN) return true;
-		return entry.object_type == object_type && entry.object_index == update.object_index;
-	});
+		if (it->source.packet < reader.current.packet) continue;
+		if (it->source.packet > reader.current.packet) break;
+		if (!same_change_source(it->source, reader.current)) continue;
+		if (it->object_type == VK_OBJECT_TYPE_UNKNOWN) return it;
+		if (it->object_type == object_type && it->object_index == update.object_index) return it;
+	}
+	return reader.rewrite_queue.end();
 }
 
 static std::list<address_rewrite>::iterator find_api_rewrite_entry(lava_file_reader& reader)
 {
-	return std::find_if(reader.rewrite_queue.begin(), reader.rewrite_queue.end(), [&](const address_rewrite& entry)
+	for (auto it = reader.rewrite_queue.begin(); it != reader.rewrite_queue.end(); ++it)
 	{
-		if (!same_change_source(entry.source, reader.current)) return false;
-		return entry.object_type == VK_OBJECT_TYPE_UNKNOWN;
-	});
+		if (it->source.packet < reader.current.packet) continue;
+		if (it->source.packet > reader.current.packet) break;
+		if (same_change_source(it->source, reader.current) && it->object_type == VK_OBJECT_TYPE_UNKNOWN) return it;
+	}
+	return reader.rewrite_queue.end();
 }
 
-static bool output_rewrites_require_maintenance6(const std::list<address_rewrite>& rewrites)
+static bool output_rewrites_require_maintenance6(const std::vector<address_rewrite>& rewrites)
 {
 	for (const address_rewrite& rewrite : rewrites)
 	{
@@ -287,13 +292,16 @@ static bool output_rewrites_require_maintenance6(const std::list<address_rewrite
 
 static std::list<address_rewrite>::iterator find_stage_rewrite_entry(lava_file_reader& reader, VkObjectType object_type, uint32_t object_index, uint32_t stage_index)
 {
-	return std::find_if(reader.rewrite_queue.begin(), reader.rewrite_queue.end(), [&](const address_rewrite& entry)
+	for (auto it = reader.rewrite_queue.begin(); it != reader.rewrite_queue.end(); ++it)
 	{
-		return same_change_source(entry.source, reader.current)
-			&& entry.object_type == object_type
-			&& entry.object_index == object_index
-			&& entry.stage_index == stage_index;
-	});
+		if (it->source.packet < reader.current.packet) continue;
+		if (it->source.packet > reader.current.packet) break;
+		if (same_change_source(it->source, reader.current)
+			&& it->object_type == object_type
+			&& it->object_index == object_index
+			&& it->stage_index == stage_index) return it;
+	}
+	return reader.rewrite_queue.end();
 }
 
 class output_packet_mapping;
@@ -413,6 +421,50 @@ static uint64_t marked_offsets_extension_size(const VkMarkedOffsetsARM* sptr)
 	return bytes;
 }
 
+static int compare_marking(const VkMarkedOffsetsARM* a, uint32_t a_index, const VkMarkedOffsetsARM* b, uint32_t b_index)
+{
+	if (a->pOffsets[a_index] < b->pOffsets[b_index]) return -1;
+	if (a->pOffsets[a_index] > b->pOffsets[b_index]) return 1;
+	if (a->pMarkingTypes[a_index] < b->pMarkingTypes[b_index]) return -1;
+	if (a->pMarkingTypes[a_index] > b->pMarkingTypes[b_index]) return 1;
+	if (a->pSubTypes[a_index].reserved < b->pSubTypes[b_index].reserved) return -1;
+	if (a->pSubTypes[a_index].reserved > b->pSubTypes[b_index].reserved) return 1;
+	return 0;
+}
+
+static uint64_t count_added_markings(const VkMarkedOffsetsARM* existing, const VkMarkedOffsetsARM* desired)
+{
+	if (!desired) return 0;
+	if (!existing) return desired->count;
+	assert(existing->pOffsets || existing->count == 0);
+	assert(existing->pMarkingTypes || existing->count == 0);
+	assert(existing->pSubTypes || existing->count == 0);
+	assert(desired->pOffsets || desired->count == 0);
+	assert(desired->pMarkingTypes || desired->count == 0);
+	assert(desired->pSubTypes || desired->count == 0);
+
+	uint32_t existing_index = 0;
+	uint32_t desired_index = 0;
+	uint64_t added = 0;
+	while (desired_index < desired->count)
+	{
+		while (existing_index < existing->count && compare_marking(existing, existing_index, desired, desired_index) < 0)
+		{
+			existing_index++;
+		}
+		if (existing_index < existing->count && compare_marking(existing, existing_index, desired, desired_index) == 0)
+		{
+			existing_index++;
+		}
+		else
+		{
+			added++;
+		}
+		desired_index++;
+	}
+	return added;
+}
+
 static bool maybe_write_rewritten_update_packet(lava_file_reader& reader, lava_file_writer& writer, output_packet_mapping& packet_mapping,
 	uint64_t packet_start, uint64_t packet_end)
 {
@@ -436,6 +488,7 @@ static bool maybe_write_rewritten_update_packet(lava_file_reader& reader, lava_f
 	VkMarkedOffsetsARM* existing = clone_marked_offsets((const VkMarkedOffsetsARM*)update.sptr);
 	normalize_marked_offsets(existing);
 	const marked_offsets_difference diff = compare_marked_offsets(existing, desired);
+	const uint64_t added_markings = count_added_markings(existing, desired);
 	if (diff == marked_offsets_difference::none)
 	{
 		free_marked_offsets(existing);
@@ -447,11 +500,11 @@ static bool maybe_write_rewritten_update_packet(lava_file_reader& reader, lava_f
 
 	if (existing)
 	{
-		ILOG("Replacing VkMarkedOffsetsARM on %s (%s)", describe_change_source(reader.current).c_str(), marked_offsets_difference_string(diff));
+		DLOG("Replacing VkMarkedOffsetsARM on %s (%s)", describe_change_source(reader.current).c_str(), marked_offsets_difference_string(diff));
 	}
 	else
 	{
-		ILOG("Injecting VkMarkedOffsetsARM on %s (%u markings)", describe_change_source(reader.current).c_str(), (unsigned)desired->count);
+		DLOG("Injecting VkMarkedOffsetsARM on %s (%u markings)", describe_change_source(reader.current).c_str(), (unsigned)desired->count);
 	}
 
 	writer.begin_packet(update.instrtype);
@@ -463,6 +516,7 @@ static bool maybe_write_rewritten_update_packet(lava_file_reader& reader, lava_f
 	write_marked_offsets_extension(writer, desired);
 	writer.write_array(reader.stream_data(update.payload_start), packet_end - update.payload_start);
 	writer.end_packet();
+	reader.parent->output_markings_added.fetch_add(added_markings, std::memory_order_relaxed);
 
 	free_marked_offsets(existing);
 	free_marked_offsets(desired);
@@ -492,6 +546,7 @@ static const VkMarkedOffsetsARM* maybe_patch_push_constants_info(lava_file_reade
 	VkMarkedOffsetsARM* existing_clone = clone_marked_offsets(existing);
 	normalize_marked_offsets(existing_clone);
 	const marked_offsets_difference diff = compare_marked_offsets(existing_clone, desired);
+	const uint64_t added_markings = count_added_markings(existing_clone, desired);
 	free_marked_offsets(existing_clone);
 	if (diff == marked_offsets_difference::none)
 	{
@@ -501,13 +556,14 @@ static const VkMarkedOffsetsARM* maybe_patch_push_constants_info(lava_file_reade
 		return nullptr;
 	}
 
-	ILOG("%s VkMarkedOffsetsARM on %s (%u markings)",
+	DLOG("%s VkMarkedOffsetsARM on %s (%u markings)",
 		existing ? "Replacing" : "Injecting",
 		describe_change_source(reader.current).c_str(),
 		(unsigned)desired->count);
 	purge_extension_parent(&patched, VK_STRUCTURE_TYPE_MARKED_OFFSETS_ARM);
 	desired->pNext = patched.pNext;
 	patched.pNext = desired;
+	reader.parent->output_markings_added.fetch_add(added_markings, std::memory_order_relaxed);
 	free_marked_offsets(it->markings);
 	reader.rewrite_queue.erase(it);
 	return desired;
@@ -546,6 +602,7 @@ static const VkMarkedOffsetsARM* patch_pipeline_shader_stage_info(lava_file_read
 	VkMarkedOffsetsARM* existing_clone = clone_marked_offsets(existing);
 	normalize_marked_offsets(existing_clone);
 	const marked_offsets_difference diff = compare_marked_offsets(existing_clone, desired);
+	const uint64_t added_markings = count_added_markings(existing_clone, desired);
 	free_marked_offsets(existing_clone);
 	if (diff == marked_offsets_difference::none)
 	{
@@ -563,6 +620,7 @@ static const VkMarkedOffsetsARM* patch_pipeline_shader_stage_info(lava_file_read
 	purge_extension_parent(&patched, VK_STRUCTURE_TYPE_MARKED_OFFSETS_ARM);
 	desired->pNext = patched.pNext;
 	patched.pNext = desired;
+	reader.parent->output_markings_added.fetch_add(added_markings, std::memory_order_relaxed);
 	free_marked_offsets(it->markings);
 	reader.rewrite_queue.erase(it);
 	return desired;
@@ -816,7 +874,7 @@ static bool descriptor_output_marking_exists(uint32_t buffer_index, VkDeviceSize
 		});
 }
 
-static void cache_existing_descriptor_output_markings(const std::list<address_rewrite>& queue)
+static void cache_existing_descriptor_output_markings(const std::vector<address_rewrite>& queue)
 {
 	existing_descriptor_output_markings.clear();
 	for (const address_rewrite& rewrite : queue)
@@ -1102,7 +1160,7 @@ static void write_descriptor_buffer_update_packet(lava_file_writer& writer, uint
 	writer.end_packet();
 }
 
-static void flush_synthetic_descriptor_buffer_updates()
+static void flush_synthetic_descriptor_buffer_updates(lava_file_reader& reader)
 {
 	if (pending_descriptor_buffer_updates.empty())
 	{
@@ -1130,6 +1188,7 @@ static void flush_synthetic_descriptor_buffer_updates()
 		group.push_back(update);
 	}
 	write_descriptor_buffer_update_packet(writer, current_buffer, group);
+	reader.parent->output_markings_added.fetch_add(pending_descriptor_buffer_updates.size(), std::memory_order_relaxed);
 	pending_descriptor_buffer_updates.clear();
 	erase_used_descriptor_payloads();
 }
@@ -1319,21 +1378,21 @@ static void output_vkCmdSetDescriptorBufferOffsets2EXT(callback_context& cb, VkC
 
 static void output_vkQueueSubmit(callback_context& cb, VkQueue queue, uint32_t submitCount, const VkSubmitInfo* pSubmits, VkFence fence)
 {
-	flush_synthetic_descriptor_buffer_updates();
+	flush_synthetic_descriptor_buffer_updates(cb.reader);
 	prepare_trace_callback(cb);
 	trace_vkQueueSubmit(queue, submitCount, pSubmits, fence);
 }
 
 static void output_vkQueueSubmit2(callback_context& cb, VkQueue queue, uint32_t submitCount, const VkSubmitInfo2* pSubmits, VkFence fence)
 {
-	flush_synthetic_descriptor_buffer_updates();
+	flush_synthetic_descriptor_buffer_updates(cb.reader);
 	prepare_trace_callback(cb);
 	trace_vkQueueSubmit2(queue, submitCount, pSubmits, fence);
 }
 
 static void output_vkQueueSubmit2KHR(callback_context& cb, VkQueue queue, uint32_t submitCount, const VkSubmitInfo2* pSubmits, VkFence fence)
 {
-	flush_synthetic_descriptor_buffer_updates();
+	flush_synthetic_descriptor_buffer_updates(cb.reader);
 	prepare_trace_callback(cb);
 	trace_vkQueueSubmit2KHR(queue, submitCount, pSubmits, fence);
 }
@@ -1907,6 +1966,34 @@ static simulation_summary collect_simulation_summary()
 	return summary;
 }
 
+static double nanoseconds_to_seconds(uint64_t nanoseconds)
+{
+	return (double)nanoseconds / 1000000000.0;
+}
+
+static void print_conversion_summary(const simulation_summary& simulation_stats, uint64_t first_pass_time_ns,
+	uint64_t second_pass_time_ns, uint64_t total_time_ns, uint64_t markings_added)
+{
+	printf("Conversion summary:\n");
+	printf("  Pass 1 time:           %.6f s\n", nanoseconds_to_seconds(first_pass_time_ns));
+	printf("  Pass 2 time:           %.6f s\n", nanoseconds_to_seconds(second_pass_time_ns));
+	printf("  Total conversion time: %.6f s\n", nanoseconds_to_seconds(total_time_ns));
+	printf("  Simulator time:        %.6f s\n", nanoseconds_to_seconds(simulation_stats.total_run_time_ns));
+	printf("  Markings added:        %llu\n", (unsigned long long)markings_added);
+	printf("  Shader invocations:    %llu\n", (unsigned long long)simulation_stats.invokation_count);
+	for (uint32_t bit = 0; bit < 32; bit++)
+	{
+		if (simulation_stats.stage_invokation_count[bit] == 0) continue;
+		printf("    %s: %llu invocations\n", shader_stage_name((VkShaderStageFlagBits)(1u << bit)),
+			(unsigned long long)simulation_stats.stage_invokation_count[bit]);
+	}
+	if (simulation_stats.slowest_run_time_ns > 0)
+	{
+		printf("  Slowest shader:        shader_%u.spv (%s), %.6f s\n", simulation_stats.slowest_shader_module_index,
+			shader_stage_name(simulation_stats.slowest_stage), nanoseconds_to_seconds(simulation_stats.slowest_run_time_ns));
+	}
+}
+
 // Main
 
 static bool shader_stage_contains_embedded_module(const VkPipelineShaderStageCreateInfo& stage)
@@ -2037,6 +2124,7 @@ static void add_callbacks_for_first_round(bool enable_simulation, bool enable_su
 
 int main(int argc, char **argv)
 {
+	const uint64_t conversion_start_time_ns = gettime();
 	int start = 0;
 	int end = -1;
 	int remaining = argc - 1; // zeroth is name of program
@@ -2045,6 +2133,9 @@ int main(int argc, char **argv)
 	bool skip_missing_input = false;
 	bool simulate_requested = false;
 	simulation_summary simulation_stats;
+	uint64_t first_pass_time_ns = 0;
+	uint64_t second_pass_time_ns = 0;
+	uint64_t markings_added = 0;
 
 	if (p__sandbox_level == -1) p__sandbox_level = DEFAULT_SANDBOX_LEVEL;
 	if (p__sandbox_level >= 1) sandbox_level_one();
@@ -2167,7 +2258,7 @@ int main(int argc, char **argv)
 
 	if (p__sandbox_level >= 2) sandbox_level_two();
 
-	std::list<address_rewrite> output_rewrite_queue_copy;
+	std::vector<address_rewrite> output_rewrites;
 
 	Json::Value meta = packed_json("metadata.json", filename_input);
 	Json::Value instance_removed_json = meta["instanceRequested"]["removedExtensions"];
@@ -2184,6 +2275,7 @@ int main(int argc, char **argv)
 
 	if (need_first_round)
 	{
+		const uint64_t first_pass_start_time_ns = gettime();
 		lava_reader replayer;
 		replayer.run_type = reader_run_type::stateful; // do not actually run anything
 		replayer.validate = simulate; // abort on less serious errors, not just warn
@@ -2211,9 +2303,9 @@ int main(int argc, char **argv)
 		}
 		if (simulate) simulation_stats = collect_simulation_summary();
 
-		// Copy out the rewrite queue
+		// Move the accumulated rewrites into the second pass.
 		sync_mutex.lock(); // threads are stopped here but let's avoid warnings
-		output_rewrite_queue_copy = replayer.global_output_rewrite_queue;
+		output_rewrites = replayer.global_output_rewrite_queue.take_entries();
 		descriptor_buffer_payloads_for_output = replayer.descriptor_buffer_payloads;
 		sync_mutex.unlock();
 
@@ -2222,6 +2314,7 @@ int main(int argc, char **argv)
 		if (image_usage) dump_image_usage_report(output_tsv);
 		reset_for_tools();
 		replayer.finalize();
+		first_pass_time_ns = gettime() - first_pass_start_time_ns;
 	}
 
 	if (space_usage || image_usage)
@@ -2232,27 +2325,16 @@ int main(int argc, char **argv)
 
 	if (!filename_output.empty())
 	{
+		const uint64_t second_pass_start_time_ns = gettime();
 		lava_reader replayer;
 		replayer.pass = 1;
 		replayer.run_type = reader_run_type::stateful;
 		replayer.write_output = true;
-		replayer.output_requires_maintenance6 = output_rewrites_require_maintenance6(output_rewrite_queue_copy);
+		replayer.output_requires_maintenance6 = output_rewrites_require_maintenance6(output_rewrites);
 		replayer.validate = false;
 		replayer.simulate = false;
 		replayer.init(filename_input);
 		replayer.set_frames(start, end);
-		if (simulate)
-		{
-			for (const auto& v : output_rewrite_queue_copy)
-			{
-				replayer.file_reader(v.source.thread).rewrite_queue.push_back(v);
-			}
-			for (unsigned i = 0; i < replayer.threads.size(); i++)
-			{
-				replayer.file_reader(i).rewrite_queue.sort(rewrite_call_less);
-			}
-		}
-
 		lava_writer& writer = lava_writer::instance();
 		writer.run = false;
 		writer.set_output(filename_output);
@@ -2303,7 +2385,17 @@ int main(int argc, char **argv)
 		vkCmdUpdateBuffer_callbacks.push_back(output_vkCmdUpdateBuffer);
 		if (simulate)
 		{
-			cache_existing_descriptor_output_markings(output_rewrite_queue_copy);
+			cache_existing_descriptor_output_markings(output_rewrites);
+			for (address_rewrite& rewrite : output_rewrites)
+			{
+				replayer.file_reader(rewrite.source.thread).rewrite_queue.push_back(rewrite);
+				rewrite.markings = nullptr;
+			}
+			output_rewrites.clear();
+			for (unsigned i = 0; i < replayer.threads.size(); i++)
+			{
+				replayer.file_reader(i).rewrite_queue.sort(rewrite_call_less);
+			}
 			vkCreateGraphicsPipelines_callbacks.clear();
 			vkCreateGraphicsPipelines_callbacks.push_back(output_vkCreateGraphicsPipelines);
 			vkCreateComputePipelines_callbacks.clear();
@@ -2336,6 +2428,7 @@ int main(int argc, char **argv)
 		{
 			replayer.threads[i].join();
 		}
+		markings_added = replayer.output_markings_added.load(std::memory_order_relaxed);
 		if (simulate)
 		{
 			for (unsigned i = 0; i < replayer.threads.size(); i++)
@@ -2358,21 +2451,11 @@ int main(int argc, char **argv)
 		clear_callbacks();
 		reset_for_tools();
 		replayer.finalize();
+		second_pass_time_ns = gettime() - second_pass_start_time_ns;
 	}
 
-	printf("%llu shader invokations executed in %.2fms\n", (unsigned long long)simulation_stats.invokation_count,
-		ns_to_ms(simulation_stats.total_run_time_ns));
-	for (uint32_t bit = 0; bit < 32; bit++)
-	{
-		if (simulation_stats.stage_invokation_count[bit] == 0) continue;
-		printf("  %s: %llu invokations\n", shader_stage_name((VkShaderStageFlagBits)(1u << bit)),
-			(unsigned long long)simulation_stats.stage_invokation_count[bit]);
-	}
-	if (simulation_stats.slowest_run_time_ns > 0)
-	{
-		printf("Slowest shader: shader_%u.spv (%s), %.2fms\n", simulation_stats.slowest_shader_module_index,
-			shader_stage_name(simulation_stats.slowest_stage), ns_to_ms(simulation_stats.slowest_run_time_ns));
-	}
+	const uint64_t total_conversion_time_ns = gettime() - conversion_start_time_ns;
+	print_conversion_summary(simulation_stats, first_pass_time_ns, second_pass_time_ns, total_conversion_time_ns, markings_added);
 
 	close_debug_destination();
 	return 0;

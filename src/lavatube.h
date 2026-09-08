@@ -84,6 +84,71 @@ struct address_rewrite
 	uint32_t stage_index = CONTAINER_NULL_VALUE;
 };
 
+struct address_rewrite_key
+{
+	uint32_t packet = UINT32_MAX;
+	uint32_t frame = UINT32_MAX;
+	uint8_t thread = UINT8_MAX;
+	uint16_t call_id = UINT16_MAX;
+	VkObjectType object_type = VK_OBJECT_TYPE_UNKNOWN;
+	uint32_t object_index = CONTAINER_NULL_VALUE;
+	uint32_t stage_index = CONTAINER_NULL_VALUE;
+
+	bool operator==(const address_rewrite_key& other) const
+	{
+		return packet == other.packet && frame == other.frame && thread == other.thread && call_id == other.call_id
+			&& object_type == other.object_type && object_index == other.object_index && stage_index == other.stage_index;
+	}
+};
+
+struct address_rewrite_key_hash
+{
+	static uint64_t combine(uint64_t seed, uint64_t value)
+	{
+		return seed ^ (value + 0x9e3779b97f4a7c15ULL + (seed << 6) + (seed >> 2));
+	}
+
+	size_t operator()(const address_rewrite_key& key) const
+	{
+		uint64_t value = key.packet;
+		value = combine(value, key.frame);
+		value = combine(value, key.thread);
+		value = combine(value, key.call_id);
+		value = combine(value, static_cast<uint32_t>(key.object_type));
+		value = combine(value, key.object_index);
+		value = combine(value, key.stage_index);
+		return static_cast<size_t>(value);
+	}
+};
+
+class address_rewrite_accumulator
+{
+public:
+	using iterator = std::vector<address_rewrite>::iterator;
+	using const_iterator = std::vector<address_rewrite>::const_iterator;
+
+	address_rewrite_accumulator() = default;
+	address_rewrite_accumulator(const address_rewrite_accumulator&) = delete;
+	address_rewrite_accumulator& operator=(const address_rewrite_accumulator&) = delete;
+
+	void merge(const change_source& source, const VkMarkedOffsetsARM* markings, VkObjectType object_type,
+		uint32_t object_index, uint32_t stage_index);
+	std::vector<address_rewrite> take_entries();
+
+	bool empty() const { return entries.empty(); }
+	size_t size() const { return entries.size(); }
+	address_rewrite& front() { return entries.front(); }
+	const address_rewrite& front() const { return entries.front(); }
+	iterator begin() { return entries.begin(); }
+	iterator end() { return entries.end(); }
+	const_iterator begin() const { return entries.begin(); }
+	const_iterator end() const { return entries.end(); }
+
+private:
+	std::vector<address_rewrite> entries;
+	ankerl::unordered_dense::map<address_rewrite_key, size_t, address_rewrite_key_hash> index;
+};
+
 struct descriptor_rewrite
 {
 	VkDescriptorType type = VK_DESCRIPTOR_TYPE_MAX_ENUM;

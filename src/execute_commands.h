@@ -22,7 +22,7 @@ struct command_execution_data
 	std::unordered_map<VkPipelineBindPoint, simulator_descriptor_sets> descriptor_sets; // bind point -> set -> binding -> logical binding contents
 	std::vector<std::byte> push_constants; // current state of the push constants
 	host_write_regions push_constant_sources;
-	std::list<address_rewrite>& global_output_rewrite_queue;
+	address_rewrite_accumulator& global_output_rewrite_queue;
 	std::deque<descriptor_rewrite>& pending_descriptor_rewrites;
 	std::vector<descriptor_buffer_payload>& descriptor_buffer_payloads;
 	struct

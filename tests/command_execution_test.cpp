@@ -167,7 +167,7 @@ static void execute_null()
 	cmdbuffer_data.index = 0;
 
 	address_remapper<trackedobject> device_address_remapping;
-	std::list<address_rewrite> global_output_rewrite_queue;
+	address_rewrite_accumulator global_output_rewrite_queue;
 	std::deque<descriptor_rewrite> pending_descriptor_rewrites;
 	std::vector<descriptor_buffer_payload> descriptor_buffer_payloads;
 
@@ -275,7 +275,7 @@ static void execute_copy_buffer()
 	device_data.allocator = &allocator;
 
 	address_remapper<trackedobject> device_address_remapping;
-	std::list<address_rewrite> global_output_rewrite_queue;
+	address_rewrite_accumulator global_output_rewrite_queue;
 	std::deque<descriptor_rewrite> pending_descriptor_rewrites;
 	std::vector<descriptor_buffer_payload> descriptor_buffer_payloads;
 
@@ -392,7 +392,7 @@ struct compute_shader_fixture
 	trackeddevice device_data;
 	trackedcmdbuffer cmdbuffer_data;
 	address_remapper<trackedobject> device_address_remapping;
-	std::list<address_rewrite> global_output_rewrite_queue;
+	address_rewrite_accumulator global_output_rewrite_queue;
 	std::deque<descriptor_rewrite> pending_descriptor_rewrites;
 	std::vector<descriptor_buffer_payload> descriptor_buffer_payloads;
 	command_execution_data data;
@@ -966,7 +966,7 @@ static void execute_compute_shader_copy_provenance()
 	device_data.allocator = &allocator;
 
 	address_remapper<trackedobject> device_address_remapping;
-	std::list<address_rewrite> global_output_rewrite_queue;
+	address_rewrite_accumulator global_output_rewrite_queue;
 	std::deque<descriptor_rewrite> pending_descriptor_rewrites;
 	std::vector<descriptor_buffer_payload> descriptor_buffer_payloads;
 
@@ -1053,7 +1053,7 @@ static void execute_compute_shader_bda_unbound_input()
 
 	address_remapper<trackedobject> device_address_remapping;
 	device_address_remapping.add(capture_address, &VkBuffer_index[0]);
-	std::list<address_rewrite> global_output_rewrite_queue;
+	address_rewrite_accumulator global_output_rewrite_queue;
 	std::deque<descriptor_rewrite> pending_descriptor_rewrites;
 	std::vector<descriptor_buffer_payload> descriptor_buffer_payloads;
 
@@ -1168,7 +1168,7 @@ static void execute_compute_shader_bda_composite_array()
 		const VkDeviceAddress address = first_target_address + (VkDeviceAddress)i * 0x10000;
 		device_address_remapping.add(address, &VkBuffer_index[first_target_index + i]);
 	}
-	std::list<address_rewrite> global_output_rewrite_queue;
+	address_rewrite_accumulator global_output_rewrite_queue;
 	std::deque<descriptor_rewrite> pending_descriptor_rewrites;
 	std::vector<descriptor_buffer_payload> descriptor_buffer_payloads;
 	command_execution_data data {
@@ -1280,7 +1280,7 @@ static void execute_compute_shader_bda_copied_address_chain()
 
 	address_remapper<trackedobject> device_address_remapping;
 	device_address_remapping.add(target_address, &VkBuffer_index[3]);
-	std::list<address_rewrite> global_output_rewrite_queue;
+	address_rewrite_accumulator global_output_rewrite_queue;
 	std::deque<descriptor_rewrite> pending_descriptor_rewrites;
 	std::vector<descriptor_buffer_payload> descriptor_buffer_payloads;
 
@@ -1397,7 +1397,7 @@ static void execute_compute_shader_bda_two_lane_output_provenance()
 
 	address_remapper<trackedobject> device_address_remapping;
 	device_address_remapping.add(output_address, &VkBuffer_index[2]);
-	std::list<address_rewrite> global_output_rewrite_queue;
+	address_rewrite_accumulator global_output_rewrite_queue;
 	std::deque<descriptor_rewrite> pending_descriptor_rewrites;
 	std::vector<descriptor_buffer_payload> descriptor_buffer_payloads;
 
@@ -1519,7 +1519,7 @@ static void execute_compute_shader_bda_interleave_copied_address_provenance()
 
 	address_remapper<trackedobject> device_address_remapping;
 	device_address_remapping.add(output_address, &VkBuffer_index[3]);
-	std::list<address_rewrite> global_output_rewrite_queue;
+	address_rewrite_accumulator global_output_rewrite_queue;
 	std::deque<descriptor_rewrite> pending_descriptor_rewrites;
 	std::vector<descriptor_buffer_payload> descriptor_buffer_payloads;
 
