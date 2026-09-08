@@ -401,7 +401,7 @@ static void merge_simulator_output_candidates(const shader_stage& stage, const c
 {
 	for (const auto& candidates : results.output_candidates)
 	{
-		ILOG("Found set of %u candidates for %p", (unsigned)candidates.second.size(), candidates.first);
+		DLOG("Found set of %u candidates for %p", (unsigned)candidates.second.size(), candidates.first);
 		const auto range_it = range_lookup.find(candidates.first);
 		for (const auto& candidate : candidates.second)
 		{
@@ -410,19 +410,19 @@ static void merge_simulator_output_candidates(const shader_stage& stage, const c
 				const simulator_buffer_range& range = range_it->second;
 				if (range.set != UINT32_MAX && range.binding != UINT32_MAX)
 				{
-					ILOG("SPIRV candidate %s in %s set=%u binding=%u base=%p offset=%lu address=0x%llx", candidate.verified ? "verified" : "UNVERIFIED", stage.name.c_str(),
+					DLOG("SPIRV candidate %s in %s set=%u binding=%u base=%p offset=%lu address=0x%llx", candidate.verified ? "verified" : "UNVERIFIED", stage.name.c_str(),
 						(unsigned)range.set, (unsigned)range.binding, candidates.first, (unsigned long)candidate.offset,
 						(unsigned long long)candidate.address);
 				}
 				else if (range.physical_address_backing)
 				{
-					ILOG("SPIRV candidate %s in %s physical-address buffer=%u base=%p offset=%lu address=0x%llx", candidate.verified ? "verified" : "UNVERIFIED",
+					DLOG("SPIRV candidate %s in %s physical-address buffer=%u base=%p offset=%lu address=0x%llx", candidate.verified ? "verified" : "UNVERIFIED",
 						stage.name.c_str(), (unsigned)range.buffer_data->index, candidates.first, (unsigned long)candidate.offset,
 						(unsigned long long)candidate.address);
 				}
 				else
 				{
-					ILOG("SPIRV candidate %s in %s buffer=%u base=%p offset=%lu address=0x%llx", candidate.verified ? "verified" : "UNVERIFIED", stage.name.c_str(),
+					DLOG("SPIRV candidate %s in %s buffer=%u base=%p offset=%lu address=0x%llx", candidate.verified ? "verified" : "UNVERIFIED", stage.name.c_str(),
 						(unsigned)range.buffer_data->index, candidates.first, (unsigned long)candidate.offset,
 						(unsigned long long)candidate.address);
 				}
@@ -434,7 +434,7 @@ static void merge_simulator_output_candidates(const shader_stage& stage, const c
 			}
 			else
 			{
-				ILOG("SPIRV candidate %s in %s base=%p offset=%lu address=0x%llx", candidate.verified ? "verified" : "UNVERIFIED", stage.name.c_str(), candidates.first,
+				DLOG("SPIRV candidate %s in %s base=%p offset=%lu address=0x%llx", candidate.verified ? "verified" : "UNVERIFIED", stage.name.c_str(), candidates.first,
 					(unsigned long)candidate.offset, (unsigned long long)candidate.address);
 			}
 		}

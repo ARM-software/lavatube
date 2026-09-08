@@ -574,7 +574,7 @@ inline void lava_file_reader::read_barrier()
 		while (i != current.thread && packet_index > parent->thread_packet_numbers->at(i).load(std::memory_order_relaxed))
 		{
 			if (parent->stop_requested()) throw_stop_requested();
-			usleep(1);
+			usleep(parent->simulate ? 1000 : 1);
 		}
 		if (publish_wait) cli_state.store(cli_thread_state::running, std::memory_order_release);
 	}
@@ -588,7 +588,9 @@ inline uint32_t lava_file_reader::read_handle(DEBUGPARAM(const char* name))
 	const uint32_t req_packet = read_uint32_t();
 	if (is_isolated() || req_thread < 0 || req_thread == (int)current.thread)
 	{
+#ifdef DEBUG
 		DLOG2("[t%02d %06d] read handle %s index=%u from same thread", (int)current.thread, (int)current.packet + 1, name, (unsigned)index);
+#endif
 		return index;
 	}
 	// check for thread dependency, if we need a resource not provided yet, spin until it is
@@ -607,7 +609,7 @@ inline uint32_t lava_file_reader::read_handle(DEBUGPARAM(const char* name))
 	while (req_packet >= completed_packets)
 	{
 		if (parent->stop_requested()) throw_stop_requested();
-		usleep(1);
+		usleep(parent->simulate ? 1000 : 1);
 		completed_packets = parent->thread_packet_numbers->at(req_thread).load(std::memory_order_relaxed);
 	}
 	if (publish_wait) cli_state.store(cli_thread_state::running, std::memory_order_release);

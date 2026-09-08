@@ -9,16 +9,10 @@
 - `external/` tracks vendored deps
 - `traces/` can store sample trace files
 - `generated/` holds generated c++ files created by the python scripts
-- The loader manifest is `VkLayer_lavatube.json`.
-- Use separate build directories (e.g. `build/`) to keep the tree clean.
+- We use git with submodules, cmake and makefiles.
+- Use separate build directories (e.g. `build/` for debug or `build_release` for release)
 - Files and classes with `write` in the name are related to trace capture, while `read` is related to trace replay.
 - Vulkan headers: `external/tracetooltests/external/Vulkan-Headers/include/vulkan/` (do not use the system headers)
-
-## Build, Test, and Development Commands
-- Bootstrap deps: `git submodule update --init --recursive`.
-- Configure: `mkdir -p build && cd build && cmake ..` (add `-DCMAKE_BUILD_TYPE=Debug` while iterating).
-- Build: `make -C build -j6`.
-- Tests: `cd build && make test`
 
 ## Coding Style & Naming Conventions
 - C++ with tab indentation and Allman braces (opening brace on a new line). Mirror existing spacing and logging patterns.
@@ -36,8 +30,7 @@
 
 ## Testing Guidelines
 - Add new tests under `tests/` (see `container_test.cpp`, `tracing*.cpp` for patterns) and reuse helpers in `tests/common.*`.
-- Favor GPU-independent checks; prefer noscreen/blackhole modes when possible to keep runs fast and deterministic.
-- Run `ctest` (or `make test`) before submitting; include any trace assets needed for reproducing issues but avoid committing large binaries.
+- Be aware that the full `ctest` test suite takes over 15 minutes.
 
 ## Coding
 - Keep in mind that lavatube is multi-threaded. For more information on the multi-threaded design, see [Multithreading.md](doc/Multithreading.md).

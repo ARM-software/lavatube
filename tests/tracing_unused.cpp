@@ -60,7 +60,7 @@ static bool extension_list_contains(const char* const* names, uint32_t count, co
 	return false;
 }
 
-#ifdef DEBUG
+#ifndef NDEBUG
 static bool json_array_contains(const Json::Value& array, const char* name)
 {
 	if (!array.isArray()) return false;

@@ -97,6 +97,14 @@ set(RUN_MODEL_TEST ${CMAKE_CURRENT_SOURCE_DIR}/cmake/run_model_test.sh)
 
 message(STATUS "Configuring spirv-simulator")
 add_subdirectory(external/spirv-simulator ${CMAKE_BINARY_DIR}/spirv-simulator)
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(spirv_simulator_lib PRIVATE $<$<CONFIG:Debug>:-Og>)
+    if(TARGET SPIRV-Tools-static)
+        target_compile_options(SPIRV-Tools-static PRIVATE $<$<CONFIG:Debug>:-Og>)
+    elseif(TARGET SPIRV-Tools)
+        target_compile_options(SPIRV-Tools PRIVATE $<$<CONFIG:Debug>:-Og>)
+    endif()
+endif()
 
 # --- zipcontainer ---
 
@@ -1729,6 +1737,7 @@ layer_test(compute_wait_query_pool compute_wait -fb --wait-type query-pool)
 layer_test(memory_budget memory_budget)
 layer_test(device_memory_report device_memory_report)
 layer_test(memory_tracking_1 memory_tracking_1)
+layer_test(memory_tracking_2 memory_tracking_2)
 layer_test(strict_sync strict_sync)
 layer_test(device_fault device_fault)
 layer_test(create_renderpass2 create_renderpass2)
