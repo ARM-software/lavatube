@@ -276,6 +276,15 @@ static std::list<address_rewrite>::iterator find_api_rewrite_entry(lava_file_rea
 	});
 }
 
+static bool output_rewrites_require_maintenance6(const std::list<address_rewrite>& rewrites)
+{
+	for (const address_rewrite& rewrite : rewrites)
+	{
+		if (rewrite.source.call_id == VKCMDPUSHCONSTANTS && rewrite.object_type == VK_OBJECT_TYPE_UNKNOWN) return true;
+	}
+	return false;
+}
+
 static std::list<address_rewrite>::iterator find_stage_rewrite_entry(lava_file_reader& reader, VkObjectType object_type, uint32_t object_index, uint32_t stage_index)
 {
 	return std::find_if(reader.rewrite_queue.begin(), reader.rewrite_queue.end(), [&](const address_rewrite& entry)
@@ -504,6 +513,23 @@ static const VkMarkedOffsetsARM* maybe_patch_push_constants_info(lava_file_reade
 	return desired;
 }
 
+static const VkMarkedOffsetsARM* maybe_patch_update_buffer_info(lava_file_reader& reader, VkUpdateBufferInfoARM& patched)
+{
+	auto it = find_api_rewrite_entry(reader);
+	if (it == reader.rewrite_queue.end()) return nullptr;
+
+	VkMarkedOffsetsARM* desired = clone_marked_offsets(it->markings);
+	normalize_marked_offsets(desired);
+	ILOG("Injecting VkMarkedOffsetsARM on %s (%u markings)",
+		describe_change_source(reader.current).c_str(),
+		(unsigned)desired->count);
+	desired->pNext = patched.pNext;
+	patched.pNext = desired;
+	free_marked_offsets(it->markings);
+	reader.rewrite_queue.erase(it);
+	return desired;
+}
+
 static const VkMarkedOffsetsARM* patch_pipeline_shader_stage_info(lava_file_reader& reader, std::list<address_rewrite>::iterator it,
 	VkPipelineShaderStageCreateInfo& patched, const char* command_name)
 {
@@ -614,6 +640,53 @@ static void output_vkCmdPushConstants(callback_context& cb, VkCommandBuffer comm
 	else
 	{
 		trace_vkCmdPushConstants(commandBuffer, layout, stageFlags, offset, size, pValues);
+	}
+	free_marked_offsets(const_cast<VkMarkedOffsetsARM*>(injected));
+}
+
+static void output_vkCreateDevice(callback_context& cb, VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo* pCreateInfo,
+	const VkAllocationCallbacks* pAllocator, VkDevice* pDevice)
+{
+	assert(pCreateInfo);
+	VkDeviceCreateInfo patched = *pCreateInfo;
+	std::vector<const char*> enabled_extensions;
+	bool has_maintenance6 = false;
+	for (uint32_t i = 0; i < pCreateInfo->enabledExtensionCount; i++)
+	{
+		enabled_extensions.push_back(pCreateInfo->ppEnabledExtensionNames[i]);
+		if (strcmp(pCreateInfo->ppEnabledExtensionNames[i], VK_KHR_MAINTENANCE_6_EXTENSION_NAME) == 0) has_maintenance6 = true;
+	}
+	if (cb.reader.parent->output_requires_maintenance6 && !has_maintenance6)
+	{
+		enabled_extensions.push_back(VK_KHR_MAINTENANCE_6_EXTENSION_NAME);
+		patched.enabledExtensionCount = enabled_extensions.size();
+		patched.ppEnabledExtensionNames = enabled_extensions.data();
+		ILOG("Adding %s to rewritten output", VK_KHR_MAINTENANCE_6_EXTENSION_NAME);
+	}
+	prepare_trace_callback(cb);
+	trace_vkCreateDevice(physicalDevice, &patched, pAllocator, pDevice);
+}
+
+static void output_vkCmdUpdateBuffer(callback_context& cb, VkCommandBuffer commandBuffer, VkBuffer dstBuffer,
+	VkDeviceSize dstOffset, VkDeviceSize dataSize, const void* pData)
+{
+	VkUpdateBufferInfoARM patched = {
+		.sType = VK_STRUCTURE_TYPE_UPDATE_BUFFER_INFO_ARM,
+		.pNext = nullptr,
+		.dstBuffer = dstBuffer,
+		.dstOffset = dstOffset,
+		.dataSize = dataSize,
+		.pData = pData,
+	};
+	const VkMarkedOffsetsARM* injected = maybe_patch_update_buffer_info(cb.reader, patched);
+	prepare_trace_callback(cb);
+	if (injected)
+	{
+		trace_vkCmdUpdateBuffer2ARM(commandBuffer, &patched);
+	}
+	else
+	{
+		trace_vkCmdUpdateBuffer(commandBuffer, dstBuffer, dstOffset, dataSize, pData);
 	}
 	free_marked_offsets(const_cast<VkMarkedOffsetsARM*>(injected));
 }
@@ -2163,6 +2236,7 @@ int main(int argc, char **argv)
 		replayer.pass = 1;
 		replayer.run_type = reader_run_type::stateful;
 		replayer.write_output = true;
+		replayer.output_requires_maintenance6 = output_rewrites_require_maintenance6(output_rewrite_queue_copy);
 		replayer.validate = false;
 		replayer.simulate = false;
 		replayer.init(filename_input);
@@ -2185,6 +2259,8 @@ int main(int argc, char **argv)
 		writer.prepare_threads(replayer.threads.size());
 		bootstrap_write_side_state(filename_input);
 		add_callbacks_for_output();
+		vkCreateDevice_callbacks.clear();
+		vkCreateDevice_callbacks.push_back(output_vkCreateDevice);
 		vkCreateDescriptorUpdateTemplate_callbacks.push_back(replay_callback_vkCreateDescriptorUpdateTemplate);
 		vkCreateDescriptorUpdateTemplateKHR_callbacks.push_back(replay_callback_vkCreateDescriptorUpdateTemplateKHR);
 		vkCreateDescriptorSetLayout_callbacks.push_back(postprocess_vkCreateDescriptorSetLayout);
@@ -2223,6 +2299,8 @@ int main(int argc, char **argv)
 		vkCmdPushConstants2_callbacks.push_back(output_vkCmdPushConstants2);
 		vkCmdPushConstants2KHR_callbacks.clear();
 		vkCmdPushConstants2KHR_callbacks.push_back(output_vkCmdPushConstants2KHR);
+		vkCmdUpdateBuffer_callbacks.clear();
+		vkCmdUpdateBuffer_callbacks.push_back(output_vkCmdUpdateBuffer);
 		if (simulate)
 		{
 			cache_existing_descriptor_output_markings(output_rewrite_queue_copy);

@@ -230,6 +230,9 @@ public:
 	/// Duplicated into the file reader.
 	bool write_output = false;
 
+	/// Whether output rewriting introduces commands that require VK_KHR_maintenance6.
+	bool output_requires_maintenance6 = false;
+
 	/// Whether this replay pass should print every packet as JSON.
 	bool print_packets = false;
 	bool print_add_checksums = false;

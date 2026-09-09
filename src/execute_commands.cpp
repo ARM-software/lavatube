@@ -330,7 +330,8 @@ static bool collect_contiguous_device_address_marking(const std::vector<simulato
 	return true;
 }
 
-/// TODO This function is temporary until the simulator accurately pinpoints addresses inside composite structures.
+/// TODO This function is temporary until the simulator explores dynamically indexed address arrays and accurately
+/// pinpoints addresses inside composite structures.
 static bool collect_composite_device_address_marking(const std::vector<simulator_buffer_range>& ranges,
 	const SPIRVSimulator::PhysicalAddressData& pointer_data, std::vector<discovered_buffer_marking>& discovered)
 {
@@ -338,7 +339,7 @@ static bool collect_composite_device_address_marking(const std::vector<simulator
 	for (const SPIRVSimulator::DataSourceBits& source : pointer_data.bit_components)
 	{
 		if (source.location != SPIRVSimulator::StorageClass && source.location != SPIRVSimulator::SpecConstant) continue;
-		if (source.bit_offset != 0 || source.bitcount <= sizeof(VkDeviceAddress) * 8 || source.bitcount % 8 != 0) continue;
+		if (source.bit_offset != 0 || source.bitcount < sizeof(VkDeviceAddress) * 8 || source.bitcount % 8 != 0) continue;
 		const VkDeviceSize source_size = source.bitcount / 8;
 		VkDeviceSize local_offset = 0;
 		const simulator_buffer_range* range = find_simulator_source_range(ranges, source, source_size, local_offset);
@@ -551,7 +552,7 @@ static void collect_simulator_physical_address_markings(const std::vector<simula
 			found_source = true;
 		}
 		if (!found_source) found_source = collect_contiguous_device_address_marking(ranges, pointer_data, discovered);
-		if (!found_source) found_source = collect_composite_device_address_marking(ranges, pointer_data, discovered);
+		if (collect_composite_device_address_marking(ranges, pointer_data, discovered)) found_source = true;
 	}
 }
 

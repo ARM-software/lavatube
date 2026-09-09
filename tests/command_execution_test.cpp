@@ -1035,13 +1035,14 @@ static void execute_compute_shader_bda_unbound_input()
 
 	trackedcmdbuffer cmdbuffer_data;
 	cmdbuffer_data.index = 0;
+	const VkDeviceAddress push_values[] = { capture_address, capture_address };
 	trackedcommand push_constants { VKCMDPUSHCONSTANTS };
 	push_constants.source = make_source(32);
 	push_constants.data.push_constants.offset = 0;
-	push_constants.data.push_constants.size = sizeof(VkDeviceAddress);
-	push_constants.data.push_constants.values = static_cast<char*>(std::malloc(sizeof(VkDeviceAddress)));
+	push_constants.data.push_constants.size = sizeof(push_values);
+	push_constants.data.push_constants.values = static_cast<char*>(std::malloc(sizeof(push_values)));
 	assert(push_constants.data.push_constants.values);
-	std::memcpy(push_constants.data.push_constants.values, &capture_address, sizeof(capture_address));
+	std::memcpy(push_constants.data.push_constants.values, push_values, sizeof(push_values));
 	cmdbuffer_data.commands.push_back(push_constants);
 	add_bind_compute_pipeline(cmdbuffer_data);
 	add_dispatch(cmdbuffer_data, make_source(33));
@@ -1082,9 +1083,11 @@ static void execute_compute_shader_bda_unbound_input()
 	const address_rewrite& rewrite = global_output_rewrite_queue.front();
 	assert(same_source(rewrite.source, push_constants.source));
 	assert(rewrite.markings);
-	assert(rewrite.markings->count == 1);
+	assert(rewrite.markings->count == 2);
 	assert(rewrite.markings->pMarkingTypes[0] == VK_MARKING_TYPE_DEVICE_ADDRESS_ARM);
+	assert(rewrite.markings->pMarkingTypes[1] == VK_MARKING_TYPE_DEVICE_ADDRESS_ARM);
 	assert(rewrite.markings->pOffsets[0] == 0);
+	assert(rewrite.markings->pOffsets[1] == sizeof(VkDeviceAddress));
 	assert(descriptor_buffer_payloads.empty());
 	for (address_rewrite& entry : global_output_rewrite_queue)
 	{

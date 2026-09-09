@@ -1277,6 +1277,7 @@ set_tests_properties(trace_file_test_anki_simple_raw_replay trace_file_test_anki
 trace_test(wicked_imgui traces/wicked_imgui.api)
 trace_test(conservative_rasterization traces/sample_conservative_rasterization.api)
 trace_test_with_simulator(ray_tracing_reflection traces/sample_ray_tracing_reflection.api)
+trace_test_with_simulator(buffer_device_address traces/sample_buffer_device_address.api)
 add_lavatube_test(trace_file_test_with_simulator_ray_tracing_reflection_markings COMMAND $<TARGET_FILE:lava-print> --select 501 ${CMAKE_CURRENT_BINARY_DIR}/tmp_ray_tracing_reflection.api)
 set_tests_properties(trace_file_test_with_simulator_ray_tracing_reflection_markings PROPERTIES PASS_REGULAR_EXPRESSION "\"count\":12.*\"type\":\"device_address\"" FIXTURES_REQUIRED "tmp_ray_tracing_reflection;cleanup_tmp")
 trace_test(texture_mipmap_generation traces/sample_texture_mipmap_generation.api)
