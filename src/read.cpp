@@ -502,7 +502,8 @@ void print_params_publish(callback_context& cb, Json::Value v)
 		parent->request_stop();
 		return;
 	}
-	printf("%s", out.c_str());
+	if (parent->print_json_output) parent->print_json_output->push_back(v);
+	else printf("%s", out.c_str());
 	parent->print_entry_count++;
 	if (selector_selected)
 	{
@@ -728,6 +729,8 @@ void lava_reader::collect_trace_file_info(const std::string& path)
 
 	mPackedFile = path;
 	mTraceFileSize = (uint64_t)status.st_size;
+	mTraceFileDevice = (uint64_t)status.st_dev;
+	mTraceFileInode = (uint64_t)status.st_ino;
 	mTraceFileCreationTimestamp.clear();
 
 #if defined(__linux__) && !defined(__ANDROID__) && defined(STATX_BTIME)

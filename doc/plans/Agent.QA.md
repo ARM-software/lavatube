@@ -1,3 +1,17 @@
+# Test suite
+
+We want to measure the effectiveness of `lava-agent` settings along
+two axes: Time and quality. We should develop a test suite of questions
+about our current trace files, with correct answers stored. Then
+record the time it takes to get responses and an evaluation (score 1 to 10)
+of their responses. We should send one warmup question first to make sure
+the LLM model is fully loaded first.
+
+Things to test:
+- Changes to the system prompt
+- Time and number of rounds allowed
+- Models: Gemma4 vs Ornith vs Terra vs Luna
+
 # Example controller questions (writen by codex)
 
 These examples are intended as evaluation prompts for the controller. The

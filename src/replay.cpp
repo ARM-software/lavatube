@@ -1677,6 +1677,8 @@ static std::string service_command_response(service_client_state* state, const s
 		Json::Value value;
 		value["filename"] = replayer.packed_file();
 		value["file_size"] = (Json::UInt64)replayer.trace_file_size();
+		value["device"] = (Json::UInt64)replayer.trace_file_device();
+		value["inode"] = (Json::UInt64)replayer.trace_file_inode();
 		if (replayer.trace_file_creation_timestamp().empty()) value["creation_timestamp"] = Json::nullValue;
 		else value["creation_timestamp"] = replayer.trace_file_creation_timestamp();
 		response = trace_metadata_json_compact(value) + "\n";

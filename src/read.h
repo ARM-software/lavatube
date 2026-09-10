@@ -173,6 +173,8 @@ public:
 	void dump_info();
 	const std::string& packed_file() const { return mPackedFile; }
 	uint64_t trace_file_size() const { return mTraceFileSize; }
+	uint64_t trace_file_device() const { return mTraceFileDevice; }
+	uint64_t trace_file_inode() const { return mTraceFileInode; }
 	/// Empty when the filesystem does not expose a file birth time.
 	const std::string& trace_file_creation_timestamp() const { return mTraceFileCreationTimestamp; }
 
@@ -266,6 +268,8 @@ public:
 	uint32_t print_max_entries = UINT32_MAX;
 	uint32_t print_entry_count = 0;
 	lava::mutex print_mutex;
+	/// Optional in-process sink used by bounded trace inspection tools.
+	std::vector<Json::Value>* print_json_output = nullptr;
 
 	/// Whether we should abort on less serious errors or just warn
 	bool validate = false;
@@ -358,6 +362,8 @@ private:
 	struct timespec process_cpu_usage;
 	std::string mPackedFile;
 	uint64_t mTraceFileSize = 0;
+	uint64_t mTraceFileDevice = 0;
+	uint64_t mTraceFileInode = 0;
 	std::string mTraceFileCreationTimestamp;
 	std::vector<lava_file_reader*> thread_streams;
 	int mStart = 0;

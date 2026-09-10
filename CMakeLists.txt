@@ -1224,9 +1224,31 @@ add_lavatube_test(lava_cli_syslog_test
 set_tests_properties(lava_cli_syslog_test PROPERTIES FIXTURES_REQUIRED tracing_2 TIMEOUT 60)
 endif()
 
-# --- lava-tui ---
+# --- lava-agent and lava-tui ---
 
 if(NOT ANDROID)
+add_executable(lava-agent
+	src/agent.cpp
+	src/agent_runtime.cpp
+	src/agent_runtime.h
+	src/agent_tools.cpp
+	src/agent_tools.h
+	src/trace_metadata.cpp
+	src/trace_metadata.h
+)
+target_include_directories(lava-agent ${COMMON_INCLUDE})
+target_link_libraries(lava-agent ${COMMON_LIBRARIES} lavatube CURL::libcurl)
+target_compile_options(lava-agent PRIVATE ${COMMON_FLAGS})
+add_dependencies(lava-agent sync_generated)
+install(TARGETS lava-agent RUNTIME)
+add_lavatube_test(lava_agent_test
+	COMMAND ${PYTHON_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tests/lava_agent_test.py
+		$<TARGET_FILE:lava-agent>
+		$<TARGET_FILE:lava-replay>
+		$<TARGET_FILE:lava-cli>
+		${CMAKE_CURRENT_BINARY_DIR}/tracing_2.api)
+set_tests_properties(lava_agent_test PROPERTIES FIXTURES_REQUIRED tracing_2 TIMEOUT 60)
+
 add_executable(lava-tui
 	src/tui.cpp
 	src/tui_app.cpp

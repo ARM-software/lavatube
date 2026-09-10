@@ -58,12 +58,15 @@ def main():
 		if len(lines) != 1:
 			raise RuntimeError('info trace did not return exactly one NDJSON record: ' + repr(result.stdout))
 		value = json.loads(lines[0])
-		if set(value) != {'filename', 'file_size', 'creation_timestamp'}:
+		if set(value) != {'filename', 'file_size', 'device', 'inode', 'creation_timestamp'}:
 			raise RuntimeError('unexpected info trace fields: ' + repr(value))
 		if value['filename'] != trace_path:
 			raise RuntimeError('unexpected trace filename: ' + repr(value['filename']))
 		if value['file_size'] != os.path.getsize(trace_path):
 			raise RuntimeError('unexpected trace file size: ' + repr(value['file_size']))
+		status = os.stat(trace_path)
+		if value['device'] != status.st_dev or value['inode'] != status.st_ino:
+			raise RuntimeError('unexpected trace filesystem identity: ' + repr(value))
 		creation_timestamp = value['creation_timestamp']
 		if creation_timestamp is not None and not re.fullmatch(r'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{9}Z', creation_timestamp):
 			raise RuntimeError('unexpected creation timestamp: ' + repr(creation_timestamp))
