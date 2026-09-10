@@ -1380,8 +1380,10 @@ static void execute_compute_shader_bda_copied_address_chain()
 	assert(global_output_rewrite_queue.size() == 1);
 	const address_rewrite& rewrite = global_output_rewrite_queue.front();
 	assert(same_source(rewrite.source, update_source));
-	assert(rewrite.object_type == VK_OBJECT_TYPE_UNKNOWN);
-	assert(rewrite.object_index == CONTAINER_NULL_VALUE);
+	// The simulator retains the original buffer identity while copying the
+	// address through the intermediate buffer.
+	assert(rewrite.object_type == VK_OBJECT_TYPE_BUFFER);
+	assert(rewrite.object_index == 0);
 	assert(rewrite.markings);
 	assert(rewrite.markings->count == 1);
 	assert(rewrite.markings->pMarkingTypes[0] == VK_MARKING_TYPE_DEVICE_ADDRESS_ARM);
@@ -1500,8 +1502,8 @@ static void execute_compute_shader_bda_two_lane_output_provenance()
 	assert(global_output_rewrite_queue.size() == 1);
 	const address_rewrite& rewrite = global_output_rewrite_queue.front();
 	assert(same_source(rewrite.source, address_source));
-	assert(rewrite.object_type == VK_OBJECT_TYPE_UNKNOWN);
-	assert(rewrite.object_index == CONTAINER_NULL_VALUE);
+	assert(rewrite.object_type == VK_OBJECT_TYPE_BUFFER);
+	assert(rewrite.object_index == 0);
 	assert(rewrite.markings);
 	assert(rewrite.markings->count == 2);
 	assert(rewrite.markings->pMarkingTypes[0] == VK_MARKING_TYPE_DEVICE_ADDRESS_ARM);
@@ -1677,8 +1679,8 @@ static void execute_compute_shader_bda_interleave_copied_address_provenance()
 	assert(global_output_rewrite_queue.size() == 1);
 	const address_rewrite& rewrite = global_output_rewrite_queue.front();
 	assert(same_source(rewrite.source, address_source));
-	assert(rewrite.object_type == VK_OBJECT_TYPE_UNKNOWN);
-	assert(rewrite.object_index == CONTAINER_NULL_VALUE);
+	assert(rewrite.object_type == VK_OBJECT_TYPE_BUFFER);
+	assert(rewrite.object_index == 0);
 	assert(rewrite.markings);
 	assert(rewrite.markings->count == 2);
 	assert(rewrite.markings->pMarkingTypes[0] == VK_MARKING_TYPE_DEVICE_ADDRESS_ARM);

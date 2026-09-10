@@ -278,13 +278,16 @@ static std::list<address_rewrite>::iterator find_output_rewrite_entry(lava_file_
 	return reader.rewrite_queue.end();
 }
 
-static std::list<address_rewrite>::iterator find_api_rewrite_entry(lava_file_reader& reader)
+static std::list<address_rewrite>::iterator find_api_rewrite_entry(lava_file_reader& reader,
+	VkObjectType object_type = VK_OBJECT_TYPE_UNKNOWN, uint32_t object_index = CONTAINER_NULL_VALUE)
 {
 	for (auto it = reader.rewrite_queue.begin(); it != reader.rewrite_queue.end(); ++it)
 	{
 		if (it->source.packet < reader.current.packet) continue;
 		if (it->source.packet > reader.current.packet) break;
-		if (same_change_source(it->source, reader.current) && it->object_type == VK_OBJECT_TYPE_UNKNOWN) return it;
+		if (!same_change_source(it->source, reader.current)) continue;
+		if (it->object_type == VK_OBJECT_TYPE_UNKNOWN) return it;
+		if (it->object_type == object_type && it->object_index == object_index) return it;
 	}
 	return reader.rewrite_queue.end();
 }
@@ -579,16 +582,34 @@ static const VkMarkedOffsetsARM* maybe_patch_push_constants_info(lava_file_reade
 
 static const VkMarkedOffsetsARM* maybe_patch_update_buffer_info(lava_file_reader& reader, VkUpdateBufferInfoARM& patched)
 {
-	auto it = find_api_rewrite_entry(reader);
+	const uint32_t buffer_index = index_to_VkBuffer.index(patched.dstBuffer);
+	auto it = find_api_rewrite_entry(reader, VK_OBJECT_TYPE_BUFFER, buffer_index);
 	if (it == reader.rewrite_queue.end()) return nullptr;
 
 	VkMarkedOffsetsARM* desired = clone_marked_offsets(it->markings);
+	if (it->object_type == VK_OBJECT_TYPE_BUFFER)
+	{
+		VkDeviceSize* offsets = const_cast<VkDeviceSize*>(desired->pOffsets);
+		for (uint32_t i = 0; i < desired->count; i++)
+		{
+			if (offsets[i] < patched.dstOffset
+				|| offsets[i] - patched.dstOffset >= patched.dataSize)
+			{
+				ABORT("Simulated marking offset %llu is outside vkCmdUpdateBuffer range [%llu, %llu)",
+					(unsigned long long)offsets[i],
+					(unsigned long long)patched.dstOffset,
+					(unsigned long long)(patched.dstOffset + patched.dataSize));
+			}
+			offsets[i] -= patched.dstOffset;
+		}
+	}
 	normalize_marked_offsets(desired);
 	ILOG("Injecting VkMarkedOffsetsARM on %s (%u markings)",
 		describe_change_source(reader.current).c_str(),
 		(unsigned)desired->count);
 	desired->pNext = patched.pNext;
 	patched.pNext = desired;
+	reader.parent->output_markings_added.fetch_add(desired->count, std::memory_order_relaxed);
 	free_marked_offsets(it->markings);
 	reader.rewrite_queue.erase(it);
 	return desired;
@@ -1713,6 +1734,7 @@ static void bootstrap_write_side_state(const std::string& input)
 
 	frame_mutex.lock();
 	writer.json() = packed_json("metadata.json", input);
+	writer.input_metadata() = writer.json();
 	writer.json()["lavatube_version_major"] = LAVATUBE_VERSION_MAJOR;
 	writer.json()["lavatube_version_minor"] = LAVATUBE_VERSION_MINOR;
 	writer.json()["lavatube_version_patch"] = LAVATUBE_VERSION_PATCH;

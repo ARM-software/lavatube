@@ -50,6 +50,26 @@ static void test_overwrite_subrange()
 	assert(same_source(got, a));
 }
 
+static void test_earliest_reference()
+{
+	host_write_regions regions;
+	change_source a = make_source(1);
+	change_source b = make_source(2);
+	change_source c = make_source(3);
+
+	regions.register_source(0, 96, a, 1, 0, VK_OBJECT_TYPE_BUFFER, 7);
+	regions.register_source(32, 16, b, 1, 0, VK_OBJECT_TYPE_BUFFER, 7);
+	regions.register_source(64, 16, c, 1, 0, VK_OBJECT_TYPE_BUFFER, 7);
+
+	host_write_reference reference;
+	assert(!regions.try_get_source(32, 32, reference.source));
+	assert(regions.try_get_earliest_reference(32, 32, VK_OBJECT_TYPE_BUFFER, 7, reference));
+	assert(same_source(reference.source, a));
+	assert(regions.try_get_earliest_reference(64, 32, VK_OBJECT_TYPE_BUFFER, 7, reference));
+	assert(same_source(reference.source, a));
+	assert(!regions.try_get_earliest_reference(32, 32, VK_OBJECT_TYPE_IMAGE, 7, reference));
+}
+
 static void test_merge_adjacent()
 {
 	host_write_regions regions;
@@ -152,6 +172,22 @@ static void test_copy_sources_overlap()
 	dst.copy_sources(src, 240, 40, 20);
 	assert(same_source(dst.get_source(240, 20), a));
 	assert(same_source(dst.get_source(260, 10), c));
+}
+
+static void test_copy_source_object_reference()
+{
+	host_write_regions src;
+	host_write_regions dst;
+	change_source a = make_source(13);
+	src.register_source(20, 16, a, 1, 0, VK_OBJECT_TYPE_BUFFER, 7, CONTAINER_NULL_VALUE, 4);
+
+	dst.copy_sources(src, 100, 20, 16);
+	host_write_reference reference;
+	assert(dst.try_get_reference(104, 8, reference));
+	assert(same_source(reference.source, a));
+	assert(reference.object_type == VK_OBJECT_TYPE_BUFFER);
+	assert(reference.object_index == 7);
+	assert(reference.object_offset == 8);
 }
 
 static void test_stats_dump_path()
@@ -261,12 +297,14 @@ int main()
 {
 	test_contiguous_basic();
 	test_overwrite_subrange();
+	test_earliest_reference();
 	test_merge_adjacent();
 	test_stride();
 	test_tightly_packed();
 	test_stats();
 	test_copy_sources_basic();
 	test_copy_sources_overlap();
+	test_copy_source_object_reference();
 	test_stats_dump_path();
 	test_concurrent_writes();
 	return 0;

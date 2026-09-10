@@ -209,6 +209,7 @@ public:
 	void bind_thread(unsigned index);
 	void prepare_threads(unsigned count);
 	Json::Value& json() REQUIRES(frame_mutex) { return mJson; }
+	Json::Value& input_metadata() REQUIRES(frame_mutex) { return mInputMetadata; }
 	Json::Value& input_tracking() REQUIRES(frame_mutex) { return mInputTracking; }
 	lava_file_writer& file_writer();
 	void serialize();
@@ -254,6 +255,7 @@ private:
 	std::string mPack;
 	VkuVulkanLibrary library = nullptr;
 	Json::Value mJson GUARDED_BY(frame_mutex);
+	Json::Value mInputMetadata GUARDED_BY(frame_mutex);
 	Json::Value mInputTracking GUARDED_BY(frame_mutex);
 	bool should_serialize = false;
 	bool preserve_output_handle_indices = true;

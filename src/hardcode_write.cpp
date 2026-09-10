@@ -466,10 +466,19 @@ static void trace_post_vkGetDeviceImageSparseMemoryRequirementsKHR(lava_file_wri
 
 static void trace_post_vkBindImageMemory(lava_file_writer& writer, VkResult result, VkDevice device, VkImage image, VkDeviceMemory memory, VkDeviceSize memoryOffset)
 {
+	auto* image_data = writer.parent->records.VkImage_index.at(image);
+	if (!writer.run && image_data->req.size == 0)
+	{
+		frame_mutex.lock();
+		const Json::Value& input = writer.parent->input_tracking()["VkImage"][image_data->index];
+		image_data->req.size = input["req_size"].asUInt64();
+		image_data->req.alignment = input["req_alignment"].asUInt64();
+		frame_mutex.unlock();
+	}
+	if (!writer.run) return;
 	writer.parent->memory_mutex.lock();
 	assert(memory != VK_NULL_HANDLE);
 	assert(result == VK_SUCCESS);
-	auto* image_data = writer.parent->records.VkImage_index.at(image);
 	auto* memory_data = writer.parent->records.VkDeviceMemory_index.at(memory);
 	assert(image_data->backing == 0); // cannot re-bind
 	image_data->backing = memory;
@@ -487,10 +496,19 @@ static void trace_post_vkBindImageMemory(lava_file_writer& writer, VkResult resu
 
 static void trace_post_vkBindBufferMemory(lava_file_writer& writer, VkResult result, VkDevice device, VkBuffer buffer, VkDeviceMemory memory, VkDeviceSize memoryOffset)
 {
+	auto* buffer_data = writer.parent->records.VkBuffer_index.at(buffer);
+	if (!writer.run && buffer_data->req.size == 0)
+	{
+		frame_mutex.lock();
+		const Json::Value& input = writer.parent->input_tracking()["VkBuffer"][buffer_data->index];
+		buffer_data->req.size = input["req_size"].asUInt64();
+		buffer_data->req.alignment = input["req_alignment"].asUInt64();
+		frame_mutex.unlock();
+	}
+	if (!writer.run) return;
 	writer.parent->memory_mutex.lock();
 	assert(memory != VK_NULL_HANDLE);
 	assert(result == VK_SUCCESS);
-	auto* buffer_data = writer.parent->records.VkBuffer_index.at(buffer);
 	auto* memory_data = writer.parent->records.VkDeviceMemory_index.at(memory);
 	assert(buffer_data->backing == 0); // cannot re-bind
 	buffer_data->backing = memory;

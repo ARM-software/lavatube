@@ -108,6 +108,22 @@ static void rewrite_enabled_extensions(Json::Value& target, const Json::Value& o
 	append_sorted_strings(target, remainder);
 }
 
+static void preserve_trace_helper_extensions(Json::Value& target, const Json::Value& original)
+{
+	if (!original.isArray()) return;
+	for (const Json::Value& value : original)
+	{
+		const std::string name = value.asString();
+		if (name != VK_ARM_TRACE_HELPERS_EXTENSION_NAME && name != VK_ARM_EXPLICIT_HOST_UPDATES_EXTENSION_NAME) continue;
+		bool found = false;
+		for (const Json::Value& current : target)
+		{
+			if (current.asString() == name) found = true;
+		}
+		if (!found) target.append(name);
+	}
+}
+
 static void log_removed_strings(const char* heading, const std::unordered_set<std::string>& values)
 {
 	if (values.empty()) return;
@@ -511,6 +527,11 @@ void lava_writer::serialize()
 	Json::Value device_requested_extensions = r["deviceRequested"]["enabledExtensions"];
 	rewrite_enabled_extensions(r["instanceRequested"]["enabledExtensions"], instance_requested_extensions, meta.app.instance_extensions);
 	rewrite_enabled_extensions(r["deviceRequested"]["enabledExtensions"], device_requested_extensions, meta.app.device_extensions);
+	if (write_output)
+	{
+		preserve_trace_helper_extensions(r["deviceRequested"]["enabledExtensions"],
+			mInputMetadata["deviceRequested"]["enabledExtensions"]);
+	}
 	write_removed_strings(r["instanceRequested"], "removedExtensions", removed_instance_exts);
 	write_removed_strings(r["deviceRequested"], "removedExtensions", removed_device_exts);
 	r["deviceRequested"]["removedFeatures"] = Json::objectValue;

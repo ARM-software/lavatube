@@ -193,6 +193,8 @@ validate_funcs(trace_post_calls)
 trace_post_tool_calls = [
 	'vkQueueSubmit', 'vkQueueSubmit2', 'vkQueueSubmit2KHR',
 	'vkQueuePresentKHR',
+	'vkBindImageMemory', 'vkBindImageMemory2', 'vkBindImageMemory2KHR',
+	'vkBindBufferMemory', 'vkBindBufferMemory2', 'vkBindBufferMemory2KHR',
 	'vkCreateShaderModule',
 	'vkCreateDescriptorUpdateTemplate', 'vkCreateDescriptorUpdateTemplateKHR',
 	'vkUpdateDescriptorSetWithTemplate', 'vkUpdateDescriptorSetWithTemplateKHR',

@@ -48,6 +48,8 @@ struct change_source
 struct host_write_reference
 {
 	change_source source;
+	VkObjectType object_type = VK_OBJECT_TYPE_UNKNOWN;
+	uint32_t object_index = CONTAINER_NULL_VALUE;
 	uint32_t stage_index = CONTAINER_NULL_VALUE;
 	int64_t object_offset = 0;
 };
@@ -170,6 +172,27 @@ public:
 		return true;
 	}
 
+	bool try_get_earliest_reference(uint64_t address, uint32_t size, VkObjectType object_type, uint32_t object_index,
+		host_write_reference& reference) const
+	{
+		std::shared_lock lock(mutex);
+		assert(size > 0);
+		std::vector<source_span> spans;
+		if (!collect_spans_unlocked(tracker, fragment_sources, address, size, spans)) return false;
+		assert(!spans.empty());
+		bool found = false;
+		for (const source_span& span : spans)
+		{
+			if (span.reference.object_type != object_type || span.reference.object_index != object_index) continue;
+			if (!found || span.reference.source.packet < reference.source.packet)
+			{
+				reference = span.reference;
+				found = true;
+			}
+		}
+		return found;
+	}
+
 	bool try_get_reference(uint64_t address, uint32_t size, host_write_reference& reference) const
 	{
 		std::shared_lock lock(mutex);
@@ -226,11 +249,11 @@ public:
 		assert(object_offset <= (uint64_t)INT64_MAX);
 		const host_write_reference reference {
 			.source = source,
+			.object_type = object_type,
+			.object_index = object_index,
 			.stage_index = stage_index,
 			.object_offset = (int64_t)object_offset,
 		};
-		(void)object_type;
-		(void)object_index;
 
 		if (elements == 1)
 		{
@@ -304,13 +327,14 @@ private:
 	static bool same_reference(const host_write_reference& a, const host_write_reference& b)
 	{
 		return same_source(a.source, b.source)
+			&& a.object_type == b.object_type
+			&& a.object_index == b.object_index
 			&& a.stage_index == b.stage_index;
 	}
 
 	static bool has_source_object(const host_write_reference& reference)
 	{
-		(void)reference;
-		return true;
+		return reference.object_type != VK_OBJECT_TYPE_UNKNOWN && reference.object_index != CONTAINER_NULL_VALUE;
 	}
 
 	static bool contiguous_reference(const source_span& previous, uint64_t next_start, const host_write_reference& next)
