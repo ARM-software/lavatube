@@ -98,7 +98,7 @@ static bool getnext(lava_file_reader& t)
 	const uint8_t instrtype = t.step();
 	if (instrtype == PACKET_VULKAN_API_CALL)
 	{
-		const uint16_t apicall = t.read_apicall();
+		const uint16_t apicall = t.read_vulkan_apicall();
 	}
 	else if (instrtype == PACKET_THREAD_BARRIER)
 	{

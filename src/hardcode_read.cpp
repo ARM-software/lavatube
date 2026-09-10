@@ -1480,7 +1480,7 @@ static VkResult replay_injected_queue_wait_idle(VkQueue queue, bool queue_access
 static void replay_log_change_source(const char* label, const change_source& source)
 {
 	ELOG("    %s: thread=%u frame=%u packet=%u call=%s", label, source.thread, source.frame, source.packet,
-		source.call_id == UINT16_MAX ? "none" : get_function_name(source.call_id));
+		source.call_id == UINT16_MAX ? "none" : vulkan_get_function_name(source.call_id));
 }
 
 static bool replay_report_fault_address(VkDeviceAddress address, VkDeviceSize precision)
@@ -1550,7 +1550,7 @@ static void replay_report_recent_submissions(const trackeddevice& device_data, l
 			unsigned printed = 0;
 			for (auto command = commandbuffer.commands.rbegin(); command != commandbuffer.commands.rend() && printed < 6; ++command, ++printed)
 			{
-				ELOG("      %s at thread=%u frame=%u packet=%u", get_function_name(command->id), command->source.thread,
+				ELOG("      %s at thread=%u frame=%u packet=%u", vulkan_get_function_name(command->id), command->source.thread,
 					command->source.frame, command->source.packet);
 			}
 			{
@@ -6781,9 +6781,14 @@ uint32_t update_tensor_packet(uint8_t instrtype, lava_file_reader& reader)
 void switchboard_packet(uint8_t instrtype, lava_file_reader& reader)
 {
 	reader.current_update_packet.clear();
+	reader.current_opencl_packet.clear();
 	if (instrtype == PACKET_VULKAN_API_CALL)
 	{
-		reader.read_apicall();
+		reader.read_vulkan_apicall();
+	}
+	else if (instrtype == PACKET_OPENCL_API_CALL)
+	{
+		reader.read_opencl_apicall();
 	}
 	else if (instrtype == PACKET_THREAD_BARRIER)
 	{

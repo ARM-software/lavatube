@@ -14,6 +14,8 @@
 #include <stdio.h>
 #include <functional>
 
+#include <CL/cl_layer.h>
+
 #include "external/tracetooltests/src/usagetracker/vulkan_feature_detect.h"
 #include "containers.h"
 #include "lavamutex.h"
@@ -109,6 +111,18 @@ struct trace_metadata
 
 class lava_writer;
 
+void trace_finalize_if_inactive();
+
+struct opencl_layer_runtime_state
+{
+	cl_icd_dispatch target_dispatch = {};
+	cl_icd_dispatch layer_dispatch = {};
+	trace_remap<cl_platform_id, trackable> platform_index;
+	std::atomic_uint_fast64_t platform_id_calls { 0 };
+	std::atomic_uint_fast32_t known_platform_count { UINT32_MAX };
+	std::atomic_bool initialized { false };
+};
+
 /// Per-thread controller
 class lava_file_writer : public file_writer
 {
@@ -200,6 +214,7 @@ public:
 
 	static lava_writer& instance();
 	void set(const std::string& path);
+	void ensure_started(const std::string& path);
 	void set_output(const std::string& packed_path);
 	void use_dense_output_handle_indices() { preserve_output_handle_indices = false; }
 	template<typename T> uint32_t desired_output_handle_index(T handle) const
@@ -214,6 +229,8 @@ public:
 	lava_file_writer& file_writer();
 	void serialize();
 	void finish();
+	bool claim_finalization();
+	void release_finalization();
 #ifdef VK_USE_PLATFORM_ANDROID_KHR
 	void start_android_finish_monitor();
 #endif
@@ -225,7 +242,9 @@ public:
 	void new_frame();
 
 	std::atomic_int global_frame;
+	std::atomic_uint_fast32_t active_vulkan_instances { 0 };
 	trace_records records;
+	opencl_layer_runtime_state opencl_layer;
 	bool run = true;
 	bool write_output = false;
 	// Importers use tracing callbacks to create a new trace and need their normal synchronization behavior.
@@ -258,6 +277,7 @@ private:
 	Json::Value mInputMetadata GUARDED_BY(frame_mutex);
 	Json::Value mInputTracking GUARDED_BY(frame_mutex);
 	bool should_serialize = false;
+	bool finalization_claimed GUARDED_BY(frame_mutex) = false;
 	bool preserve_output_handle_indices = true;
 #ifdef VK_USE_PLATFORM_ANDROID_KHR
 	std::atomic<bool> android_finish_monitor_running = false;

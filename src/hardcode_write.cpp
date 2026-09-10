@@ -1887,12 +1887,11 @@ static void trace_post_vkQueuePresentKHR(lava_file_writer& writer, VkResult resu
 	instance.new_frame();
 }
 
-/// 'instance' is not safe to use here, since it has already been destroyed
-void trace_post_vkDestroyInstance(lava_file_writer& writer, VkInstance instance, const VkAllocationCallbacks* pAllocator)
+void trace_finalize_if_inactive()
 {
 	lava_writer& inst = lava_writer::instance();
+	if (!inst.claim_finalization()) return;
 
-	if (instance == VK_NULL_HANDLE) return;
 	inst.serialize();
 	inst.finish();
 	frame_mutex.lock();
@@ -1905,6 +1904,17 @@ void trace_post_vkDestroyInstance(lava_file_writer& writer, VkInstance instance,
 	reset_all(&inst.records);
 
 	frame_mutex.unlock();
+	inst.release_finalization();
+}
+
+/// 'instance' is not safe to use here, since it has already been destroyed
+void trace_post_vkDestroyInstance(lava_file_writer& writer, VkInstance instance, const VkAllocationCallbacks* pAllocator)
+{
+	if (instance == VK_NULL_HANDLE) return;
+	lava_writer& inst = lava_writer::instance();
+	const uint_fast32_t previous = inst.active_vulkan_instances.fetch_sub(1, std::memory_order_acq_rel);
+	assert(previous != 0);
+	trace_finalize_if_inactive();
 }
 
 // TBD - nuke any PROTECTED_BIT memory types
@@ -2195,7 +2205,7 @@ static bool trace_pre_vkCreateDevice(VkPhysicalDevice physicalDevice, VkDeviceCr
 	else DLOG("vkCreateDevice pNext chain is empty");
 	while (pNext)
 	{
-		DLOG("\t%s", get_stype_name(pNext->sType));
+		DLOG("\t%s", vulkan_get_stype_name(pNext->sType));
 		pNext = pNext->pNext;
 	}
 
@@ -2558,13 +2568,14 @@ static void trace_post_vkCreateInstance(lava_file_writer& writer, VkResult resul
 	assert(*pInstance != VK_NULL_HANDLE);
 
 	lava_writer& instance = lava_writer::instance();
+	instance.active_vulkan_instances.fetch_add(1, std::memory_order_release);
 	std::string base_out_path = "trace";
 	if (pCreateInfo->pApplicationInfo && pCreateInfo->pApplicationInfo->pApplicationName)
 	{
 		base_out_path = pCreateInfo->pApplicationInfo->pApplicationName;
 	}
 	const std::string trace_out_path = get_trace_path(base_out_path);
-	instance.set(trace_out_path);
+	instance.ensure_started(trace_out_path);
 
 	frame_mutex.lock();
 

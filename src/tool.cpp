@@ -390,11 +390,6 @@ static void write_output_initialization_packet(lava_file_reader& reader, lava_fi
 	writer.end_packet();
 }
 
-static bool is_flush_markings_source(const change_source& source)
-{
-	return source.call_id != UINT16_MAX && strcmp(get_function_name(source.call_id), "vkFlushMappedMemoryRanges") == 0;
-}
-
 static void write_marked_offsets_extension(lava_file_writer& writer, const VkMarkedOffsetsARM* sptr)
 {
 	assert(sptr);
@@ -1661,7 +1656,7 @@ static void discard_ignored_flush_rewrites(std::list<address_rewrite>& queue)
 {
 	for (auto it = queue.begin(); it != queue.end();)
 	{
-		if (!is_flush_markings_source(it->source))
+		if (it->source.call_id != VKFLUSHMAPPEDMEMORYRANGES)
 		{
 			++it;
 			continue;
@@ -1924,7 +1919,7 @@ static void replay_thread(lava_reader* replayer, int thread_id, output_packet_ma
 			}
 			if (write_output && instrtype == PACKET_VULKAN_API_CALL && output_writer->current.packet == output_packet)
 			{
-				ABORT("Output callback for %s did not write a packet on thread %u packet %u", get_function_name(t.current.call_id),
+				ABORT("Output callback for %s did not write a packet on thread %u packet %u", vulkan_get_function_name(t.current.call_id),
 					(unsigned)t.thread_index(), (unsigned)t.current.packet);
 			}
 			if (write_output && instrtype != PACKET_THREAD_BARRIER) packet_mapping->record(t.thread_index(), input_packet + 1, output_writer->current.packet);

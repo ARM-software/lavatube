@@ -217,7 +217,7 @@ uint8_t lava_file_reader::step()
 	current_packet_end = current_packet_start + current_packet_size;
 	current.packet_type = r;
 	current_packet_contains_shader_data = false;
-	if (r != PACKET_VULKAN_API_CALL) current.call_id = UINT16_MAX;
+	if (r != PACKET_VULKAN_API_CALL && r != PACKET_OPENCL_API_CALL) current.call_id = UINT16_MAX;
 	printed_current_packet = false;
 	print_packet_frame = current.frame;
 	if (is_isolated())
@@ -263,12 +263,12 @@ lava_file_reader::~lava_file_reader()
 {
 }
 
-uint16_t lava_file_reader::read_apicall()
+uint16_t lava_file_reader::read_vulkan_apicall()
 {
 	set_checkpoint();
-	const uint16_t apicall = parent->dictionary.at(read_uint16_t());
+	const uint16_t apicall = parent->vulkan_dictionary.at(read_uint16_t());
 	(void)read_uint32_t(); // reserved for future use
-	DLOG2("[t%02u f%u %06d] %s", current.thread, current.frame, (int)parent->thread_packet_numbers->at(current.thread).load(std::memory_order_relaxed) + 1, get_function_name(apicall));
+	DLOG2("[t%02u f%u %06d] %s", current.thread, current.frame, (int)parent->thread_packet_numbers->at(current.thread).load(std::memory_order_relaxed) + 1, vulkan_get_function_name(apicall));
 	lava_replay_func func = retrace_getcall(apicall);
 	current.call_id = apicall;
 	current.packet_type = PACKET_VULKAN_API_CALL;
@@ -279,6 +279,34 @@ uint16_t lava_file_reader::read_apicall()
 		callback_context cb_context{ *this };
 		print_params_unavailable(cb_context);
 	}
+	api_call_count++;
+	return apicall;
+}
+
+uint16_t lava_file_reader::read_opencl_apicall()
+{
+	const uint16_t apicall = parent->opencl_dictionary.at(read_uint16_t());
+	(void)read_uint32_t();
+	current.call_id = apicall;
+	current.packet_type = PACKET_OPENCL_API_CALL;
+	DLOG2("[t%02u f%u %06d] %s", current.thread, current.frame,
+	      (int)parent->thread_packet_numbers->at(current.thread).load(std::memory_order_relaxed) + 1,
+	      opencl_get_function_name(apicall));
+
+	opencl_api_packet& packet = current_opencl_packet;
+	packet.valid = true;
+	packet.num_entries = read_uint32_t();
+	const uint8_t pointer_flags = read_uint8_t();
+	packet.platforms_present = pointer_flags & 1;
+	packet.num_platforms_present = pointer_flags & 2;
+	packet.num_platforms = read_uint32_t();
+	const uint32_t platform_count = read_uint32_t();
+	packet.platform_indices.resize(platform_count);
+	for (uint32_t i = 0; i < platform_count; i++)
+	{
+		packet.platform_indices[i] = read_uint32_t();
+	}
+	packet.result = read_int32_t();
 	api_call_count++;
 	return apicall;
 }
@@ -342,7 +370,24 @@ static Json::Value params_packet_json(const callback_context& cb)
 	Json::Value v = cli_params_base_json(cb);
 	Json::Value params;
 	const output_update_packet& update = cb.reader.current_update_packet;
-	if (update.valid)
+	const opencl_api_packet& opencl = cb.reader.current_opencl_packet;
+	if (opencl.valid)
+	{
+		params["num_entries"] = opencl.num_entries;
+		if (opencl.platforms_present)
+		{
+			params["platforms"] = Json::arrayValue;
+			for (uint32_t index : opencl.platform_indices) params["platforms"].append(index);
+		}
+		else
+		{
+			params["platforms"] = Json::nullValue;
+		}
+		if (opencl.num_platforms_present) params["num_platforms"] = opencl.num_platforms;
+		else params["num_platforms"] = Json::nullValue;
+		params["result"] = opencl.result;
+	}
+	else if (update.valid)
 	{
 		params["packet_type"] = update.instrtype;
 		params["device_index"] = update.device_index;
@@ -560,7 +605,7 @@ static VkResult replay_test_forced_retval(lava_file_reader& reader)
 {
 	lava_reader* parent = reader.parent;
 	if (parent->test_retval_result_call.empty()
-	    || parent->test_retval_result_call != get_function_name(reader.current.call_id))
+	    || parent->test_retval_result_call != vulkan_get_function_name(reader.current.call_id))
 	{
 		return VK_SUCCESS;
 	}
@@ -587,7 +632,7 @@ void check_retval(lava_file_reader& reader, VkResult stored_retval, VkResult& re
 	if (retval == VK_SUCCESS || compatible_replay_status(reader.current.call_id, stored_retval, retval)) return;
 
 	const char* result = errorString(retval);
-	const char* call_name = get_function_name(reader.current.call_id);
+	const char* call_name = vulkan_get_function_name(reader.current.call_id);
 	lava_reader* parent = reader.parent;
 	parent->cli_error_count.fetch_add(1, std::memory_order_relaxed);
 	if (!parent->cli_service.load(std::memory_order_acquire))
@@ -627,7 +672,7 @@ void lava_reader::request_abort(lava_file_reader& reader, VkResult retval)
 		{
 			mAbortRequested = true;
 			mAbortReason = std::string("unexpected API result ") + errorString(retval) + " in "
-			             + get_function_name(reader.current.call_id)
+			             + vulkan_get_function_name(reader.current.call_id)
 			             + " (thread " + std::to_string(reader.current.thread)
 			             + ", packet " + std::to_string(reader.current.packet) + ")";
 		}
@@ -703,8 +748,14 @@ void lava_reader::init_metadata(const std::string& path)
 	for (const std::string& funcname : dict.getMemberNames())
 	{
 		const uint16_t trace_index = dict[funcname].asInt(); // old index
+		const uint16_t opencl_index = opencl_get_function_id(funcname.c_str());
+		if (opencl_index != UINT16_MAX)
+		{
+			opencl_dictionary[trace_index] = opencl_index;
+			continue;
+		}
 		const uint16_t retrace_index = retrace_getid(funcname.c_str()); // new index
-		if (retrace_index != UINT16_MAX) dictionary[trace_index] = retrace_index; // map old index to new
+		if (retrace_index != UINT16_MAX) vulkan_dictionary[trace_index] = retrace_index; // map old index to new
 		else DLOG("Function %s from trace dictionary not supported! If used, we will fail!", funcname.c_str());
 	}
 

@@ -227,6 +227,7 @@ static const char* packet_type_name(uint8_t instrtype)
 	case PACKET_BUFFER_UPDATE2: return "PACKET_BUFFER_UPDATE2";
 	case PACKET_IMAGE_INITIALIZATION: return "PACKET_IMAGE_INITIALIZATION";
 	case PACKET_BUFFER_INITIALIZATION: return "PACKET_BUFFER_INITIALIZATION";
+	case PACKET_OPENCL_API_CALL: return "PACKET_OPENCL_API_CALL";
 	default: return "PACKET_UNKNOWN";
 	}
 }
@@ -257,7 +258,7 @@ static std::string markings_location_string(const collected_markings_entry& entr
 		+ " marking " + _to_string(entry.occurrence);
 	if (entry.instrtype == PACKET_VULKAN_API_CALL && entry.source.call_id != UINT16_MAX)
 	{
-		where += " (" + std::string(get_function_name(entry.source.call_id))
+		where += " (" + std::string(vulkan_get_function_name(entry.source.call_id))
 			+ ", call " + _to_string(entry.source.packet) + ")";
 	}
 	else
@@ -272,7 +273,7 @@ static bool is_capture_flush_leftover_markings(const collected_markings_entry& e
 {
 	return entry.instrtype == PACKET_VULKAN_API_CALL
 		&& entry.source.call_id != UINT16_MAX
-		&& strcmp(get_function_name(entry.source.call_id), "vkFlushMappedMemoryRanges") == 0;
+		&& strcmp(vulkan_get_function_name(entry.source.call_id), "vkFlushMappedMemoryRanges") == 0;
 }
 
 static std::string marking_type_string(VkMarkingTypeARM type)

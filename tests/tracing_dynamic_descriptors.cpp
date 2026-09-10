@@ -469,7 +469,7 @@ static bool process_next(lava_file_reader& reader)
 
 	if (instrtype == PACKET_VULKAN_API_CALL)
 	{
-		reader.read_apicall();
+		reader.read_vulkan_apicall();
 	}
 	else if (instrtype == PACKET_THREAD_BARRIER)
 	{

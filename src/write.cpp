@@ -383,28 +383,33 @@ void lava_writer::start_android_finish_monitor()
 
 void lava_writer::set(const std::string& path)
 {
-	mPath = path + "_tmp";
-	mPack = trace_pack_path(path, false);
-	write_output = false;
-	ILOG("Base path is set to %s", mPath.c_str());
+	ensure_started(path);
+}
 
-	// make path
-	int result = mkdir(mPath.c_str(), 0755);
-	if (result != 0)
+void lava_writer::ensure_started(const std::string& path)
+{
 	{
-		ELOG("Failed to create \"%s\": %s", mPath.c_str(), strerror(errno));
-	}
+		lava::lock_guard lock(frame_mutex);
+		if (should_serialize) return;
 
-	// inform our workers
-	frame_mutex.lock();
-	for (unsigned i = 0; i < thread_streams.size(); i++)
-	{
-		thread_streams.at(i)->write_output = false;
-		thread_streams.at(i)->set(mPath);
-	}
-	frame_mutex.unlock();
+		mPath = path + "_tmp";
+		mPack = trace_pack_path(path, false);
+		write_output = false;
+		ILOG("Base path is set to %s", mPath.c_str());
 
-	should_serialize = true;
+		const int result = mkdir(mPath.c_str(), 0755);
+		if (result != 0)
+		{
+			ELOG("Failed to create \"%s\": %s", mPath.c_str(), strerror(errno));
+		}
+
+		for (unsigned i = 0; i < thread_streams.size(); i++)
+		{
+			thread_streams.at(i)->write_output = false;
+			thread_streams.at(i)->set(mPath);
+		}
+		should_serialize = true;
+	}
 #ifdef VK_USE_PLATFORM_ANDROID_KHR
 	start_android_finish_monitor();
 #endif
@@ -506,6 +511,13 @@ void lava_writer::serialize()
 	{
 		jd[pair.first] = (unsigned)pair.second;
 	}
+	if (opencl_layer.platform_id_calls.load(std::memory_order_relaxed) != 0)
+	{
+		for (const auto& pair : opencl_function_table())
+		{
+			jd[pair.first] = (unsigned)(OPENCL_DICTIONARY_BASE + pair.second);
+		}
+	}
 	write_json(dict_path, jd);
 
 	// over-write these in case something was not used
@@ -575,10 +587,25 @@ void lava_writer::serialize()
 	write_json(mPath + "/metadata.json", mJson);
 
 	// write limits
-	write_json(mPath + "/limits.json", trace_limits(this));
+	Json::Value limits = trace_limits(this);
+	if (opencl_layer.platform_id_calls.load(std::memory_order_relaxed) != 0)
+	{
+		limits["cl_platform_id"] = opencl_layer.platform_index.size();
+	}
+	write_json(mPath + "/limits.json", limits);
 
 	// write out tracking info for each object
 	Json::Value tracking = trackable_json(this);
+	if (opencl_layer.platform_index.size())
+	{
+		tracking["cl_platform_id"] = Json::arrayValue;
+		for (const trackable* data : opencl_layer.platform_index.iterate())
+		{
+			Json::Value value = trackable_json(data);
+			value["index"] = data->index;
+			tracking["cl_platform_id"].append(value);
+		}
+	}
 	if (write_output)
 	{
 		merge_tracking_field(tracking, mInputTracking, "updates");
@@ -586,6 +613,26 @@ void lava_writer::serialize()
 	}
 	write_json(mPath + "/tracking.json", tracking);
 
+}
+
+bool lava_writer::claim_finalization()
+{
+	lava::lock_guard lock(frame_mutex);
+	if (!should_serialize || finalization_claimed
+	    || active_vulkan_instances.load(std::memory_order_acquire) != 0
+	    || opencl_layer.initialized.load(std::memory_order_acquire))
+	{
+		return false;
+	}
+	finalization_claimed = true;
+	return true;
+}
+
+void lava_writer::release_finalization()
+{
+	lava::lock_guard lock(frame_mutex);
+	assert(finalization_claimed);
+	finalization_claimed = false;
 }
 
 void lava_writer::finish()
@@ -611,7 +658,8 @@ void lava_writer::finish()
 	thread_streams.clear();
 	if (!mPath.empty())
 	{
-		if (p__delete_empty_trace && records.VkDevice_index.size() == 0)
+		if (p__delete_empty_trace && records.VkDevice_index.size() == 0
+		    && opencl_layer.platform_id_calls.load(std::memory_order_relaxed) == 0)
 		{
 			ILOG("No device was created; deleting empty trace %s", mPack.c_str());
 			erase_directory(mPath);
@@ -624,6 +672,9 @@ void lava_writer::finish()
 	mPath = "";
 	mJson = Json::Value();
 	mInputTracking = Json::Value();
+	opencl_layer.platform_index.clear();
+	opencl_layer.platform_id_calls.store(0, std::memory_order_relaxed);
+	opencl_layer.known_platform_count.store(UINT32_MAX, std::memory_order_relaxed);
 	global_frame.exchange(0);
 	tid = -1;
 	preserve_output_handle_indices = true;

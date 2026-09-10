@@ -18,6 +18,7 @@
 
 #include "generated/util_auto.h"
 #include "generated/vk_wrapper_auto.h"
+#include "generated/opencl_auto.h"
 #include "tracetooltests/tostring.h"
 
 #include <map>
@@ -58,6 +59,7 @@ enum packet_type
 	PACKET_JUMP = 10, // an instruction to jump to another trace file at given uncompressed offset
 	PACKET_IMAGE_INITIALIZATION = 11,
 	PACKET_BUFFER_INITIALIZATION = 12,
+	PACKET_OPENCL_API_CALL = 13,
 };
 
 enum lava_tiling // generalize memory tiling
@@ -1328,7 +1330,8 @@ inline const char* get_packet_name(packet_type type, uint16_t call_id)
 {
 	switch (type)
 	{
-	case PACKET_VULKAN_API_CALL: assert(call_id != UINT16_MAX); return get_function_name(call_id);
+	case PACKET_VULKAN_API_CALL: assert(call_id != UINT16_MAX); return vulkan_get_function_name(call_id);
+	case PACKET_OPENCL_API_CALL: assert(call_id != UINT16_MAX); return opencl_get_function_name(call_id);
 	case PACKET_THREAD_BARRIER: return "thread_barrier";
 	case PACKET_IMAGE_UPDATE: return "legacy_image_update";
 	case PACKET_BUFFER_UPDATE: return "legacy_buffer_update";

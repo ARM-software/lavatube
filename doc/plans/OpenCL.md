@@ -17,14 +17,21 @@
 
 ## Preparation
 
-What code reorganization and refactoring should we do first?
+- What code reorganization and refactoring should we do first?
+- Do we need a shared-runtime refactor? The Vulkan layer compiles the capture
+  implementation directly into its DSO, including its static writer singleton.
+  Repeating that for an OpenCL layer would create two writers?
 
 ## Capture
 
 - We want to store both APIs in the same trace container.
-- OpenCL has layers, but pretty much nobody has implemented support for them. We will likely
-  have to rely on old-fashioned dynamic linker shenanigans instead.
-- Should we store OpenCL calls intermixed with Vulkan calls if they come from the same thread?
+- Use OpenCL loader layers as the primary capture mechanism for now. Layer support is
+  still experimental and loader-dependent. High uncertainty for Android which we can
+  figure out later.
+- We should store OpenCL calls intermixed with Vulkan calls if they come from the same thread.
+- Both Vulkan and OpenCL should be served from the same DLL so they share one singleton.
+- clCreateContext must initialize capture the same way that vkCreateInstance does (if not
+  already initialized)
 
 ## Replay
 
@@ -32,5 +39,10 @@ What code reorganization and refactoring should we do first?
 
 ## Multi-threading
 
-- We want to re-use the same thread-model as we use with Vulkan now, but not sure what
-  OpenCL's thread model is. TBD - figure this out.
+- We want to re-use the same thread-model as we use with Vulkan now, but most OpenCL calls
+  are explicitly thread-safe.
+
+## Documentation
+
+- https://github.com/Kerilk/OpenCL-Layers-Tutorial
+- https://github.com/KhronosGroup/OpenCL-Layers

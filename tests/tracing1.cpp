@@ -319,7 +319,7 @@ static void getnext(lava_file_reader& t, const char* expected_s)
 	if (instrtype == PACKET_VULKAN_API_CALL)
 	{
 		const uint16_t expected = retrace_getid(expected_s);
-		const uint16_t apicall = t.read_apicall();
+		const uint16_t apicall = t.read_vulkan_apicall();
 		assert(instrtype == 2);
 		assert(apicall == expected);
 	}

@@ -98,6 +98,28 @@ struct output_update_packet
 	}
 };
 
+struct opencl_api_packet
+{
+	bool valid = false;
+	uint32_t num_entries = 0;
+	bool platforms_present = false;
+	bool num_platforms_present = false;
+	uint32_t num_platforms = 0;
+	std::vector<uint32_t> platform_indices;
+	int32_t result = 0;
+
+	void clear()
+	{
+		valid = false;
+		num_entries = 0;
+		platforms_present = false;
+		num_platforms_present = false;
+		num_platforms = 0;
+		platform_indices.clear();
+		result = 0;
+	}
+};
+
 struct print_packet_selector
 {
 	uint32_t packet = UINT32_MAX;
@@ -218,7 +240,8 @@ public:
 	std::vector<std::thread> threads;
 
 	// The dictionary is read from a JSON file and then mapped from their to our function ids.
-	std::unordered_map<uint16_t, uint16_t> dictionary;
+	std::unordered_map<uint16_t, uint16_t> vulkan_dictionary;
+	std::unordered_map<uint16_t, uint16_t> opencl_dictionary;
 
 	/// Select whether we replay Vulkan calls, process the trace statefully without Vulkan, or
 	/// decode isolated packets without maintaining replay state. Duplicated into the file reader.
@@ -393,7 +416,8 @@ public:
 #endif
 	inline void read_barrier();
 	const std::vector<unsigned>& barrier_packet_indices() const { return current_barrier_packet_indices; }
-	uint16_t read_apicall();
+	uint16_t read_vulkan_apicall();
+	uint16_t read_opencl_apicall();
 
 	bool start_measurement_on_thread_entry() const
 	{
@@ -519,6 +543,7 @@ public:
 	/// Rewrite queue for the second pass, re-sorted and split by thread.
 	std::list<address_rewrite> rewrite_queue;
 	output_update_packet current_update_packet;
+	opencl_api_packet current_opencl_packet;
 	bool current_packet_contains_shader_data = false;
 
 	change_source current;

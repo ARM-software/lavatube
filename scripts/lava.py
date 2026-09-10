@@ -174,9 +174,9 @@ for f in fake_functions:
 	out([u], '\t{ %d, "%s" },' % (idx, f))
 	idx += 1
 out([u], '};')
-out([u], 'const char* get_function_name(uint16_t idx) { return reverse_function_table.at(idx); }')
-out([uh], 'const char* get_function_name(uint16_t idx) __attribute__((pure));')
-out([uh], 'const char* get_stype_name(VkStructureType idx) __attribute__((pure));')
+out([u], 'const char* vulkan_get_function_name(uint16_t idx) { return reverse_function_table.at(idx); }')
+out([uh], 'const char* vulkan_get_function_name(uint16_t idx) __attribute__((pure));')
+out([uh], 'const char* vulkan_get_stype_name(VkStructureType idx) __attribute__((pure));')
 
 out([u])
 out([u], 'static std::unordered_map<VkStructureType, const char*> reverse_stype_table =')
@@ -195,7 +195,7 @@ out([u], '\t{ VK_STRUCTURE_TYPE_LOADER_DEVICE_CREATE_INFO, "VkLayerDeviceCreateI
 for k,v in fake_extension_structs.items():
 	out([u], '\t{ %s, "%s" },' % (v, k))
 out([u], '};')
-out([u], 'const char* get_stype_name(VkStructureType idx) { return reverse_stype_table.at(idx); }')
+out([u], 'const char* vulkan_get_stype_name(VkStructureType idx) { return reverse_stype_table.at(idx); }')
 
 out([u])
 out([uh, u])
@@ -482,7 +482,7 @@ for v in spec.root.findall('types/type'):
 		out(targets_read, '\t\t\t\t}')
 		out(targets_read, '\t\t\t}')
 		if v.find('name').text == 'VkInstance':
-			out(targets_read, '\t\t\tif (count == 0) ELOG("No Vulkan instances recorded. Broken trace file!");')
+			out(targets_read, '\t\t\tif (count == 0 && v.get("cl_platform_id", 0).asUInt() == 0) ELOG("No API context or instance recorded. Broken trace file!");')
 		if v.find('name').text == 'VkSurfaceKHR':
 			out(targets_read, '\t\t\tif (!replayer.is_isolated()) window_preallocate(count);')
 		out(targets_read, '\t\t}')

@@ -120,8 +120,14 @@ if __name__ == '__main__':
 			os.environ['LAVATUBE_BLACKLIST_EXTENSIONS'] = normalize_blacklisted_extensions(os.environ['LAVATUBE_BLACKLIST_EXTENSIONS'])
 		except ValueError as error:
 			parser.error(str(error))
-	if args.layer: os.environ['VK_LAYER_PATH'] = args.layer
-	else: os.environ['VK_LAYER_PATH'] = '/opt/lavatube'
+	if args.layer: capture_layer_path = args.layer
+	else: capture_layer_path = '/opt/lavatube'
+	os.environ['VK_LAYER_PATH'] = capture_layer_path
+	opencl_layer = os.path.abspath(os.path.join(capture_layer_path, 'libVkLayer_lavatube.so'))
+	if 'OPENCL_LAYERS' in os.environ:
+		os.environ['OPENCL_LAYERS'] = opencl_layer + os.pathsep + os.environ['OPENCL_LAYERS']
+	else:
+		os.environ['OPENCL_LAYERS'] = opencl_layer
 	if args.nomp:
 		os.environ['LAVATUBE_DISABLE_MULTITHREADED_WRITEOUT'] = '1'
 		os.environ['LAVATUBE_DISABLE_MULTITHREADED_COMPRESS'] = '1'
@@ -138,6 +144,7 @@ if __name__ == '__main__':
 	PrintEnvVar('LAVATUBE_DEBUG_FILE')
 	PrintEnvVar('VK_INSTANCE_LAYERS')
 	PrintEnvVar('VK_LAYER_PATH')
+	PrintEnvVar('OPENCL_LAYERS')
 	PrintEnvVar('LAVATUBE_GPU')
 	PrintEnvVar('LAVATUBE_DEDICATED_BUFFER')
 	PrintEnvVar('LAVATUBE_DEDICATED_IMAGE')
