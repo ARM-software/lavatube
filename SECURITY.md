@@ -1,3 +1,11 @@
+Software classification
+-----------------------
+
+This software is currently considered unfinished and experimental.
+
+It will remain so until anyone starts using it for anything but
+experiments.
+
 Reporting security issues
 -------------------------
 

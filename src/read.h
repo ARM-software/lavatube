@@ -482,6 +482,9 @@ public:
 	// First-pass simulation timings accumulated by this trace thread.
 	uint64_t simulation_command_execution_time_ns = 0;
 	uint64_t simulation_shader_setup_time_ns = 0;
+	uint64_t simulation_descriptor_setup_time_ns = 0;
+	uint64_t simulation_physical_address_setup_time_ns = 0;
+	uint64_t simulation_range_lookup_time_ns = 0;
 	uint64_t simulation_initialization_time_ns = 0;
 	uint64_t simulation_run_time_ns = 0;
 	uint64_t simulation_shader_result_time_ns = 0;

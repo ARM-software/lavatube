@@ -544,6 +544,7 @@ struct shader_stage
 	VkShaderModule module = VK_NULL_HANDLE;
 	std::string name;
 	std::vector<uint32_t> code; // raw SPIR-V when sourced from VK_EXT_shader_object or maintenance 5
+	bool enables_device_address = false;
 	std::vector<VkSpecializationMapEntry> specialization_constants;
 	std::vector<char> specialization_data;
 	host_write_regions specialization_sources;

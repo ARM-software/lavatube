@@ -60,6 +60,9 @@ struct simulation_summary
 	uint64_t total_run_time_ns = 0;
 	uint64_t command_execution_time_ns = 0;
 	uint64_t shader_setup_time_ns = 0;
+	uint64_t descriptor_setup_time_ns = 0;
+	uint64_t physical_address_setup_time_ns = 0;
+	uint64_t range_lookup_time_ns = 0;
 	uint64_t initialization_time_ns = 0;
 	uint64_t command_execution_run_time_ns = 0;
 	uint64_t shader_result_time_ns = 0;
@@ -1973,6 +1976,9 @@ static simulation_summary collect_simulation_summary(lava_reader& replayer)
 		const lava_file_reader& reader = replayer.file_reader(i);
 		summary.command_execution_time_ns += reader.simulation_command_execution_time_ns;
 		summary.shader_setup_time_ns += reader.simulation_shader_setup_time_ns;
+		summary.descriptor_setup_time_ns += reader.simulation_descriptor_setup_time_ns;
+		summary.physical_address_setup_time_ns += reader.simulation_physical_address_setup_time_ns;
+		summary.range_lookup_time_ns += reader.simulation_range_lookup_time_ns;
 		summary.initialization_time_ns += reader.simulation_initialization_time_ns;
 		summary.command_execution_run_time_ns += reader.simulation_run_time_ns;
 		summary.shader_result_time_ns += reader.simulation_shader_result_time_ns;
@@ -1997,6 +2003,9 @@ static void print_conversion_summary(const simulation_summary& simulation_stats,
 	printf("  Pass 1 time:           %.6f s\n", nanoseconds_to_seconds(first_pass_time_ns));
 	printf("    Command execution:   %.6f s\n", nanoseconds_to_seconds(simulation_stats.command_execution_time_ns));
 	printf("      Shader setup:      %.6f s\n", nanoseconds_to_seconds(simulation_stats.shader_setup_time_ns));
+	printf("        Descriptor setup:       %.6f s\n", nanoseconds_to_seconds(simulation_stats.descriptor_setup_time_ns));
+	printf("        Physical-address setup: %.6f s\n", nanoseconds_to_seconds(simulation_stats.physical_address_setup_time_ns));
+	printf("        Range lookup:           %.6f s\n", nanoseconds_to_seconds(simulation_stats.range_lookup_time_ns));
 	printf("      Simulator init:    %.6f s\n", nanoseconds_to_seconds(simulation_stats.initialization_time_ns));
 	printf("      Simulator run:     %.6f s\n", nanoseconds_to_seconds(simulation_stats.command_execution_run_time_ns));
 	printf("      Shader results:    %.6f s\n", nanoseconds_to_seconds(simulation_stats.shader_result_time_ns));

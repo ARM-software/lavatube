@@ -30,6 +30,9 @@ static bool setup_execute_commands(lava_file_reader& reader, const trackeddevice
 	const uint64_t command_buffer_time_ns = gettime() - command_buffer_start;
 	reader.simulation_command_execution_time_ns += command_buffer_time_ns;
 	reader.simulation_shader_setup_time_ns += data.stats.total_shader_setup_time;
+	reader.simulation_descriptor_setup_time_ns += data.stats.total_descriptor_setup_time;
+	reader.simulation_physical_address_setup_time_ns += data.stats.total_physical_address_setup_time;
+	reader.simulation_range_lookup_time_ns += data.stats.total_range_lookup_time;
 	reader.simulation_initialization_time_ns += data.stats.total_init_time;
 	reader.simulation_run_time_ns += data.stats.total_spirv_run_time;
 	reader.simulation_shader_result_time_ns += data.stats.total_shader_result_time;
@@ -968,6 +971,7 @@ static void copy_shader_stage(const trackedpipeline& pipeline_data, shader_stage
 		{
 			stage.code.resize(smciext->codeSize / sizeof(uint32_t));
 			memcpy(stage.code.data(), smciext->pCode, smciext->codeSize);
+			stage.enables_device_address = shader_has_device_addresses(stage.code);
 		}
 	}
 	else // old style shader modules
@@ -976,6 +980,7 @@ static void copy_shader_stage(const trackedpipeline& pipeline_data, shader_stage
 		const auto& shader_data = VkShaderModule_index.at(shader_index);
 		stage.code = shader_data.code;
 		stage.shader_module_index = shader_index;
+		stage.enables_device_address = shader_data.enables_device_address || shader_has_device_addresses(stage.code);
 	}
 	stage.name = info.pName;
 	stage.stage = info.stage;
@@ -1016,6 +1021,7 @@ static void copy_data_graph_shader_stage(const trackedpipeline& pipeline_data, s
 		{
 			stage.code.resize(smciext->codeSize / sizeof(uint32_t));
 			memcpy(stage.code.data(), smciext->pCode, smciext->codeSize);
+			stage.enables_device_address = shader_has_device_addresses(stage.code);
 		}
 	}
 	else
@@ -1024,6 +1030,7 @@ static void copy_data_graph_shader_stage(const trackedpipeline& pipeline_data, s
 		const auto& shader_data = VkShaderModule_index.at(shader_index);
 		stage.code = shader_data.code;
 		stage.shader_module_index = shader_index;
+		stage.enables_device_address = shader_data.enables_device_address || shader_has_device_addresses(stage.code);
 	}
 	stage.name = info.pName ? info.pName : "";
 	stage.stage = VK_SHADER_STAGE_COMPUTE_BIT; // Reuse the existing single-stage metadata path until GraphARM execution is modeled separately.
@@ -1229,6 +1236,7 @@ void postprocess_vkCreateShadersEXT(callback_context& cb, VkDevice device, uint3
 		{
 			obj.stage.code.resize(pCreateInfos[i].codeSize / sizeof(uint32_t));
 			memcpy(obj.stage.code.data(), pCreateInfos[i].pCode, pCreateInfos[i].codeSize);
+			obj.stage.enables_device_address = shader_has_device_addresses(obj.stage.code);
 		}
 	}
 }

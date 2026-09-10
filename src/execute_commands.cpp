@@ -559,6 +559,10 @@ static void collect_simulator_physical_address_markings(const std::vector<simula
 static bool run_spirv(command_execution_data& data, shader_stage& stage, const change_source& source,
 	VkPipelineBindPoint owner_bind_point, uint32_t owner_index, bool shader_object)
 {
+	// Avoid rebuilding inputs for shaders the simulator has already proven cannot produce useful metadata.
+	// The simulator repeats this check in its constructor to handle another worker marking the shader meanwhile.
+	if (simulator_persistent_data.IsUninteresting(stage.unique_index)) return true;
+
 	const uint64_t shader_setup_start = gettime();
 	SPIRVSimulator::SimulationData inputs;
 	SPIRVSimulator::SimulationResults results;
@@ -722,25 +726,37 @@ static bool run_spirv(command_execution_data& data, shader_stage& stage, const c
 		}
 	}
 
-	for (trackedbuffer& buffer_data : VkBuffer_index)
+	const uint64_t physical_address_setup_start = gettime();
+	data.stats.total_descriptor_setup_time += physical_address_setup_start - shader_setup_start;
+	if (stage.enables_device_address)
 	{
-		if (buffer_data.parent_device_index != data.device_data.index) continue;
-		if (buffer_data.size == 0) continue;
-		const uint64_t visible_address = buffer_data.capture_device_address ? buffer_data.capture_device_address : buffer_data.device_address;
-		if (visible_address == 0) continue;
-		if (!buffer_data.is_state(trackedobject::states::bound) && data.device_address_remapping.get_by_address(visible_address) != &buffer_data) continue;
-		suballoc_location loc = data.device_data.allocator->find_buffer_memory(buffer_data.index);
-		if (!loc.mapped) continue;
-		std::byte* base = (std::byte*)loc.mapped;
-		inputs.physical_address_buffers[visible_address] = std::make_pair(static_cast<size_t>(buffer_data.size), base);
-		inputs.rt_array_lengths[simulator_pointer_bits(base)][0] = static_cast<size_t>(buffer_data.size);
-		register_simulator_buffer_range(simulator_ranges, base, buffer_data.size, &buffer_data, 0, UINT32_MAX, UINT32_MAX, true);
-		if ((buffer_data.usage2 & VK_BUFFER_USAGE_2_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT) != 0)
+		const size_t buffer_count = VkBuffer_index.size();
+		simulator_ranges.reserve(simulator_ranges.size() + buffer_count);
+		inputs.physical_address_buffers.reserve(buffer_count);
+		inputs.rt_array_lengths.reserve(inputs.rt_array_lengths.size() + buffer_count);
+		for (trackedbuffer& buffer_data : VkBuffer_index)
 		{
-			inputs.descriptor_candidates[base];
+			if (buffer_data.parent_device_index != data.device_data.index) continue;
+			if (buffer_data.size == 0) continue;
+			const uint64_t visible_address = buffer_data.capture_device_address ? buffer_data.capture_device_address : buffer_data.device_address;
+			if (visible_address == 0) continue;
+			if (!buffer_data.is_state(trackedobject::states::bound) && data.device_address_remapping.get_by_address(visible_address) != &buffer_data) continue;
+			suballoc_location loc = data.device_data.allocator->find_buffer_memory(buffer_data.index);
+			if (!loc.mapped) continue;
+			std::byte* base = (std::byte*)loc.mapped;
+			inputs.physical_address_buffers[visible_address] = std::make_pair(static_cast<size_t>(buffer_data.size), base);
+			inputs.rt_array_lengths[simulator_pointer_bits(base)][0] = static_cast<size_t>(buffer_data.size);
+			register_simulator_buffer_range(simulator_ranges, base, buffer_data.size, &buffer_data, 0, UINT32_MAX, UINT32_MAX, true);
+			if ((buffer_data.usage2 & VK_BUFFER_USAGE_2_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT) != 0)
+			{
+				inputs.descriptor_candidates[base];
+			}
 		}
 	}
 
+	const uint64_t range_lookup_start = gettime();
+	data.stats.total_physical_address_setup_time += range_lookup_start - physical_address_setup_start;
+	range_lookup.reserve(simulator_ranges.size());
 	for (const simulator_buffer_range& range : simulator_ranges)
 	{
 		range_lookup.emplace(range.base_ptr, range);
@@ -749,6 +765,7 @@ static bool run_spirv(command_execution_data& data, shader_stage& stage, const c
 	inputs.shader_id = stage.unique_index;
 	SPIRVSimulator::MemoryFlagTracker memory_flag_tracker;
 	const uint64_t simulator_init_start = gettime();
+	data.stats.total_range_lookup_time += simulator_init_start - range_lookup_start;
 	data.stats.total_shader_setup_time += simulator_init_start - shader_setup_start;
 	SPIRVSimulator::SPIRVSimulator sim(stage.code, &memory_flag_tracker, &inputs, &results, &simulator_persistent_data, false, ERROR_RAISE_ON_BUFFERS_INCOMPLETE);
 	const uint64_t simulator_run_start = gettime();
@@ -1484,6 +1501,9 @@ static void merge_execution_stats(command_execution_data& dst, const command_exe
 	dst.stats.commands += src.stats.commands;
 	dst.stats.execution_commands += src.stats.execution_commands;
 	dst.stats.total_shader_setup_time += src.stats.total_shader_setup_time;
+	dst.stats.total_descriptor_setup_time += src.stats.total_descriptor_setup_time;
+	dst.stats.total_physical_address_setup_time += src.stats.total_physical_address_setup_time;
+	dst.stats.total_range_lookup_time += src.stats.total_range_lookup_time;
 	dst.stats.total_init_time += src.stats.total_init_time;
 	dst.stats.total_spirv_run_time += src.stats.total_spirv_run_time;
 	dst.stats.total_shader_result_time += src.stats.total_shader_result_time;

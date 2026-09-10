@@ -338,6 +338,7 @@ static uint32_t add_compute_pipeline(uint64_t unique_index, const std::vector<ui
 	stage.stage = VK_SHADER_STAGE_COMPUTE_BIT;
 	stage.name = "main";
 	stage.code = code;
+	stage.enables_device_address = shader_has_device_addresses(stage.code);
 	return pipeline_index;
 }
 
