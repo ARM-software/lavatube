@@ -3734,6 +3734,32 @@ static void adjust_virtual_swapchain_parameters(VkPhysicalDevice physical_device
 	data.real_image_usage = s.imageUsage;
 }
 
+void replay_pre_vkGetPhysicalDeviceSurfaceCapabilities2KHR(lava_file_reader& reader, VkPhysicalDevice physicalDevice,
+	VkPhysicalDeviceSurfaceInfo2KHR* pSurfaceInfo, VkSurfaceCapabilities2KHR* pSurfaceCapabilities)
+{
+	(void)reader;
+	(void)pSurfaceCapabilities;
+	if (!pSurfaceInfo) return;
+	VkSurfacePresentModeKHR* surface_present_mode = reinterpret_cast<VkSurfacePresentModeKHR*>(
+		find_extension(pSurfaceInfo, VK_STRUCTURE_TYPE_SURFACE_PRESENT_MODE_KHR));
+	if (!surface_present_mode) return;
+
+	uint32_t present_mode_count = 0;
+	VkResult result = wrap_vkGetPhysicalDeviceSurfacePresentModesKHR(physicalDevice, pSurfaceInfo->surface, &present_mode_count, nullptr);
+	if (result != VK_SUCCESS || present_mode_count == 0) return;
+	std::vector<VkPresentModeKHR> present_modes(present_mode_count);
+	result = wrap_vkGetPhysicalDeviceSurfacePresentModesKHR(physicalDevice, pSurfaceInfo->surface, &present_mode_count, present_modes.data());
+	if (result != VK_SUCCESS) return;
+	for (VkPresentModeKHR mode : present_modes)
+	{
+		if (mode == surface_present_mode->presentMode) return;
+	}
+
+	ILOG("Present mode %u not supported by replay surface capabilities query, falling back to VK_PRESENT_MODE_FIFO_KHR",
+		static_cast<uint32_t>(surface_present_mode->presentMode));
+	surface_present_mode->presentMode = VK_PRESENT_MODE_FIFO_KHR;
+}
+
 static VkSwapchainKHR remake_swapchain(lava_file_reader& reader, VkSwapchainKHR old_swapchain, trackedswapchain_replay* data)
 {
 	assert(reader.is_replay());

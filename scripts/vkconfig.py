@@ -159,6 +159,7 @@ replay_pre_calls = [ 'vkDestroyInstance', 'vkDestroyDevice', 'vkCreateDevice', '
 	'vkCmdBuildAccelerationStructuresIndirectKHR',
 	'vkUpdateDescriptorSetWithTemplate', 'vkUpdateDescriptorSetWithTemplateKHR', 'vkCmdPushDescriptorSetWithTemplate', 'vkCmdPushDescriptorSetWithTemplateKHR',
 	'vkGetPhysicalDeviceImageFormatProperties2', 'vkGetPhysicalDeviceImageFormatProperties2KHR', 'vkCreateBuffer', 'vkCreateImage', 'vkAllocateMemory',
+	'vkGetPhysicalDeviceSurfaceCapabilities2KHR',
 	'vkWriteSamplerDescriptorsEXT', 'vkWriteResourceDescriptorsEXT' ]
 validate_funcs(replay_pre_calls)
 replay_pre_tool_calls = [
