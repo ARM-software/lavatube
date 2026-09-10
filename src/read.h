@@ -479,6 +479,12 @@ public:
 	uint32_t print_packet_frame = 0;
 	uint32_t print_packet_number = 0;
 	uint32_t api_call_count = 0;
+	// First-pass simulation timings accumulated by this trace thread.
+	uint64_t simulation_command_execution_time_ns = 0;
+	uint64_t simulation_shader_setup_time_ns = 0;
+	uint64_t simulation_initialization_time_ns = 0;
+	uint64_t simulation_run_time_ns = 0;
+	uint64_t simulation_shader_result_time_ns = 0;
 
 	// CLI stuff
 	std::atomic_uint_fast32_t cli_call{ UINT32_MAX };

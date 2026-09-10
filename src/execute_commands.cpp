@@ -559,6 +559,7 @@ static void collect_simulator_physical_address_markings(const std::vector<simula
 static bool run_spirv(command_execution_data& data, shader_stage& stage, const change_source& source,
 	VkPipelineBindPoint owner_bind_point, uint32_t owner_index, bool shader_object)
 {
+	const uint64_t shader_setup_start = gettime();
 	SPIRVSimulator::SimulationData inputs;
 	SPIRVSimulator::SimulationResults results;
 	std::deque<uint64_t> opaque_storage;
@@ -748,6 +749,7 @@ static bool run_spirv(command_execution_data& data, shader_stage& stage, const c
 	inputs.shader_id = stage.unique_index;
 	SPIRVSimulator::MemoryFlagTracker memory_flag_tracker;
 	const uint64_t simulator_init_start = gettime();
+	data.stats.total_shader_setup_time += simulator_init_start - shader_setup_start;
 	SPIRVSimulator::SPIRVSimulator sim(stage.code, &memory_flag_tracker, &inputs, &results, &simulator_persistent_data, false, ERROR_RAISE_ON_BUFFERS_INCOMPLETE);
 	const uint64_t simulator_run_start = gettime();
 	sim.Run();
@@ -762,6 +764,7 @@ static bool run_spirv(command_execution_data& data, shader_stage& stage, const c
 		data.stats.slowest.stage = stage.stage;
 		data.stats.slowest.shader_module_index = stage.shader_module_index;
 	}
+	const uint64_t shader_result_start = gettime();
 
 	if (results.full_dispatch_needed)
 	{
@@ -814,6 +817,7 @@ static bool run_spirv(command_execution_data& data, shader_stage& stage, const c
 	merge_discovered_markings(data, discovered_markings);
 	merge_simulator_output_candidates(stage, source, range_lookup, results);
 	merge_simulator_memory_metadata(source, simulator_ranges, memory_flag_tracker);
+	data.stats.total_shader_result_time += gettime() - shader_result_start;
 
 	return true;
 }
@@ -1479,8 +1483,10 @@ static void merge_execution_stats(command_execution_data& dst, const command_exe
 {
 	dst.stats.commands += src.stats.commands;
 	dst.stats.execution_commands += src.stats.execution_commands;
+	dst.stats.total_shader_setup_time += src.stats.total_shader_setup_time;
 	dst.stats.total_init_time += src.stats.total_init_time;
 	dst.stats.total_spirv_run_time += src.stats.total_spirv_run_time;
+	dst.stats.total_shader_result_time += src.stats.total_shader_result_time;
 	if (src.stats.slowest.run_time_ns > dst.stats.slowest.run_time_ns)
 	{
 		dst.stats.slowest = src.stats.slowest;

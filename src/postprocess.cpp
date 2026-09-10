@@ -28,6 +28,11 @@ static bool setup_execute_commands(lava_file_reader& reader, const trackeddevice
 	};
 	const bool r = execute_commands(data);
 	const uint64_t command_buffer_time_ns = gettime() - command_buffer_start;
+	reader.simulation_command_execution_time_ns += command_buffer_time_ns;
+	reader.simulation_shader_setup_time_ns += data.stats.total_shader_setup_time;
+	reader.simulation_initialization_time_ns += data.stats.total_init_time;
+	reader.simulation_run_time_ns += data.stats.total_spirv_run_time;
+	reader.simulation_shader_result_time_ns += data.stats.total_shader_result_time;
 	if (data.stats.execution_commands > 0 && command_buffer_time_ns > 0)
 	{
 		DLOG("Simulator execution of cmd_buffer=%u frame=%u packet=%u thread=%u simulator_time=%.2fms commands=%d execution_commands=%d slowest_shader=%d slowest_type=%s slowest_time=%.2fms", (unsigned)cmdbuffer_index,

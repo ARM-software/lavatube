@@ -58,6 +58,11 @@ struct simulation_summary
 {
 	uint64_t invokation_count = 0;
 	uint64_t total_run_time_ns = 0;
+	uint64_t command_execution_time_ns = 0;
+	uint64_t shader_setup_time_ns = 0;
+	uint64_t initialization_time_ns = 0;
+	uint64_t command_execution_run_time_ns = 0;
+	uint64_t shader_result_time_ns = 0;
 	uint64_t stage_invokation_count[32] = {};
 	uint64_t slowest_run_time_ns = 0;
 	uint32_t slowest_shader_module_index = CONTAINER_INVALID_INDEX;
@@ -1948,7 +1953,7 @@ static void add_stage_to_simulation_summary(simulation_summary& summary, const s
 	}
 }
 
-static simulation_summary collect_simulation_summary()
+static simulation_summary collect_simulation_summary(lava_reader& replayer)
 {
 	simulation_summary summary;
 	for (uint32_t i = 0; i < index_to_VkPipeline.size(); i++)
@@ -1963,6 +1968,15 @@ static simulation_summary collect_simulation_summary()
 	{
 		add_stage_to_simulation_summary(summary, VkShaderEXT_index.at(i).stage);
 	}
+	for (uint32_t i = 0; i < replayer.threads.size(); i++)
+	{
+		const lava_file_reader& reader = replayer.file_reader(i);
+		summary.command_execution_time_ns += reader.simulation_command_execution_time_ns;
+		summary.shader_setup_time_ns += reader.simulation_shader_setup_time_ns;
+		summary.initialization_time_ns += reader.simulation_initialization_time_ns;
+		summary.command_execution_run_time_ns += reader.simulation_run_time_ns;
+		summary.shader_result_time_ns += reader.simulation_shader_result_time_ns;
+	}
 	return summary;
 }
 
@@ -1974,9 +1988,19 @@ static double nanoseconds_to_seconds(uint64_t nanoseconds)
 static void print_conversion_summary(const simulation_summary& simulation_stats, uint64_t first_pass_time_ns,
 	uint64_t second_pass_time_ns, uint64_t total_time_ns, uint64_t markings_added)
 {
+	const uint64_t accounted_command_execution_time_ns = simulation_stats.shader_setup_time_ns
+		+ simulation_stats.initialization_time_ns + simulation_stats.command_execution_run_time_ns
+		+ simulation_stats.shader_result_time_ns;
+	const uint64_t other_command_execution_time_ns = simulation_stats.command_execution_time_ns > accounted_command_execution_time_ns
+		? simulation_stats.command_execution_time_ns - accounted_command_execution_time_ns : 0;
 	printf("Conversion summary:\n");
 	printf("  Pass 1 time:           %.6f s\n", nanoseconds_to_seconds(first_pass_time_ns));
-	printf("    Simulator time:      %.6f s\n", nanoseconds_to_seconds(simulation_stats.total_run_time_ns));
+	printf("    Command execution:   %.6f s\n", nanoseconds_to_seconds(simulation_stats.command_execution_time_ns));
+	printf("      Shader setup:      %.6f s\n", nanoseconds_to_seconds(simulation_stats.shader_setup_time_ns));
+	printf("      Simulator init:    %.6f s\n", nanoseconds_to_seconds(simulation_stats.initialization_time_ns));
+	printf("      Simulator run:     %.6f s\n", nanoseconds_to_seconds(simulation_stats.command_execution_run_time_ns));
+	printf("      Shader results:    %.6f s\n", nanoseconds_to_seconds(simulation_stats.shader_result_time_ns));
+	printf("      Other command work: %.6f s\n", nanoseconds_to_seconds(other_command_execution_time_ns));
 	printf("  Pass 2 time:           %.6f s\n", nanoseconds_to_seconds(second_pass_time_ns));
 	printf("  Total conversion time: %.6f s\n", nanoseconds_to_seconds(total_time_ns));
 	printf("  Markings added:        %llu\n", (unsigned long long)markings_added);
@@ -2304,7 +2328,7 @@ int main(int argc, char **argv)
 		{
 			replayer.threads[i].join();
 		}
-		if (simulate) simulation_stats = collect_simulation_summary();
+		if (simulate) simulation_stats = collect_simulation_summary(replayer);
 
 		// Move the accumulated rewrites into the second pass.
 		sync_mutex.lock(); // threads are stopped here but let's avoid warnings
