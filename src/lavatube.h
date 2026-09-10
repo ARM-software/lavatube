@@ -894,6 +894,11 @@ struct trackedcommand // does _not_ inherit trackable
 			VkShaderStageFlagBits* shader_types;
 			uint32_t* shader_objects;
 		} bind_shaders_ext;
+		struct execute_commands
+		{
+			uint32_t commandBufferCount;
+			uint32_t* command_buffer_indices;
+		} execute_commands;
 		struct dispatch_data_graph
 		{
 			uint32_t session_index;

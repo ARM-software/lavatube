@@ -1423,6 +1423,70 @@ static void free_push_descriptor_writes(uint32_t descriptorWriteCount, VkWriteDe
 	free(pDescriptorWrites);
 }
 
+void clear_simulator_commands(trackedcmdbuffer& command_buffer_data)
+{
+	for (const trackedcommand& c : command_buffer_data.commands)
+	{
+		switch (c.id)
+		{
+		case VKCMDBINDDESCRIPTORSETS:
+			free(c.data.bind_descriptorsets.pDescriptorSets);
+			free(c.data.bind_descriptorsets.pDynamicOffsets);
+			break;
+		case VKCMDBINDDESCRIPTORBUFFERSEXT:
+			free(c.data.bind_descriptor_buffers_ext.addresses);
+			free(c.data.bind_descriptor_buffers_ext.usages);
+			break;
+		case VKCMDSETDESCRIPTORBUFFEROFFSETSEXT:
+			free(c.data.set_descriptor_buffer_offsets_ext.pBufferIndices);
+			free(c.data.set_descriptor_buffer_offsets_ext.pOffsets);
+			break;
+		case VKCMDPUSHDESCRIPTORSETKHR:
+			free_push_descriptor_writes(c.data.push_descriptorset.descriptorWriteCount,
+				c.data.push_descriptorset.pDescriptorWrites);
+			break;
+		case VKCMDCOPYBUFFER:
+			free(c.data.copy_buffer.pRegions);
+			break;
+		case VKCMDUPDATEBUFFER:
+			free(c.data.update_buffer.values);
+			break;
+		case VKCMDPUSHCONSTANTS:
+		case VKCMDPUSHCONSTANTS2KHR:
+			free(c.data.push_constants.values);
+			break;
+		case VKCMDBINDSHADERSEXT:
+			free(c.data.bind_shaders_ext.shader_types);
+			free(c.data.bind_shaders_ext.shader_objects);
+			break;
+		case VKCMDEXECUTECOMMANDS:
+			free(c.data.execute_commands.command_buffer_indices);
+			break;
+		case VKCMDBUILDACCELERATIONSTRUCTURESKHR:
+			free(c.data.build_acceleration_structures.instance_addresses);
+			free(c.data.build_acceleration_structures.primitive_offsets);
+			free(c.data.build_acceleration_structures.primitive_counts);
+			free(c.data.build_acceleration_structures.indirect_range_addresses);
+			break;
+		default:
+			break;
+		}
+	}
+	command_buffer_data.commands.clear();
+}
+
+static void merge_execution_stats(command_execution_data& dst, const command_execution_data& src)
+{
+	dst.stats.commands += src.stats.commands;
+	dst.stats.execution_commands += src.stats.execution_commands;
+	dst.stats.total_init_time += src.stats.total_init_time;
+	dst.stats.total_spirv_run_time += src.stats.total_spirv_run_time;
+	if (src.stats.slowest.run_time_ns > dst.stats.slowest.run_time_ns)
+	{
+		dst.stats.slowest = src.stats.slowest;
+	}
+}
+
 bool execute_commands(command_execution_data& data)
 {
 	std::vector<std::byte> push_constants; // current state of the push constants
@@ -1533,8 +1597,6 @@ bool execute_commands(command_execution_data& data)
 					dynamic_offset_index++;
 				}
 			}
-			free((void*)c.data.bind_descriptorsets.pDescriptorSets);
-			free((void*)c.data.bind_descriptorsets.pDynamicOffsets);
 			}
 			break;
 		case VKCMDBINDDESCRIPTORBUFFERSEXT:
@@ -1551,8 +1613,6 @@ bool execute_commands(command_execution_data& data)
 					descriptor_buffers[i].usage = c.data.bind_descriptor_buffers_ext.usages[i];
 				}
 			}
-			free(c.data.bind_descriptor_buffers_ext.addresses);
-			free(c.data.bind_descriptor_buffers_ext.usages);
 			break;
 		case VKCMDSETDESCRIPTORBUFFEROFFSETSEXT:
 			{
@@ -1641,8 +1701,6 @@ bool execute_commands(command_execution_data& data)
 					}
 				}
 			}
-			free(c.data.set_descriptor_buffer_offsets_ext.pBufferIndices);
-			free(c.data.set_descriptor_buffer_offsets_ext.pOffsets);
 			break;
 		case VKCMDCOPYBUFFER:
 			{
@@ -1657,7 +1715,6 @@ bool execute_commands(command_execution_data& data)
 					dst_buffer.source.copy_sources(src_buffer.source, r.dstOffset, r.srcOffset, r.size);
 				}
 			}
-			free(c.data.copy_buffer.pRegions);
 			break;
 		case VKCMDUPDATEBUFFER:
 			{
@@ -1667,14 +1724,39 @@ bool execute_commands(command_execution_data& data)
 				dst_buffer.source.register_source(c.data.update_buffer.offset, c.data.update_buffer.size, c.source,
 					1, 0, dst_buffer.object_type, dst_buffer.index);
 			}
-			free(c.data.update_buffer.values);
 			break;
 		case VKCMDPUSHCONSTANTS:
 		case VKCMDPUSHCONSTANTS2KHR:
 			if (data.push_constants.size() < c.data.push_constants.offset + c.data.push_constants.size) data.push_constants.resize(c.data.push_constants.offset + c.data.push_constants.size);
 			memcpy(data.push_constants.data() + c.data.push_constants.offset, c.data.push_constants.values, c.data.push_constants.size);
 			data.push_constant_sources.register_source(c.data.push_constants.offset, c.data.push_constants.size, c.source);
-			free(c.data.push_constants.values);
+			break;
+		case VKCMDEXECUTECOMMANDS:
+			if (data.secondary_command_buffer_depth > 0)
+			{
+				DLOG("Ignoring nested vkCmdExecuteCommands in secondary command buffer %u", (unsigned)data.cmdbuffer_data.index);
+				break;
+			}
+			for (uint32_t i = 0; i < c.data.execute_commands.commandBufferCount; i++)
+			{
+				const uint32_t secondary_index = c.data.execute_commands.command_buffer_indices[i];
+				if (secondary_index >= VkCommandBuffer_index.size())
+				{
+					DLOG("Ignoring invalid secondary command buffer index %u", (unsigned)secondary_index);
+					continue;
+				}
+				command_execution_data secondary_data {
+					.device_data = data.device_data,
+					.cmdbuffer_data = VkCommandBuffer_index.at(secondary_index),
+					.device_address_remapping = data.device_address_remapping,
+					.global_output_rewrite_queue = data.global_output_rewrite_queue,
+					.pending_descriptor_rewrites = data.pending_descriptor_rewrites,
+					.descriptor_buffer_payloads = data.descriptor_buffer_payloads,
+					.secondary_command_buffer_depth = data.secondary_command_buffer_depth + 1,
+				};
+				execute_commands(secondary_data);
+				merge_execution_stats(data, secondary_data);
+			}
 			break;
 		case VKCMDBINDPIPELINE:
 			if (c.data.bind_pipeline.pipelineBindPoint == VK_PIPELINE_BIND_POINT_GRAPHICS) graphics_pipeline_bound = c.data.bind_pipeline.pipeline_index;
@@ -1689,7 +1771,6 @@ bool execute_commands(command_execution_data& data)
 			apply_push_descriptor_writes(data, c.data.push_descriptorset.pipelineBindPoint, c.data.push_descriptorset.set,
 				c.data.push_descriptorset.descriptorWriteCount,
 				c.data.push_descriptorset.pDescriptorWrites);
-			free_push_descriptor_writes(c.data.push_descriptorset.descriptorWriteCount, c.data.push_descriptorset.pDescriptorWrites);
 			break;
 		case VKCMDBINDSHADERSEXT:
 			for (uint32_t i = 0; i < c.data.bind_shaders_ext.stageCount; i++)
@@ -1697,8 +1778,6 @@ bool execute_commands(command_execution_data& data)
 				if (c.data.bind_shaders_ext.shader_objects[i] != CONTAINER_NULL_VALUE) shader_objects[c.data.bind_shaders_ext.shader_types[i]] = c.data.bind_shaders_ext.shader_objects[i];
 				else shader_objects.erase(c.data.bind_shaders_ext.shader_types[i]); // explicit unbind
 			}
-			free(c.data.bind_shaders_ext.shader_types);
-			free(c.data.bind_shaders_ext.shader_objects);
 			break;
 		case VKCMDDISPATCH: // proxy for all compute commands
 			data.stats.execution_commands++;
@@ -1786,10 +1865,6 @@ bool execute_commands(command_execution_data& data)
 						discovered_markings);
 				}
 				merge_discovered_markings(data, discovered_markings);
-				free(c.data.build_acceleration_structures.instance_addresses);
-				free(c.data.build_acceleration_structures.primitive_offsets);
-				free(c.data.build_acceleration_structures.primitive_counts);
-				free(c.data.build_acceleration_structures.indirect_range_addresses);
 			}
 			break;
 		case VKCMDTRACERAYSKHR: // proxy for all raytracing commands

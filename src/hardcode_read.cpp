@@ -2,6 +2,7 @@
 // and not compiled as a separate unit.
 
 #include "markings.h"
+#include "execute_commands.h"
 #include "replay_instrumentation.h"
 #include "swapchain_format_compatibility.h"
 #include "jsoncpp/json/writer.h"
@@ -95,6 +96,10 @@ static bool remove_ahb_import_memory_info(VkMemoryAllocateInfo* pAllocateInfo)
 // this is a big hack until we have something better
 void reset_for_tools()
 {
+	for (trackedcmdbuffer& command_buffer_data : VkCommandBuffer_index)
+	{
+		clear_simulator_commands(command_buffer_data);
+	}
 	stored_VkPhysicalDeviceFeatures2 = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2, nullptr };
 	stored_VkPhysicalDeviceVulkan13Features = {};
 	stored_VkPhysicalDeviceVulkan12Features = {};
@@ -1902,6 +1907,13 @@ static void replay_cleanup_commandbuffer_for_rerecord(lava_file_reader& reader, 
 	replay_destroy_commandbuffer_scratch_buffers(commandbuffer_data.device, commandbuffer_data);
 }
 
+static void replay_clear_destroyed_commandbuffer_simulator_commands(lava_file_reader& reader, trackedcmdbuffer& commandbuffer_data)
+{
+	if (!reader.parent->simulate) return;
+	lava::lock_guard lock(sync_mutex);
+	clear_simulator_commands(commandbuffer_data);
+}
+
 static bool create_internal_buffer(VkDevice device, VkPhysicalDevice physical_device, VkDeviceSize size, VkBufferUsageFlags usage,
 	VkMemoryPropertyFlags memory_flags, internal_buffer& out)
 {
@@ -2071,6 +2083,7 @@ void replay_pre_vkDestroyCommandPool(lava_file_reader& reader, VkDevice device, 
 		trackedcmdbuffer& commandbuffer_data = VkCommandBuffer_index.at(commandbuffer_index);
 		if (commandbuffer_data.pool_index != commandpool_index) continue;
 		replay_cleanup_commandbuffer_for_rerecord(reader, commandbuffer_index, commandbuffer_data);
+		replay_clear_destroyed_commandbuffer_simulator_commands(reader, commandbuffer_data);
 	}
 }
 
@@ -2086,6 +2099,7 @@ void replay_pre_vkFreeCommandBuffers(lava_file_reader& reader, VkDevice device, 
 		if (commandbuffer_index == CONTAINER_INVALID_INDEX) continue;
 		trackedcmdbuffer& commandbuffer_data = VkCommandBuffer_index.at(commandbuffer_index);
 		replay_cleanup_commandbuffer_for_rerecord(reader, commandbuffer_index, commandbuffer_data);
+		replay_clear_destroyed_commandbuffer_simulator_commands(reader, commandbuffer_data);
 	}
 }
 

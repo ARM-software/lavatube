@@ -25,6 +25,7 @@ struct command_execution_data
 	address_rewrite_accumulator& global_output_rewrite_queue;
 	std::deque<descriptor_rewrite>& pending_descriptor_rewrites;
 	std::vector<descriptor_buffer_payload>& descriptor_buffer_payloads;
+	uint32_t secondary_command_buffer_depth = 0;
 	struct
 	{
 		int commands = 0;
@@ -41,3 +42,4 @@ struct command_execution_data
 };
 
 bool execute_commands(command_execution_data& data);
+void clear_simulator_commands(trackedcmdbuffer& command_buffer_data);

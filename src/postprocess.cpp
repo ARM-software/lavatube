@@ -27,7 +27,6 @@ static bool setup_execute_commands(lava_file_reader& reader, const trackeddevice
 		.descriptor_buffer_payloads = reader.parent->descriptor_buffer_payloads,
 	};
 	const bool r = execute_commands(data);
-	VkCommandBuffer_index.at(cmdbuffer_index).commands.clear();
 	const uint64_t command_buffer_time_ns = gettime() - command_buffer_start;
 	if (data.stats.execution_commands > 0 && command_buffer_time_ns > 0)
 	{
@@ -36,6 +35,43 @@ static bool setup_execute_commands(lava_file_reader& reader, const trackeddevice
 		     data.stats.execution_commands, (int)data.stats.slowest.shader_module_index, shader_stage_name(data.stats.slowest.stage), ns_to_ms(data.stats.slowest.run_time_ns));
 	}
 	return r;
+}
+
+void postprocess_vkBeginCommandBuffer(callback_context& cb, VkCommandBuffer commandBuffer, const VkCommandBufferBeginInfo* pBeginInfo)
+{
+	(void)pBeginInfo;
+	if (cb.result.vkresult != VK_SUCCESS) return;
+	const uint32_t command_buffer_index = index_to_VkCommandBuffer.index(commandBuffer);
+	clear_simulator_commands(VkCommandBuffer_index.at(command_buffer_index));
+}
+
+void postprocess_vkResetCommandBuffer(callback_context& cb, VkCommandBuffer commandBuffer, VkCommandBufferResetFlags flags)
+{
+	(void)flags;
+	if (cb.result.vkresult != VK_SUCCESS) return;
+	const uint32_t command_buffer_index = index_to_VkCommandBuffer.index(commandBuffer);
+	clear_simulator_commands(VkCommandBuffer_index.at(command_buffer_index));
+}
+
+void postprocess_vkCmdExecuteCommands(callback_context& cb, VkCommandBuffer commandBuffer, uint32_t commandBufferCount,
+	const VkCommandBuffer* pCommandBuffers)
+{
+	const uint32_t command_buffer_index = index_to_VkCommandBuffer.index(commandBuffer);
+	trackedcmdbuffer& command_buffer_data = VkCommandBuffer_index.at(command_buffer_index);
+	trackedcommand cmd { VKCMDEXECUTECOMMANDS };
+	cmd.source = cb.reader.current;
+	cmd.data.execute_commands.commandBufferCount = commandBufferCount;
+	cmd.data.execute_commands.command_buffer_indices = nullptr;
+	if (commandBufferCount > 0)
+	{
+		cmd.data.execute_commands.command_buffer_indices = static_cast<uint32_t*>(malloc(commandBufferCount * sizeof(uint32_t)));
+		assert(cmd.data.execute_commands.command_buffer_indices);
+		for (uint32_t i = 0; i < commandBufferCount; i++)
+		{
+			cmd.data.execute_commands.command_buffer_indices[i] = index_to_VkCommandBuffer.index(pCommandBuffers[i]);
+		}
+	}
+	command_buffer_data.commands.push_back(cmd);
 }
 
 static void handle_VkWriteDescriptorSets(uint32_t descriptorWriteCount, const VkWriteDescriptorSet* pDescriptorWrites, bool clear)

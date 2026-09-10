@@ -471,6 +471,74 @@ static void execute_compute_shader()
 	assert(fixture.descriptor_buffer_payloads.empty());
 }
 
+static void execute_secondary_command_buffer()
+{
+	VkPipeline_index.clear();
+	VkPipeline_index.resize(1);
+	VkPipeline_index[0].index = 0;
+	VkPipeline_index[0].type = VK_PIPELINE_BIND_POINT_DATA_GRAPH_ARM;
+	VkPipeline_index[0].shader_stages.resize(1);
+	VkPipeline_index[0].shader_stages[0].stage = VK_SHADER_STAGE_COMPUTE_BIT;
+
+	VkDataGraphPipelineSessionARM_index.clear();
+	VkDataGraphPipelineSessionARM_index.resize(1);
+	VkDataGraphPipelineSessionARM_index[0].pipeline_index = 0;
+
+	VkCommandBuffer_index.clear();
+	VkCommandBuffer_index.resize(2);
+	trackedcmdbuffer& primary = VkCommandBuffer_index[0];
+	primary.index = 0;
+	trackedcmdbuffer& secondary = VkCommandBuffer_index[1];
+	secondary.index = 1;
+
+	trackedcommand bind_pipeline { VKCMDBINDPIPELINE };
+	bind_pipeline.data.bind_pipeline.pipelineBindPoint = VK_PIPELINE_BIND_POINT_DATA_GRAPH_ARM;
+	bind_pipeline.data.bind_pipeline.pipeline_index = 0;
+	secondary.commands.push_back(bind_pipeline);
+	trackedcommand dispatch { VKCMDDISPATCHDATAGRAPHARM };
+	dispatch.data.dispatch_data_graph.session_index = 0;
+	secondary.commands.push_back(dispatch);
+
+	trackedcommand execute_secondary { VKCMDEXECUTECOMMANDS };
+	execute_secondary.data.execute_commands.commandBufferCount = 1;
+	execute_secondary.data.execute_commands.command_buffer_indices = static_cast<uint32_t*>(malloc(sizeof(uint32_t)));
+	assert(execute_secondary.data.execute_commands.command_buffer_indices);
+	execute_secondary.data.execute_commands.command_buffer_indices[0] = 1;
+	primary.commands.push_back(execute_secondary);
+
+	trackeddevice device_data;
+	address_remapper<trackedobject> device_address_remapping;
+	address_rewrite_accumulator global_output_rewrite_queue;
+	std::deque<descriptor_rewrite> pending_descriptor_rewrites;
+	std::vector<descriptor_buffer_payload> descriptor_buffer_payloads;
+	command_execution_data data {
+		.device_data = device_data,
+		.cmdbuffer_data = primary,
+		.device_address_remapping = device_address_remapping,
+		.global_output_rewrite_queue = global_output_rewrite_queue,
+		.pending_descriptor_rewrites = pending_descriptor_rewrites,
+		.descriptor_buffer_payloads = descriptor_buffer_payloads,
+	};
+
+	assert(execute_commands(data));
+	assert(VkPipeline_index[0].shader_stages[0].calls == 1);
+	assert(data.stats.commands == 3);
+	assert(data.stats.execution_commands == 1);
+	assert(primary.commands.size() == 1);
+	assert(secondary.commands.size() == 2);
+
+	assert(execute_commands(data));
+	assert(VkPipeline_index[0].shader_stages[0].calls == 2);
+	assert(data.stats.commands == 6);
+	assert(data.stats.execution_commands == 2);
+
+	clear_simulator_commands(primary);
+	clear_simulator_commands(secondary);
+	VkCommandBuffer_index.clear();
+	VkDataGraphPipelineSessionARM_index.clear();
+	VkPipeline_index.clear();
+}
+
 static descriptor_rewrite make_buffer_descriptor_rewrite(VkDescriptorType type, const std::vector<uint8_t>& bytes,
 	VkDeviceAddress address, VkDeviceSize range)
 {
@@ -1650,6 +1718,7 @@ int main(int argc, char** argv)
 	execute_copy_buffer();
 	track_descriptor_set_layout_size();
 	execute_compute_shader();
+	execute_secondary_command_buffer();
 	execute_compute_shader_mutable_descriptor_buffer();
 	execute_compute_shader_descriptor_buffer_array();
 	execute_compute_shader_mixed_mutable_descriptor_buffer_array();

@@ -1976,9 +1976,9 @@ static void print_conversion_summary(const simulation_summary& simulation_stats,
 {
 	printf("Conversion summary:\n");
 	printf("  Pass 1 time:           %.6f s\n", nanoseconds_to_seconds(first_pass_time_ns));
+	printf("    Simulator time:      %.6f s\n", nanoseconds_to_seconds(simulation_stats.total_run_time_ns));
 	printf("  Pass 2 time:           %.6f s\n", nanoseconds_to_seconds(second_pass_time_ns));
 	printf("  Total conversion time: %.6f s\n", nanoseconds_to_seconds(total_time_ns));
-	printf("  Simulator time:        %.6f s\n", nanoseconds_to_seconds(simulation_stats.total_run_time_ns));
 	printf("  Markings added:        %llu\n", (unsigned long long)markings_added);
 	printf("  Shader invocations:    %llu\n", (unsigned long long)simulation_stats.invokation_count);
 	for (uint32_t bit = 0; bit < 32; bit++)
@@ -2074,6 +2074,9 @@ static void add_callbacks_for_first_round(bool enable_simulation, bool enable_su
 		CALLBACK(vkCreateGraphicsPipelines);
 		CALLBACK(vkCreateComputePipelines);
 		CALLBACK(vkCreateDataGraphPipelinesARM);
+		CALLBACK(vkBeginCommandBuffer);
+		CALLBACK(vkResetCommandBuffer);
+		CALLBACK(vkCmdExecuteCommands);
 		CALLBACK(vkCmdBindPipeline);
 		CALLBACK(vkCmdBuildAccelerationStructuresKHR);
 		CALLBACK(vkCmdBuildAccelerationStructuresIndirectKHR);
