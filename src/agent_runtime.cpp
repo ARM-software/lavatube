@@ -113,14 +113,37 @@ Json::Value agent_runtime::request(const Json::Value& input) const
 	return value;
 }
 
-void agent_runtime::debug_event(const std::string& type, const Json::Value& value) const
+void agent_runtime::debug_event(const std::string& type, const Json::Value& value,
+	uint64_t duration_milliseconds) const
 {
 	if (!mOptions.debug_file) return;
 	Json::Value event;
 	event["type"] = type;
 	event["value"] = value;
+	if (duration_milliseconds != UINT64_MAX) event["duration_ms"] = (Json::UInt64)duration_milliseconds;
 	fprintf(mOptions.debug_file, "%s\n", agent_json_compact(event).c_str());
 	fflush(mOptions.debug_file);
+}
+
+void agent_runtime::add_provider_usage(const Json::Value& response)
+{
+	if (!response.isMember("usage") || !response["usage"].isObject()) return;
+	const Json::Value& usage = response["usage"];
+	if (usage.isMember("input_tokens") && usage["input_tokens"].isUInt64())
+	{
+		mInputTokens += usage["input_tokens"].asUInt64();
+		mHasInputTokens = true;
+	}
+	if (usage.isMember("output_tokens") && usage["output_tokens"].isUInt64())
+	{
+		mOutputTokens += usage["output_tokens"].asUInt64();
+		mHasOutputTokens = true;
+	}
+	if (usage.isMember("total_tokens") && usage["total_tokens"].isUInt64())
+	{
+		mTotalTokens += usage["total_tokens"].asUInt64();
+		mHasTotalTokens = true;
+	}
 }
 
 std::string agent_runtime::response_text(const Json::Value& response) const
@@ -269,6 +292,9 @@ Json::Value agent_runtime::finish(const std::string& status, const std::string& 
 	output["unresolved"] = unresolved.isArray() ? unresolved : Json::Value(Json::arrayValue);
 	output["usage"]["rounds"] = rounds;
 	output["usage"]["calls"] = calls;
+	if (mHasInputTokens) output["usage"]["input_tokens"] = (Json::UInt64)mInputTokens;
+	if (mHasOutputTokens) output["usage"]["output_tokens"] = (Json::UInt64)mOutputTokens;
+	if (mHasTotalTokens) output["usage"]["total_tokens"] = (Json::UInt64)mTotalTokens;
 	return output;
 }
 
@@ -298,7 +324,7 @@ Json::Value agent_runtime::ask(const std::string& prompt, const std::chrono::ste
 	uint32_t calls = 0;
 	size_t total_tool_bytes = 0;
 	std::string correction;
-	for (uint32_t round = 1; round <= 8; round++)
+	for (uint32_t round = 1; round <= mOptions.max_rounds; round++)
 	{
 		const clock::time_point now = clock::now();
 		if (now >= deadline)
@@ -311,9 +337,16 @@ Json::Value agent_runtime::ask(const std::string& prompt, const std::chrono::ste
 		const Json::Value request_value = request(input);
 		debug_event("model_request", request_value);
 		if (mOptions.verbose) fprintf(stderr, "lava-agent: model round %u\n", round);
+		const clock::time_point model_started = clock::now();
 		const http_response response = post(request_value, std::max<uint64_t>(remaining, 1));
+		const uint64_t model_milliseconds = (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(
+			clock::now() - model_started).count();
 		if (!response.ok)
 		{
+			Json::Value event;
+			event["http_code"] = (Json::Int64)response.code;
+			event["error"] = response.error;
+			debug_event("model_error", event, model_milliseconds);
 			Json::Value unresolved(Json::arrayValue);
 			if (response.timed_out)
 			{
@@ -333,11 +366,16 @@ Json::Value agent_runtime::ask(const std::string& prompt, const std::chrono::ste
 		Json::Reader reader;
 		if (!reader.parse(response.body, root, false))
 		{
+			Json::Value event;
+			event["http_code"] = (Json::Int64)response.code;
+			event["error"] = "invalid response JSON";
+			debug_event("model_error", event, model_milliseconds);
 			Json::Value unresolved(Json::arrayValue);
 			unresolved.append("The model returned invalid response JSON.");
 			return bound_output(finish("error", "The local model response could not be parsed.", 0.0, unresolved, round, calls));
 		}
-		debug_event("model_response", root);
+		add_provider_usage(root);
+		debug_event("model_response", root, model_milliseconds);
 		Json::Value tool_calls(Json::arrayValue);
 		if (root.isMember("output") && root["output"].isArray())
 		{
@@ -353,7 +391,7 @@ Json::Value agent_runtime::ask(const std::string& prompt, const std::chrono::ste
 			for (const Json::Value& call : tool_calls)
 			{
 				calls++;
-				if (calls > 32)
+				if (calls > mOptions.max_tool_calls)
 				{
 					Json::Value unresolved(Json::arrayValue);
 					unresolved.append("Internal tool-call budget exhausted.");
@@ -370,7 +408,10 @@ Json::Value agent_runtime::ask(const std::string& prompt, const std::chrono::ste
 					tool_result.error = "Invalid function call name, ID, or JSON arguments";
 					tool_result.result["error"] = tool_result.error;
 				}
-				else tool_result = mTools.execute(name, arguments);
+				const clock::time_point tool_started = clock::now();
+				if (tool_result.error.empty()) tool_result = mTools.execute(name, arguments);
+				const uint64_t tool_milliseconds = (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(
+					clock::now() - tool_started).count();
 				bool exhausted = false;
 				const Json::Value bounded = bounded_tool_result(tool_result, total_tool_bytes, exhausted);
 				tool_record record;
@@ -387,7 +428,7 @@ Json::Value agent_runtime::ask(const std::string& prompt, const std::chrono::ste
 				event["tool_name"] = name;
 				event["arguments"] = record.arguments;
 				event["output"] = tool_output;
-				debug_event("tool_call", event);
+				debug_event("tool_call", event, tool_milliseconds);
 				Json::Value item;
 				item["type"] = "function_call_output";
 				item["call_id"] = call_id;
@@ -417,5 +458,5 @@ Json::Value agent_runtime::ask(const std::string& prompt, const std::chrono::ste
 	}
 	Json::Value unresolved(Json::arrayValue);
 	unresolved.append(correction.empty() ? "Internal model-round budget exhausted." : correction);
-	return bound_output(finish("budget_exhausted", "The investigation exhausted its model-round budget.", 0.0, unresolved, 8, calls));
+	return bound_output(finish("budget_exhausted", "The investigation exhausted its model-round budget.", 0.0, unresolved, mOptions.max_rounds, calls));
 }

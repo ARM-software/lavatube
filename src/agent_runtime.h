@@ -15,6 +15,8 @@ struct agent_runtime_options
 	std::string base_url;
 	std::string reasoning_effort;
 	uint32_t timeout_seconds = 300;
+	uint32_t max_rounds = 8;
+	uint32_t max_tool_calls = 32;
 	size_t max_output_bytes = 32768;
 	FILE* debug_file = nullptr;
 	bool verbose = false;
@@ -53,11 +55,19 @@ private:
 	bool parse_final(const std::string& text, Json::Value& final, std::string& error) const;
 	std::string response_text(const Json::Value& response) const;
 	void append_response(Json::Value& input, const Json::Value& response) const;
-	void debug_event(const std::string& type, const Json::Value& value) const;
+	void debug_event(const std::string& type, const Json::Value& value,
+		uint64_t duration_milliseconds = UINT64_MAX) const;
+	void add_provider_usage(const Json::Value& response);
 	Json::Value bounded_tool_result(const agent_tool_result& result, size_t& total_bytes, bool& exhausted) const;
 	Json::Value bound_output(Json::Value output) const;
 
 	agent_runtime_options mOptions;
 	const agent_tools& mTools;
 	std::vector<tool_record> mRecords;
+	uint64_t mInputTokens = 0;
+	uint64_t mOutputTokens = 0;
+	uint64_t mTotalTokens = 0;
+	bool mHasInputTokens = false;
+	bool mHasOutputTokens = false;
+	bool mHasTotalTokens = false;
 };

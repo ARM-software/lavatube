@@ -51,7 +51,14 @@ def run_cli(cli, port, *command):
 
 
 def response_output(handler, output):
-	body = json.dumps({'output': output}, separators=(',', ':')).encode('utf-8')
+	body = json.dumps({
+		'output': output,
+		'usage': {
+			'input_tokens': 10,
+			'output_tokens': 5,
+			'total_tokens': 15,
+		},
+	}, separators=(',', ':')).encode('utf-8')
 	handler.send_response(200)
 	handler.send_header('Content-Type', 'application/json')
 	handler.send_header('Content-Length', str(len(body)))
@@ -303,6 +310,10 @@ def main():
 	if help_result.returncode != 0 or '-s/--sandbox LEVEL' not in help_result.stdout:
 		raise RuntimeError('lava-agent help omitted sandboxing: %r %r' % (
 			help_result.stdout, help_result.stderr))
+	for option in ('--max-rounds', '--max-tool-calls', '--reasoning-effort'):
+		if option not in help_result.stdout:
+			raise RuntimeError('lava-agent help omitted %s: %r' % (
+				option, help_result.stdout))
 	invalid_sandbox = subprocess.run(
 		[agent, '--sandbox', '0'],
 		text=True,
@@ -315,6 +326,19 @@ def main():
 			or 'Invalid --sandbox level' not in invalid_output['conclusion']):
 		raise RuntimeError('invalid sandbox level was accepted: %r %r' % (
 			invalid_sandbox.stdout, invalid_sandbox.stderr))
+	for option in ('--max-rounds', '--max-tool-calls'):
+		invalid_limit = subprocess.run(
+			[agent, option, '0'],
+			text=True,
+			stdout=subprocess.PIPE,
+			stderr=subprocess.PIPE,
+			timeout=5,
+		)
+		invalid_output = json.loads(invalid_limit.stdout)
+		if (invalid_limit.returncode != 2 or invalid_output['status'] != 'error'
+				or 'Invalid %s value' % option not in invalid_output['conclusion']):
+			raise RuntimeError('invalid %s was accepted: %r %r' % (
+				option, invalid_limit.stdout, invalid_limit.stderr))
 	replay_port = reserve_port()
 	model_port = reserve_port()
 	replay = subprocess.Popen(
@@ -349,7 +373,8 @@ def main():
 			result = subprocess.run(
 				[agent, '--service', '127.0.0.1:%d' % replay_port,
 				 '--base-url', 'http://127.0.0.1:%d/v1' % model_port,
-				 '--model', 'test-model', '-d', '3', '-df', debug_file, '-s', '3',
+				 '--model', 'test-model', '--reasoning-effort', 'high',
+				 '-d', '3', '-df', debug_file, '-s', '3',
 				 trace, 'ask', 'Confirm the test evidence.'],
 				text=True,
 				stdout=subprocess.PIPE,
@@ -368,12 +393,72 @@ def main():
 				raise RuntimeError('unexpected agent result: %r' % output)
 			if [item['tool_id'] for item in output['evidence']] != [1, 2, 3]:
 				raise RuntimeError('runtime evidence IDs were not preserved: %r' % output['evidence'])
-			if output['usage'] != {'rounds': 3, 'calls': 3}:
+			if output['usage'] != {
+					'rounds': 3,
+					'calls': 3,
+					'input_tokens': 30,
+					'output_tokens': 15,
+					'total_tokens': 45,
+			}:
 				raise RuntimeError('unexpected usage: %r' % output['usage'])
+			if any(request.get('reasoning', {}).get('effort') != 'high'
+					for request in AgentModelHandler.requests):
+				raise RuntimeError('reasoning effort was not sent: %r' % (
+					AgentModelHandler.requests,))
 			with open(debug_file, encoding='utf-8') as debug:
 				debug_events = [json.loads(line) for line in debug]
-			if [event['type'] for event in debug_events].count('tool_call') != 3:
+			tool_events = [event for event in debug_events
+				if event['type'] == 'tool_call']
+			model_events = [event for event in debug_events
+				if event['type'] == 'model_response']
+			if len(tool_events) != 3:
 				raise RuntimeError('debug transcript omitted exploratory calls')
+			if len(model_events) != 3:
+				raise RuntimeError('debug transcript omitted model responses')
+			if any(not isinstance(event.get('duration_ms'), int)
+					for event in tool_events + model_events):
+				raise RuntimeError('debug transcript omitted durations: %r' % (
+					debug_events,))
+
+		AgentModelHandler.mode = 'normal'
+		AgentModelHandler.requests = []
+		limited_rounds = subprocess.run(
+			[agent, '--service', '127.0.0.1:%d' % replay_port,
+			 '--base-url', 'http://127.0.0.1:%d/v1' % model_port,
+			 '--model', 'test-model', '--max-rounds', '2',
+			 trace, 'ask', 'Stop after two model rounds.'],
+			text=True,
+			stdout=subprocess.PIPE,
+			stderr=subprocess.PIPE,
+			timeout=30,
+		)
+		limited_rounds_output = json.loads(limited_rounds.stdout)
+		if (limited_rounds.returncode != 0
+				or limited_rounds_output['status'] != 'budget_exhausted'
+				or limited_rounds_output['usage']['rounds'] != 2
+				or limited_rounds_output['usage']['calls'] != 3):
+			raise RuntimeError('model-round budget was not enforced: %r %r' % (
+				limited_rounds.stdout, limited_rounds.stderr))
+
+		AgentModelHandler.mode = 'normal'
+		AgentModelHandler.requests = []
+		limited_calls = subprocess.run(
+			[agent, '--service', '127.0.0.1:%d' % replay_port,
+			 '--base-url', 'http://127.0.0.1:%d/v1' % model_port,
+			 '--model', 'test-model', '--max-tool-calls', '1',
+			 trace, 'ask', 'Stop after one tool call.'],
+			text=True,
+			stdout=subprocess.PIPE,
+			stderr=subprocess.PIPE,
+			timeout=30,
+		)
+		limited_calls_output = json.loads(limited_calls.stdout)
+		if (limited_calls.returncode != 0
+				or limited_calls_output['status'] != 'budget_exhausted'
+				or limited_calls_output['usage']['rounds'] != 1
+				or limited_calls_output['usage']['calls'] != 1):
+			raise RuntimeError('tool-call budget was not enforced: %r %r' % (
+				limited_calls.stdout, limited_calls.stderr))
 
 		AgentModelHandler.mode = 'unstable'
 		AgentModelHandler.requests = []

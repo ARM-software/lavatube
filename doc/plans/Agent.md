@@ -14,39 +14,12 @@ It is meant to be invoked by an external agent harness, called the controller
 in this document, which will typically use a cloud model. `lava-agent` uses a
 local model and runs on the same device as the replay service.
 
-It requires:
-* Local access to the trace file
-* Access to an explicitly selected, already-running `lava-replay` service
-  instance that it can query. The caller owns the service lifecycle and replay
-  position.
-* Access to a local AI model supporting an OpenAI compatible interface (like
-  `lava-tui`)
-* A fixed system prompt that tells it what it can and must (not) do
-* A provided user prompt that tells it what to investigate
-* Check with `lava-cli info trace` that the local trace path and the running
-  replay refer to the same filesystem object. A lightweight device and inode
-  comparison is sufficient; this is an accidental-mismatch check, not a
-  security boundary, and does not require hashing the trace.
-* Ability to look directly into a trace file similarly to `lava-print-fast`
+It requires local access to the trace file and to an already-running replay
+service. The caller owns the service lifecycle and replay position.
 
-It will give you:
-* Structured JSON output
+It will give you a atructured JSON output as a result.
 
-It must not:
-* Modify a running `lava-replay` service instance. The list of tool commands
-  must not include options to do so.
-* Launch, load a trace into, restart, stop, or advance a `lava-replay` service
-  instance.
-* Require any state or history. Any context it needs should be provided by the
-  controller.
-
-We do not want:
-- Persistent history
-- Replay control
-- Arbitrary commands
-- Trace modification
-- Human chat UI
-- Model routing
+It does not have a persistent history and is unable to run arbitrary commands.
 
 # Future possibilities
 
@@ -60,6 +33,8 @@ We do not want:
 * A `go` mode (as opposed to `ask`) that uses a different system prompt and tool
   options to allow the agent to modify the running replay service, such as
   "go to the start of the first frame that is not a loading frame".
+* Access local models through LiteRT-LM, this may be needed on Android. It can
+  offer up an OpenAI compatible endpoint, but unsure if this is the best way.
 
 # Security
 

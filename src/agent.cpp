@@ -25,9 +25,12 @@ static void agent_usage()
 	printf("-s/--sandbox LEVEL     Set security sandbox level [1,2,3] (default %d)\n", (int)DEFAULT_SANDBOX_LEVEL);
 	printf("--service HOST:PORT    Required replay service endpoint\n");
 	printf("--timeout SECONDS      Maximum wall-clock duration (default 300)\n");
+	printf("--max-rounds N         Maximum model rounds (default 8)\n");
+	printf("--max-tool-calls N     Maximum tool calls (default 32)\n");
 	printf("--max-output-bytes N   Maximum result size (default 32768, minimum 1024)\n");
 	printf("--base-url URL         OpenAI-compatible API base (or LAVA_AGENT_BASE_URL)\n");
 	printf("--model MODEL          Local model name (or LAVA_AGENT_MODEL)\n");
+	printf("--reasoning-effort E   Model reasoning effort (or LAVA_AGENT_REASONING_EFFORT)\n");
 	printf("--api-key KEY          API key (or LAVA_AGENT_API_KEY, default ollama)\n");
 }
 
@@ -196,6 +199,18 @@ int main(int argc, char** argv)
 			if (!agent_parse_u64(argv[index++], seconds) || seconds == 0 || seconds > UINT32_MAX) error = "Invalid --timeout value";
 			else runtime_options.timeout_seconds = (uint32_t)seconds;
 		}
+		else if (option == "--max-rounds" && index < argc)
+		{
+			uint64_t rounds = 0;
+			if (!agent_parse_u64(argv[index++], rounds) || rounds == 0 || rounds > UINT32_MAX) error = "Invalid --max-rounds value";
+			else runtime_options.max_rounds = (uint32_t)rounds;
+		}
+		else if (option == "--max-tool-calls" && index < argc)
+		{
+			uint64_t calls = 0;
+			if (!agent_parse_u64(argv[index++], calls) || calls == 0 || calls > UINT32_MAX) error = "Invalid --max-tool-calls value";
+			else runtime_options.max_tool_calls = (uint32_t)calls;
+		}
 		else if (option == "--max-output-bytes" && index < argc)
 		{
 			uint64_t bytes = 0;
@@ -204,6 +219,7 @@ int main(int argc, char** argv)
 		}
 		else if (option == "--base-url" && index < argc) runtime_options.base_url = argv[index++];
 		else if (option == "--model" && index < argc) runtime_options.model = argv[index++];
+		else if (option == "--reasoning-effort" && index < argc) runtime_options.reasoning_effort = argv[index++];
 		else if (option == "--api-key" && index < argc) runtime_options.api_key = argv[index++];
 		else error = "Unknown or incomplete option: " + option;
 		if (!error.empty()) break;
