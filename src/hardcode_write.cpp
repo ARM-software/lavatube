@@ -466,6 +466,7 @@ static void trace_post_vkGetDeviceImageSparseMemoryRequirementsKHR(lava_file_wri
 
 static void trace_post_vkBindImageMemory(lava_file_writer& writer, VkResult result, VkDevice device, VkImage image, VkDeviceMemory memory, VkDeviceSize memoryOffset)
 {
+	if (result != VK_SUCCESS) return;
 	auto* image_data = writer.parent->records.VkImage_index.at(image);
 	if (!writer.run && image_data->req.size == 0)
 	{
@@ -478,7 +479,6 @@ static void trace_post_vkBindImageMemory(lava_file_writer& writer, VkResult resu
 	if (!writer.run) return;
 	writer.parent->memory_mutex.lock();
 	assert(memory != VK_NULL_HANDLE);
-	assert(result == VK_SUCCESS);
 	auto* memory_data = writer.parent->records.VkDeviceMemory_index.at(memory);
 	assert(image_data->backing == 0); // cannot re-bind
 	image_data->backing = memory;
@@ -496,6 +496,7 @@ static void trace_post_vkBindImageMemory(lava_file_writer& writer, VkResult resu
 
 static void trace_post_vkBindBufferMemory(lava_file_writer& writer, VkResult result, VkDevice device, VkBuffer buffer, VkDeviceMemory memory, VkDeviceSize memoryOffset)
 {
+	if (result != VK_SUCCESS) return;
 	auto* buffer_data = writer.parent->records.VkBuffer_index.at(buffer);
 	if (!writer.run && buffer_data->req.size == 0)
 	{
@@ -508,7 +509,6 @@ static void trace_post_vkBindBufferMemory(lava_file_writer& writer, VkResult res
 	if (!writer.run) return;
 	writer.parent->memory_mutex.lock();
 	assert(memory != VK_NULL_HANDLE);
-	assert(result == VK_SUCCESS);
 	auto* memory_data = writer.parent->records.VkDeviceMemory_index.at(memory);
 	assert(buffer_data->backing == 0); // cannot re-bind
 	buffer_data->backing = memory;
@@ -527,7 +527,7 @@ static void trace_post_vkBindBufferMemory(lava_file_writer& writer, VkResult res
 
 static void trace_post_vkBindImageMemory2(lava_file_writer& writer, VkResult result, VkDevice device, uint32_t bindInfoCount, const VkBindImageMemoryInfo* pBindInfos)
 {
-	assert(result == VK_SUCCESS);
+	if (result != VK_SUCCESS) return;
 	for (unsigned i = 0; i < bindInfoCount; i++)
 	{
 		trace_post_vkBindImageMemory(writer, result, device, pBindInfos[i].image, pBindInfos[i].memory, pBindInfos[i].memoryOffset);
@@ -541,7 +541,7 @@ static void trace_post_vkBindImageMemory2KHR(lava_file_writer& writer, VkResult 
 
 static void trace_post_vkBindBufferMemory2(lava_file_writer& writer, VkResult result, VkDevice device, uint32_t bindInfoCount, const VkBindBufferMemoryInfo* pBindInfos)
 {
-	assert(result == VK_SUCCESS);
+	if (result != VK_SUCCESS) return;
 	for (unsigned i = 0; i < bindInfoCount; i++)
 	{
 		trace_post_vkBindBufferMemory(writer, result, device, pBindInfos[i].buffer, pBindInfos[i].memory, pBindInfos[i].memoryOffset);

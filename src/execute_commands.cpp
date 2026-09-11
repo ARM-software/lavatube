@@ -513,7 +513,7 @@ static void merge_simulator_memory_metadata(const change_source& source, const s
 			if (range.buffer_data->source.try_get_reference(range_offset, end - start, reference))
 			{
 				range.buffer_data->source.register_source(range_offset, end - start, reference.source,
-					1, 0, VK_OBJECT_TYPE_UNKNOWN, CONTAINER_NULL_VALUE, reference.stage_index, reference.object_offset);
+					1, 0, reference.object_type, reference.object_index, reference.stage_index, reference.object_offset);
 			}
 			else
 			{

@@ -52,10 +52,16 @@
 - The contained file `tracking.json` contains immutable or accumulated meta-information for each Vulkan object.
 - The contained file `metadata.json` contains information on presented device capabilities (given by capture device) and requested
   capabilities (as requested by the captured application or by our capture layer).
-- You can use `build/lava-print` to print out the packets/calls in a trace in NDJSON format.
+- You can use `build/lava-print` or `build/lava-print-fast` to print out the packets/calls in a trace in NDJSON format.
 - You can use `build/lava-cli` with `build/lava-replay --service` to run the replay in interactive mode. The trace starts paused
   and can now be stepped through or jumped forward into, then you can print calls or meta-information at the current position. See
   `build/lava-cli --help` for more information. After each `lava-cli` command, all replay threads will be in a stable paused state.
+- Running `lava-replay --validate` may help find indications for an error. But real content often has many harmless validation warnings.
+- For output changes, `lava-print --add-checksums` can distinguish captured logical data (checksum is computed before replay address
+  translation) from replay-normalized data.
+- For replays that hang, try using the replay service with `lava-cli diagnose deadlock` and `lava-cli info threads`.
+- Running a trace file through the spirv-simulator may help with buffer device address, shader binding table and descriptor issues.
+  May try `lava-tool -S <input trace> <output trace>`. Beware that it may be slow - prefer a release build of `lava-tool`.
 
 ## Modifying capture functionality
 - Capture is often also called `write` or `trace` in the code.
