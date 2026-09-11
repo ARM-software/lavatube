@@ -708,7 +708,12 @@ int main(int argc, char **argv)
 	}
 
 	if (command.empty()) usage();
-	if (p__sandbox_level >= 2) sandbox_level_two();
+	if (p__sandbox_level >= 2)
+	{
+		if (port <= 0 || port > UINT16_MAX) DIE("Invalid TCP port %d", port);
+		const uint16_t connect_port = (uint16_t)port;
+		sandbox_level_two(1, &connect_port);
+	}
 	if (p__sandbox_level >= 3) sandbox_level_three();
 
 	const bool log_stream = !command.empty() && (command[0] == "log" || command[0] == "syslog");

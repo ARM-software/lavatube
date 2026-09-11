@@ -7,6 +7,7 @@
 #include <stdlib.h>
 
 #include <string>
+#include <vector>
 
 #include "tui_app.h"
 #include "lavatube.h"
@@ -95,8 +96,6 @@ int main(int argc, char **argv)
 			}
 		}
 	}
-	if (p__sandbox_level >= 2) sandbox_level_two();
-
 	if (!filename.empty() && access(filename.c_str(), R_OK) != 0)
 	{
 		fprintf(stderr, "Cannot read trace file \"%s\": %s\n", filename.c_str(), strerror(errno));
@@ -140,6 +139,25 @@ int main(int argc, char **argv)
 		return 1;
 	}
 
+	if (p__sandbox_level >= 2)
+	{
+		std::vector<uint16_t> connect_ports;
+		if (options.replay_service)
+		{
+			if (port <= 0 || port > UINT16_MAX)
+			{
+				fprintf(stderr, "Invalid replay service TCP port %d\n", port);
+				return 1;
+			}
+			connect_ports.push_back((uint16_t)port);
+		}
+		if (!tui_llm_append_connect_ports(options.llm, connect_ports, error))
+		{
+			fprintf(stderr, "%s\n", error.c_str());
+			return 1;
+		}
+		sandbox_level_two(connect_ports.size(), connect_ports.data());
+	}
 	if (p__sandbox_level >= 3) sandbox_level_three();
 	return run_tui(options);
 }

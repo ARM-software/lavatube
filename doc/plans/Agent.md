@@ -61,7 +61,18 @@ We do not want:
   options to allow the agent to modify the running replay service, such as
   "go to the start of the first frame that is not a loading frame".
 
+# Security
+
+The agent is sandboxed and only allowed a very limited set of tool calls. It
+has strict limits on how many rounds, tool calls, wall clock time, output
+bytes and tokens it is allowed to consume.
+
+The replayer service it calls is also sandboxed.
+
+This leaves the model service endpoint as the only component that the model
+interfaces with that is not secured from our side.
+
 # Tests
 
 Questions to pose the agent for testing its efficacy can be found in
-[this doc](doc/plans/Agent.QA.md).
+[this doc](Agent.QA.md).

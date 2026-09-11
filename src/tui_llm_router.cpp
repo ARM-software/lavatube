@@ -1,6 +1,49 @@
 #include "tui_llm_router.h"
 
 #include <curl/curl.h>
+#include <errno.h>
+#include <stdlib.h>
+#include <string.h>
+
+static bool tui_llm_append_connect_port(const char* label, const tui_llm_client_options& options,
+	std::vector<uint16_t>& ports, std::string& error)
+{
+	if (options.api_key.empty()) return true;
+	const std::string url = options.base_url.empty() ? "https://api.openai.com/v1" : options.base_url;
+	CURLU* handle = curl_url();
+	if (!handle)
+	{
+		error = "Failed to allocate URL parser for the " + std::string(label) + " model";
+		return false;
+	}
+	CURLUcode result = curl_url_set(handle, CURLUPART_URL, url.c_str(), 0);
+	char* scheme = nullptr;
+	char* port_text = nullptr;
+	if (result == CURLUE_OK) result = curl_url_get(handle, CURLUPART_SCHEME, &scheme, 0);
+	if (result == CURLUE_OK && strcmp(scheme, "http") != 0 && strcmp(scheme, "https") != 0) result = CURLUE_BAD_SCHEME;
+	if (result == CURLUE_OK) result = curl_url_get(handle, CURLUPART_PORT, &port_text, CURLU_DEFAULT_PORT);
+	char* end = nullptr;
+	errno = 0;
+	const unsigned long parsed = result == CURLUE_OK ? strtoul(port_text, &end, 10) : 0;
+	if (result != CURLUE_OK || errno != 0 || end == port_text || *end != '\0' || parsed == 0 || parsed > UINT16_MAX)
+	{
+		error = "Invalid HTTP or HTTPS base URL for the " + std::string(label) + " model: " + url;
+		curl_free(scheme);
+		curl_free(port_text);
+		curl_url_cleanup(handle);
+		return false;
+	}
+	curl_free(scheme);
+	curl_free(port_text);
+	curl_url_cleanup(handle);
+	const uint16_t port = (uint16_t)parsed;
+	for (const uint16_t existing : ports)
+	{
+		if (existing == port) return true;
+	}
+	ports.push_back(port);
+	return true;
+}
 
 tui_llm_options tui_llm_default_options()
 {
@@ -62,6 +105,12 @@ bool tui_llm_resolve_options(tui_llm_options& options, std::string& error)
 
 	error = "Invalid LAVATUI_LLM_MODE \"" + options.requested_mode + "\". Expected local, cloud, or routed";
 	return false;
+}
+
+bool tui_llm_append_connect_ports(const tui_llm_options& options, std::vector<uint16_t>& ports, std::string& error)
+{
+	return tui_llm_append_connect_port("local", options.local, ports, error)
+		&& tui_llm_append_connect_port("cloud", options.cloud, ports, error);
 }
 
 tui_llm_command tui_llm_parse_command(const std::string& input)

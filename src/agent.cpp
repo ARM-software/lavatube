@@ -9,7 +9,10 @@
 #include "agent_runtime.h"
 #include "agent_tools.h"
 #include "lavatube.h"
+#include "sandbox.h"
 #include "util.h"
+
+#define DEFAULT_SANDBOX_LEVEL 3
 
 static void agent_usage()
 {
@@ -19,6 +22,7 @@ static void agent_usage()
 	printf("-v/--verbose           Write progress diagnostics to standard error\n");
 	printf("-d/--debug LEVEL       Set debug level [0,1,2,3]\n");
 	printf("-df/--debugfile FILE   Write the complete model/tool transcript as JSONL\n");
+	printf("-s/--sandbox LEVEL     Set security sandbox level [1,2,3] (default %d)\n", (int)DEFAULT_SANDBOX_LEVEL);
 	printf("--service HOST:PORT    Required replay service endpoint\n");
 	printf("--timeout SECONDS      Maximum wall-clock duration (default 300)\n");
 	printf("--max-output-bytes N   Maximum result size (default 32768, minimum 1024)\n");
@@ -67,6 +71,47 @@ static bool agent_parse_service(const std::string& endpoint, std::string& hostna
 	return true;
 }
 
+static bool agent_parse_model_port(const std::string& url, uint16_t& port)
+{
+	const size_t separator = url.find("://");
+	if (separator == std::string::npos) return false;
+	const std::string scheme = url.substr(0, separator);
+	if (scheme != "http" && scheme != "https") return false;
+	const size_t authority_start = separator + 3;
+	const size_t authority_end = url.find_first_of("/?#", authority_start);
+	const size_t end = authority_end == std::string::npos ? url.size() : authority_end;
+	if (authority_start == end) return false;
+	std::string port_text;
+	if (url[authority_start] == '[')
+	{
+		const size_t close = url.find(']', authority_start + 1);
+		if (close == std::string::npos || close >= end) return false;
+		if (close + 1 < end)
+		{
+			if (url[close + 1] != ':') return false;
+			port_text = url.substr(close + 2, end - close - 2);
+		}
+	}
+	else
+	{
+		const size_t colon = url.rfind(':', end - 1);
+		if (colon != std::string::npos && colon >= authority_start)
+		{
+			if (url.find(':', authority_start) != colon) return false;
+			port_text = url.substr(colon + 1, end - colon - 1);
+		}
+	}
+	if (port_text.empty())
+	{
+		port = scheme == "https" ? 443 : 80;
+		return true;
+	}
+	uint64_t parsed = 0;
+	if (!agent_parse_u64(port_text, parsed) || parsed == 0 || parsed > UINT16_MAX) return false;
+	port = (uint16_t)parsed;
+	return true;
+}
+
 static Json::Value agent_error_envelope(const std::string& message)
 {
 	Json::Value output;
@@ -100,8 +145,10 @@ static void agent_mark_unstable(Json::Value& output, const std::string& reason, 
 
 int main(int argc, char** argv)
 {
+	if (p__sandbox_level == -1) p__sandbox_level = DEFAULT_SANDBOX_LEVEL;
+	if (p__sandbox_level >= 1) sandbox_level_one();
 	if (p__debug_destination == stdout) p__debug_destination = stderr;
-	if (argc == 2 && (strcmp(argv[1], "-h") == 0 || strcmp(argv[1], "--help") == 0))
+	if (argc <= 2 && (strcmp(argv[1], "-h") == 0 || strcmp(argv[1], "--help") == 0))
 	{
 		agent_usage();
 		return 0;
@@ -115,6 +162,7 @@ int main(int argc, char** argv)
 	agent_tools_options tool_options;
 	std::string debug_filename;
 	std::string error;
+	uint16_t model_port = 0;
 	int index = 1;
 	while (index < argc && argv[index][0] == '-')
 	{
@@ -135,6 +183,12 @@ int main(int argc, char** argv)
 			uint64_t level = 0;
 			if (!agent_parse_u64(argv[index++], level) || level > 3) error = "Invalid debug level";
 			else p__debug_level = (uint_fast8_t)level;
+		}
+		else if ((option == "-s" || option == "--sandbox") && index < argc)
+		{
+			uint64_t level = 0;
+			if (!agent_parse_u64(argv[index++], level) || level == 0 || level > 3) error = "Invalid --sandbox level";
+			else p__sandbox_level = (int_fast8_t)level;
 		}
 		else if (option == "--timeout" && index < argc)
 		{
@@ -170,6 +224,10 @@ int main(int argc, char** argv)
 	{
 		error = "Model base URL, model, and API key must be configured";
 	}
+	if (error.empty() && p__sandbox_level >= 2 && !agent_parse_model_port(runtime_options.base_url, model_port))
+	{
+		error = "Model base URL must be an HTTP or HTTPS URL when sandbox level 2 or 3 is enabled";
+	}
 	if (!error.empty())
 	{
 		fprintf(stderr, "lava-agent: %s\n", error.c_str());
@@ -191,6 +249,10 @@ int main(int argc, char** argv)
 			return 2;
 		}
 	}
+	const uint16_t connect_ports[2] = { (uint16_t)tool_options.port, model_port };
+	const size_t connect_port_count = connect_ports[0] == connect_ports[1] ? 1 : 2;
+	if (p__sandbox_level >= 2) sandbox_level_two(connect_port_count, connect_ports);
+	if (p__sandbox_level >= 3) sandbox_level_three();
 
 	agent_tools tools(tool_options);
 	std::string initial_position;

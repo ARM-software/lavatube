@@ -44,7 +44,8 @@ This sandbox is composed of four levels:
 
 * Zero - sandbox disabled.
 * One - ability of getting root privileges removed.
-* Two - network and file execution privileges removed.
+* Two - network and file execution privileges removed. Individual tools may
+  retain outgoing TCP access to explicitly allowlisted destination ports.
 * Three - file system write privileges removed except to current
   working directory and directories underneath it.
 
@@ -56,3 +57,11 @@ as they are no longer needed.
 However, Vulkan layers are also affected by these capability changes,
 so validation layers, screenshot layers, and performance tools might
 all become dysfunctional.
+
+`lava-agent`, `lava-cli`, and `lava-tui` need to create new connections while
+running. At sandbox levels two and three, they retain outgoing TCP access only
+to their configured destination ports. This is the replay-service port for
+`lava-cli`, the configured model and optional replay-service ports for
+`lava-tui`, and the model and replay-service ports for `lava-agent`. Landlock
+restricts ports rather than remote addresses, so this does not limit
+connections to a specific host on an allowed port.

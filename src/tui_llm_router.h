@@ -37,6 +37,7 @@ struct tui_llm_options
 
 tui_llm_options tui_llm_default_options();
 bool tui_llm_resolve_options(tui_llm_options& options, std::string& error);
+bool tui_llm_append_connect_ports(const tui_llm_options& options, std::vector<uint16_t>& ports, std::string& error);
 tui_llm_command tui_llm_parse_command(const std::string& input);
 const char* tui_llm_mode_name(tui_llm_mode mode);
 

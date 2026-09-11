@@ -293,6 +293,28 @@ def main():
 	if len(sys.argv) != 5:
 		raise RuntimeError('usage: lava_agent_test.py LAVA_AGENT LAVA_REPLAY LAVA_CLI TRACE')
 	agent, replay_path, cli, trace = sys.argv[1:]
+	help_result = subprocess.run(
+		[agent, '--help'],
+		text=True,
+		stdout=subprocess.PIPE,
+		stderr=subprocess.PIPE,
+		timeout=5,
+	)
+	if help_result.returncode != 0 or '-s/--sandbox LEVEL' not in help_result.stdout:
+		raise RuntimeError('lava-agent help omitted sandboxing: %r %r' % (
+			help_result.stdout, help_result.stderr))
+	invalid_sandbox = subprocess.run(
+		[agent, '--sandbox', '0'],
+		text=True,
+		stdout=subprocess.PIPE,
+		stderr=subprocess.PIPE,
+		timeout=5,
+	)
+	invalid_output = json.loads(invalid_sandbox.stdout)
+	if (invalid_sandbox.returncode != 2 or invalid_output['status'] != 'error'
+			or 'Invalid --sandbox level' not in invalid_output['conclusion']):
+		raise RuntimeError('invalid sandbox level was accepted: %r %r' % (
+			invalid_sandbox.stdout, invalid_sandbox.stderr))
 	replay_port = reserve_port()
 	model_port = reserve_port()
 	replay = subprocess.Popen(
@@ -327,7 +349,7 @@ def main():
 			result = subprocess.run(
 				[agent, '--service', '127.0.0.1:%d' % replay_port,
 				 '--base-url', 'http://127.0.0.1:%d/v1' % model_port,
-				 '--model', 'test-model', '-d', '3', '-df', debug_file,
+				 '--model', 'test-model', '-d', '3', '-df', debug_file, '-s', '3',
 				 trace, 'ask', 'Confirm the test evidence.'],
 				text=True,
 				stdout=subprocess.PIPE,

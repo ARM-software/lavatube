@@ -17,7 +17,7 @@ def reserve_port():
 
 def run_cli(cli, port, *command):
 	return subprocess.run(
-		[cli, '-H', '127.0.0.1', '-P', str(port)] + list(command),
+		[cli, '-s', '3', '-H', '127.0.0.1', '-P', str(port)] + list(command),
 		text=True,
 		stdout=subprocess.PIPE,
 		stderr=subprocess.PIPE,

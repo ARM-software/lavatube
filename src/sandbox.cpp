@@ -57,7 +57,7 @@ void sandbox_level_one()
 	if (prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0) ABORT("Failed to restrict root privileges");
 }
 
-void sandbox_level_two()
+void sandbox_level_two(size_t connect_port_count, const uint16_t* connect_ports)
 {
 	int abi = landlock_create_ruleset(NULL, 0, LANDLOCK_CREATE_RULESET_VERSION);
 	if (abi < 0)
@@ -74,6 +74,20 @@ void sandbox_level_two()
 #endif
 	int ruleset_fd = landlock_create_ruleset(&ruleset_attr, sizeof(ruleset_attr), 0);
 	if (ruleset_fd < 0) ABORT("Failed to create landlock ruleset: %s", strerror(errno));
+#ifdef LANDLOCK_ACCESS_NET_CONNECT_TCP
+	for (size_t index = 0; index < connect_port_count; index++)
+	{
+		struct landlock_net_port_attr port = {};
+		port.allowed_access = LANDLOCK_ACCESS_NET_CONNECT_TCP;
+		port.port = connect_ports[index];
+		if (landlock_add_rule(ruleset_fd, LANDLOCK_RULE_NET_PORT, &port, 0) != 0)
+		{
+			ABORT("Failed to add TCP port %u to landlock sandbox ruleset: %s", (unsigned)connect_ports[index], strerror(errno));
+		}
+	}
+#else
+	if (connect_port_count != 0) ABORT("Landlock TCP port rules are not supported by the build headers");
+#endif
 	if (landlock_restrict_self(ruleset_fd, 0) != 0) ABORT("Failed to enforce landlock ruleset: %s", strerror(errno));
 	close(ruleset_fd);
 }

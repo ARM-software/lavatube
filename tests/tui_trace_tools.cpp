@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "packfile.h"
+#include "sandbox.h"
 #include "tui_trace_tools.h"
 #include "util.h"
 
@@ -171,6 +172,10 @@ static void test_service_tools()
 	state.listen_fd = make_fake_listener(port);
 	state.expected_connections = 6;
 	std::thread thread(fake_service_thread, &state);
+	sandbox_level_one();
+	const uint16_t connect_port = (uint16_t)port;
+	sandbox_level_two(1, &connect_port);
+	sandbox_level_three();
 
 	tui_trace_tools_options options;
 	options.replay_service = true;

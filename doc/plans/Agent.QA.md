@@ -1,5 +1,7 @@
 # Test suite
 
+Main document is [this doc](Agent.md).
+
 We want to measure the effectiveness of `lava-agent` settings along
 two axes: Time and quality. We should develop a test suite of questions
 about our current trace files, with correct answers stored. Then
@@ -11,6 +13,8 @@ Things to test:
 - Changes to the system prompt
 - Time and number of rounds allowed
 - Models: Gemma4 vs Ornith vs Terra vs Luna
+	- Also comparing different quants of Gemma
+	- Want to see if an on-device mobile-sized model could work
 
 # Example controller questions (writen by codex)
 

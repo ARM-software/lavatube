@@ -96,10 +96,43 @@ static void test_commands_and_switching()
 	assert(cloud_only.mode() == tui_llm_mode::cloud_model);
 }
 
+static void test_connect_ports()
+{
+	std::string error;
+	std::vector<uint16_t> ports;
+	tui_llm_options options = tui_llm_default_options();
+	assert(tui_llm_append_connect_ports(options, ports, error));
+	assert(ports.empty());
+
+	options.local.api_key = "ollama";
+	assert(tui_llm_append_connect_ports(options, ports, error));
+	assert(ports.size() == 1);
+	assert(ports[0] == 11434);
+
+	options.cloud.api_key = "cloud-key";
+	assert(tui_llm_append_connect_ports(options, ports, error));
+	assert(ports.size() == 2);
+	assert(ports[1] == 443);
+
+	options.local.base_url = "http://localhost:8443/v1";
+	ports.clear();
+	ports.push_back(8443);
+	assert(tui_llm_append_connect_ports(options, ports, error));
+	assert(ports.size() == 2);
+	assert(ports[0] == 8443);
+	assert(ports[1] == 443);
+
+	options.local.base_url = "ftp://localhost:21";
+	ports.clear();
+	assert(!tui_llm_append_connect_ports(options, ports, error));
+	assert(error.find("Invalid HTTP or HTTPS") != std::string::npos);
+}
+
 int main()
 {
 	test_defaults();
 	test_mode_resolution();
 	test_commands_and_switching();
+	test_connect_ports();
 	return 0;
 }
