@@ -50,14 +50,26 @@ def run_cli(cli, port, *command):
 	)
 
 
-def response_output(handler, output):
-	body = json.dumps({
-		'output': output,
-		'usage': {
-			'input_tokens': 10,
-			'output_tokens': 5,
+def response_output(handler, message, finish_reason=None, usage=None):
+	if finish_reason is None:
+		finish_reason = 'tool_calls' if 'tool_calls' in message else 'stop'
+	if usage is None:
+		usage = {
+			'prompt_tokens': 10,
+			'completion_tokens': 5,
 			'total_tokens': 15,
-		},
+		}
+	body = json.dumps({
+		'id': 'test-response',
+		'object': 'chat.completion',
+		'choices': [
+			{
+				'index': 0,
+				'message': message,
+				'finish_reason': finish_reason,
+			}
+		],
+		'usage': usage,
 	}, separators=(',', ':')).encode('utf-8')
 	handler.send_response(200)
 	handler.send_header('Content-Type', 'application/json')
@@ -78,12 +90,12 @@ class AgentModelHandler(http.server.BaseHTTPRequestHandler):
 
 	def do_POST(self):
 		try:
-			if self.path != '/v1/responses':
+			if self.path != '/v1/chat/completions':
 				raise RuntimeError('unexpected model path: ' + self.path)
 			length = int(self.headers['Content-Length'])
 			request = json.loads(self.rfile.read(length))
 			self.__class__.requests.append(request)
-			tool_names = {tool['name'] for tool in request['tools']}
+			tool_names = {tool['function']['name'] for tool in request['tools']}
 			if tool_names != EXPECTED_TOOLS:
 				raise RuntimeError('unexpected tool registry: %r' % tool_names)
 			if request.get('parallel_tool_calls') is not False:
@@ -92,14 +104,23 @@ class AgentModelHandler(http.server.BaseHTTPRequestHandler):
 			round_number = len(self.__class__.requests)
 			if self.__class__.mode in ('truncated', 'tool_stall'):
 				if round_number == 1:
-					response_output(self, [
-						{'type': 'function_call', 'name': 'replay_get_instrumentation',
-						 'call_id': 'instrumentation', 'arguments': '{"command_buffer":0}'},
-					])
+					response_output(self, {
+						'role': 'assistant',
+						'tool_calls': [
+							{
+								'id': 'instrumentation',
+								'type': 'function',
+								'function': {
+									'name': 'replay_get_instrumentation',
+									'arguments': '{"command_buffer":0}',
+								},
+							},
+						],
+					})
 					return
 				if self.__class__.mode == 'truncated' and round_number == 2:
-					outputs = [item for item in request['input'] if item.get('type') == 'function_call_output']
-					tool_output = json.loads(outputs[-1]['output'])
+					outputs = [item for item in request['messages'] if item.get('role') == 'tool']
+					tool_output = json.loads(outputs[-1]['content'])
 					result = tool_output['result']
 					if (not tool_output['ok'] or not result.get('truncated')
 							or result.get('limit_bytes') != 1024 * 1024
@@ -112,10 +133,10 @@ class AgentModelHandler(http.server.BaseHTTPRequestHandler):
 						'evidence': [{'tool_id': 1, 'inference': 'The response was explicitly truncated.'}],
 						'unresolved': [],
 					}
-					response_output(self, [
-						{'type': 'message', 'content': [{'type': 'output_text',
-						 'text': json.dumps(final, separators=(',', ':'))}]},
-					])
+					response_output(self, {
+						'role': 'assistant',
+						'content': json.dumps(final, separators=(',', ':')),
+					})
 					return
 				raise RuntimeError('unexpected model round %d in %s mode' % (round_number, self.__class__.mode))
 			if self.__class__.mode == 'immediate':
@@ -126,10 +147,10 @@ class AgentModelHandler(http.server.BaseHTTPRequestHandler):
 					'evidence': [],
 					'unresolved': [],
 				}
-				response_output(self, [
-					{'type': 'message', 'content': [{'type': 'output_text',
-					 'text': json.dumps(final, separators=(',', ':'))}]},
-				])
+				response_output(self, {
+					'role': 'assistant',
+					'content': json.dumps(final, separators=(',', ':')),
+				})
 				return
 			if self.__class__.mode == 'unstable':
 				step = run_cli(self.__class__.cli, self.__class__.replay_port, 'step', '0', 'packets', '1')
@@ -142,10 +163,69 @@ class AgentModelHandler(http.server.BaseHTTPRequestHandler):
 					'evidence': [],
 					'unresolved': [],
 				}
-				response_output(self, [
-					{'type': 'message', 'content': [{'type': 'output_text', 'text': '```json\n' + json.dumps(final, separators=(',', ':')) + '\n```'}]},
-				])
+				response_output(self, {
+					'role': 'assistant',
+					'content': '```json\n' + json.dumps(final, separators=(',', ':')) + '\n```',
+				})
 				return
+			if self.__class__.mode == 'malformed_choice':
+				body = json.dumps({
+					'id': 'test-response',
+					'object': 'chat.completion',
+					'choices': [],
+					'usage': {
+						'prompt_tokens': 10,
+						'completion_tokens': 5,
+						'total_tokens': 15,
+					},
+				}, separators=(',', ':')).encode('utf-8')
+				self.send_response(200)
+				self.send_header('Content-Type', 'application/json')
+				self.send_header('Content-Length', str(len(body)))
+				self.end_headers()
+				self.wfile.write(body)
+				return
+			if self.__class__.mode == 'length_truncated':
+				if round_number == 1:
+					body = json.dumps({
+						'id': 'test-response',
+						'object': 'chat.completion',
+						'choices': [
+							{
+								'index': 0,
+								'message': {
+									'role': 'assistant',
+									'content': '{"status":"ans',
+								},
+								'finish_reason': 'length',
+							}
+						],
+						'usage': {
+							'prompt_tokens': 10,
+							'completion_tokens': 5,
+							'total_tokens': 15,
+						},
+					}, separators=(',', ':')).encode('utf-8')
+					self.send_response(200)
+					self.send_header('Content-Type', 'application/json')
+					self.send_header('Content-Length', str(len(body)))
+					self.end_headers()
+					self.wfile.write(body)
+					return
+				if round_number == 2:
+					final = {
+						'status': 'answered',
+						'conclusion': 'Recovered after token limit truncation.',
+						'confidence': 1.0,
+						'evidence': [],
+						'unresolved': [],
+					}
+					response_output(self, {
+						'role': 'assistant',
+						'content': json.dumps(final, separators=(',', ':')),
+					})
+					return
+				raise RuntimeError('unexpected model round %d in length_truncated mode' % round_number)
 			if self.__class__.mode == 'oversized':
 				final = {
 					'status': 'answered',
@@ -154,37 +234,67 @@ class AgentModelHandler(http.server.BaseHTTPRequestHandler):
 					'evidence': [],
 					'unresolved': [],
 				}
-				response_output(self, [
-					{'type': 'message', 'content': [{'type': 'output_text', 'text': json.dumps(final, separators=(',', ':'))}]},
-				])
+				response_output(self, {
+					'role': 'assistant',
+					'content': json.dumps(final, separators=(',', ':')),
+				})
 				return
 			if round_number == 1:
-				response_output(self, [
-					{'type': 'function_call', 'name': 'trace_find_calls', 'call_id': 'find',
-					 'arguments': '{"name":"vkCreateInstance","thread":0,"limit":2}'},
-					{'type': 'function_call', 'name': 'replay_get_status', 'call_id': 'status',
-					 'arguments': '{}'},
-				])
+				response_output(self, {
+					'role': 'assistant',
+					'tool_calls': [
+						{
+							'id': 'find',
+							'type': 'function',
+							'function': {
+								'name': 'trace_find_calls',
+								'arguments': '{"name":"vkCreateInstance","thread":0,"limit":2}',
+							},
+						},
+						{
+							'id': 'status',
+							'type': 'function',
+							'function': {
+								'name': 'replay_get_status',
+								'arguments': {},
+							},
+						},
+					],
+				})
 				return
 			if round_number == 2:
-				outputs = [item for item in request['input'] if item.get('type') == 'function_call_output']
+				outputs = [item for item in request['messages'] if item.get('role') == 'tool']
 				if len(outputs) != 2:
 					raise RuntimeError('expected two first-round tool outputs: %r' % outputs)
-				find = json.loads(outputs[0]['output'])
+				find = json.loads(outputs[0]['content'])
 				if find['tool_id'] != 1 or not find['ok'] or not find['result']['matches']:
 					raise RuntimeError('unexpected find result: %r' % find)
-				status = json.loads(outputs[1]['output'])
+				status = json.loads(outputs[1]['content'])
 				if status['tool_id'] != 2 or not status['ok'] or not status['result']['output'].startswith('PAUSED'):
 					raise RuntimeError('unexpected status result: %r' % status)
 				match = find['result']['matches'][0]
 				arguments = json.dumps({'thread': match['thread'], 'start': match['packet']}, separators=(',', ':'))
-				response_output(self, [
-					{'type': 'function_call', 'name': 'trace_get_packets', 'call_id': 'packet', 'arguments': arguments},
-				])
+				response_output(self, {
+					'role': 'assistant',
+					'tool_calls': [
+						{
+							'id': 'packet',
+							'type': 'function',
+							'function': {
+								'name': 'trace_get_packets',
+								'arguments': arguments,
+							},
+						},
+					],
+				}, usage={
+					'input_tokens': 10,
+					'output_tokens': 5,
+					'total_tokens': 15,
+				})
 				return
 			if round_number == 3:
-				outputs = [item for item in request['input'] if item.get('type') == 'function_call_output']
-				packet = json.loads(outputs[-1]['output'])
+				outputs = [item for item in request['messages'] if item.get('role') == 'tool']
+				packet = json.loads(outputs[-1]['content'])
 				if packet['tool_id'] != 3 or not packet['ok']:
 					raise RuntimeError('unexpected packet result: %r' % packet)
 				if packet['result']['packets'][0].get('name') != 'vkCreateInstance':
@@ -200,10 +310,12 @@ class AgentModelHandler(http.server.BaseHTTPRequestHandler):
 					],
 					'unresolved': [],
 				}
-				response_output(self, [
-					{'type': 'message', 'content': [{'type': 'output_text', 'text': json.dumps(final, separators=(',', ':'))}]},
-				])
+				response_output(self, {
+					'role': 'assistant',
+					'content': json.dumps(final, separators=(',', ':')),
+				})
 				return
+
 			raise RuntimeError('unexpected model round %d' % round_number)
 		except Exception as exc:
 			self.__class__.failure = exc
@@ -401,9 +513,13 @@ def main():
 					'total_tokens': 45,
 			}:
 				raise RuntimeError('unexpected usage: %r' % output['usage'])
-			if any(request.get('reasoning', {}).get('effort') != 'high'
+			if any(request.get('reasoning_effort') != 'high'
 					for request in AgentModelHandler.requests):
 				raise RuntimeError('reasoning effort was not sent: %r' % (
+					AgentModelHandler.requests,))
+			if any('reasoning' in request
+					for request in AgentModelHandler.requests):
+				raise RuntimeError('deprecated reasoning object was sent: %r' % (
 					AgentModelHandler.requests,))
 			with open(debug_file, encoding='utf-8') as debug:
 				debug_events = [json.loads(line) for line in debug]
@@ -424,7 +540,7 @@ def main():
 		AgentModelHandler.requests = []
 		limited_rounds = subprocess.run(
 			[agent, '--service', '127.0.0.1:%d' % replay_port,
-			 '--base-url', 'http://127.0.0.1:%d/v1' % model_port,
+			 '--base-url', 'http://127.0.0.1:%d/v1/responses' % model_port,
 			 '--model', 'test-model', '--max-rounds', '2',
 			 trace, 'ask', 'Stop after two model rounds.'],
 			text=True,
@@ -506,6 +622,42 @@ def main():
 			mismatch_output = json.loads(mismatch.stdout)
 			if mismatch.returncode == 0 or mismatch_output['status'] != 'error' or 'different filesystem objects' not in mismatch_output['conclusion']:
 				raise RuntimeError('trace identity mismatch was accepted: %r %r' % (mismatch.stdout, mismatch.stderr))
+		AgentModelHandler.mode = 'length_truncated'
+		AgentModelHandler.requests = []
+		length_truncated_run = subprocess.run(
+			[agent, '--service', '127.0.0.1:%d' % replay_port,
+			 '--base-url', 'http://127.0.0.1:%d/v1' % model_port,
+			 '--model', 'test-model', trace, 'ask', 'Handle truncation.'],
+			text=True,
+			stdout=subprocess.PIPE,
+			stderr=subprocess.PIPE,
+			timeout=30,
+		)
+		length_truncated_output = json.loads(length_truncated_run.stdout)
+		if (length_truncated_run.returncode != 0
+				or length_truncated_output['status'] != 'answered'
+				or length_truncated_output['usage']['rounds'] != 2):
+			raise RuntimeError('length truncation recovery failed: %r %r' % (
+				length_truncated_run.stdout, length_truncated_run.stderr))
+
+		AgentModelHandler.mode = 'malformed_choice'
+		AgentModelHandler.requests = []
+		malformed_run = subprocess.run(
+			[agent, '--service', '127.0.0.1:%d' % replay_port,
+			 '--base-url', 'http://127.0.0.1:%d/v1' % model_port,
+			 '--model', 'test-model', trace, 'ask', 'Malformed choice.'],
+			text=True,
+			stdout=subprocess.PIPE,
+			stderr=subprocess.PIPE,
+			timeout=30,
+		)
+		malformed_output = json.loads(malformed_run.stdout)
+		if (malformed_run.returncode == 0
+				or malformed_output['status'] != 'error'
+				or 'choices[0].message' not in malformed_output['unresolved'][0]):
+			raise RuntimeError('malformed choice test failed: %r %r' % (
+				malformed_run.stdout, malformed_run.stderr))
+
 		if AgentModelHandler.failure is not None:
 			raise AgentModelHandler.failure
 

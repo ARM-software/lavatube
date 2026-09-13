@@ -48,13 +48,13 @@ private:
 	};
 
 	http_response post(const Json::Value& request, uint64_t remaining_milliseconds) const;
-	Json::Value request(const Json::Value& input) const;
+	Json::Value request(const Json::Value& messages) const;
 	Json::Value finish(const std::string& status, const std::string& conclusion,
 		double confidence, const Json::Value& unresolved, uint32_t rounds,
 		uint32_t calls, const Json::Value* model_evidence = nullptr) const;
 	bool parse_final(const std::string& text, Json::Value& final, std::string& error) const;
 	std::string response_text(const Json::Value& response) const;
-	void append_response(Json::Value& input, const Json::Value& response) const;
+	void append_response(Json::Value& messages, const Json::Value& response) const;
 	void debug_event(const std::string& type, const Json::Value& value,
 		uint64_t duration_milliseconds = UINT64_MAX) const;
 	void add_provider_usage(const Json::Value& response);

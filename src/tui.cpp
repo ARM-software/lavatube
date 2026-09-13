@@ -20,7 +20,7 @@ static bool verbose = false;
 
 static bool valid_reasoning_effort(const std::string& value)
 {
-	return value == "none" || value == "low" || value == "medium" || value == "high";
+	return value.empty() || value == "none" || value == "low" || value == "medium" || value == "high";
 }
 
 void usage()

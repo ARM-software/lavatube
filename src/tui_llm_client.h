@@ -52,13 +52,13 @@ private:
 
 	response_data post_json(const Json::Value& request) const;
 	Json::Value build_initial_request(const std::vector<tui_chat_message>& history, const Json::Value& tool_definitions) const;
-	Json::Value build_tool_result_request(const Json::Value& input, const Json::Value& tool_definitions) const;
+	Json::Value build_tool_result_request(const Json::Value& messages, const Json::Value& tool_definitions) const;
 	bool parse_response_json(const response_data& response, Json::Value& root, tui_assistant_result& result) const;
 	std::string collect_output_text(const Json::Value& root) const;
 	std::string collect_usage(const Json::Value& root) const;
 	bool collect_tool_calls(const Json::Value& root, std::vector<tui_tool_notice>& calls) const;
-	void append_response_output(Json::Value& input, const Json::Value& root) const;
-	void append_tool_outputs(Json::Value& input, const std::vector<tui_tool_notice>& notices) const;
+	void append_response_output(Json::Value& messages, const Json::Value& root) const;
+	void append_tool_outputs(Json::Value& messages, const std::vector<tui_tool_notice>& notices) const;
 
 	std::string mApiKey;
 	std::string mModel;

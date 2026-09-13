@@ -16,9 +16,19 @@ static size_t agent_curl_write(char* data, size_t size, size_t count, void* poin
 
 static std::string agent_normalize_url(const std::string& value)
 {
-	std::string url = value;
+	std::string url = value.empty() ? "http://localhost:11434/v1" : value;
 	while (!url.empty() && url.back() == '/') url.pop_back();
-	if (url.size() < 10 || url.compare(url.size() - 10, 10, "/responses") != 0) url += "/responses";
+	const std::string legacy_suffix = "/responses";
+	if (url.size() >= legacy_suffix.size() && url.compare(url.size() - legacy_suffix.size(), legacy_suffix.size(), legacy_suffix) == 0)
+	{
+		url.erase(url.size() - legacy_suffix.size());
+		while (!url.empty() && url.back() == '/') url.pop_back();
+	}
+	const std::string suffix = "/chat/completions";
+	if (url.size() < suffix.size() || url.compare(url.size() - suffix.size(), suffix.size(), suffix) != 0)
+	{
+		url += suffix;
+	}
 	return url;
 }
 
@@ -99,17 +109,18 @@ agent_runtime::http_response agent_runtime::post(const Json::Value& request_valu
 	return response;
 }
 
-Json::Value agent_runtime::request(const Json::Value& input) const
+Json::Value agent_runtime::request(const Json::Value& messages) const
 {
 	Json::Value value;
 	value["model"] = mOptions.model;
-	value["instructions"] = agent_model_instructions();
-	value["input"] = input;
+	value["messages"] = messages;
 	value["tools"] = mTools.definitions();
 	value["tool_choice"] = "auto";
 	value["parallel_tool_calls"] = false;
-	value["store"] = false;
-	if (!mOptions.reasoning_effort.empty()) value["reasoning"]["effort"] = mOptions.reasoning_effort;
+	if (!mOptions.reasoning_effort.empty() && mOptions.reasoning_effort != "none")
+	{
+		value["reasoning_effort"] = mOptions.reasoning_effort;
+	}
 	return value;
 }
 
@@ -129,12 +140,22 @@ void agent_runtime::add_provider_usage(const Json::Value& response)
 {
 	if (!response.isMember("usage") || !response["usage"].isObject()) return;
 	const Json::Value& usage = response["usage"];
-	if (usage.isMember("input_tokens") && usage["input_tokens"].isUInt64())
+	if (usage.isMember("prompt_tokens") && usage["prompt_tokens"].isUInt64())
+	{
+		mInputTokens += usage["prompt_tokens"].asUInt64();
+		mHasInputTokens = true;
+	}
+	else if (usage.isMember("input_tokens") && usage["input_tokens"].isUInt64())
 	{
 		mInputTokens += usage["input_tokens"].asUInt64();
 		mHasInputTokens = true;
 	}
-	if (usage.isMember("output_tokens") && usage["output_tokens"].isUInt64())
+	if (usage.isMember("completion_tokens") && usage["completion_tokens"].isUInt64())
+	{
+		mOutputTokens += usage["completion_tokens"].asUInt64();
+		mHasOutputTokens = true;
+	}
+	else if (usage.isMember("output_tokens") && usage["output_tokens"].isUInt64())
 	{
 		mOutputTokens += usage["output_tokens"].asUInt64();
 		mHasOutputTokens = true;
@@ -149,25 +170,52 @@ void agent_runtime::add_provider_usage(const Json::Value& response)
 std::string agent_runtime::response_text(const Json::Value& response) const
 {
 	std::string text;
-	if (!response.isMember("output") || !response["output"].isArray()) return text;
-	for (const Json::Value& item : response["output"])
+	if (!response.isMember("choices") || !response["choices"].isArray() || response["choices"].empty()) return text;
+	const Json::Value& choice = response["choices"][0];
+	if (!choice.isMember("message") || !choice["message"].isObject()) return text;
+	const Json::Value& message = choice["message"];
+	if (message.isMember("content"))
 	{
-		if (agent_json_string(item, "type") != "message" || !item["content"].isArray()) continue;
-		for (const Json::Value& part : item["content"])
+		if (message["content"].isString())
 		{
-			if (agent_json_string(part, "type") != "output_text" || !part.isMember("text")) continue;
-			if (!text.empty()) text += "\n";
-			text += part["text"].asString();
+			text = message["content"].asString();
+		}
+		else if (message["content"].isArray())
+		{
+			for (const Json::Value& part : message["content"])
+			{
+				if (part.isObject() && part.isMember("text") && part["text"].isString())
+				{
+					if (!text.empty()) text += "\n";
+					text += part["text"].asString();
+				}
+			}
 		}
 	}
-	if (text.empty() && response.isMember("output_text") && response["output_text"].isString()) text = response["output_text"].asString();
 	return text;
 }
 
-void agent_runtime::append_response(Json::Value& input, const Json::Value& response) const
+void agent_runtime::append_response(Json::Value& messages, const Json::Value& response) const
 {
-	if (!response.isMember("output") || !response["output"].isArray()) return;
-	for (const Json::Value& item : response["output"]) input.append(item);
+	if (!response.isMember("choices") || !response["choices"].isArray() || response["choices"].empty()) return;
+	const Json::Value& choice = response["choices"][0];
+	if (!choice.isMember("message") || !choice["message"].isObject()) return;
+	const Json::Value& message = choice["message"];
+	Json::Value assistant_message;
+	assistant_message["role"] = "assistant";
+	if (message.isMember("content") && !message["content"].isNull())
+	{
+		assistant_message["content"] = message["content"];
+	}
+	else
+	{
+		assistant_message["content"] = Json::Value(Json::nullValue);
+	}
+	if (message.isMember("tool_calls") && message["tool_calls"].isArray())
+	{
+		assistant_message["tool_calls"] = message["tool_calls"];
+	}
+	messages.append(assistant_message);
 }
 
 Json::Value agent_runtime::bounded_tool_result(const agent_tool_result& result, size_t& total_bytes, bool& exhausted) const
@@ -319,8 +367,9 @@ Json::Value agent_runtime::bound_output(Json::Value output) const
 Json::Value agent_runtime::ask(const std::string& prompt, const std::chrono::steady_clock::time_point& deadline)
 {
 	using clock = std::chrono::steady_clock;
-	Json::Value input(Json::arrayValue);
-	input.append(agent_input_message("user", prompt));
+	Json::Value messages(Json::arrayValue);
+	messages.append(agent_input_message("system", agent_model_instructions()));
+	messages.append(agent_input_message("user", prompt));
 	uint32_t calls = 0;
 	size_t total_tool_bytes = 0;
 	std::string correction;
@@ -334,7 +383,7 @@ Json::Value agent_runtime::ask(const std::string& prompt, const std::chrono::ste
 			return bound_output(finish("budget_exhausted", "The investigation did not finish within the time budget.", 0.0, unresolved, round - 1, calls));
 		}
 		const uint64_t remaining = (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(deadline - now).count();
-		const Json::Value request_value = request(input);
+		const Json::Value request_value = request(messages);
 		debug_event("model_request", request_value);
 		if (mOptions.verbose) fprintf(stderr, "lava-agent: model round %u\n", round);
 		const clock::time_point model_started = clock::now();
@@ -376,18 +425,28 @@ Json::Value agent_runtime::ask(const std::string& prompt, const std::chrono::ste
 		}
 		add_provider_usage(root);
 		debug_event("model_response", root, model_milliseconds);
-		Json::Value tool_calls(Json::arrayValue);
-		if (root.isMember("output") && root["output"].isArray())
+
+		if (!root.isMember("choices") || !root["choices"].isArray() || root["choices"].empty()
+		    || !root["choices"][0].isMember("message") || !root["choices"][0]["message"].isObject())
 		{
-			for (const Json::Value& item : root["output"])
-			{
-				if (agent_json_string(item, "type") == "function_call") tool_calls.append(item);
-			}
+			Json::Value unresolved(Json::arrayValue);
+			unresolved.append("The model response did not contain choices[0].message.");
+			return bound_output(finish("error", "The local model response structure was invalid.", 0.0, unresolved, round, calls));
+		}
+
+		const Json::Value& choice = root["choices"][0];
+		const Json::Value& message = choice["message"];
+		const std::string finish_reason = choice.isMember("finish_reason") && choice["finish_reason"].isString()
+			? choice["finish_reason"].asString() : "";
+		Json::Value tool_calls(Json::arrayValue);
+		if (message.isMember("tool_calls") && message["tool_calls"].isArray())
+		{
+			tool_calls = message["tool_calls"];
 		}
 
 		if (!tool_calls.empty())
 		{
-			append_response(input, root);
+			append_response(messages, root);
 			for (const Json::Value& call : tool_calls)
 			{
 				calls++;
@@ -397,15 +456,31 @@ Json::Value agent_runtime::ask(const std::string& prompt, const std::chrono::ste
 					unresolved.append("Internal tool-call budget exhausted.");
 					return bound_output(finish("budget_exhausted", "The investigation exhausted its tool-call budget.", 0.0, unresolved, round, calls - 1));
 				}
-				const std::string name = agent_json_string(call, "name");
-				const std::string call_id = agent_json_string(call, "call_id");
-				const std::string argument_text = agent_json_string(call, "arguments");
+				std::string name;
+				std::string argument_text;
+				if (call.isMember("function") && call["function"].isObject())
+				{
+					name = agent_json_string(call["function"], "name");
+					if (call["function"].isMember("arguments"))
+					{
+						if (call["function"]["arguments"].isString())
+						{
+							argument_text = call["function"]["arguments"].asString();
+						}
+						else if (call["function"]["arguments"].isObject())
+						{
+							argument_text = agent_json_compact(call["function"]["arguments"]);
+						}
+					}
+				}
+				const std::string call_id = agent_json_string(call, "id");
 				Json::Value arguments;
 				Json::Reader argument_reader;
 				agent_tool_result tool_result;
 				if (name.empty() || call_id.empty() || !argument_reader.parse(argument_text.empty() ? "{}" : argument_text, arguments, false) || !arguments.isObject())
 				{
-					tool_result.error = "Invalid function call name, ID, or JSON arguments";
+					if (finish_reason == "length") tool_result.error = "Model response was truncated during tool calls (finish_reason=length)";
+					else tool_result.error = "Invalid function call name, ID, or JSON arguments";
 					tool_result.result["error"] = tool_result.error;
 				}
 				const clock::time_point tool_started = clock::now();
@@ -429,11 +504,11 @@ Json::Value agent_runtime::ask(const std::string& prompt, const std::chrono::ste
 				event["arguments"] = record.arguments;
 				event["output"] = tool_output;
 				debug_event("tool_call", event, tool_milliseconds);
-				Json::Value item;
-				item["type"] = "function_call_output";
-				item["call_id"] = call_id;
-				item["output"] = agent_json_compact(tool_output);
-				input.append(item);
+				Json::Value tool_message;
+				tool_message["role"] = "tool";
+				tool_message["tool_call_id"] = call_id;
+				tool_message["content"] = agent_json_compact(tool_output);
+				messages.append(tool_message);
 				if (exhausted)
 				{
 					Json::Value unresolved(Json::arrayValue);
@@ -441,6 +516,14 @@ Json::Value agent_runtime::ask(const std::string& prompt, const std::chrono::ste
 					return bound_output(finish("budget_exhausted", "The investigation exhausted its tool-result budget.", 0.0, unresolved, round, calls));
 				}
 			}
+			continue;
+		}
+
+		if (finish_reason == "length")
+		{
+			append_response(messages, root);
+			correction = "The model response was truncated due to token limit (finish_reason=length).";
+			messages.append(agent_input_message("user", "Your previous final answer was truncated due to token limit. Return only the required compact JSON object."));
 			continue;
 		}
 
@@ -452,9 +535,9 @@ Json::Value agent_runtime::ask(const std::string& prompt, const std::chrono::ste
 			return bound_output(finish(final["status"].asString(), final["conclusion"].asString(),
 				final["confidence"].asDouble(), final["unresolved"], round, calls, &final["evidence"]));
 		}
-		append_response(input, root);
+		append_response(messages, root);
 		correction = error;
-		input.append(agent_input_message("user", "Your previous final answer was invalid: " + error + ". Return only the required compact JSON object."));
+		messages.append(agent_input_message("user", "Your previous final answer was invalid: " + error + ". Return only the required compact JSON object."));
 	}
 	Json::Value unresolved(Json::arrayValue);
 	unresolved.append(correction.empty() ? "Internal model-round budget exhausted." : correction);

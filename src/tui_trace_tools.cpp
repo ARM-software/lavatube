@@ -15,9 +15,11 @@ static Json::Value function_tool_schema(const std::string& name, const std::stri
 {
 	Json::Value tool;
 	tool["type"] = "function";
-	tool["name"] = name;
-	tool["description"] = description;
-	tool["parameters"] = parameters;
+	Json::Value function;
+	function["name"] = name;
+	function["description"] = description;
+	function["parameters"] = parameters;
+	tool["function"] = function;
 	return tool;
 }
 

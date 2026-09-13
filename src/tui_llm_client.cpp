@@ -35,13 +35,6 @@ static Json::Value input_message(const std::string& role, const std::string& con
 	return item;
 }
 
-static Json::Value include_fields()
-{
-	Json::Value include(Json::arrayValue);
-	include.append("reasoning.encrypted_content");
-	return include;
-}
-
 static std::string json_string_field(const Json::Value& value, const char* name)
 {
 	if (!value.isMember(name) || !value[name].isString()) return "";
@@ -66,13 +59,32 @@ static std::string normalize_base_url(const std::string& base_url)
 	{
 		out.pop_back();
 	}
+	const std::string legacy_suffix = "/responses";
+	if (out.size() >= legacy_suffix.size() && out.compare(out.size() - legacy_suffix.size(), legacy_suffix.size(), legacy_suffix) == 0)
+	{
+		out.erase(out.size() - legacy_suffix.size());
+		while (!out.empty() && out.back() == '/')
+		{
+			out.pop_back();
+		}
+	}
+	const std::string completions_suffix = "/chat/completions";
+	if (out.size() >= completions_suffix.size() && out.compare(out.size() - completions_suffix.size(), completions_suffix.size(), completions_suffix) == 0)
+	{
+		out.erase(out.size() - completions_suffix.size());
+		while (!out.empty() && out.back() == '/')
+		{
+			out.pop_back();
+		}
+	}
 	return out;
 }
 
-static bool ends_with(const std::string& value, const char* suffix)
+static std::string endpoint_url(const std::string& base_url)
 {
-	const size_t len = strlen(suffix);
-	return value.size() >= len && value.compare(value.size() - len, len, suffix) == 0;
+	std::string out = normalize_base_url(base_url);
+	out += "/chat/completions";
+	return out;
 }
 
 static long timeout_seconds_from_env(const char* name, long fallback)
@@ -106,7 +118,7 @@ tui_assistant_result tui_llm_client::ask(const std::vector<tui_chat_message>& hi
 
 	Json::Value tool_definitions = tools.tool_definitions();
 	Json::Value request = build_initial_request(history, tool_definitions);
-	Json::Value input = request["input"];
+	Json::Value messages = request["messages"];
 
 	for (unsigned round = 0; round < 6; round++)
 	{
@@ -114,10 +126,22 @@ tui_assistant_result tui_llm_client::ask(const std::vector<tui_chat_message>& hi
 		Json::Value root;
 		if (!parse_response_json(response, root, result)) return result;
 
+		const Json::Value& choice = root["choices"][0];
+		const std::string finish_reason = choice.isMember("finish_reason") && choice["finish_reason"].isString()
+			? choice["finish_reason"].asString()
+			: "";
+
 		std::vector<tui_tool_notice> calls;
 		if (!collect_tool_calls(root, calls))
 		{
-			result.error = "Failed to parse tool calls from model response";
+			if (finish_reason == "length")
+			{
+				result.error = "Model response was truncated during tool calls (finish_reason=length)";
+			}
+			else
+			{
+				result.error = "Failed to parse tool calls from model response";
+			}
 			return result;
 		}
 
@@ -125,12 +149,18 @@ tui_assistant_result tui_llm_client::ask(const std::vector<tui_chat_message>& hi
 		{
 			result.text = collect_output_text(root);
 			result.usage = collect_usage(root);
+			if (finish_reason == "length")
+			{
+				if (!result.usage.empty()) result.usage += " ";
+				result.usage += "[truncated: length]";
+				if (!result.text.empty()) result.text += "\n[response truncated by token limit]";
+			}
 			result.ok = true;
 			if (result.text.empty()) result.text = "(model returned no text)";
 			return result;
 		}
 
-		append_response_output(input, root);
+		append_response_output(messages, root);
 		for (tui_tool_notice& call : calls)
 		{
 			tui_tool_result tool_result = tools.execute(call.name, call.arguments);
@@ -139,8 +169,8 @@ tui_assistant_result tui_llm_client::ask(const std::vector<tui_chat_message>& hi
 			result.tools.push_back(call);
 		}
 
-		append_tool_outputs(input, calls);
-		request = build_tool_result_request(input, tool_definitions);
+		append_tool_outputs(messages, calls);
+		request = build_tool_result_request(messages, tool_definitions);
 	}
 
 	result.error = "Tool-call limit reached";
@@ -163,8 +193,7 @@ tui_llm_client::response_data tui_llm_client::post_json(const Json::Value& reque
 	headers = curl_slist_append(headers, "Content-Type: application/json");
 	headers = curl_slist_append(headers, auth.c_str());
 
-	std::string url = mBaseUrl;
-	if (!ends_with(url, "/responses")) url += "/responses";
+	const std::string url = endpoint_url(mBaseUrl);
 
 	curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
 	curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
@@ -199,34 +228,37 @@ Json::Value tui_llm_client::build_initial_request(const std::vector<tui_chat_mes
 {
 	Json::Value request;
 	request["model"] = mModel;
-	if (!mReasoningEffort.empty()) request["reasoning"]["effort"] = mReasoningEffort;
-	request["instructions"] = llm_instructions();
+	if (!mReasoningEffort.empty() && mReasoningEffort != "none")
+	{
+		request["reasoning_effort"] = mReasoningEffort;
+	}
 	request["tools"] = tool_definitions;
 	request["tool_choice"] = "auto";
-	request["store"] = false;
-	request["include"] = include_fields();
+	request["parallel_tool_calls"] = false;
 
-	Json::Value input(Json::arrayValue);
+	Json::Value messages(Json::arrayValue);
+	messages.append(input_message("system", llm_instructions()));
 	const size_t start = history.size() > 12 ? history.size() - 12 : 0;
 	for (size_t i = start; i < history.size(); i++)
 	{
-		input.append(input_message(history[i].role, history[i].content));
+		messages.append(input_message(history[i].role, history[i].content));
 	}
-	request["input"] = input;
+	request["messages"] = messages;
 	return request;
 }
 
-Json::Value tui_llm_client::build_tool_result_request(const Json::Value& input, const Json::Value& tool_definitions) const
+Json::Value tui_llm_client::build_tool_result_request(const Json::Value& messages, const Json::Value& tool_definitions) const
 {
 	Json::Value request;
 	request["model"] = mModel;
-	if (!mReasoningEffort.empty()) request["reasoning"]["effort"] = mReasoningEffort;
-	request["instructions"] = llm_instructions();
+	if (!mReasoningEffort.empty() && mReasoningEffort != "none")
+	{
+		request["reasoning_effort"] = mReasoningEffort;
+	}
 	request["tools"] = tool_definitions;
 	request["tool_choice"] = "auto";
-	request["store"] = false;
-	request["include"] = include_fields();
-	request["input"] = input;
+	request["parallel_tool_calls"] = false;
+	request["messages"] = messages;
 	return request;
 }
 
@@ -253,31 +285,41 @@ bool tui_llm_client::parse_response_json(const response_data& response, Json::Va
 		return false;
 	}
 
+	if (!root.isMember("choices") || !root["choices"].isArray() || root["choices"].empty()
+	    || !root["choices"][0].isMember("message") || !root["choices"][0]["message"].isObject())
+	{
+		result.error = "The model response did not contain choices[0].message";
+		return false;
+	}
+
 	return true;
 }
 
 std::string tui_llm_client::collect_output_text(const Json::Value& root) const
 {
 	std::string text;
-	const Json::Value& output = root["output"];
-	if (!output.isArray()) return text;
-
-	for (const Json::Value& item : output)
+	if (!root.isMember("choices") || !root["choices"].isArray() || root["choices"].empty()) return text;
+	const Json::Value& choice = root["choices"][0];
+	if (!choice.isMember("message") || !choice["message"].isObject()) return text;
+	const Json::Value& message = choice["message"];
+	if (message.isMember("content"))
 	{
-		if (json_string_field(item, "type") != "message") continue;
-		const Json::Value& content = item["content"];
-		if (!content.isArray()) continue;
-		for (const Json::Value& part : content)
+		if (message["content"].isString())
 		{
-			if (json_string_field(part, "type") == "output_text" && part.isMember("text"))
+			text = message["content"].asString();
+		}
+		else if (message["content"].isArray())
+		{
+			for (const Json::Value& part : message["content"])
 			{
-				if (!text.empty()) text += "\n";
-				text += part["text"].asString();
+				if (part.isObject() && part.isMember("text") && part["text"].isString())
+				{
+					if (!text.empty()) text += "\n";
+					text += part["text"].asString();
+				}
 			}
 		}
 	}
-
-	if (text.empty() && root.isMember("output_text")) text = root["output_text"].asString();
 	return text;
 }
 
@@ -286,13 +328,39 @@ std::string tui_llm_client::collect_usage(const Json::Value& root) const
 	if (!root.isMember("usage") || !root["usage"].isObject()) return "";
 	const Json::Value& usage = root["usage"];
 	std::string out;
-	if (usage.isMember("input_tokens")) out += "in=" + std::to_string(usage["input_tokens"].asUInt64());
-	if (usage.isMember("output_tokens"))
+	uint64_t in_tokens = 0;
+	bool has_in = false;
+	if (usage.isMember("prompt_tokens") && usage["prompt_tokens"].isUInt64())
+	{
+		in_tokens = usage["prompt_tokens"].asUInt64();
+		has_in = true;
+	}
+	else if (usage.isMember("input_tokens") && usage["input_tokens"].isUInt64())
+	{
+		in_tokens = usage["input_tokens"].asUInt64();
+		has_in = true;
+	}
+	if (has_in) out += "in=" + std::to_string(in_tokens);
+
+	uint64_t out_tokens = 0;
+	bool has_out = false;
+	if (usage.isMember("completion_tokens") && usage["completion_tokens"].isUInt64())
+	{
+		out_tokens = usage["completion_tokens"].asUInt64();
+		has_out = true;
+	}
+	else if (usage.isMember("output_tokens") && usage["output_tokens"].isUInt64())
+	{
+		out_tokens = usage["output_tokens"].asUInt64();
+		has_out = true;
+	}
+	if (has_out)
 	{
 		if (!out.empty()) out += " ";
-		out += "out=" + std::to_string(usage["output_tokens"].asUInt64());
+		out += "out=" + std::to_string(out_tokens);
 	}
-	if (usage.isMember("total_tokens"))
+
+	if (usage.isMember("total_tokens") && usage["total_tokens"].isUInt64())
 	{
 		if (!out.empty()) out += " ";
 		out += "total=" + std::to_string(usage["total_tokens"].asUInt64());
@@ -302,16 +370,31 @@ std::string tui_llm_client::collect_usage(const Json::Value& root) const
 
 bool tui_llm_client::collect_tool_calls(const Json::Value& root, std::vector<tui_tool_notice>& calls) const
 {
-	const Json::Value& output = root["output"];
-	if (!output.isArray()) return true;
+	if (!root.isMember("choices") || !root["choices"].isArray() || root["choices"].empty()) return true;
+	const Json::Value& choice = root["choices"][0];
+	if (!choice.isMember("message") || !choice["message"].isObject()) return true;
+	const Json::Value& message = choice["message"];
+	if (!message.isMember("tool_calls") || !message["tool_calls"].isArray()) return true;
 
-	for (const Json::Value& item : output)
+	for (const Json::Value& item : message["tool_calls"])
 	{
-		if (json_string_field(item, "type") != "function_call") continue;
 		tui_tool_notice notice;
-		notice.name = json_string_field(item, "name");
-		notice.arguments = json_string_field(item, "arguments");
-		notice.call_id = json_string_field(item, "call_id");
+		notice.call_id = json_string_field(item, "id");
+		if (item.isMember("function") && item["function"].isObject())
+		{
+			notice.name = json_string_field(item["function"], "name");
+			if (item["function"].isMember("arguments"))
+			{
+				if (item["function"]["arguments"].isString())
+				{
+					notice.arguments = item["function"]["arguments"].asString();
+				}
+				else if (item["function"]["arguments"].isObject())
+				{
+					notice.arguments = tui_json_compact(item["function"]["arguments"]);
+				}
+			}
+		}
 		if (notice.name.empty() || notice.call_id.empty()) return false;
 		if (notice.arguments.empty()) notice.arguments = "{}";
 		calls.push_back(notice);
@@ -320,24 +403,37 @@ bool tui_llm_client::collect_tool_calls(const Json::Value& root, std::vector<tui
 	return true;
 }
 
-void tui_llm_client::append_response_output(Json::Value& input, const Json::Value& root) const
+void tui_llm_client::append_response_output(Json::Value& messages, const Json::Value& root) const
 {
-	const Json::Value& output = root["output"];
-	if (!output.isArray()) return;
-	for (const Json::Value& item : output)
+	if (!root.isMember("choices") || !root["choices"].isArray() || root["choices"].empty()) return;
+	const Json::Value& choice = root["choices"][0];
+	if (!choice.isMember("message") || !choice["message"].isObject()) return;
+	const Json::Value& message = choice["message"];
+	Json::Value assistant_message;
+	assistant_message["role"] = "assistant";
+	if (message.isMember("content") && !message["content"].isNull())
 	{
-		input.append(item);
+		assistant_message["content"] = message["content"];
 	}
+	else
+	{
+		assistant_message["content"] = Json::Value(Json::nullValue);
+	}
+	if (message.isMember("tool_calls") && message["tool_calls"].isArray())
+	{
+		assistant_message["tool_calls"] = message["tool_calls"];
+	}
+	messages.append(assistant_message);
 }
 
-void tui_llm_client::append_tool_outputs(Json::Value& input, const std::vector<tui_tool_notice>& notices) const
+void tui_llm_client::append_tool_outputs(Json::Value& messages, const std::vector<tui_tool_notice>& notices) const
 {
 	for (const tui_tool_notice& notice : notices)
 	{
 		Json::Value item;
-		item["type"] = "function_call_output";
-		item["call_id"] = notice.call_id;
-		item["output"] = notice.output;
-		input.append(item);
+		item["role"] = "tool";
+		item["tool_call_id"] = notice.call_id;
+		item["content"] = notice.output;
+		messages.append(item);
 	}
 }
