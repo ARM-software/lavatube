@@ -43,6 +43,7 @@ private:
 	agent_tool_result trace_list_objects(const Json::Value& arguments) const;
 	agent_tool_result trace_get_object(const Json::Value& arguments) const;
 	agent_tool_result trace_get_packets(const Json::Value& arguments) const;
+	agent_tool_result trace_list_calls(const Json::Value& arguments) const;
 	agent_tool_result trace_find_calls(const Json::Value& arguments) const;
 	agent_tool_result replay_command(const Json::Value& arguments, const std::string& command) const;
 	agent_tool_result replay_get_object_state(const Json::Value& arguments) const;

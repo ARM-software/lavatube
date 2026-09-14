@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "agent_tools.h"
+#include "llm_usage.h"
 
 struct agent_runtime_options
 {
@@ -18,6 +19,7 @@ struct agent_runtime_options
 	uint32_t max_rounds = 8;
 	uint32_t max_tool_calls = 32;
 	size_t max_output_bytes = 32768;
+	bool digest_evidence = false;
 	FILE* debug_file = nullptr;
 	bool verbose = false;
 };
@@ -64,10 +66,5 @@ private:
 	agent_runtime_options mOptions;
 	const agent_tools& mTools;
 	std::vector<tool_record> mRecords;
-	uint64_t mInputTokens = 0;
-	uint64_t mOutputTokens = 0;
-	uint64_t mTotalTokens = 0;
-	bool mHasInputTokens = false;
-	bool mHasOutputTokens = false;
-	bool mHasTotalTokens = false;
+	llm_usage_tracker mUsage;
 };

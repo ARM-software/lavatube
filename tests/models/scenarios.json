@@ -1,0 +1,12 @@
+{
+  "mipmap" : {
+    "trace_file" : "traces/sample_texture_mipmap_generation.api",
+    "question": "How does this trace generate the mip levels for its texture? Give the source and destination extent of every step, and say whether the work is recorded on more than one trace thread.",
+    "setup": []
+  },
+  "multithreading" : {
+    "trace_file" : "traces/demo_multithreading.api",
+    "question": "Is this application submitting Vulkan work from many threads, or only recording command buffers from many threads? Summarize the evidence.",
+    "setup": []
+  }
+}

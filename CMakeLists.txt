@@ -1233,6 +1233,8 @@ add_executable(lava-agent
 	src/agent_runtime.h
 	src/agent_tools.cpp
 	src/agent_tools.h
+	src/llm_usage.cpp
+	src/llm_usage.h
 	src/trace_metadata.cpp
 	src/trace_metadata.h
 )
@@ -1259,6 +1261,8 @@ add_executable(lava-tui
 	src/tui_llm_router.h
 	src/tui_trace_tools.cpp
 	src/tui_trace_tools.h
+	src/llm_usage.cpp
+	src/llm_usage.h
 	src/trace_metadata.cpp
 	src/trace_metadata.h
 )
@@ -1283,6 +1287,8 @@ add_executable(tui_llm_router_test
 	src/tui_llm_router.h
 	src/tui_trace_tools.cpp
 	src/tui_trace_tools.h
+	src/llm_usage.cpp
+	src/llm_usage.h
 	src/trace_metadata.cpp
 	src/trace_metadata.h
 )

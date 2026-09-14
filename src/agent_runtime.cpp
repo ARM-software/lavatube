@@ -4,8 +4,22 @@
 
 #include <algorithm>
 #include <chrono>
+#include <stdio.h>
 
 #include "jsoncpp/json/reader.h"
+
+static std::string agent_fnv1a64_hex(const std::string& data)
+{
+	uint64_t hash = 14695981039346656037ULL;
+	for (const char c : data)
+	{
+		hash ^= (uint8_t)c;
+		hash *= 1099511628211ULL;
+	}
+	char buffer[17];
+	snprintf(buffer, sizeof(buffer), "%016llx", (unsigned long long)hash);
+	return buffer;
+}
 
 static size_t agent_curl_write(char* data, size_t size, size_t count, void* pointer)
 {
@@ -138,33 +152,7 @@ void agent_runtime::debug_event(const std::string& type, const Json::Value& valu
 
 void agent_runtime::add_provider_usage(const Json::Value& response)
 {
-	if (!response.isMember("usage") || !response["usage"].isObject()) return;
-	const Json::Value& usage = response["usage"];
-	if (usage.isMember("prompt_tokens") && usage["prompt_tokens"].isUInt64())
-	{
-		mInputTokens += usage["prompt_tokens"].asUInt64();
-		mHasInputTokens = true;
-	}
-	else if (usage.isMember("input_tokens") && usage["input_tokens"].isUInt64())
-	{
-		mInputTokens += usage["input_tokens"].asUInt64();
-		mHasInputTokens = true;
-	}
-	if (usage.isMember("completion_tokens") && usage["completion_tokens"].isUInt64())
-	{
-		mOutputTokens += usage["completion_tokens"].asUInt64();
-		mHasOutputTokens = true;
-	}
-	else if (usage.isMember("output_tokens") && usage["output_tokens"].isUInt64())
-	{
-		mOutputTokens += usage["output_tokens"].asUInt64();
-		mHasOutputTokens = true;
-	}
-	if (usage.isMember("total_tokens") && usage["total_tokens"].isUInt64())
-	{
-		mTotalTokens += usage["total_tokens"].asUInt64();
-		mHasTotalTokens = true;
-	}
+	mUsage.add(response);
 }
 
 std::string agent_runtime::response_text(const Json::Value& response) const
@@ -331,7 +319,21 @@ Json::Value agent_runtime::finish(const std::string& status, const std::string& 
 				evidence["tool_id"] = record.id;
 				evidence["tool_name"] = record.name;
 				evidence["arguments"] = record.arguments;
-				evidence["results"] = record.results;
+				if (mOptions.digest_evidence && mOptions.debug_file)
+				{
+					// The full result lives in the -df transcript's tool_call event
+					// (value.output.result); identify it by tool_id and fingerprint
+					// the exact compact-serialized bytes so a caller can verify the
+					// fetched evidence. FNV-1a 64-bit, non-cryptographic.
+					const std::string serialized = agent_json_compact(record.results);
+					evidence["result_bytes"] = (Json::UInt64)serialized.size();
+					evidence["result_hash"] = agent_fnv1a64_hex(serialized);
+					evidence["transcript_ref"] = "tool_call:" + std::to_string(record.id);
+				}
+				else
+				{
+					evidence["results"] = record.results;
+				}
 				evidence["inference"] = citation["inference"];
 				output["evidence"].append(evidence);
 			}
@@ -340,9 +342,10 @@ Json::Value agent_runtime::finish(const std::string& status, const std::string& 
 	output["unresolved"] = unresolved.isArray() ? unresolved : Json::Value(Json::arrayValue);
 	output["usage"]["rounds"] = rounds;
 	output["usage"]["calls"] = calls;
-	if (mHasInputTokens) output["usage"]["input_tokens"] = (Json::UInt64)mInputTokens;
-	if (mHasOutputTokens) output["usage"]["output_tokens"] = (Json::UInt64)mOutputTokens;
-	if (mHasTotalTokens) output["usage"]["total_tokens"] = (Json::UInt64)mTotalTokens;
+	if (mUsage.has_input_tokens) output["usage"]["input_tokens"] = (Json::UInt64)mUsage.input_tokens;
+	if (mUsage.has_cached_tokens) output["usage"]["cached_tokens"] = (Json::UInt64)mUsage.cached_tokens;
+	if (mUsage.has_output_tokens) output["usage"]["output_tokens"] = (Json::UInt64)mUsage.output_tokens;
+	if (mUsage.has_total_tokens) output["usage"]["total_tokens"] = (Json::UInt64)mUsage.total_tokens;
 	return output;
 }
 

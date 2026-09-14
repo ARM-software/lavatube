@@ -120,11 +120,15 @@ tui_assistant_result tui_llm_client::ask(const std::vector<tui_chat_message>& hi
 	Json::Value request = build_initial_request(history, tool_definitions);
 	Json::Value messages = request["messages"];
 
+	llm_usage_tracker tracker;
+
 	for (unsigned round = 0; round < 6; round++)
 	{
 		response_data response = post_json(request);
 		Json::Value root;
 		if (!parse_response_json(response, root, result)) return result;
+
+		tracker.add(root);
 
 		const Json::Value& choice = root["choices"][0];
 		const std::string finish_reason = choice.isMember("finish_reason") && choice["finish_reason"].isString()
@@ -134,6 +138,7 @@ tui_assistant_result tui_llm_client::ask(const std::vector<tui_chat_message>& hi
 		std::vector<tui_tool_notice> calls;
 		if (!collect_tool_calls(root, calls))
 		{
+			result.apply_usage(tracker);
 			if (finish_reason == "length")
 			{
 				result.error = "Model response was truncated during tool calls (finish_reason=length)";
@@ -148,7 +153,7 @@ tui_assistant_result tui_llm_client::ask(const std::vector<tui_chat_message>& hi
 		if (calls.empty())
 		{
 			result.text = collect_output_text(root);
-			result.usage = collect_usage(root);
+			result.apply_usage(tracker);
 			if (finish_reason == "length")
 			{
 				if (!result.usage.empty()) result.usage += " ";
@@ -173,6 +178,7 @@ tui_assistant_result tui_llm_client::ask(const std::vector<tui_chat_message>& hi
 		request = build_tool_result_request(messages, tool_definitions);
 	}
 
+	result.apply_usage(tracker);
 	result.error = "Tool-call limit reached";
 	return result;
 }
@@ -321,51 +327,6 @@ std::string tui_llm_client::collect_output_text(const Json::Value& root) const
 		}
 	}
 	return text;
-}
-
-std::string tui_llm_client::collect_usage(const Json::Value& root) const
-{
-	if (!root.isMember("usage") || !root["usage"].isObject()) return "";
-	const Json::Value& usage = root["usage"];
-	std::string out;
-	uint64_t in_tokens = 0;
-	bool has_in = false;
-	if (usage.isMember("prompt_tokens") && usage["prompt_tokens"].isUInt64())
-	{
-		in_tokens = usage["prompt_tokens"].asUInt64();
-		has_in = true;
-	}
-	else if (usage.isMember("input_tokens") && usage["input_tokens"].isUInt64())
-	{
-		in_tokens = usage["input_tokens"].asUInt64();
-		has_in = true;
-	}
-	if (has_in) out += "in=" + std::to_string(in_tokens);
-
-	uint64_t out_tokens = 0;
-	bool has_out = false;
-	if (usage.isMember("completion_tokens") && usage["completion_tokens"].isUInt64())
-	{
-		out_tokens = usage["completion_tokens"].asUInt64();
-		has_out = true;
-	}
-	else if (usage.isMember("output_tokens") && usage["output_tokens"].isUInt64())
-	{
-		out_tokens = usage["output_tokens"].asUInt64();
-		has_out = true;
-	}
-	if (has_out)
-	{
-		if (!out.empty()) out += " ";
-		out += "out=" + std::to_string(out_tokens);
-	}
-
-	if (usage.isMember("total_tokens") && usage["total_tokens"].isUInt64())
-	{
-		if (!out.empty()) out += " ";
-		out += "total=" + std::to_string(usage["total_tokens"].asUInt64());
-	}
-	return out;
 }
 
 bool tui_llm_client::collect_tool_calls(const Json::Value& root, std::vector<tui_tool_notice>& calls) const

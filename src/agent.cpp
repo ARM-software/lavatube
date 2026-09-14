@@ -28,6 +28,9 @@ static void agent_usage()
 	printf("--max-rounds N         Maximum model rounds (default 8)\n");
 	printf("--max-tool-calls N     Maximum tool calls (default 32)\n");
 	printf("--max-output-bytes N   Maximum result size (default 32768, minimum 1024)\n");
+	printf("--evidence-mode M      full embeds complete tool results in evidence (default); digest\n");
+	printf("                       embeds result_bytes, result_hash, and transcript_ref only, so the\n");
+	printf("                       -df transcript sidecar serves as the evidence store\n");
 	printf("--base-url URL         OpenAI-compatible API base (or LAVA_AGENT_BASE_URL)\n");
 	printf("--model MODEL          Local model name (or LAVA_AGENT_MODEL)\n");
 	printf("--reasoning-effort E   Model reasoning effort (or LAVA_AGENT_REASONING_EFFORT)\n");
@@ -217,6 +220,13 @@ int main(int argc, char** argv)
 			if (!agent_parse_u64(argv[index++], bytes) || bytes < 1024 || bytes > SIZE_MAX) error = "Invalid --max-output-bytes value";
 			else runtime_options.max_output_bytes = (size_t)bytes;
 		}
+		else if (option == "--evidence-mode" && index < argc)
+		{
+			const std::string value = argv[index++];
+			if (value == "full") runtime_options.digest_evidence = false;
+			else if (value == "digest") runtime_options.digest_evidence = true;
+			else error = "Invalid --evidence-mode value (expected full or digest)";
+		}
 		else if (option == "--base-url" && index < argc) runtime_options.base_url = argv[index++];
 		else if (option == "--model" && index < argc) runtime_options.model = argv[index++];
 		else if (option == "--reasoning-effort" && index < argc) runtime_options.reasoning_effort = argv[index++];
@@ -239,6 +249,10 @@ int main(int argc, char** argv)
 	if (error.empty() && (runtime_options.base_url.empty() || runtime_options.model.empty() || runtime_options.api_key.empty()))
 	{
 		error = "Model base URL, model, and API key must be configured";
+	}
+	if (error.empty() && runtime_options.digest_evidence && debug_filename.empty())
+	{
+		error = "--evidence-mode digest requires --debugfile / -df";
 	}
 	if (error.empty() && p__sandbox_level >= 2 && !agent_parse_model_port(runtime_options.base_url, model_port))
 	{

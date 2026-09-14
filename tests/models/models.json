@@ -1,0 +1,313 @@
+{
+  "providers": {
+    "mistral": {
+      "base_url": "https://api.mistral.ai/v1",
+      "chat_completions_url": "https://api.mistral.ai/v1/chat/completions",
+      "auth": "Authorization: Bearer $MISTRAL_KEY"
+    },
+    "entrim": {
+      "base_url": "https://api.entrim.ai/v1",
+      "chat_completions_url": "https://api.entrim.ai/v1/chat/completions",
+      "auth": "Authorization: Bearer $ENTRIM_KEY"
+    }
+  },
+  "models": [
+    {
+      "provider": "Mistral",
+      "name": "Mistral Large 3",
+      "model_id": "mistral-large-2512",
+      "type": "chat",
+      "base_url": "https://api.mistral.ai/v1",
+      "url": "https://api.mistral.ai/v1/chat/completions",
+      "pricing_per_mtok_usd": {
+        "input": 0.5,
+        "cached": 0.05,
+        "output": 1.5
+      }
+    },
+    {
+      "provider": "Mistral",
+      "name": "Mistral Medium 3.5",
+      "model_id": "mistral-medium-2604",
+      "type": "chat",
+      "base_url": "https://api.mistral.ai/v1",
+      "url": "https://api.mistral.ai/v1/chat/completions",
+      "pricing_per_mtok_usd": {
+        "input": 1.5,
+        "cached": 0.15,
+        "output": 7.5
+      }
+    },
+    {
+      "provider": "Mistral",
+      "name": "Mistral Small 4",
+      "model_id": "mistral-small-2603",
+      "type": "chat",
+      "base_url": "https://api.mistral.ai/v1",
+      "url": "https://api.mistral.ai/v1/chat/completions",
+      "pricing_per_mtok_usd": {
+        "input": 0.15,
+        "cached": 0.015,
+        "output": 0.6
+      },
+      "reasoning": {
+        "levels": [
+          "none",
+          "minimal",
+          "low",
+          "medium",
+          "high",
+          "xhigh"
+        ]
+      }
+    },
+    {
+      "provider": "Mistral",
+      "name": "Ministral 3 14B",
+      "model_id": "ministral-14b-2512",
+      "type": "chat",
+      "base_url": "https://api.mistral.ai/v1",
+      "url": "https://api.mistral.ai/v1/chat/completions",
+      "pricing_per_mtok_usd": {
+        "input": 0.2,
+        "cached": 0.02,
+        "output": 0.2
+      }
+    },
+    {
+      "provider": "Mistral",
+      "name": "Ministral 3 8B",
+      "model_id": "ministral-8b-2512",
+      "type": "chat",
+      "base_url": "https://api.mistral.ai/v1",
+      "url": "https://api.mistral.ai/v1/chat/completions",
+      "pricing_per_mtok_usd": {
+        "input": 0.15,
+        "cached": 0.015,
+        "output": 0.15
+      }
+    },
+    {
+      "provider": "Mistral",
+      "name": "Ministral 3 3B",
+      "model_id": "ministral-3b-2512",
+      "type": "chat",
+      "base_url": "https://api.mistral.ai/v1",
+      "url": "https://api.mistral.ai/v1/chat/completions",
+      "pricing_per_mtok_usd": {
+        "input": 0.1,
+        "cached": 0.01,
+        "output": 0.1
+      }
+    },
+    {
+      "provider": "Mistral",
+      "name": "Z.ai GLM 5.2",
+      "model_id": "glm-5-2",
+      "type": "chat",
+      "base_url": "https://api.mistral.ai/v1",
+      "url": "https://api.mistral.ai/v1/chat/completions",
+      "pricing_per_mtok_usd": {
+        "input": 1.4,
+        "cached": 0.14,
+        "output": 4.4
+      }
+    },
+    {
+      "provider": "Mistral",
+      "name": "Codestral",
+      "model_id": "codestral-2508",
+      "type": "chat",
+      "base_url": "https://api.mistral.ai/v1",
+      "url": "https://api.mistral.ai/v1/chat/completions",
+      "pricing_per_mtok_usd": {
+        "input": 0.3,
+        "cached": 0.03,
+        "output": 0.9
+      }
+    },
+    {
+      "provider": "Mistral",
+      "name": "Codestral Embed",
+      "model_id": "codestral-embed-2505",
+      "type": "embedding",
+      "base_url": "https://api.mistral.ai/v1",
+      "url": "https://api.mistral.ai/v1/embeddings",
+      "pricing_per_mtok_usd": {
+        "input": 0.15,
+        "cached": 0.015,
+        "output": null
+      }
+    },
+    {
+      "provider": "Entrim",
+      "name": "GPT OSS 20B",
+      "model_id": "openai/gpt-oss-20b",
+      "available": false,
+      "type": "chat",
+      "base_url": "https://api.entrim.ai/v1",
+      "url": "https://api.entrim.ai/v1/chat/completions",
+      "pricing_per_mtok_usd": {
+        "input": 0.02,
+        "cached": 0.005,
+        "output": 0.1
+      },
+      "reasoning": {
+        "levels": [
+          "low",
+          "medium",
+          "high"
+        ]
+      }
+    },
+    {
+      "provider": "Entrim",
+      "name": "GLM 5.2",
+      "model_id": "zai-org/GLM-5.2",
+      "available": false,
+      "type": "chat",
+      "base_url": "https://api.entrim.ai/v1",
+      "url": "https://api.entrim.ai/v1/chat/completions",
+      "pricing_per_mtok_usd": {
+        "input": 0.9,
+        "cached": 0.15,
+        "output": 3.0
+      }
+    },
+    {
+      "provider": "Entrim",
+      "name": "GLM 5.3 Flash",
+      "model_id": "zai-org/GLM-5.3-Flash",
+      "type": "chat",
+      "base_url": "https://api.entrim.ai/v1",
+      "url": "https://api.entrim.ai/v1/chat/completions",
+      "pricing_per_mtok_usd": {
+        "input": 0.1,
+        "cached": 0.0175,
+        "output": 0.35
+      }
+    },
+    {
+      "provider": "Entrim",
+      "name": "DeepSeek V4 Flash",
+      "model_id": "deepseek-ai/DeepSeek-V4-Flash",
+      "type": "chat",
+      "base_url": "https://api.entrim.ai/v1",
+      "url": "https://api.entrim.ai/v1/chat/completions",
+      "pricing_per_mtok_usd": {
+        "input": 0.09,
+        "cached": 0.015,
+        "output": 0.17
+      }
+    },
+    {
+      "provider": "Entrim",
+      "name": "GPT OSS 120B",
+      "model_id": "openai/gpt-oss-120b",
+      "available": false,
+      "type": "chat",
+      "base_url": "https://api.entrim.ai/v1",
+      "url": "https://api.entrim.ai/v1/chat/completions",
+      "pricing_per_mtok_usd": {
+        "input": 0.029,
+        "cached": 0.01,
+        "output": 0.13
+      },
+      "reasoning": {
+        "levels": [
+          "low",
+          "medium",
+          "high"
+        ]
+      }
+    },
+    {
+      "provider": "Entrim",
+      "name": "Qwen 3.6 27B",
+      "model_id": "Qwen/Qwen3.6-27B",
+      "type": "chat",
+      "base_url": "https://api.entrim.ai/v1",
+      "url": "https://api.entrim.ai/v1/chat/completions",
+      "pricing_per_mtok_usd": {
+        "input": 0.1,
+        "cached": 0.04,
+        "output": 0.4
+      }
+    },
+    {
+      "provider": "Entrim",
+      "name": "Qwen 3.8 27B",
+      "model_id": "Qwen/Qwen3.8-27B",
+      "type": "chat",
+      "base_url": "https://api.entrim.ai/v1",
+      "url": "https://api.entrim.ai/v1/chat/completions",
+      "pricing_per_mtok_usd": {
+        "input": 0.1,
+        "cached": 0.04,
+        "output": 0.4
+      },
+      "reasoning": {
+        "levels": [
+          "low",
+          "medium",
+          "xhigh"
+        ]
+      }
+    },
+    {
+      "provider": "Entrim",
+      "name": "Qwen 3.6 35B-A3B",
+      "model_id": "Qwen/Qwen3.6-35B-A3B",
+      "type": "chat",
+      "base_url": "https://api.entrim.ai/v1",
+      "url": "https://api.entrim.ai/v1/chat/completions",
+      "pricing_per_mtok_usd": {
+        "input": 0.05,
+        "cached": 0.025,
+        "output": 0.25
+      }
+    },
+    {
+      "provider": "Entrim",
+      "name": "Gemma 4 31B",
+      "model_id": "google/gemma-4-31B-it",
+      "available": false,
+      "type": "chat",
+      "base_url": "https://api.entrim.ai/v1",
+      "url": "https://api.entrim.ai/v1/chat/completions",
+      "pricing_per_mtok_usd": {
+        "input": 0.1,
+        "cached": 0.04,
+        "output": 0.3
+      }
+    },
+    {
+      "provider": "Entrim",
+      "name": "Gemma 4 26B A4B",
+      "model_id": "google/gemma-4-26B-A4B-it",
+      "available": false,
+      "type": "chat",
+      "base_url": "https://api.entrim.ai/v1",
+      "url": "https://api.entrim.ai/v1/chat/completions",
+      "pricing_per_mtok_usd": {
+        "input": 0.05,
+        "cached": 0.025,
+        "output": 0.25
+      }
+    },
+    {
+      "provider": "Entrim",
+      "name": "Qwen3 Embedding 8B",
+      "model_id": "Qwen/Qwen3-Embedding-8B",
+      "available": false,
+      "type": "embedding",
+      "base_url": "https://api.entrim.ai/v1",
+      "url": "https://api.entrim.ai/v1/embeddings",
+      "pricing_per_mtok_usd": {
+        "input": 0.02,
+        "cached": null,
+        "output": null
+      }
+    }
+  ]
+}

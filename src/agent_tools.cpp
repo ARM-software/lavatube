@@ -8,6 +8,7 @@
 #include <unistd.h>
 
 #include <algorithm>
+#include <map>
 #include <vector>
 
 #include "jsoncpp/json/reader.h"
@@ -120,6 +121,22 @@ static Json::Value agent_find_parameters()
 	parameters["required"].append("name");
 	return parameters;
 }
+
+static Json::Value agent_list_calls_parameters()
+{
+	Json::Value parameters = agent_empty_parameters();
+	parameters["properties"]["thread"] = agent_u32_property("Optional trace thread index.");
+	return parameters;
+}
+
+struct agent_call_count_compare
+{
+	bool operator()(const std::pair<uint64_t, std::string>& a, const std::pair<uint64_t, std::string>& b) const
+	{
+		if (a.first != b.first) return a.first > b.first;
+		return a.second < b.second;
+	}
+};
 
 static bool agent_arguments_only(const Json::Value& arguments, const char* first = nullptr,
 	const char* second = nullptr, const char* third = nullptr, const char* fourth = nullptr,
@@ -501,6 +518,7 @@ Json::Value agent_tools::definitions() const
 	tools.append(agent_function_schema("trace_list_objects", "List locally captured Vulkan object types and creation counts.", agent_empty_parameters()));
 	tools.append(agent_function_schema("trace_get_object", "Return immutable tracking metadata for one captured Vulkan object.", agent_object_parameters()));
 	tools.append(agent_function_schema("trace_get_packets", "Decode one packet or an inclusive range of at most 64 packets from one trace thread.", agent_packet_parameters()));
+	tools.append(agent_function_schema("trace_list_calls", "List distinct Vulkan command names present in the local trace with occurrence counts, most common first. Optionally limited to one thread.", agent_list_calls_parameters()));
 	tools.append(agent_function_schema("trace_find_calls", "Find exact Vulkan command names in the local trace with optional thread and packet bounds.", agent_find_parameters()));
 	tools.append(agent_function_schema("replay_get_status", "Return the live replay service status without changing it.", agent_empty_parameters()));
 	tools.append(agent_function_schema("replay_list_threads", "Return current replay thread positions and waits.", agent_empty_parameters()));
@@ -523,6 +541,7 @@ agent_tool_result agent_tools::execute(const std::string& name, const Json::Valu
 	if (name == "trace_list_objects") return trace_list_objects(arguments);
 	if (name == "trace_get_object") return trace_get_object(arguments);
 	if (name == "trace_get_packets") return trace_get_packets(arguments);
+	if (name == "trace_list_calls") return trace_list_calls(arguments);
 	if (name == "trace_find_calls") return trace_find_calls(arguments);
 	if (name == "replay_get_status") return replay_command(arguments, "status");
 	if (name == "replay_list_threads") return replay_command(arguments, "info threads");
@@ -672,6 +691,68 @@ agent_tool_result agent_tools::trace_get_packets(const Json::Value& arguments) c
 	agent_tool_result result;
 	result.ok = true;
 	result.result["packets"] = packets;
+	return result;
+}
+
+agent_tool_result agent_tools::trace_list_calls(const Json::Value& arguments) const
+{
+	if (!agent_arguments_only(arguments, "thread")) return error_result("Unexpected argument for trace_list_calls");
+	std::string error;
+	const Json::Value metadata = packed_json("metadata.json", mTraceFile);
+	const uint32_t thread_count = metadata["threads"].asUInt();
+	uint32_t first_thread = 0;
+	uint32_t last_thread = thread_count == 0 ? 0 : thread_count - 1;
+	if (arguments.isMember("thread"))
+	{
+		if (!agent_read_u32(arguments, "thread", first_thread, error)) return error_result(error);
+		if (first_thread >= thread_count) return error_result("Trace thread is out of range");
+		last_thread = first_thread;
+	}
+
+	lava_reader& trace = trace_reader();
+	std::map<uint16_t, uint64_t> counts;
+	for (uint32_t thread = first_thread; thread <= last_thread; thread++)
+	{
+		random_access_file_reader source(packed_open("thread_" + _to_string(thread) + ".bin", mTraceFile));
+		while (source.remaining() > 0)
+		{
+			const uint64_t position = source.position();
+			if (source.remaining() < sizeof(uint8_t) + sizeof(uint32_t)) return error_result("Truncated packet header");
+			const uint8_t type = source.read_uint8_t();
+			const uint32_t size = source.read_uint32_t();
+			if (size < sizeof(uint8_t) + sizeof(uint32_t) || size > source.size() - position) return error_result("Invalid packet size");
+			if (type == PACKET_VULKAN_API_CALL && size >= sizeof(uint8_t) + sizeof(uint32_t) + sizeof(uint16_t))
+			{
+				const uint16_t stored = source.read_uint16_t();
+				if (trace.vulkan_dictionary.count(stored)) counts[stored]++;
+			}
+			source.seek(position + size);
+		}
+	}
+
+	std::vector<std::pair<uint64_t, std::string>> sorted;
+	sorted.reserve(counts.size());
+	uint64_t total = 0;
+	for (const auto& entry : counts)
+	{
+		const auto remapped = trace.vulkan_dictionary.find(entry.first);
+		if (remapped == trace.vulkan_dictionary.end()) continue;
+		sorted.push_back(std::make_pair(entry.second, std::string(vulkan_get_function_name(remapped->second))));
+		total += entry.second;
+	}
+	std::sort(sorted.begin(), sorted.end(), agent_call_count_compare());
+	Json::Value calls(Json::arrayValue);
+	for (size_t i = 0; i < sorted.size(); i++)
+	{
+		Json::Value call;
+		call["name"] = sorted[i].second;
+		call["count"] = (Json::UInt64)sorted[i].first;
+		calls.append(call);
+	}
+	agent_tool_result result;
+	result.ok = true;
+	result.result["calls"] = calls;
+	result.result["total"] = (Json::UInt64)total;
 	return result;
 }
 

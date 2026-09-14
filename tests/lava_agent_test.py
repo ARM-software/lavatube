@@ -13,6 +13,14 @@ import threading
 import time
 
 
+def fnv1a64_hex(data):
+	value = 0xcbf29ce484222325
+	for byte in data:
+		value ^= byte
+		value = (value * 0x100000001b3) & 0xFFFFFFFFFFFFFFFF
+	return '%016x' % value
+
+
 EXPECTED_TOOLS = {
 	'trace_get_metadata',
 	'trace_list_threads',
@@ -21,6 +29,7 @@ EXPECTED_TOOLS = {
 	'trace_list_objects',
 	'trace_get_object',
 	'trace_get_packets',
+	'trace_list_calls',
 	'trace_find_calls',
 	'replay_get_status',
 	'replay_list_threads',
@@ -58,6 +67,9 @@ def response_output(handler, message, finish_reason=None, usage=None):
 			'prompt_tokens': 10,
 			'completion_tokens': 5,
 			'total_tokens': 15,
+			'prompt_tokens_details': {
+				'cached_tokens': 4,
+			},
 		}
 	body = json.dumps({
 		'id': 'test-response',
@@ -290,6 +302,7 @@ class AgentModelHandler(http.server.BaseHTTPRequestHandler):
 					'input_tokens': 10,
 					'output_tokens': 5,
 					'total_tokens': 15,
+					'cached_tokens': 4,
 				})
 				return
 			if round_number == 3:
@@ -509,6 +522,7 @@ def main():
 					'rounds': 3,
 					'calls': 3,
 					'input_tokens': 30,
+					'cached_tokens': 12,
 					'output_tokens': 15,
 					'total_tokens': 45,
 			}:
@@ -535,6 +549,57 @@ def main():
 					for event in tool_events + model_events):
 				raise RuntimeError('debug transcript omitted durations: %r' % (
 					debug_events,))
+
+		AgentModelHandler.mode = 'normal'
+		AgentModelHandler.requests = []
+		with tempfile.TemporaryDirectory() as digest_temporary:
+			digest_debug_file = os.path.join(digest_temporary, 'digest.jsonl')
+			digest = subprocess.run(
+				[agent, '--service', '127.0.0.1:%d' % replay_port,
+				 '--base-url', 'http://127.0.0.1:%d/v1' % model_port,
+				 '--model', 'test-model', '--evidence-mode', 'digest',
+				 '-df', digest_debug_file,
+				 trace, 'ask', 'Digest the evidence.'],
+				text=True,
+				stdout=subprocess.PIPE,
+				stderr=subprocess.PIPE,
+				timeout=30,
+			)
+			if digest.returncode != 0:
+				raise RuntimeError('digest-mode lava-agent failed: stdout=%r stderr=%r' % (digest.stdout, digest.stderr))
+			digest_output = json.loads(digest.stdout)
+			if digest_output['status'] != 'answered':
+				raise RuntimeError('digest-mode run was not answered: %r' % digest_output)
+			with open(digest_debug_file, encoding='utf-8') as file:
+				digest_events = [json.loads(line) for line in file]
+			transcript = {event['value']['output']['tool_id']: event['value']['output']['result']
+				for event in digest_events if event['type'] == 'tool_call'}
+			if [item['tool_id'] for item in digest_output['evidence']] != [1, 2, 3]:
+				raise RuntimeError('digest evidence IDs were not preserved: %r' % digest_output['evidence'])
+			for item in digest_output['evidence']:
+				if 'results' in item:
+					raise RuntimeError('digest evidence still embeds results: %r' % item)
+				if item['transcript_ref'] != 'tool_call:%d' % item['tool_id']:
+					raise RuntimeError('digest evidence transcript_ref mismatch: %r' % item)
+				stored = json.dumps(transcript[item['tool_id']], separators=(',', ':')).encode('utf-8')
+				if item['result_bytes'] != len(stored):
+					raise RuntimeError('digest evidence result_bytes mismatch: %r' % item)
+				if item['result_hash'] != fnv1a64_hex(stored):
+					raise RuntimeError('digest evidence result_hash mismatch: %r' % item)
+
+		missing_df = subprocess.run(
+			[agent, '--service', '127.0.0.1:%d' % replay_port,
+			 '--base-url', 'http://127.0.0.1:%d/v1' % model_port,
+			 '--model', 'test-model', '--evidence-mode', 'digest',
+			 trace, 'ask', 'Should fail without debugfile.'],
+			text=True,
+			stdout=subprocess.PIPE,
+			stderr=subprocess.PIPE,
+			timeout=30,
+		)
+		if missing_df.returncode != 2 or '--evidence-mode digest requires --debugfile / -df' not in missing_df.stderr:
+			raise RuntimeError('expected error when --evidence-mode digest has no -df: stdout=%r stderr=%r' % (
+				missing_df.stdout, missing_df.stderr))
 
 		AgentModelHandler.mode = 'normal'
 		AgentModelHandler.requests = []
