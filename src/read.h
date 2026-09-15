@@ -3,6 +3,7 @@
 #pragma once
 
 #include <assert.h>
+#include <algorithm>
 #include <atomic>
 #include <cstdint>
 #include <thread>
@@ -62,6 +63,15 @@ enum class cli_marker_placement : uint8_t
 using lava_markings_observer = void (*)(const change_source&, const VkMarkedOffsetsARM*, void*);
 
 extern lava::mutex sync_mutex;
+
+static inline void replay_poll_wait(uint32_t& delay_us, bool stagger)
+{
+	usleep(delay_us);
+	if (stagger && delay_us < 10000)
+	{
+		delay_us = std::min(delay_us * 2, 10000u);
+	}
+}
 
 bool same_change_source(const change_source& a, const change_source& b);
 void merge_rewrite_markings(address_rewrite_accumulator& queue, const change_source& source, const VkMarkedOffsetsARM* markings);
@@ -532,6 +542,7 @@ public:
 	std::atomic_uint_fast32_t cli_wait_object_type{ VK_OBJECT_TYPE_UNKNOWN };
 	std::atomic_uint_fast32_t cli_wait_object_index{ CONTAINER_INVALID_INDEX };
 	std::atomic_uint_fast32_t cli_wait_aux_index{ CONTAINER_INVALID_INDEX };
+	uint32_t cli_poll_delay_us = 50;
 	/// Unexpected API result mark from check_retval: the packet where the error was seen and the
 	/// error code itself. Consumed by check_cli(), which turns it into an error pause.
 	std::atomic_uint_fast32_t cli_error_packet{ UINT32_MAX };
@@ -601,6 +612,8 @@ inline void lava_file_reader::read_barrier()
 	}
 	complete_packet();
 	if (is_isolated()) return;
+	uint32_t poll_delay_us = parent->simulate ? 1000 : 1;
+	const bool stagger_poll = parent->cli_service.load(std::memory_order_acquire);
 	for (int i = 0; i < (int)size; i++)
 	{
 		const unsigned packet_index = current_barrier_packet_indices[i];
@@ -615,8 +628,9 @@ inline void lava_file_reader::read_barrier()
 		while (i != current.thread && packet_index > parent->thread_packet_numbers->at(i).load(std::memory_order_relaxed))
 		{
 			if (parent->stop_requested()) throw_stop_requested();
-			usleep(parent->simulate ? 1000 : 1);
+			replay_poll_wait(poll_delay_us, stagger_poll);
 		}
+		poll_delay_us = parent->simulate ? 1000 : 1;
 		if (publish_wait) cli_state.store(cli_thread_state::running, std::memory_order_release);
 	}
 	DLOG2("[t%02d] Passed thread barrier, waited for %u threads", (int)current.thread, size);
@@ -641,6 +655,8 @@ inline uint32_t lava_file_reader::read_handle(DEBUGPARAM(const char* name))
 	else DLOG2("[t%02d %06d] read handle %s index=%u, MUST WAIT for tid=%d packet=%u, it is now at packet=%u", (int)current.thread, (int)current.packet + 1, name, (unsigned)index, (int)req_thread, req_packet, completed_packets);
 #endif
 	const bool publish_wait = req_packet >= completed_packets && parent->cli_service.load(std::memory_order_acquire);
+	uint32_t poll_delay_us = parent->simulate ? 1000 : 1;
+	const bool stagger_poll = parent->cli_service.load(std::memory_order_relaxed);
 	if (publish_wait)
 	{
 		cli_wait_thread.store(req_thread, std::memory_order_relaxed);
@@ -650,7 +666,7 @@ inline uint32_t lava_file_reader::read_handle(DEBUGPARAM(const char* name))
 	while (req_packet >= completed_packets)
 	{
 		if (parent->stop_requested()) throw_stop_requested();
-		usleep(parent->simulate ? 1000 : 1);
+		replay_poll_wait(poll_delay_us, stagger_poll);
 		completed_packets = parent->thread_packet_numbers->at(req_thread).load(std::memory_order_relaxed);
 	}
 	if (publish_wait) cli_state.store(cli_thread_state::running, std::memory_order_release);
@@ -661,8 +677,13 @@ static inline bool check_cli(const callback_context& cb)
 {
 	lava_reader* parent = cb.reader.parent;
 	int req_thread = parent->cli_thread.load(std::memory_order_acquire);
-	if (req_thread == -1) return false; // fast out if not running under CLI control
+	if (req_thread == -1)
+	{
+		cb.reader.cli_poll_delay_us = 50;
+		return false; // fast out if not running under CLI control
+	}
 	if (parent->stop_requested()) cb.reader.throw_stop_requested();
+	if (parent->cli_running.load(std::memory_order_acquire)) cb.reader.cli_poll_delay_us = 50;
 	// A replayed API call on this thread returned an unexpected error: force an error pause so
 	// lava-cli can inspect the state. If the replay is already paused elsewhere, or another
 	// thread's error won the race, the error stays reported through the log and error count.
@@ -696,7 +717,7 @@ static inline bool check_cli(const callback_context& cb)
 			cb.reader.cli_pause_generation.notify_all();
 			parent->cli_running.store(false, std::memory_order_release);
 			parent->cli_running.notify_all();
-			usleep(50);
+			replay_poll_wait(cb.reader.cli_poll_delay_us, true);
 			return true; // loop in caller until lava-cli resolves the error pause
 		}
 	}
@@ -707,12 +728,13 @@ static inline bool check_cli(const callback_context& cb)
 	{
 		if (parent->cli_isolate_thread.load(std::memory_order_acquire))
 		{
+			uint32_t poll_delay_us = 50;
 			cb.reader.cli_state.store(cli_thread_state::cli_paused, std::memory_order_release);
 			while (parent->cli_isolate_thread.load(std::memory_order_acquire)
 			       && parent->cli_thread.load(std::memory_order_acquire) != (int)cb.reader.current.thread)
 			{
 				if (parent->stop_requested()) cb.reader.throw_stop_requested();
-				usleep(50);
+				replay_poll_wait(poll_delay_us, true);
 			}
 		}
 		cb.reader.cli_state.store(cli_thread_state::running, std::memory_order_release);
@@ -757,7 +779,7 @@ static inline bool check_cli(const callback_context& cb)
 	cb.reader.cli_pause_generation.notify_all();
 	parent->cli_running.store(false, std::memory_order_release);
 	parent->cli_running.notify_all();
-	usleep(50);
+	replay_poll_wait(cb.reader.cli_poll_delay_us, true);
 	return true; // loop in caller until lava-cli resumes replay
 }
 
