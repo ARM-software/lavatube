@@ -1817,6 +1817,7 @@ layer_test(buffer_bind_lifetime buffer_bind_lifetime)
 layer_test(dedicated_memory dedicated_memory)
 layer_test(device_local_memory device_local_memory)
 #layer_test(memory_tracking_race memory_tracking_race) # TBD add support - and make it run faster
+layer_test(as_scatter_upload as_scatter_upload)
 
 # These require the Mali GPU model for now:
 model_layer_test(shader_core_properties shader_core_properties)

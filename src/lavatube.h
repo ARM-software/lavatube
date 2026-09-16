@@ -884,6 +884,13 @@ struct trackedcommand // does _not_ inherit trackable
 			uint32_t buffer_index;
 			char* values;
 		} update_buffer;
+		struct fill_buffer
+		{
+			VkDeviceSize offset;
+			VkDeviceSize size;
+			uint32_t buffer_index;
+			uint32_t value;
+		} fill_buffer;
 		struct copy_buffer
 		{
 			uint32_t src_buffer_index;

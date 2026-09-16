@@ -2156,6 +2156,7 @@ static void add_callbacks_for_first_round(bool enable_simulation, bool enable_su
 		CALLBACK(vkCmdPushDescriptorSet);
 		CALLBACK(vkUpdateDescriptorSets);
 		CALLBACK(vkCmdUpdateBuffer);
+		CALLBACK(vkCmdFillBuffer);
 		CALLBACK(vkCmdCopyBuffer);
 		CALLBACK(vkCmdCopyBuffer2);
 		CALLBACK(vkCmdCopyBuffer2KHR);

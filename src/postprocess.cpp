@@ -811,6 +811,19 @@ void postprocess_vkCmdUpdateBuffer(callback_context& cb, VkCommandBuffer command
 	cmdbuffer_data.commands.push_back(cmd);
 }
 
+void postprocess_vkCmdFillBuffer(callback_context& cb, VkCommandBuffer commandBuffer, VkBuffer dstBuffer, VkDeviceSize dstOffset, VkDeviceSize size, uint32_t value)
+{
+	const uint32_t cmdbuffer_index = index_to_VkCommandBuffer.index(commandBuffer);
+	auto& cmdbuffer_data = VkCommandBuffer_index.at(cmdbuffer_index);
+	trackedcommand cmd { VKCMDFILLBUFFER };
+	cmd.source = cb.reader.current;
+	cmd.data.fill_buffer.offset = dstOffset;
+	cmd.data.fill_buffer.size = size;
+	cmd.data.fill_buffer.buffer_index = index_to_VkBuffer.index(dstBuffer);
+	cmd.data.fill_buffer.value = value;
+	cmdbuffer_data.commands.push_back(cmd);
+}
+
 static void postprocess_copy_buffer(callback_context& cb, VkCommandBuffer commandBuffer, VkBuffer srcBuffer, VkBuffer dstBuffer, uint32_t regionCount)
 {
 	uint32_t cmdbuffer_index = index_to_VkCommandBuffer.index(commandBuffer);

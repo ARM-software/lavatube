@@ -1749,6 +1749,29 @@ bool execute_commands(command_execution_data& data)
 				}
 			}
 			break;
+		case VKCMDFILLBUFFER:
+			{
+				suballoc_location sub = data.device_data.allocator->find_buffer_memory(c.data.fill_buffer.buffer_index);
+				trackedbuffer& dst_buffer = VkBuffer_index.at(c.data.fill_buffer.buffer_index);
+				if (c.data.fill_buffer.offset > dst_buffer.size)
+				{
+					ABORT("vkCmdFillBuffer simulator offset exceeds Buffer[%u] size", c.data.fill_buffer.buffer_index);
+				}
+				const VkDeviceSize size = c.data.fill_buffer.size == VK_WHOLE_SIZE
+					? dst_buffer.size - c.data.fill_buffer.offset : c.data.fill_buffer.size;
+				if (size > dst_buffer.size - c.data.fill_buffer.offset)
+				{
+					ABORT("vkCmdFillBuffer simulator range exceeds Buffer[%u] size", c.data.fill_buffer.buffer_index);
+				}
+				char* destination = (char*)sub.memory + c.data.fill_buffer.offset;
+				for (VkDeviceSize offset = 0; offset < size; offset += sizeof(uint32_t))
+				{
+					memcpy(destination + offset, &c.data.fill_buffer.value, sizeof(uint32_t));
+				}
+				dst_buffer.source.register_source(c.data.fill_buffer.offset, size, c.source,
+					1, 0, dst_buffer.object_type, dst_buffer.index);
+			}
+			break;
 		case VKCMDCOPYBUFFER:
 			{
 				suballoc_location src = data.device_data.allocator->find_buffer_memory(c.data.copy_buffer.src_buffer_index);
