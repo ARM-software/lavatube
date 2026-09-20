@@ -116,6 +116,13 @@ struct opencl_api_packet
 	bool num_platforms_present = false;
 	uint32_t num_platforms = 0;
 	std::vector<uint32_t> platform_indices;
+	uint32_t platform_index = CONTAINER_INVALID_INDEX;
+	bool platform_present = false;
+	uint64_t device_type = 0;
+	bool devices_present = false;
+	bool num_devices_present = false;
+	uint32_t num_devices = 0;
+	std::vector<uint32_t> device_indices;
 	int32_t result = 0;
 
 	void clear()
@@ -126,6 +133,13 @@ struct opencl_api_packet
 		num_platforms_present = false;
 		num_platforms = 0;
 		platform_indices.clear();
+		platform_index = CONTAINER_INVALID_INDEX;
+		platform_present = false;
+		device_type = 0;
+		devices_present = false;
+		num_devices_present = false;
+		num_devices = 0;
+		device_indices.clear();
 		result = 0;
 	}
 };

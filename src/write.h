@@ -113,12 +113,19 @@ class lava_writer;
 
 void trace_finalize_if_inactive();
 
+struct trackedcldevice : trackable
+{
+	uint32_t parent_platform_index = CONTAINER_INVALID_INDEX;
+};
+
 struct opencl_layer_runtime_state
 {
 	cl_icd_dispatch target_dispatch = {};
 	cl_icd_dispatch layer_dispatch = {};
 	trace_remap<cl_platform_id, trackable> platform_index;
+	trace_remap<cl_device_id, trackedcldevice> device_index;
 	std::atomic_uint_fast64_t platform_id_calls { 0 };
+	std::atomic_uint_fast64_t device_id_calls { 0 };
 	std::atomic_uint_fast32_t known_platform_count { UINT32_MAX };
 	std::atomic_bool initialized { false };
 };

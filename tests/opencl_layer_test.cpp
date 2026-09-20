@@ -18,6 +18,20 @@ static cl_int CL_API_CALL fake_clGetPlatformIDs(cl_uint num_entries, cl_platform
 	return CL_SUCCESS;
 }
 
+static cl_int CL_API_CALL fake_clGetDeviceIDs(cl_platform_id platform, cl_device_type device_type,
+	cl_uint num_entries, cl_device_id* devices, cl_uint* num_devices)
+{
+	(void)device_type;
+	if (platform != reinterpret_cast<cl_platform_id>(0x1000)) return CL_INVALID_PLATFORM;
+	if (num_devices) *num_devices = 2;
+	if (devices && num_entries >= 2)
+	{
+		devices[0] = reinterpret_cast<cl_device_id>(0x3000);
+		devices[1] = reinterpret_cast<cl_device_id>(0x4000);
+	}
+	return CL_SUCCESS;
+}
+
 int main(int argc, char** argv)
 {
 	assert(argc == 3);
@@ -54,6 +68,7 @@ int main(int argc, char** argv)
 
 	cl_icd_dispatch target_dispatch = {};
 	target_dispatch.clGetPlatformIDs = fake_clGetPlatformIDs;
+	target_dispatch.clGetDeviceIDs = fake_clGetDeviceIDs;
 	cl_uint layer_entries = 0;
 	const cl_icd_dispatch* layer_dispatch = nullptr;
 	const cl_uint target_entries = sizeof(target_dispatch) / sizeof(void*);
@@ -62,6 +77,7 @@ int main(int argc, char** argv)
 	assert(layer_dispatch);
 	assert(layer_dispatch->clGetPlatformIDs);
 	assert(layer_dispatch->clGetPlatformIDs != fake_clGetPlatformIDs);
+	assert(!layer_dispatch->clGetDeviceIDs);
 
 	cl_uint num_platforms = 0;
 	assert(layer_dispatch->clGetPlatformIDs(0, nullptr, &num_platforms) == CL_SUCCESS);
@@ -83,6 +99,27 @@ int main(int argc, char** argv)
 	assert(layer_dispatch->clGetPlatformIDs(2, platforms, nullptr) == CL_SUCCESS);
 	assert(platforms[0] == reinterpret_cast<cl_platform_id>(0x1000));
 	assert(platforms[1] == reinterpret_cast<cl_platform_id>(0x2000));
+	assert(layer_dispatch->clGetDeviceIDs);
+	assert(layer_dispatch->clGetDeviceIDs != fake_clGetDeviceIDs);
+	cl_uint num_devices = 0;
+	assert(layer_dispatch->clGetDeviceIDs(
+		platforms[0], CL_DEVICE_TYPE_ALL, 0, nullptr, &num_devices) == CL_SUCCESS);
+	assert(num_devices == 2);
+	cl_device_id devices[2] = {};
+	assert(layer_dispatch->clGetDeviceIDs(
+		platforms[0], CL_DEVICE_TYPE_ALL, 2, devices, nullptr) == CL_SUCCESS);
+	assert(devices[0] == reinterpret_cast<cl_device_id>(0x3000));
+	assert(devices[1] == reinterpret_cast<cl_device_id>(0x4000));
+	devices[0] = nullptr;
+	devices[1] = nullptr;
+	assert(layer_dispatch->clGetDeviceIDs(
+		platforms[0], CL_DEVICE_TYPE_GPU, 2, devices, nullptr) == CL_SUCCESS);
+	assert(devices[0] == reinterpret_cast<cl_device_id>(0x3000));
+	assert(devices[1] == reinterpret_cast<cl_device_id>(0x4000));
+	cl_uint invalid_num_devices = 17;
+	assert(layer_dispatch->clGetDeviceIDs(reinterpret_cast<cl_platform_id>(0xdead),
+		CL_DEVICE_TYPE_ALL, 0, nullptr, &invalid_num_devices) == CL_INVALID_PLATFORM);
+	assert(invalid_num_devices == 17);
 	assert(access(argv[2], F_OK) != 0);
 	assert(deinit_layer() == CL_SUCCESS);
 	assert(access(argv[2], F_OK) == 0);

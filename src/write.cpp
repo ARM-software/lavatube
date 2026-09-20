@@ -503,6 +503,8 @@ void lava_writer::serialize()
 {
 	lava::lock_guard lock(frame_mutex);
 	assert(!mPath.empty());
+	const bool has_opencl_calls = opencl_layer.platform_id_calls.load(std::memory_order_relaxed) != 0
+		|| opencl_layer.device_id_calls.load(std::memory_order_relaxed) != 0;
 
 	// write dictionary to JSON file
 	std::string dict_path = mPath + "/dictionary.json";
@@ -511,7 +513,7 @@ void lava_writer::serialize()
 	{
 		jd[pair.first] = (unsigned)pair.second;
 	}
-	if (opencl_layer.platform_id_calls.load(std::memory_order_relaxed) != 0)
+	if (has_opencl_calls)
 	{
 		for (const auto& pair : opencl_function_table())
 		{
@@ -588,9 +590,10 @@ void lava_writer::serialize()
 
 	// write limits
 	Json::Value limits = trace_limits(this);
-	if (opencl_layer.platform_id_calls.load(std::memory_order_relaxed) != 0)
+	if (has_opencl_calls)
 	{
 		limits["cl_platform_id"] = opencl_layer.platform_index.size();
+		limits["cl_device_id"] = opencl_layer.device_index.size();
 	}
 	write_json(mPath + "/limits.json", limits);
 
@@ -604,6 +607,17 @@ void lava_writer::serialize()
 			Json::Value value = trackable_json(data);
 			value["index"] = data->index;
 			tracking["cl_platform_id"].append(value);
+		}
+	}
+	if (opencl_layer.device_index.size())
+	{
+		tracking["cl_device_id"] = Json::arrayValue;
+		for (const trackedcldevice* data : opencl_layer.device_index.iterate())
+		{
+			Json::Value value = trackable_json(data);
+			value["index"] = data->index;
+			value["parent_platform_index"] = data->parent_platform_index;
+			tracking["cl_device_id"].append(value);
 		}
 	}
 	if (write_output)
@@ -659,7 +673,8 @@ void lava_writer::finish()
 	if (!mPath.empty())
 	{
 		if (p__delete_empty_trace && records.VkDevice_index.size() == 0
-		    && opencl_layer.platform_id_calls.load(std::memory_order_relaxed) == 0)
+		    && opencl_layer.platform_id_calls.load(std::memory_order_relaxed) == 0
+		    && opencl_layer.device_id_calls.load(std::memory_order_relaxed) == 0)
 		{
 			ILOG("No device was created; deleting empty trace %s", mPack.c_str());
 			erase_directory(mPath);
@@ -673,7 +688,9 @@ void lava_writer::finish()
 	mJson = Json::Value();
 	mInputTracking = Json::Value();
 	opencl_layer.platform_index.clear();
+	opencl_layer.device_index.clear();
 	opencl_layer.platform_id_calls.store(0, std::memory_order_relaxed);
+	opencl_layer.device_id_calls.store(0, std::memory_order_relaxed);
 	opencl_layer.known_platform_count.store(UINT32_MAX, std::memory_order_relaxed);
 	global_frame.exchange(0);
 	tid = -1;

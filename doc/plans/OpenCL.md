@@ -14,13 +14,13 @@
 
 - tracetooltests and chameleon support OpenCL already.
 - `external/tracetooltests/scripts/opencl_spec.py` as basis for code generation
+- Initial OpenCL ICD capture code has landed
 
-## Preparation
+## Organization
 
-- What code reorganization and refactoring should we do first?
-- Do we need a shared-runtime refactor? The Vulkan layer compiles the capture
-  implementation directly into its DSO, including its static writer singleton.
-  Repeating that for an OpenCL layer would create two writers?
+- We need tracking types similar to `trackable` for Vulkan (or reuse this as our
+  base class for OpenCL as well)
+- We need to generate OpenCL commands from XMl similar to how we do for Vulkan
 
 ## Capture
 

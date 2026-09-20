@@ -295,16 +295,40 @@ uint16_t lava_file_reader::read_opencl_apicall()
 
 	opencl_api_packet& packet = current_opencl_packet;
 	packet.valid = true;
-	packet.num_entries = read_uint32_t();
-	const uint8_t pointer_flags = read_uint8_t();
-	packet.platforms_present = pointer_flags & 1;
-	packet.num_platforms_present = pointer_flags & 2;
-	packet.num_platforms = read_uint32_t();
-	const uint32_t platform_count = read_uint32_t();
-	packet.platform_indices.resize(platform_count);
-	for (uint32_t i = 0; i < platform_count; i++)
+	if (apicall == OPENCL_clGetPlatformIDs)
 	{
-		packet.platform_indices[i] = read_uint32_t();
+		packet.num_entries = read_uint32_t();
+		const uint8_t pointer_flags = read_uint8_t();
+		packet.platforms_present = pointer_flags & 1;
+		packet.num_platforms_present = pointer_flags & 2;
+		packet.num_platforms = read_uint32_t();
+		const uint32_t platform_count = read_uint32_t();
+		packet.platform_indices.resize(platform_count);
+		for (uint32_t i = 0; i < platform_count; i++)
+		{
+			packet.platform_indices[i] = read_uint32_t();
+		}
+	}
+	else if (apicall == OPENCL_clGetDeviceIDs)
+	{
+		packet.platform_index = read_uint32_t();
+		packet.device_type = read_uint64_t();
+		packet.num_entries = read_uint32_t();
+		const uint8_t pointer_flags = read_uint8_t();
+		packet.devices_present = pointer_flags & 1;
+		packet.num_devices_present = pointer_flags & 2;
+		packet.platform_present = pointer_flags & 4;
+		packet.num_devices = read_uint32_t();
+		const uint32_t device_count = read_uint32_t();
+		packet.device_indices.resize(device_count);
+		for (uint32_t i = 0; i < device_count; i++)
+		{
+			packet.device_indices[i] = read_uint32_t();
+		}
+	}
+	else
+	{
+		ABORT("OpenCL packet decoder does not support %s", opencl_get_function_name(apicall));
 	}
 	packet.result = read_int32_t();
 	api_call_count++;
@@ -373,18 +397,46 @@ static Json::Value params_packet_json(const callback_context& cb)
 	const opencl_api_packet& opencl = cb.reader.current_opencl_packet;
 	if (opencl.valid)
 	{
-		params["num_entries"] = opencl.num_entries;
-		if (opencl.platforms_present)
+		if (cb.reader.current.call_id == OPENCL_clGetPlatformIDs)
 		{
-			params["platforms"] = Json::arrayValue;
-			for (uint32_t index : opencl.platform_indices) params["platforms"].append(index);
+			params["num_entries"] = opencl.num_entries;
+			if (opencl.platforms_present)
+			{
+				params["platforms"] = Json::arrayValue;
+				for (uint32_t index : opencl.platform_indices) params["platforms"].append(index);
+			}
+			else
+			{
+				params["platforms"] = Json::nullValue;
+			}
+			if (opencl.num_platforms_present) params["num_platforms"] = opencl.num_platforms;
+			else params["num_platforms"] = Json::nullValue;
 		}
-		else
+		else if (cb.reader.current.call_id == OPENCL_clGetDeviceIDs)
 		{
-			params["platforms"] = Json::nullValue;
+			if (opencl.platform_index != CONTAINER_INVALID_INDEX)
+			{
+				params["platform"] = opencl.platform_index;
+			}
+			else
+			{
+				params["platform"] = Json::nullValue;
+				if (opencl.platform_present) params["platform_unresolved"] = true;
+			}
+			params["device_type"] = (Json::UInt64)opencl.device_type;
+			params["num_entries"] = opencl.num_entries;
+			if (opencl.devices_present)
+			{
+				params["devices"] = Json::arrayValue;
+				for (uint32_t index : opencl.device_indices) params["devices"].append(index);
+			}
+			else
+			{
+				params["devices"] = Json::nullValue;
+			}
+			if (opencl.num_devices_present) params["num_devices"] = opencl.num_devices;
+			else params["num_devices"] = Json::nullValue;
 		}
-		if (opencl.num_platforms_present) params["num_platforms"] = opencl.num_platforms;
-		else params["num_platforms"] = Json::nullValue;
 		params["result"] = opencl.result;
 	}
 	else if (update.valid)

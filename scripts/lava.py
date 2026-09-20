@@ -482,7 +482,7 @@ for v in spec.root.findall('types/type'):
 		out(targets_read, '\t\t\t\t}')
 		out(targets_read, '\t\t\t}')
 		if v.find('name').text == 'VkInstance':
-			out(targets_read, '\t\t\tif (count == 0 && v.get("cl_platform_id", 0).asUInt() == 0) ELOG("No API context or instance recorded. Broken trace file!");')
+			out(targets_read, '\t\t\tif (count == 0 && !v.isMember("cl_platform_id")) ELOG("No API context or instance recorded. Broken trace file!");')
 		if v.find('name').text == 'VkSurfaceKHR':
 			out(targets_read, '\t\t\tif (!replayer.is_isolated()) window_preallocate(count);')
 		out(targets_read, '\t\t}')

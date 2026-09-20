@@ -25,6 +25,12 @@ foreach(expected
 		"\"num_entries\":2"
 		"\"platforms\":[0,1]"
 		"\"num_platforms\":2"
+		"\"name\":\"clGetDeviceIDs\""
+		"\"platform\":0"
+		"\"device_type\":4294967295"
+		"\"devices\":[0,1]"
+		"\"num_devices\":2"
+		"\"platform_unresolved\":true"
 		"\"result\":0")
 	string(FIND "${print_output}" "${expected}" found)
 	if(found EQUAL -1)
@@ -32,3 +38,11 @@ foreach(expected
 			"Missing ${expected} in lava-print output:\n${print_output}")
 	endif()
 endforeach()
+
+string(REGEX MATCHALL "\"devices\":\\[0,1\\]" device_enumerations
+	"${print_output}")
+list(LENGTH device_enumerations device_enumeration_count)
+if(NOT device_enumeration_count EQUAL 2)
+	message(FATAL_ERROR
+		"Expected two stable device enumerations:\n${print_output}")
+endif()
