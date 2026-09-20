@@ -145,10 +145,11 @@ def stop_replay(cli, port, replay_process):
 
 
 def provider_for(model, providers):
-	provider = providers.get(model['provider'].casefold())
-	if provider is None:
-		raise RuntimeError('no provider entry for %r' % model['provider'])
-	return provider
+	key = model['provider'].casefold()
+	for name, provider in providers.items():
+		if name.casefold() == key:
+			return provider
+	raise RuntimeError('no provider entry for %r' % model['provider'])
 
 
 def api_key_for(model, providers):

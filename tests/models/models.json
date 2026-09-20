@@ -113,17 +113,6 @@
       }
     },
     {
-      "provider": "Mistral",
-      "name": "Codestral Embed",
-      "model_id": "codestral-embed-2505",
-      "type": "embedding",
-      "pricing_per_mtok_usd": {
-        "input": 0.15,
-        "cached": 0.015,
-        "output": null
-      }
-    },
-    {
       "provider": "Entrim",
       "name": "GPT OSS 20B",
       "model_id": "openai/gpt-oss-20b",
@@ -257,18 +246,6 @@
         "input": 0.05,
         "cached": 0.025,
         "output": 0.25
-      }
-    },
-    {
-      "provider": "Entrim",
-      "name": "Qwen3 Embedding 8B",
-      "model_id": "Qwen/Qwen3-Embedding-8B",
-      "available": false,
-      "type": "embedding",
-      "pricing_per_mtok_usd": {
-        "input": 0.02,
-        "cached": null,
-        "output": null
       }
     },
     {
