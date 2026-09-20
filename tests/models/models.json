@@ -1,14 +1,16 @@
 {
   "providers": {
-    "mistral": {
+    "Mistral": {
       "base_url": "https://api.mistral.ai/v1",
-      "chat_completions_url": "https://api.mistral.ai/v1/chat/completions",
       "auth": "Authorization: Bearer $MISTRAL_KEY"
     },
-    "entrim": {
+    "Entrim": {
       "base_url": "https://api.entrim.ai/v1",
-      "chat_completions_url": "https://api.entrim.ai/v1/chat/completions",
       "auth": "Authorization: Bearer $ENTRIM_KEY"
+    },
+    "OpenAI": {
+      "base_url": "https://api.openai.com/v1",
+      "auth": "Authorization: Bearer $OPENAI_API_KEY"
     }
   },
   "models": [
@@ -17,8 +19,6 @@
       "name": "Mistral Large 3",
       "model_id": "mistral-large-2512",
       "type": "chat",
-      "base_url": "https://api.mistral.ai/v1",
-      "url": "https://api.mistral.ai/v1/chat/completions",
       "pricing_per_mtok_usd": {
         "input": 0.5,
         "cached": 0.05,
@@ -30,8 +30,6 @@
       "name": "Mistral Medium 3.5",
       "model_id": "mistral-medium-2604",
       "type": "chat",
-      "base_url": "https://api.mistral.ai/v1",
-      "url": "https://api.mistral.ai/v1/chat/completions",
       "pricing_per_mtok_usd": {
         "input": 1.5,
         "cached": 0.15,
@@ -43,8 +41,6 @@
       "name": "Mistral Small 4",
       "model_id": "mistral-small-2603",
       "type": "chat",
-      "base_url": "https://api.mistral.ai/v1",
-      "url": "https://api.mistral.ai/v1/chat/completions",
       "pricing_per_mtok_usd": {
         "input": 0.15,
         "cached": 0.015,
@@ -66,8 +62,6 @@
       "name": "Ministral 3 14B",
       "model_id": "ministral-14b-2512",
       "type": "chat",
-      "base_url": "https://api.mistral.ai/v1",
-      "url": "https://api.mistral.ai/v1/chat/completions",
       "pricing_per_mtok_usd": {
         "input": 0.2,
         "cached": 0.02,
@@ -79,8 +73,6 @@
       "name": "Ministral 3 8B",
       "model_id": "ministral-8b-2512",
       "type": "chat",
-      "base_url": "https://api.mistral.ai/v1",
-      "url": "https://api.mistral.ai/v1/chat/completions",
       "pricing_per_mtok_usd": {
         "input": 0.15,
         "cached": 0.015,
@@ -92,8 +84,6 @@
       "name": "Ministral 3 3B",
       "model_id": "ministral-3b-2512",
       "type": "chat",
-      "base_url": "https://api.mistral.ai/v1",
-      "url": "https://api.mistral.ai/v1/chat/completions",
       "pricing_per_mtok_usd": {
         "input": 0.1,
         "cached": 0.01,
@@ -105,8 +95,6 @@
       "name": "Z.ai GLM 5.2",
       "model_id": "glm-5-2",
       "type": "chat",
-      "base_url": "https://api.mistral.ai/v1",
-      "url": "https://api.mistral.ai/v1/chat/completions",
       "pricing_per_mtok_usd": {
         "input": 1.4,
         "cached": 0.14,
@@ -118,8 +106,6 @@
       "name": "Codestral",
       "model_id": "codestral-2508",
       "type": "chat",
-      "base_url": "https://api.mistral.ai/v1",
-      "url": "https://api.mistral.ai/v1/chat/completions",
       "pricing_per_mtok_usd": {
         "input": 0.3,
         "cached": 0.03,
@@ -131,8 +117,6 @@
       "name": "Codestral Embed",
       "model_id": "codestral-embed-2505",
       "type": "embedding",
-      "base_url": "https://api.mistral.ai/v1",
-      "url": "https://api.mistral.ai/v1/embeddings",
       "pricing_per_mtok_usd": {
         "input": 0.15,
         "cached": 0.015,
@@ -145,8 +129,6 @@
       "model_id": "openai/gpt-oss-20b",
       "available": false,
       "type": "chat",
-      "base_url": "https://api.entrim.ai/v1",
-      "url": "https://api.entrim.ai/v1/chat/completions",
       "pricing_per_mtok_usd": {
         "input": 0.02,
         "cached": 0.005,
@@ -166,8 +148,6 @@
       "model_id": "zai-org/GLM-5.2",
       "available": false,
       "type": "chat",
-      "base_url": "https://api.entrim.ai/v1",
-      "url": "https://api.entrim.ai/v1/chat/completions",
       "pricing_per_mtok_usd": {
         "input": 0.9,
         "cached": 0.15,
@@ -179,8 +159,6 @@
       "name": "GLM 5.3 Flash",
       "model_id": "zai-org/GLM-5.3-Flash",
       "type": "chat",
-      "base_url": "https://api.entrim.ai/v1",
-      "url": "https://api.entrim.ai/v1/chat/completions",
       "pricing_per_mtok_usd": {
         "input": 0.1,
         "cached": 0.0175,
@@ -192,8 +170,6 @@
       "name": "DeepSeek V4 Flash",
       "model_id": "deepseek-ai/DeepSeek-V4-Flash",
       "type": "chat",
-      "base_url": "https://api.entrim.ai/v1",
-      "url": "https://api.entrim.ai/v1/chat/completions",
       "pricing_per_mtok_usd": {
         "input": 0.09,
         "cached": 0.015,
@@ -206,8 +182,6 @@
       "model_id": "openai/gpt-oss-120b",
       "available": false,
       "type": "chat",
-      "base_url": "https://api.entrim.ai/v1",
-      "url": "https://api.entrim.ai/v1/chat/completions",
       "pricing_per_mtok_usd": {
         "input": 0.029,
         "cached": 0.01,
@@ -226,8 +200,6 @@
       "name": "Qwen 3.6 27B",
       "model_id": "Qwen/Qwen3.6-27B",
       "type": "chat",
-      "base_url": "https://api.entrim.ai/v1",
-      "url": "https://api.entrim.ai/v1/chat/completions",
       "pricing_per_mtok_usd": {
         "input": 0.1,
         "cached": 0.04,
@@ -239,8 +211,6 @@
       "name": "Qwen 3.8 27B",
       "model_id": "Qwen/Qwen3.8-27B",
       "type": "chat",
-      "base_url": "https://api.entrim.ai/v1",
-      "url": "https://api.entrim.ai/v1/chat/completions",
       "pricing_per_mtok_usd": {
         "input": 0.1,
         "cached": 0.04,
@@ -259,8 +229,6 @@
       "name": "Qwen 3.6 35B-A3B",
       "model_id": "Qwen/Qwen3.6-35B-A3B",
       "type": "chat",
-      "base_url": "https://api.entrim.ai/v1",
-      "url": "https://api.entrim.ai/v1/chat/completions",
       "pricing_per_mtok_usd": {
         "input": 0.05,
         "cached": 0.025,
@@ -273,8 +241,6 @@
       "model_id": "google/gemma-4-31B-it",
       "available": false,
       "type": "chat",
-      "base_url": "https://api.entrim.ai/v1",
-      "url": "https://api.entrim.ai/v1/chat/completions",
       "pricing_per_mtok_usd": {
         "input": 0.1,
         "cached": 0.04,
@@ -287,8 +253,6 @@
       "model_id": "google/gemma-4-26B-A4B-it",
       "available": false,
       "type": "chat",
-      "base_url": "https://api.entrim.ai/v1",
-      "url": "https://api.entrim.ai/v1/chat/completions",
       "pricing_per_mtok_usd": {
         "input": 0.05,
         "cached": 0.025,
@@ -301,12 +265,133 @@
       "model_id": "Qwen/Qwen3-Embedding-8B",
       "available": false,
       "type": "embedding",
-      "base_url": "https://api.entrim.ai/v1",
-      "url": "https://api.entrim.ai/v1/embeddings",
       "pricing_per_mtok_usd": {
         "input": 0.02,
         "cached": null,
         "output": null
+      }
+    },
+    {
+      "provider": "OpenAI",
+      "name": "GPT-6 Astra",
+      "model_id": "gpt-6-astra",
+      "type": "chat",
+      "pricing_per_mtok_usd": {
+        "input": 10.0,
+        "cached": 1.0,
+        "cache_write": 12.5,
+        "output": 50.0
+      },
+      "long_context": {
+        "input_token_threshold_exclusive": 272000,
+        "pricing_per_mtok_usd": {
+          "input": 20.0,
+          "cached": 2.0,
+          "cache_write": 25.0,
+          "output": 75.0
+        }
+      },
+      "reasoning": {
+        "levels": [
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ]
+      }
+    },
+    {
+      "provider": "OpenAI",
+      "name": "GPT-5.6 Sol",
+      "model_id": "gpt-5.6-sol",
+      "type": "chat",
+      "pricing_per_mtok_usd": {
+        "input": 4.0,
+        "cached": 0.4,
+        "cache_write": 5.0,
+        "output": 20.0
+      },
+      "long_context": {
+        "input_token_threshold_exclusive": 272000,
+        "pricing_per_mtok_usd": {
+          "input": 8.0,
+          "cached": 0.8,
+          "cache_write": 10.0,
+          "output": 30.0
+        }
+      },
+      "reasoning": {
+        "levels": [
+          "none",
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ]
+      }
+    },
+    {
+      "provider": "OpenAI",
+      "name": "GPT-5.6 Terra",
+      "model_id": "gpt-5.6-terra",
+      "type": "chat",
+      "pricing_per_mtok_usd": {
+        "input": 2.0,
+        "cached": 0.2,
+        "cache_write": 2.5,
+        "output": 12.0
+      },
+      "long_context": {
+        "input_token_threshold_exclusive": 272000,
+        "pricing_per_mtok_usd": {
+          "input": 4.0,
+          "cached": 0.4,
+          "cache_write": 5.0,
+          "output": 18.0
+        }
+      },
+      "reasoning": {
+        "levels": [
+          "none",
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ]
+      }
+    },
+    {
+      "provider": "OpenAI",
+      "name": "GPT-5.6 Luna",
+      "model_id": "gpt-5.6-luna",
+      "type": "chat",
+      "pricing_per_mtok_usd": {
+        "input": 0.2,
+        "cached": 0.02,
+        "cache_write": 0.25,
+        "output": 1.2
+      },
+      "long_context": {
+        "input_token_threshold_exclusive": 272000,
+        "pricing_per_mtok_usd": {
+          "input": 0.4,
+          "cached": 0.04,
+          "cache_write": 0.5,
+          "output": 1.8
+        }
+      },
+      "reasoning": {
+        "levels": [
+          "none",
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ]
       }
     }
   ]

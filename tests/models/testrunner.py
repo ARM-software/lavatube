@@ -144,10 +144,15 @@ def stop_replay(cli, port, replay_process):
 			pass
 
 
-def api_key_for(model, providers):
+def provider_for(model, providers):
 	provider = providers.get(model['provider'].casefold())
 	if provider is None:
 		raise RuntimeError('no provider entry for %r' % model['provider'])
+	return provider
+
+
+def api_key_for(model, providers):
+	provider = provider_for(model, providers)
 	match = re.search(r'\$([A-Za-z_][A-Za-z0-9_]*)', provider.get('auth', ''))
 	if not match:
 		raise RuntimeError('cannot find API key variable in provider auth: %r' % provider.get('auth'))
@@ -160,10 +165,15 @@ def api_key_for(model, providers):
 
 def run_agent(agent, port, model, trace, question, providers, debug_file):
 	api_model = model['model_id']
+	provider = provider_for(model, providers)
+	base_url = model.get('base_url', provider.get('base_url'))
+	if not base_url:
+		raise RuntimeError('no base_url for provider %r or model %r' % (
+			model['provider'], model['model_id']))
 	command = [
 		agent,
 		'--service', '127.0.0.1:%d' % port,
-		'--base-url', model['base_url'],
+		'--base-url', base_url,
 		'--model', api_model,
 		'--api-key', api_key_for(model, providers),
 		'--max-output-bytes', str(MAX_OUTPUT_BYTES),
