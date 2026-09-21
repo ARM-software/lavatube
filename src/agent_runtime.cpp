@@ -268,12 +268,44 @@ bool agent_runtime::parse_final(const std::string& text, Json::Value& final, std
 		error = "Final model response has an invalid result shape";
 		return false;
 	}
-	for (const Json::Value& item : final["evidence"])
+	for (Json::Value& item : final["evidence"])
 	{
-		if (!item.isObject() || item.size() != 2 || !item.isMember("tool_id") || !item["tool_id"].isUInt()
+		if (!item.isObject() || item.size() != 2 || !item.isMember("tool_id")
 		    || !item.isMember("inference") || !item["inference"].isString())
 		{
 			error = "Final evidence references must contain tool_id and inference";
+			return false;
+		}
+		if (item["tool_id"].isString())
+		{
+			// Tolerate small models that quote numeric tool IDs.
+			uint64_t id = 0;
+			const std::string id_text = item["tool_id"].asString();
+			bool numeric = !id_text.empty();
+			for (const char c : id_text)
+			{
+				if (c < '0' || c > '9')
+				{
+					numeric = false;
+					break;
+				}
+				id = id * 10 + (uint64_t)(c - '0');
+				if (id > 4294967295ull)
+				{
+					numeric = false;
+					break;
+				}
+			}
+			if (!numeric)
+			{
+				error = "Final evidence tool_id must be a number";
+				return false;
+			}
+			item["tool_id"] = (Json::UInt)id;
+		}
+		else if (!item["tool_id"].isUInt())
+		{
+			error = "Final evidence tool_id must be a number";
 			return false;
 		}
 		bool found = false;
@@ -371,7 +403,12 @@ Json::Value agent_runtime::ask(const std::string& prompt, const std::chrono::ste
 {
 	using clock = std::chrono::steady_clock;
 	Json::Value messages(Json::arrayValue);
-	messages.append(agent_input_message("system", agent_model_instructions()));
+	std::string instructions = agent_model_instructions();
+	instructions += " You have at most " + std::to_string(mOptions.max_rounds) + " model rounds and " +
+		std::to_string(mOptions.max_tool_calls) + " tool calls in total. "
+		"Batch independent queries into a single round. "
+		"Return the final JSON as soon as evidence is sufficient; do not spend the remaining budget verifying alternatives.";
+	messages.append(agent_input_message("system", instructions));
 	messages.append(agent_input_message("user", prompt));
 	uint32_t calls = 0;
 	size_t total_tool_bytes = 0;
@@ -386,6 +423,12 @@ Json::Value agent_runtime::ask(const std::string& prompt, const std::chrono::ste
 			return bound_output(finish("budget_exhausted", "The investigation did not finish within the time budget.", 0.0, unresolved, round - 1, calls));
 		}
 		const uint64_t remaining = (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(deadline - now).count();
+		if (round == mOptions.max_rounds)
+		{
+			messages.append(agent_input_message("user",
+				"This is your final round. Return the final JSON object now from the evidence you already have; "
+				"record anything you could not verify in unresolved and lower confidence accordingly."));
+		}
 		const Json::Value request_value = request(messages);
 		debug_event("model_request", request_value);
 		if (mOptions.verbose) fprintf(stderr, "lava-agent: model round %u\n", round);
@@ -541,6 +584,46 @@ Json::Value agent_runtime::ask(const std::string& prompt, const std::chrono::ste
 		append_response(messages, root);
 		correction = error;
 		messages.append(agent_input_message("user", "Your previous final answer was invalid: " + error + ". Return only the required compact JSON object."));
+	}
+	// The round budget is exhausted. The conversation already contains the evidence gathered so far, so make
+	// one final request for the answer without further tools, and only give up if it fails.
+	{
+		const clock::time_point now = clock::now();
+		if (now < deadline)
+		{
+			const uint64_t remaining = (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(deadline - now).count();
+			messages.append(agent_input_message("user",
+				"Your round budget is exhausted; no further tool calls are possible. "
+				"Return the final JSON object now from the evidence in this conversation. "
+				"Record anything you could not verify in unresolved and lower confidence accordingly."));
+			const Json::Value salvage_request = request(messages);
+			debug_event("model_request", salvage_request);
+			const clock::time_point model_started = clock::now();
+			const http_response response = post(salvage_request, std::max<uint64_t>(remaining, 1));
+			const uint64_t model_milliseconds = (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(
+				clock::now() - model_started).count();
+			Json::Value root;
+			Json::Reader reader;
+			if (response.ok && reader.parse(response.body, root, false))
+			{
+				add_provider_usage(root);
+				debug_event("model_response", root, model_milliseconds);
+				Json::Value final;
+				std::string error;
+				if (parse_final(response_text(root), final, error))
+				{
+					return bound_output(finish(final["status"].asString(), final["conclusion"].asString(),
+						final["confidence"].asDouble(), final["unresolved"], mOptions.max_rounds, calls, &final["evidence"]));
+				}
+			}
+			else
+			{
+				Json::Value event;
+				event["http_code"] = (Json::Int64)response.code;
+				event["error"] = response.ok ? "invalid response JSON" : response.error;
+				debug_event("model_error", event, model_milliseconds);
+			}
+		}
 	}
 	Json::Value unresolved(Json::arrayValue);
 	unresolved.append(correction.empty() ? "Internal model-round budget exhausted." : correction);

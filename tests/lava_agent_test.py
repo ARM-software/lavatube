@@ -251,6 +251,34 @@ class AgentModelHandler(http.server.BaseHTTPRequestHandler):
 					'content': json.dumps(final, separators=(',', ':')),
 				})
 				return
+			if self.__class__.mode == 'string_tool_id':
+				if round_number == 1:
+					response_output(self, {
+						'role': 'assistant',
+						'tool_calls': [
+							{
+								'id': 'status',
+								'type': 'function',
+								'function': {
+									'name': 'replay_get_status',
+									'arguments': {},
+								},
+							},
+						],
+					})
+					return
+				final = {
+					'status': 'answered',
+					'conclusion': 'Quoted numeric tool IDs are tolerated.',
+					'confidence': 1.0,
+					'evidence': [{'tool_id': '1', 'inference': 'The status tool_id was quoted as a string.'}],
+					'unresolved': [],
+				}
+				response_output(self, {
+					'role': 'assistant',
+					'content': json.dumps(final, separators=(',', ':')),
+				})
+				return
 			if round_number == 1:
 				response_output(self, {
 					'role': 'assistant',
@@ -615,10 +643,11 @@ def main():
 		)
 		limited_rounds_output = json.loads(limited_rounds.stdout)
 		if (limited_rounds.returncode != 0
-				or limited_rounds_output['status'] != 'budget_exhausted'
+				or limited_rounds_output['status'] != 'answered'
 				or limited_rounds_output['usage']['rounds'] != 2
-				or limited_rounds_output['usage']['calls'] != 3):
-			raise RuntimeError('model-round budget was not enforced: %r %r' % (
+				or limited_rounds_output['usage']['calls'] != 3
+				or len(AgentModelHandler.requests) != 3):
+			raise RuntimeError('model-round budget or final-round salvage was not enforced: %r %r' % (
 				limited_rounds.stdout, limited_rounds.stderr))
 
 		AgentModelHandler.mode = 'normal'
@@ -671,6 +700,24 @@ def main():
 		oversized_output = json.loads(oversized.stdout)
 		if oversized.returncode != 0 or oversized_output['status'] != 'budget_exhausted' or len(oversized.stdout.rstrip('\n').encode('utf-8')) > 1024:
 			raise RuntimeError('output budget was not enforced: %r %r' % (oversized.stdout, oversized.stderr))
+
+		AgentModelHandler.mode = 'string_tool_id'
+		AgentModelHandler.requests = []
+		string_id = subprocess.run(
+			[agent, '--service', '127.0.0.1:%d' % replay_port,
+			 '--base-url', 'http://127.0.0.1:%d/v1' % model_port,
+			 '--model', 'test-model', trace, 'ask', 'Tolerate quoted numeric tool IDs.'],
+			text=True,
+			stdout=subprocess.PIPE,
+			stderr=subprocess.PIPE,
+			timeout=30,
+		)
+		string_id_output = json.loads(string_id.stdout)
+		if (string_id.returncode != 0
+				or string_id_output['status'] != 'answered'
+				or [item['tool_id'] for item in string_id_output['evidence']] != [1]):
+			raise RuntimeError('quoted numeric tool_id was not normalized: %r %r' % (
+				string_id.stdout, string_id.stderr))
 
 		with tempfile.TemporaryDirectory() as temporary:
 			mismatched_trace = os.path.join(temporary, 'mismatch.api')
