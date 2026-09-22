@@ -16,7 +16,7 @@ struct agent_runtime_options
 	std::string base_url;
 	std::string reasoning_effort;
 	uint32_t timeout_seconds = 300;
-	uint32_t max_rounds = 8;
+	uint32_t max_rounds = 10;
 	uint32_t max_tool_calls = 32;
 	size_t max_output_bytes = 32768;
 	bool digest_evidence = false;
@@ -50,7 +50,7 @@ private:
 	};
 
 	http_response post(const Json::Value& request, uint64_t remaining_milliseconds) const;
-	Json::Value request(const Json::Value& messages) const;
+	Json::Value request(const Json::Value& messages, bool with_tools) const;
 	Json::Value finish(const std::string& status, const std::string& conclusion,
 		double confidence, const Json::Value& unresolved, uint32_t rounds,
 		uint32_t calls, const Json::Value* model_evidence = nullptr) const;

@@ -92,6 +92,7 @@ def response_output(handler, message, finish_reason=None, usage=None):
 
 class AgentModelHandler(http.server.BaseHTTPRequestHandler):
 	requests = []
+	headers = []
 	failure = None
 	mode = 'normal'
 	cli = None
@@ -107,11 +108,20 @@ class AgentModelHandler(http.server.BaseHTTPRequestHandler):
 			length = int(self.headers['Content-Length'])
 			request = json.loads(self.rfile.read(length))
 			self.__class__.requests.append(request)
-			tool_names = {tool['function']['name'] for tool in request['tools']}
-			if tool_names != EXPECTED_TOOLS:
-				raise RuntimeError('unexpected tool registry: %r' % tool_names)
-			if request.get('parallel_tool_calls') is not False:
-				raise RuntimeError('parallel tool calls were not disabled')
+			self.__class__.headers.append(dict(self.headers))
+			messages = request.get('messages', [])
+			for i in range(1, len(messages)):
+				if messages[i].get('role') == 'user' and messages[i - 1].get('role') == 'user':
+					raise RuntimeError('consecutive user messages in request: %r' % messages)
+			if 'tools' in request:
+				tool_names = {tool['function']['name'] for tool in request['tools']}
+				if tool_names != EXPECTED_TOOLS:
+					raise RuntimeError('unexpected tool registry: %r' % tool_names)
+				if request.get('parallel_tool_calls') is not False:
+					raise RuntimeError('parallel tool calls were not disabled')
+			else:
+				if 'tool_choice' in request or 'parallel_tool_calls' in request:
+					raise RuntimeError('tools-free request carried tool options: %r' % request.keys())
 
 			round_number = len(self.__class__.requests)
 			if self.__class__.mode in ('truncated', 'tool_stall'):
@@ -272,6 +282,25 @@ class AgentModelHandler(http.server.BaseHTTPRequestHandler):
 					'conclusion': 'Quoted numeric tool IDs are tolerated.',
 					'confidence': 1.0,
 					'evidence': [{'tool_id': '1', 'inference': 'The status tool_id was quoted as a string.'}],
+					'unresolved': [],
+				}
+				response_output(self, {
+					'role': 'assistant',
+					'content': json.dumps(final, separators=(',', ':')),
+				})
+				return
+			if self.__class__.mode == 'salvage_invalid':
+				if round_number == 1:
+					response_output(self, {
+						'role': 'assistant',
+						'content': 'This is not JSON.',
+					})
+					return
+				final = {
+					'status': 'answered',
+					'conclusion': 'Salvaged after invalid final round.',
+					'confidence': 1.0,
+					'evidence': [],
 					'unresolved': [],
 				}
 				response_output(self, {
@@ -646,9 +675,52 @@ def main():
 				or limited_rounds_output['status'] != 'answered'
 				or limited_rounds_output['usage']['rounds'] != 2
 				or limited_rounds_output['usage']['calls'] != 3
-				or len(AgentModelHandler.requests) != 3):
-			raise RuntimeError('model-round budget or final-round salvage was not enforced: %r %r' % (
+				or len(AgentModelHandler.requests) != 3
+				or 'tools' in AgentModelHandler.requests[1]
+				or 'tools' in AgentModelHandler.requests[2]):
+			raise RuntimeError('model-round budget, final-round salvage, or tools-free final requests were not enforced: %r %r' % (
 				limited_rounds.stdout, limited_rounds.stderr))
+
+		AgentModelHandler.mode = 'salvage_invalid'
+		AgentModelHandler.requests = []
+		AgentModelHandler.headers = []
+		salvage_invalid_run = subprocess.run(
+			[agent, '--service', '127.0.0.1:%d' % replay_port,
+			 '--base-url', 'http://127.0.0.1:%d/v1' % model_port,
+			 '--model', 'test-model', '--max-rounds', '1', '--api-key', 'none',
+			 trace, 'ask', 'Salvage after invalid answer.'],
+			text=True,
+			stdout=subprocess.PIPE,
+			stderr=subprocess.PIPE,
+			timeout=30,
+		)
+		salvage_invalid_output = json.loads(salvage_invalid_run.stdout)
+		if (salvage_invalid_run.returncode != 0
+				or salvage_invalid_output['status'] != 'answered'
+				or len(AgentModelHandler.requests) != 2
+				or any('authorization' in {k.lower(): v for k, v in h.items()} for h in AgentModelHandler.headers)):
+			raise RuntimeError('salvage invalid or keyless auth failed: %r %r' % (
+				salvage_invalid_run.stdout, salvage_invalid_run.stderr))
+
+		AgentModelHandler.mode = 'immediate'
+		AgentModelHandler.requests = []
+		AgentModelHandler.headers = []
+		env_keyless = dict(os.environ, LAVA_AGENT_API_KEY='')
+		keyless_env_run = subprocess.run(
+			[agent, '--service', '127.0.0.1:%d' % replay_port,
+			 '--base-url', 'http://127.0.0.1:%d/v1' % model_port,
+			 '--model', 'test-model',
+			 trace, 'ask', 'Keyless via env.'],
+			text=True,
+			stdout=subprocess.PIPE,
+			stderr=subprocess.PIPE,
+			timeout=30,
+			env=env_keyless,
+		)
+		if (keyless_env_run.returncode != 0
+				or any('authorization' in {k.lower(): v for k, v in h.items()} for h in AgentModelHandler.headers)):
+			raise RuntimeError('keyless via LAVA_AGENT_API_KEY="" failed: %r %r' % (
+				keyless_env_run.stdout, keyless_env_run.stderr))
 
 		AgentModelHandler.mode = 'normal'
 		AgentModelHandler.requests = []

@@ -25,7 +25,7 @@ static void agent_usage()
 	printf("-s/--sandbox LEVEL     Set security sandbox level [1,2,3] (default %d)\n", (int)DEFAULT_SANDBOX_LEVEL);
 	printf("--service HOST:PORT    Required replay service endpoint\n");
 	printf("--timeout SECONDS      Maximum wall-clock duration (default 300)\n");
-	printf("--max-rounds N         Maximum model rounds (default 8)\n");
+	printf("--max-rounds N         Maximum model rounds (default 10)\n");
 	printf("--max-tool-calls N     Maximum tool calls (default 32)\n");
 	printf("--max-output-bytes N   Maximum result size (default 32768, minimum 1024)\n");
 	printf("--evidence-mode M      full embeds complete tool results in evidence (default); digest\n");
@@ -34,13 +34,15 @@ static void agent_usage()
 	printf("--base-url URL         OpenAI-compatible API base (or LAVA_AGENT_BASE_URL)\n");
 	printf("--model MODEL          Local model name (or LAVA_AGENT_MODEL)\n");
 	printf("--reasoning-effort E   Model reasoning effort (or LAVA_AGENT_REASONING_EFFORT)\n");
-	printf("--api-key KEY          API key (or LAVA_AGENT_API_KEY, default ollama)\n");
+	printf("--api-key KEY          API key, empty or none for no auth (or LAVA_AGENT_API_KEY, default ollama)\n");
 }
 
-static std::string agent_environment(const char* name, const char* fallback)
+static std::string agent_environment(const char* name, const char* fallback, bool allow_empty = false)
 {
 	const char* value = getenv(name);
-	return value && value[0] != '\0' ? value : fallback;
+	if (!value) return fallback;
+	if (!allow_empty && value[0] == '\0') return fallback;
+	return value;
 }
 
 static bool agent_parse_u64(const std::string& text, uint64_t& value)
@@ -162,7 +164,8 @@ int main(int argc, char** argv)
 
 	agent_runtime_options runtime_options;
 	runtime_options.base_url = agent_environment("LAVA_AGENT_BASE_URL", "http://localhost:11434/v1");
-	runtime_options.api_key = agent_environment("LAVA_AGENT_API_KEY", "ollama");
+	runtime_options.api_key = agent_environment("LAVA_AGENT_API_KEY", "ollama", true);
+	if (runtime_options.api_key == "none") runtime_options.api_key.clear();
 	runtime_options.model = agent_environment("LAVA_AGENT_MODEL", "gemma4:latest");
 	runtime_options.reasoning_effort = agent_environment("LAVA_AGENT_REASONING_EFFORT", "");
 	agent_tools_options tool_options;
@@ -230,7 +233,11 @@ int main(int argc, char** argv)
 		else if (option == "--base-url" && index < argc) runtime_options.base_url = argv[index++];
 		else if (option == "--model" && index < argc) runtime_options.model = argv[index++];
 		else if (option == "--reasoning-effort" && index < argc) runtime_options.reasoning_effort = argv[index++];
-		else if (option == "--api-key" && index < argc) runtime_options.api_key = argv[index++];
+		else if (option == "--api-key" && index < argc)
+		{
+			runtime_options.api_key = argv[index++];
+			if (runtime_options.api_key == "none") runtime_options.api_key.clear();
+		}
 		else error = "Unknown or incomplete option: " + option;
 		if (!error.empty()) break;
 	}
@@ -246,9 +253,9 @@ int main(int argc, char** argv)
 		if (!prompt.empty()) prompt += " ";
 		prompt += argv[index++];
 	}
-	if (error.empty() && (runtime_options.base_url.empty() || runtime_options.model.empty() || runtime_options.api_key.empty()))
+	if (error.empty() && (runtime_options.base_url.empty() || runtime_options.model.empty()))
 	{
-		error = "Model base URL, model, and API key must be configured";
+		error = "Model base URL and model must be configured";
 	}
 	if (error.empty() && runtime_options.digest_evidence && debug_filename.empty())
 	{

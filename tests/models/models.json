@@ -12,12 +12,27 @@
       "base_url": "https://api.runware.ai/v1",
       "auth": "Authorization: Bearer $RUNWARE_KEY"
     },
+    "Local": {
+      "base_url": "http://192.168.10.120:11434/v1",
+      "auth": "Authorization: Bearer $LOCAL_KEY"
+    },
     "OpenAI": {
       "base_url": "https://api.openai.com/v1",
       "auth": "Authorization: Bearer $OPENAI_API_KEY"
     }
   },
   "models": [
+    {
+      "provider": "LocalOllama",
+      "name": "Gemma 4 12B",
+      "model_id": "gemma4:12b-16k",
+      "type": "chat",
+      "pricing_per_mtok_usd": {
+        "input": 0.0,
+        "cached": 0.0,
+        "output": 0.0
+      }
+    },
     {
       "provider": "Mistral",
       "name": "Mistral Large 3",

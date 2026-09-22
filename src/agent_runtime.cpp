@@ -65,6 +65,30 @@ static Json::Value agent_input_message(const std::string& role, const std::strin
 	return message;
 }
 
+static void agent_append_or_merge_user_message(Json::Value& messages, const std::string& content)
+{
+	// Strict chat templates (e.g. the Ministral/Mistral template) only allow a user message
+	// after an assistant message, never directly after a tool result, and reject the whole
+	// request otherwise. In that case skip the guidance message; the tool-less request still
+	// forces the model to commit to a final answer.
+	if (!messages.empty() && messages[messages.size() - 1].isMember("role")
+	    && messages[messages.size() - 1]["role"].asString() == "tool")
+	{
+		return;
+	}
+	if (!messages.empty() && messages[messages.size() - 1].isMember("role") && messages[messages.size() - 1]["role"].asString() == "user")
+	{
+		std::string existing = messages[messages.size() - 1].isMember("content") ? messages[messages.size() - 1]["content"].asString() : "";
+		if (!existing.empty()) existing += " ";
+		existing += content;
+		messages[messages.size() - 1]["content"] = existing;
+	}
+	else
+	{
+		messages.append(agent_input_message("user", content));
+	}
+}
+
 static std::string agent_json_string(const Json::Value& value, const char* name)
 {
 	if (!value.isMember(name) || !value[name].isString()) return "";
@@ -95,10 +119,13 @@ agent_runtime::http_response agent_runtime::post(const Json::Value& request_valu
 		return response;
 	}
 	const std::string body = agent_json_compact(request_value);
-	const std::string authorization = "Authorization: Bearer " + mOptions.api_key;
 	struct curl_slist* headers = nullptr;
 	headers = curl_slist_append(headers, "Content-Type: application/json");
-	headers = curl_slist_append(headers, authorization.c_str());
+	if (!mOptions.api_key.empty() && mOptions.api_key != "none")
+	{
+		const std::string authorization = "Authorization: Bearer " + mOptions.api_key;
+		headers = curl_slist_append(headers, authorization.c_str());
+	}
 	const std::string url = agent_normalize_url(mOptions.base_url);
 	curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
 	curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
@@ -123,14 +150,17 @@ agent_runtime::http_response agent_runtime::post(const Json::Value& request_valu
 	return response;
 }
 
-Json::Value agent_runtime::request(const Json::Value& messages) const
+Json::Value agent_runtime::request(const Json::Value& messages, bool with_tools) const
 {
 	Json::Value value;
 	value["model"] = mOptions.model;
 	value["messages"] = messages;
-	value["tools"] = mTools.definitions();
-	value["tool_choice"] = "auto";
-	value["parallel_tool_calls"] = false;
+	if (with_tools)
+	{
+		value["tools"] = mTools.definitions();
+		value["tool_choice"] = "auto";
+		value["parallel_tool_calls"] = false;
+	}
 	if (!mOptions.reasoning_effort.empty() && mOptions.reasoning_effort != "none")
 	{
 		value["reasoning_effort"] = mOptions.reasoning_effort;
@@ -425,11 +455,12 @@ Json::Value agent_runtime::ask(const std::string& prompt, const std::chrono::ste
 		const uint64_t remaining = (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(deadline - now).count();
 		if (round == mOptions.max_rounds)
 		{
-			messages.append(agent_input_message("user",
+			agent_append_or_merge_user_message(messages,
 				"This is your final round. Return the final JSON object now from the evidence you already have; "
-				"record anything you could not verify in unresolved and lower confidence accordingly."));
+				"record anything you could not verify in unresolved and lower confidence accordingly.");
 		}
-		const Json::Value request_value = request(messages);
+		// The final round is sent without tools so the model must commit to the final answer.
+		const Json::Value request_value = request(messages, round < mOptions.max_rounds);
 		debug_event("model_request", request_value);
 		if (mOptions.verbose) fprintf(stderr, "lava-agent: model round %u\n", round);
 		const clock::time_point model_started = clock::now();
@@ -569,7 +600,7 @@ Json::Value agent_runtime::ask(const std::string& prompt, const std::chrono::ste
 		{
 			append_response(messages, root);
 			correction = "The model response was truncated due to token limit (finish_reason=length).";
-			messages.append(agent_input_message("user", "Your previous final answer was truncated due to token limit. Return only the required compact JSON object."));
+			agent_append_or_merge_user_message(messages, "Your previous final answer was truncated due to token limit. Return only the required compact JSON object.");
 			continue;
 		}
 
@@ -583,7 +614,7 @@ Json::Value agent_runtime::ask(const std::string& prompt, const std::chrono::ste
 		}
 		append_response(messages, root);
 		correction = error;
-		messages.append(agent_input_message("user", "Your previous final answer was invalid: " + error + ". Return only the required compact JSON object."));
+		agent_append_or_merge_user_message(messages, "Your previous final answer was invalid: " + error + ". Return only the required compact JSON object.");
 	}
 	// The round budget is exhausted. The conversation already contains the evidence gathered so far, so make
 	// one final request for the answer without further tools, and only give up if it fails.
@@ -592,11 +623,12 @@ Json::Value agent_runtime::ask(const std::string& prompt, const std::chrono::ste
 		if (now < deadline)
 		{
 			const uint64_t remaining = (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(deadline - now).count();
-			messages.append(agent_input_message("user",
+			agent_append_or_merge_user_message(messages,
 				"Your round budget is exhausted; no further tool calls are possible. "
 				"Return the final JSON object now from the evidence in this conversation. "
-				"Record anything you could not verify in unresolved and lower confidence accordingly."));
-			const Json::Value salvage_request = request(messages);
+				"Record anything you could not verify in unresolved and lower confidence accordingly.");
+			// No tools: the salvage request must produce the final answer.
+			const Json::Value salvage_request = request(messages, false);
 			debug_event("model_request", salvage_request);
 			const clock::time_point model_started = clock::now();
 			const http_response response = post(salvage_request, std::max<uint64_t>(remaining, 1));

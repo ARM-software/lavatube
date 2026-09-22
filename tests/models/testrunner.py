@@ -154,9 +154,12 @@ def provider_for(model, providers):
 
 def api_key_for(model, providers):
 	provider = provider_for(model, providers)
-	match = re.search(r'\$([A-Za-z_][A-Za-z0-9_]*)', provider.get('auth', ''))
+	auth = provider.get('auth')
+	if not auth:
+		return None
+	match = re.search(r'\$([A-Za-z_][A-Za-z0-9_]*)', auth)
 	if not match:
-		raise RuntimeError('cannot find API key variable in provider auth: %r' % provider.get('auth'))
+		raise RuntimeError('cannot find API key variable in provider auth: %r' % auth)
 	name = match.group(1)
 	value = os.environ.get(name)
 	if not value:
@@ -176,7 +179,10 @@ def run_agent(agent, port, model, trace, question, providers, debug_file):
 		'--service', '127.0.0.1:%d' % port,
 		'--base-url', base_url,
 		'--model', api_model,
-		'--api-key', api_key_for(model, providers),
+	]
+	command += [
+		# Empty for providers without an auth field (e.g. local Ollama).
+		'--api-key', api_key_for(model, providers) or '',
 		'--max-output-bytes', str(MAX_OUTPUT_BYTES),
 		'--evidence-mode', 'digest',
 		'-df', debug_file,
