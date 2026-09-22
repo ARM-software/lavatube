@@ -8,6 +8,10 @@
       "base_url": "https://api.entrim.ai/v1",
       "auth": "Authorization: Bearer $ENTRIM_KEY"
     },
+    "Runware": {
+      "base_url": "https://api.runware.ai/v1",
+      "auth": "Authorization: Bearer $RUNWARE_KEY"
+    },
     "OpenAI": {
       "base_url": "https://api.openai.com/v1",
       "auth": "Authorization: Bearer $OPENAI_API_KEY"
@@ -246,6 +250,18 @@
         "input": 0.05,
         "cached": 0.025,
         "output": 0.25
+      }
+    },
+    {
+      "provider": "Runware",
+      "name": "Gemma 4 31B",
+      "model_id": "google:gemma@4-31b",
+      "available": true,
+      "type": "chat",
+      "pricing_per_mtok_usd": {
+        "input": 0.102,
+        "cached": 0.012,
+        "output": 0.297
       }
     },
     {
