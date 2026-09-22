@@ -569,6 +569,7 @@ struct shader_stage
 struct trackedshaderobject : trackable
 {
 	using trackable::trackable; // inherit constructor
+	VkShaderCreateFlagsEXT flags = VK_SHADER_CREATE_FLAG_BITS_MAX_ENUM_EXT;
 	shader_stage stage;
 };
 
@@ -782,6 +783,7 @@ struct trackedpipeline : trackable
 	uint32_t device_index = UINT32_MAX;
 	VkPipelineBindPoint type = VK_PIPELINE_BIND_POINT_MAX_ENUM;
 	VkPipelineCreateFlags flags = 0;
+	VkPipelineCreateFlags2 flags2 = 0;
 	VkPipelineCache cache = VK_NULL_HANDLE;
 	bool enables_device_address = false; // capture only
 	std::vector<shader_stage> shader_stages; // only set for postprocessing
@@ -1229,7 +1231,7 @@ struct trackedindirectcommandslayout : trackable
 {
 	using trackable::trackable; // inherit constructor
 	VkIndirectCommandsLayoutUsageFlagsEXT flags = VK_INDIRECT_COMMANDS_LAYOUT_USAGE_FLAG_BITS_MAX_ENUM_EXT;
-	VkShaderStageFlags stages = VK_PIPELINE_LAYOUT_CREATE_FLAG_BITS_MAX_ENUM;
+	VkShaderStageFlags stages = VK_SHADER_STAGE_FLAG_BITS_MAX_ENUM;
 	uint32_t indirectStride = UINT32_MAX;
 	uint32_t pipeline_layout_index = CONTAINER_INVALID_INDEX; // is optional
 	// TBD we need to store the indirect command tokens here, at least for postprocessing needs, but this is not trivial
@@ -1237,7 +1239,7 @@ struct trackedindirectcommandslayout : trackable
 	void self_test() const
 	{
 		assert(flags != VK_INDIRECT_COMMANDS_LAYOUT_USAGE_FLAG_BITS_MAX_ENUM_EXT);
-		assert(stages != VK_PIPELINE_LAYOUT_CREATE_FLAG_BITS_MAX_ENUM);
+		assert(stages != VK_SHADER_STAGE_FLAG_BITS_MAX_ENUM);
 		assert(indirectStride != UINT32_MAX);
 		trackable::self_test();
 	}

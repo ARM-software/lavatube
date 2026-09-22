@@ -291,6 +291,7 @@ Json::Value trackedpipeline_json(const trackedpipeline* t)
 {
 	Json::Value v = trackable_json(t);
 	v["flags"] = (unsigned)t->flags;
+	v["flags2"] = Json::UInt64(t->flags2);
 	v["type"] = (unsigned)t->type;
 	return v;
 }
@@ -385,7 +386,7 @@ Json::Value trackeddescriptorupdatetemplate_json(const trackeddescriptorupdatete
 {
 	Json::Value v = trackable_json(t);
 	v["template_type"] = t->type;
-	v["create_flags"] = t->flags;
+	v["create_flags"] = static_cast<uint32_t>(t->flags);
 	v["data_size"] = t->data_size;
 	return v;
 }
@@ -403,7 +404,7 @@ Json::Value trackedsurface_json(const trackedsurface* t)
 Json::Value trackedshaderobject_json(const trackedshaderobject* t)
 {
 	Json::Value v = trackable_json(t);
-	v["flags"] = t->stage.flags;
+	v["flags"] = static_cast<uint32_t>(t->flags);
 	v["stage"] = t->stage.stage;
 	v["entry_name"] = t->stage.name;
 	return v;
@@ -441,7 +442,7 @@ trackedfence trackedfence_json(const Json::Value& v)
 {
 	trackedfence t;
 	trackable_helper(t, v);
-	t.flags = v["flags"].asInt();
+	t.flags = static_cast<VkFenceCreateFlags>(v["flags"].asUInt());
 	t.enter_initialized();
 	return t;
 }
@@ -458,7 +459,8 @@ trackedpipeline trackedpipeline_json(const Json::Value& v)
 {
 	trackedpipeline t;
 	trackable_helper(t, v);
-	t.flags = v["flags"].asUInt();
+	t.flags = static_cast<VkPipelineCreateFlags>(v["flags"].asUInt());
+	t.flags2 = v.get("flags2", 0).asUInt64();
 	t.type = (VkPipelineBindPoint)v["type"].asUInt();
 	t.enter_initialized();
 	return t;
@@ -789,7 +791,7 @@ trackeddescriptorupdatetemplate trackeddescriptorupdatetemplate_json(const Json:
 	trackeddescriptorupdatetemplate t;
 	trackable_helper(t, v);
 	t.type = (VkDescriptorUpdateTemplateType)v["template_type"].asUInt();
-	t.flags = v["create_flags"].asUInt();
+	t.flags = static_cast<VkDescriptorUpdateTemplateCreateFlags>(v["create_flags"].asUInt());
 	t.data_size = v.get("data_size", 0).asUInt64();
 	t.enter_initialized();
 	return t;
@@ -799,7 +801,7 @@ trackedshaderobject trackedshaderobject_json(const Json::Value& v)
 {
 	trackedshaderobject t;
 	trackable_helper(t, v);
-	t.stage.flags = (VkShaderCreateFlagsEXT)v["flags"].asUInt();
+	t.flags = static_cast<VkShaderCreateFlagsEXT>(v["flags"].asUInt());
 	t.stage.stage = (VkShaderStageFlagBits)v["stage"].asUInt();
 	t.stage.name = v["entry_name"].asString();
 	t.enter_initialized();

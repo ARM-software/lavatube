@@ -3425,7 +3425,7 @@ void trace_post_vkCreateSwapchainKHR(lava_file_writer& writer, VkResult result, 
 		add->tiling = TILING_OPTIMAL;
 		add->usage = pCreateInfo->imageUsage;
 		add->imageType = VK_IMAGE_TYPE_2D;
-		add->flags = pCreateInfo->flags;
+		add->flags = 0;
 		add->format = pCreateInfo->imageFormat;
 		add->initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 		add->currentLayout = VK_IMAGE_LAYOUT_UNDEFINED;
@@ -3456,7 +3456,7 @@ static void ensure_swapchain_image_records(lava_file_writer& writer, trackedswap
 		add->tiling = TILING_OPTIMAL;
 		add->usage = swapchain_data->info.imageUsage;
 		add->imageType = VK_IMAGE_TYPE_2D;
-		add->flags = swapchain_data->info.flags;
+		add->flags = 0;
 		add->format = swapchain_data->info.imageFormat;
 		add->initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 		add->currentLayout = VK_IMAGE_LAYOUT_UNDEFINED;
@@ -3757,7 +3757,8 @@ VKAPI_ATTR void VKAPI_CALL trace_vkGetDeviceQueue2(VkDevice device, const VkDevi
 		auto* queue_data = writer.parent->records.VkQueue_index.add(*pQueue, writer.current, writer.parent->desired_output_handle_index(*pQueue));
 		queue_data->queueIndex = pQueueInfo->queueIndex;
 		queue_data->queueFamily = pQueueInfo->queueFamilyIndex;
-		queue_data->queueFlags = pQueueInfo->flags;
+		queue_data->queueFlags = pQueueInfo->queueFamilyIndex < physicaldevice_data->queueFamilyProperties.size()
+			? physicaldevice_data->queueFamilyProperties.at(pQueueInfo->queueFamilyIndex).queueFlags : VkQueueFlags {};
 		queue_data->device = device;
 		queue_data->device_index = device_data->index;
 		queue_data->realIndex = realIndex;
@@ -3810,7 +3811,7 @@ VKAPI_ATTR void VKAPI_CALL trace_vkGetDeviceQueue(VkDevice device, uint32_t queu
 		auto* queue_data = writer.parent->records.VkQueue_index.add(*pQueue, writer.current, writer.parent->desired_output_handle_index(*pQueue));
 		queue_data->queueIndex = queueIndex;
 		queue_data->queueFamily = queueFamilyIndex;
-		queue_data->queueFlags = (queueFamilyIndex < physicaldevice_data->queueFamilyProperties.size()) ? physicaldevice_data->queueFamilyProperties.at(queueFamilyIndex).queueFlags : 0;
+		queue_data->queueFlags = (queueFamilyIndex < physicaldevice_data->queueFamilyProperties.size()) ? physicaldevice_data->queueFamilyProperties.at(queueFamilyIndex).queueFlags : VkQueueFlags {};
 		queue_data->device = device;
 		queue_data->device_index = device_data->index;
 		queue_data->realIndex = realIndex;
@@ -4223,7 +4224,7 @@ VKAPI_ATTR VkBool32 VKAPI_CALL trace_vkGetPhysicalDeviceXcbPresentationSupportKH
 static uint32_t common_virtual_VkQueueFamilyProperties(VkPhysicalDevice physicalDevice, VkQueueFamilyProperties* pQueueFamilyProperties)
 {
 	uint32_t timestampValidBits = 0;
-	uint32_t sparseBits = 0;
+	VkQueueFlags sparseBits = 0;
 	uint32_t count = 0;
 	uint32_t source_queue_family = UINT32_MAX;
 	wrap_vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice, &count, nullptr);

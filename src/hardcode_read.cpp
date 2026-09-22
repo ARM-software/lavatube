@@ -1627,7 +1627,7 @@ static void replay_report_device_fault(VkDevice device, lava_reader* reader)
 					found = true;
 					ELOG("    driver binding+0x%llx range=[0x%llx,0x%llx) flags=0x%x%s",
 						(unsigned long long)binding_offset, (unsigned long long)binding.base_address,
-						(unsigned long long)(binding.base_address + binding.size), binding.flags,
+						(unsigned long long)(binding.base_address + binding.size), static_cast<uint32_t>(binding.flags),
 						(binding.flags & VK_DEVICE_ADDRESS_BINDING_INTERNAL_OBJECT_BIT_EXT) ? " internal-object" : "");
 				}
 			}
@@ -1672,7 +1672,7 @@ static void replay_report_device_fault(VkDevice device, lava_reader* reader)
 		for (uint32_t i = 0; i < count && i < reports.size(); i++)
 		{
 			const VkDeviceFaultInfoKHR& report = reports[i];
-			ELOG("Vulkan device fault[%u]: flags=0x%x group=%llu %s", i, report.flags,
+			ELOG("Vulkan device fault[%u]: flags=0x%x group=%llu %s", i, static_cast<uint32_t>(report.flags),
 				(unsigned long long)report.groupId, report.description);
 		}
 		replay_report_recent_submissions(device_data, reader);
@@ -2020,7 +2020,7 @@ void replay_pre_vkBeginCommandBuffer(lava_file_reader& reader, VkCommandBuffer c
 	if (commandbuffer_index == CONTAINER_INVALID_INDEX) return;
 	trackedcmdbuffer& commandbuffer_data = VkCommandBuffer_index.at(commandbuffer_index);
 	replay_cleanup_commandbuffer_for_rerecord(reader, commandbuffer_index, commandbuffer_data);
-	commandbuffer_data.replay_begin_flags = pBeginInfo ? pBeginInfo->flags : 0;
+	commandbuffer_data.replay_begin_flags = pBeginInfo ? pBeginInfo->flags : VkCommandBufferUsageFlags {};
 }
 
 void replay_pre_vkEndCommandBuffer(lava_file_reader& reader, VkCommandBuffer commandBuffer)
@@ -3709,7 +3709,8 @@ static void adjust_virtual_swapchain_parameters(VkPhysicalDevice physical_device
 		? s.compositeAlpha : (surface_capabilities.supportedCompositeAlpha & VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR)
 		? VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR : (surface_capabilities.supportedCompositeAlpha & VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR)
 		? VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR : (surface_capabilities.supportedCompositeAlpha & VK_COMPOSITE_ALPHA_PRE_MULTIPLIED_BIT_KHR)
-		? VK_COMPOSITE_ALPHA_PRE_MULTIPLIED_BIT_KHR : static_cast<VkCompositeAlphaFlagBitsKHR>(surface_capabilities.supportedCompositeAlpha);
+		? VK_COMPOSITE_ALPHA_PRE_MULTIPLIED_BIT_KHR : (surface_capabilities.supportedCompositeAlpha & VK_COMPOSITE_ALPHA_POST_MULTIPLIED_BIT_KHR)
+		? VK_COMPOSITE_ALPHA_POST_MULTIPLIED_BIT_KHR : s.compositeAlpha;
 
 	if (p__realimages > 0) s.minImageCount = p__realimages;
 	s.minImageCount = std::max(s.minImageCount, surface_capabilities.minImageCount);
@@ -3786,8 +3787,8 @@ static VkSwapchainKHR remake_swapchain(lava_file_reader& reader, VkSwapchainKHR 
 		surface_capabilities.currentExtent.width, surface_capabilities.currentExtent.height,
 		surface_capabilities.minImageExtent.width, surface_capabilities.minImageExtent.height,
 		surface_capabilities.maxImageExtent.width, surface_capabilities.maxImageExtent.height,
-		surface_capabilities.currentTransform, surface_capabilities.supportedTransforms,
-		surface_capabilities.supportedCompositeAlpha, surface_capabilities.minImageCount, surface_capabilities.maxImageCount);
+		surface_capabilities.currentTransform, static_cast<uint32_t>(surface_capabilities.supportedTransforms),
+		static_cast<uint32_t>(surface_capabilities.supportedCompositeAlpha), surface_capabilities.minImageCount, surface_capabilities.maxImageCount);
 
 	VkSwapchainCreateInfoKHR s = { VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR, nullptr };
 	s.flags = data->info.flags;
@@ -5610,7 +5611,7 @@ void read_VkUpdateMemoryInfoARM(lava_file_reader& reader, VkUpdateMemoryInfoARM*
 		read_VkDeviceAddressRangeKHR(reader, backing);
 		sptr->pDstRange = backing;
 	}
-	sptr->dstFlags = (VkAddressCommandFlagsKHR)reader.read_uint32_t();
+	sptr->dstFlags = static_cast<VkAddressCommandFlagsKHR>(reader.read_uint32_t());
 	sptr->dataSize = reader.read_uint64_t();
 	uint8_t pData_opt = reader.read_uint8_t();
 	sptr->pData = nullptr;
@@ -5714,8 +5715,8 @@ void retrace_vkGetSwapchainImagesKHR(lava_file_reader& reader)
 		// Make virtual images
 		VkImageCreateInfo pinfo = {};
 		pinfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-		pinfo.flags = (data.info.flags & VK_SWAPCHAIN_CREATE_MUTABLE_FORMAT_BIT_KHR);
-		pinfo.flags &= ~VK_SWAPCHAIN_CREATE_DEFERRED_MEMORY_ALLOCATION_BIT_KHR; // disable lazy swapchain image allocation
+		pinfo.flags = (data.info.flags & VK_SWAPCHAIN_CREATE_MUTABLE_FORMAT_BIT_KHR)
+			? VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT : VkImageCreateFlags {};
 		pinfo.imageType = VK_IMAGE_TYPE_2D;
 		pinfo.extent.height = data.info.imageExtent.height;
 		pinfo.extent.width = data.info.imageExtent.width;
@@ -6651,7 +6652,7 @@ static void initialize_image_packet(lava_file_reader& reader)
 	if (reader.is_isolated()) return;
 	const uint32_t device_index = reader.read_handle(DEBUGPARAM("VkDevice"));
 	const uint32_t image_index = reader.read_handle(DEBUGPARAM("VkImage"));
-	const VkImageAspectFlags aspect = reader.read_uint32_t();
+	const VkImageAspectFlags aspect = static_cast<VkImageAspectFlags>(reader.read_uint32_t());
 	const VkImageLayout final_layout = static_cast<VkImageLayout>(reader.read_uint32_t());
 	const uint32_t level_count = reader.read_uint32_t();
 	std::vector<uint64_t> level_sizes(level_count);

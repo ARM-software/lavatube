@@ -1,12 +1,12 @@
 #include "util.h"
 #include "lavatube.h"
+#include "format_utils.h"
 #include "jsoncpp/json/writer.h"
 
 #include <string.h>
 #include <errno.h>
 #include <netdb.h>
 #include <sys/socket.h>
-#include <vulkan/vulkan_format_traits.hpp>
 #include <spirv/unified1/spirv.h>
 
 #include <algorithm>
@@ -87,12 +87,12 @@ static VkFormat host_image_copy_plane_format(VkFormat format, VkImageAspectFlags
 	uint32_t plane = 0;
 	if (aspect & VK_IMAGE_ASPECT_PLANE_1_BIT) plane = 1;
 	else if (aspect & VK_IMAGE_ASPECT_PLANE_2_BIT) plane = 2;
-	const auto plane_format = VULKAN_HPP_NAMESPACE::planeCompatibleFormat(static_cast<VULKAN_HPP_NAMESPACE::Format>(format), plane);
-	if (plane_format == VULKAN_HPP_NAMESPACE::Format::eUndefined)
+	const VkFormat plane_format = static_cast<VkFormat>(lava_plane_compatible_format(static_cast<uint32_t>(format), plane));
+	if (plane_format == VK_FORMAT_UNDEFINED)
 	{
 		return format;
 	}
-	return static_cast<VkFormat>(plane_format);
+	return plane_format;
 }
 
 uint64_t host_image_copy_size(VkFormat format, const VkImageSubresourceLayers* subresource, const VkExtent3D* extent, uint32_t memory_row_length, uint32_t memory_image_height)
@@ -103,12 +103,11 @@ uint64_t host_image_copy_size(VkFormat format, const VkImageSubresourceLayers* s
 	}
 
 	const VkFormat plane_format = host_image_copy_plane_format(format, subresource->aspectMask);
-	const auto vk_format = static_cast<VULKAN_HPP_NAMESPACE::Format>(plane_format);
-	const auto block_extent = VULKAN_HPP_NAMESPACE::blockExtent(vk_format);
-	const uint32_t block_width = block_extent[0] ? block_extent[0] : 1;
-	const uint32_t block_height = block_extent[1] ? block_extent[1] : 1;
-	const uint32_t block_depth = block_extent[2] ? block_extent[2] : 1;
-	const uint32_t block_size = VULKAN_HPP_NAMESPACE::blockSize(vk_format);
+	const lava_format_block_info block = lava_format_block_info_get(static_cast<uint32_t>(plane_format));
+	const uint32_t block_width = block.width;
+	const uint32_t block_height = block.height;
+	const uint32_t block_depth = block.depth;
+	const uint32_t block_size = block.size;
 	if (block_size == 0)
 	{
 		WLOG("host_image_copy_size: unsupported format %u", static_cast<uint32_t>(plane_format));
@@ -151,7 +150,7 @@ uint64_t tensor_data_size(const VkTensorDescriptionARM* description)
 		return dimension * stride;
 	}
 
-	const uint64_t block_size = VULKAN_HPP_NAMESPACE::blockSize(static_cast<VULKAN_HPP_NAMESPACE::Format>(description->format));
+	const uint64_t block_size = lava_format_block_info_get(static_cast<uint32_t>(description->format)).size;
 	if (block_size == 0)
 	{
 		return 0;

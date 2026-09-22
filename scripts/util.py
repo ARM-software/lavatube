@@ -1477,7 +1477,7 @@ def save_add_tracking(name):
 			z.do('add->flags = pCreateInfo->flags;')
 		elif type == 'VkDeviceMemory':
 			z.do('frame_mutex.lock();')
-			z.do('add->propertyFlags = (virtual_memory_properties.memoryTypeCount > pAllocateInfo_ORIGINAL->memoryTypeIndex) ? virtual_memory_properties.memoryTypes[pAllocateInfo_ORIGINAL->memoryTypeIndex].propertyFlags : 0;')
+			z.do('add->propertyFlags = (virtual_memory_properties.memoryTypeCount > pAllocateInfo_ORIGINAL->memoryTypeIndex) ? virtual_memory_properties.memoryTypes[pAllocateInfo_ORIGINAL->memoryTypeIndex].propertyFlags : VkMemoryPropertyFlags {};')
 			z.do('add->allocationSize = pAllocateInfo->allocationSize;')
 			z.do('add->backing = *pMemory;')
 			z.do('add->extmem = extmem;')
@@ -1566,14 +1566,15 @@ def save_add_tracking(name):
 		elif type == 'VkShaderEXT':
 			z.do('add->stage.device_index = device_data->index;')
 			z.do('add->stage.name = pCreateInfos[i].pName;')
-			z.do('add->stage.flags = pCreateInfos[i].flags;')
+			z.do('add->flags = pCreateInfos[i].flags;')
 			z.do('add->stage.stage = pCreateInfos[i].stage;')
 			z.do('add->stage.unique_index = add->index;')
 		elif type == 'VkDescriptorSet':
 			z.do('add->pool = pAllocateInfo->descriptorPool;')
 			z.do('add->pool_index = writer.parent->records.VkDescriptorPool_index.at(pAllocateInfo->descriptorPool)->index;')
 		elif type == 'VkPipeline':
-			z.do('add->flags = pCreateInfos[i].flags;')
+			if name == 'vkCreateDataGraphPipelinesARM': z.do('add->flags2 = pCreateInfos[i].flags;')
+			else: z.do('add->flags = pCreateInfos[i].flags;')
 			z.do('add->cache = pipelineCache;')
 			z.do('add->device_index = device_data->index;');
 			if name == 'vkCreateGraphicsPipelines': z.do('add->type = VK_PIPELINE_BIND_POINT_GRAPHICS;')
@@ -1752,7 +1753,7 @@ def load_add_tracking(name):
 			if type == 'VkShaderEXT':
 				z.do('data.stage.device_index = device_index;')
 				z.do('data.stage.name = pCreateInfos[i].pName;')
-				z.do('data.stage.flags = pCreateInfos[i].flags;')
+				z.do('data.flags = pCreateInfos[i].flags;')
 				z.do('data.stage.stage = pCreateInfos[i].stage;')
 				z.do('data.stage.unique_index = data.index;')
 			elif type == 'VkCommandBuffer':

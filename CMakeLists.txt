@@ -207,6 +207,7 @@ set(COMMON_SRC
     ${PROJECT_SOURCE_DIR}/external/tracetooltests/src/usagetracker/vulkan_feature_detect.h
     ${PROJECT_SOURCE_DIR}/src/vk_wrapper.cpp
     ${PROJECT_SOURCE_DIR}/src/util.cpp
+    ${PROJECT_SOURCE_DIR}/src/format_utils.cpp
     ${PROJECT_SOURCE_DIR}/src/util.h
     ${PROJECT_SOURCE_DIR}/src/vkjson.cpp
     ${PROJECT_SOURCE_DIR}/src/vkjson.h
@@ -346,7 +347,7 @@ add_dependencies(opencl_layer_test VkLayer_lavatube)
 add_lavatube_test(opencl_layer_test COMMAND opencl_layer_test
 	$<TARGET_FILE:VkLayer_lavatube> ${CMAKE_CURRENT_BINARY_DIR}/opencl_layer_test.api)
 
-add_executable(mprotect tests/mprotect.cpp src/util.cpp src/util.h src/android_utils.cpp)
+add_executable(mprotect tests/mprotect.cpp src/util.cpp src/format_utils.cpp src/util.h src/android_utils.cpp)
 target_include_directories(mprotect ${COMMON_INCLUDE})
 target_link_libraries(mprotect ${MOST_COMMON_LIBRARIES})
 target_compile_options(mprotect PRIVATE ${COMMON_FLAGS})
@@ -616,7 +617,7 @@ target_compile_options(write3-2 PRIVATE ${COMMON_FLAGS})
 add_dependencies(write3-2 sync_generated)
 add_lavatube_test(write_test_3-2 COMMAND write3-2)
 
-add_executable(write4 tests/write4.cpp src/filewriter.cpp src/util.cpp src/android_utils.cpp)
+add_executable(write4 tests/write4.cpp src/filewriter.cpp src/util.cpp src/format_utils.cpp src/android_utils.cpp)
 target_include_directories(write4 ${COMMON_INCLUDE})
 target_link_libraries(write4 ${MOST_COMMON_LIBRARIES} density LZ4::LZ4)
 
@@ -624,7 +625,7 @@ target_compile_options(write4 PRIVATE ${COMMON_FLAGS})
 add_dependencies(write4 sync_generated)
 add_lavatube_test(write_test_4 COMMAND write4)
 
-add_executable(read4 tests/read4.cpp src/filereader.cpp src/util.cpp src/android_utils.cpp)
+add_executable(read4 tests/read4.cpp src/filereader.cpp src/util.cpp src/format_utils.cpp src/android_utils.cpp)
 target_include_directories(read4 ${COMMON_INCLUDE})
 target_link_libraries(read4 ${MOST_COMMON_LIBRARIES} density LZ4::LZ4 zipcontainer)
 
@@ -633,7 +634,7 @@ add_dependencies(read4 sync_generated)
 add_lavatube_test(read_test_4 COMMAND read4)
 set_property(TEST read_test_4 APPEND PROPERTY DEPENDS write_test_4)
 
-add_executable(read_preload tests/read_preload.cpp src/filewriter.cpp src/filereader.cpp src/util.cpp src/android_utils.cpp)
+add_executable(read_preload tests/read_preload.cpp src/filewriter.cpp src/filereader.cpp src/util.cpp src/format_utils.cpp src/android_utils.cpp)
 target_include_directories(read_preload ${COMMON_INCLUDE})
 target_link_libraries(read_preload ${MOST_COMMON_LIBRARIES} density LZ4::LZ4 zipcontainer)
 target_compile_options(read_preload PRIVATE ${COMMON_FLAGS})
@@ -657,7 +658,7 @@ add_dependencies(large_trace_test sync_generated)
 add_lavatube_test(large_trace_test COMMAND large_trace_test)
 set_tests_properties(large_trace_test PROPERTIES TIMEOUT 10 FIXTURES_SETUP large_trace)
 
-add_executable(write5 tests/write5.cpp src/filewriter.cpp src/filereader.cpp src/util.cpp src/android_utils.cpp)
+add_executable(write5 tests/write5.cpp src/filewriter.cpp src/filereader.cpp src/util.cpp src/format_utils.cpp src/android_utils.cpp)
 target_include_directories(write5 ${COMMON_INCLUDE})
 target_link_libraries(write5 ${MOST_COMMON_LIBRARIES} density LZ4::LZ4 zipcontainer)
 

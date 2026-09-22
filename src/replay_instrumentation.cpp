@@ -533,7 +533,7 @@ std::string replay_instrumentation_show(uint32_t commandbuffer_index)
 				block_json["resultIndex"] = block.header.resultIndex;
 				block_json["resultSubIndex"] = block.header.resultSubIndex;
 				block_json["stages"] = VkShaderStageFlags_to_string(block.header.stages);
-				block_json["stageFlags"] = block.header.stages;
+				block_json["stageFlags"] = static_cast<uint32_t>(block.header.stages);
 				block_json["basicBlockIndex"] = block.header.basicBlockIndex;
 				Json::Value values;
 				for (uint32_t i = 0; i < block.values.size() && i < device_data.shader_instrumentation_metrics.size(); i++)
