@@ -437,6 +437,9 @@ Json::Value agent_runtime::ask(const std::string& prompt, const std::chrono::ste
 	instructions += " You have at most " + std::to_string(mOptions.max_rounds) + " model rounds and " +
 		std::to_string(mOptions.max_tool_calls) + " tool calls in total. "
 		"Batch independent queries into a single round. "
+		"Identify the relevant work by its Vulkan commands: use trace_list_calls or trace_find_calls to find them "
+		"and trace_get_packets to decode them, rather than enumerating objects one by one; inspect objects only to "
+		"interpret commands you have already found. "
 		"Return the final JSON as soon as evidence is sufficient; do not spend the remaining budget verifying alternatives.";
 	messages.append(agent_input_message("system", instructions));
 	messages.append(agent_input_message("user", prompt));
