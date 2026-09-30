@@ -89,11 +89,11 @@ struct concurrent_unordered_map
 		return *this;
 	}
 
-	U at(T key) const { std::lock_guard<std::mutex> lock(mutex); return map.at(key); } // must be fast
+	U at(const T key) const { std::lock_guard<std::mutex> lock(mutex); return map.at(key); } // must be fast
 	void clear() { std::lock_guard<std::mutex> lock(mutex); map.clear(); } // can be unsafe
-	void insert(T key, U value) { std::lock_guard<std::mutex> lock(mutex); map.insert_or_assign(key, value); }
+	void insert(const T key, U value) { std::lock_guard<std::mutex> lock(mutex); map.insert_or_assign(key, value); }
 	void reserve(size_t count) { std::lock_guard<std::mutex> lock(mutex); map.reserve(count); }
-	int count(T key) const { std::lock_guard<std::mutex> lock(mutex); return map.count(key); }
+	int count(const T key) const { std::lock_guard<std::mutex> lock(mutex); return map.count(key); }
 	unsigned size() const { std::lock_guard<std::mutex> lock(mutex); return static_cast<unsigned>(map.size()); }
 
 private:

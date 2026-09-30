@@ -1755,7 +1755,10 @@ static void memory_update(lava_file_writer& writer, trackedqueue* queue_data, co
 				wrap_vkUnmapMemory(queue_data->device, memory_data->backing);
 				restore = true;
 			}
-			else NEVER("Remapping previously mapped memory %u to flush it, mapped to offset=%lu size=%lu", memory_data->index, binding_offset, binding_size);
+			else
+			{
+				NEVER("Remapping previously mapped memory %u to flush it, mapped to offset=%lu size=%lu", memory_data->index, binding_offset, binding_size);
+			}
 			VkResult result = wrap_vkMapMemory(queue_data->device, memory_data->backing, binding_offset, binding_size, 0, (void**)&ptr);
 			assert(result == VK_SUCCESS);
 		}
