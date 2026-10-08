@@ -1,6 +1,7 @@
 # Running with sanitizers:
 # Create a _new_ build directory and run cmake with the -DSANITIZE=<option> command line option. The various options that should work are: address, thread, undefined
-# You may need to run "export ASAN_OPTIONS=detect_leaks=0" before running any of the tests with the address sanitizer.
+# You may need to run "export ASAN_OPTIONS=detect_leaks=0" before running any of the tests with the address sanitizer. For address sanitizer, you also need to set
+# "protect_shadow_gap=0" before running raytracing content on the Nvidia driver.
 
 # This needs to go before the project() call below, since it can be set by toolchain files
 set(NO_XCB FALSE CACHE BOOL "Do not compile support for XCB and Xlib")
@@ -82,11 +83,13 @@ if(NOT EXISTS "${PROJECT_SOURCE_DIR}/external/tracetooltests/external/Vulkan-Hea
 endif()
 
 if(SANITIZE)
-    if ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
-        set(SANITIZER -fsanitize=${SANITIZE} -fstack-protector-all -fsanitize-undefined-trap-on-error)
-    else()
-        set(SANITIZER -fsanitize=${SANITIZE} -fstack-protector-all -fsanitize-undefined-trap-on-error -fuse-ld=gold)
+    set(SANITIZER_COMPILE_OPTIONS -fsanitize=${SANITIZE} -fstack-protector-all -fsanitize-undefined-trap-on-error)
+    set(SANITIZER_LINK_OPTIONS -fsanitize=${SANITIZE})
+    if (NOT "${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
+        list(APPEND SANITIZER_LINK_OPTIONS -fuse-ld=gold)
     endif()
+    add_compile_options(${SANITIZER_COMPILE_OPTIONS})
+    add_link_options(${SANITIZER_LINK_OPTIONS})
 endif()
 
 set(RUN_IF_EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/cmake/run_if_exists.sh)
@@ -157,7 +160,7 @@ endif()
 # --- common ---
 
 # Debug Release RelWithDebInfo MinSizeRel
-set(COMMON_FLAGS ${SANITIZER} -Werror -Wall -fvisibility=hidden ${XCB_ENABLE} -Wshadow -DCL_TARGET_OPENCL_VERSION=310)
+set(COMMON_FLAGS -Werror -Wall -fvisibility=hidden ${XCB_ENABLE} -Wshadow -DCL_TARGET_OPENCL_VERSION=310)
 if(CMAKE_BUILD_TYPE STREQUAL "Debug" OR NOT CMAKE_BUILD_TYPE)
 	set(COMMON_FLAGS ${COMMON_FLAGS} -ggdb -O0 -fno-omit-frame-pointer -DDEBUG -DRELTYPE="debug")
 	message(STATUS "Debug build")
@@ -172,9 +175,9 @@ if ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
 	set(COMMON_FLAGS ${COMMON_FLAGS} -Wthread-safety -Wno-error=thread-safety-analysis -Wno-error=unused-but-set-variable)
 endif()
 if(ANDROID)
-    set(MOST_COMMON_LIBRARIES ${SANITIZER} dl ${ANDROID_LIBRARIES} unordered_dense::unordered_dense)
+    set(MOST_COMMON_LIBRARIES dl ${ANDROID_LIBRARIES} unordered_dense::unordered_dense)
 else()
-    set(MOST_COMMON_LIBRARIES ${SANITIZER} stdc++ dl pthread ${ANDROID_LIBRARIES} unordered_dense::unordered_dense)
+    set(MOST_COMMON_LIBRARIES stdc++ dl pthread ${ANDROID_LIBRARIES} unordered_dense::unordered_dense)
 endif()
 set(COMMON_LIBRARIES ${MOST_COMMON_LIBRARIES} atomic density LZ4::LZ4 ${XCB_LIBRARIES} spirv_simulator_lib zipcontainer)
 

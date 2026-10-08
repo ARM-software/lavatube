@@ -265,11 +265,12 @@ buffer file_writer::compress_chunk(buffer& uncompressed)
 	else ABORT("Bad compression type: %d", (int)p__compression_type);
 
 	buffer compressed(compressed_size);
+	const uint64_t payload_capacity = compressed_size - header_size;
 
 	if (p__compression_type == LAVATUBE_COMPRESSION_DENSITY)
 	{
 		density_processing_result result = density_compress((const uint8_t *)uncompressed.data(), uncompressed.size(),
-		                                                    (uint8_t *)compressed.data() + header_size, compressed.size(),
+		                                                    (uint8_t *)compressed.data() + header_size, payload_capacity,
 		                                                    (DENSITY_ALGORITHM)p__compression_level);
 		if (result.state != DENSITY_STATE_OK)
 		{
@@ -280,7 +281,7 @@ buffer file_writer::compress_chunk(buffer& uncompressed)
 	}
 	else if (p__compression_type == LAVATUBE_COMPRESSION_LZ4)
 	{
-		int result = LZ4_compress_fast(uncompressed.data(), compressed.data() + header_size, uncompressed.size(), compressed_size, p__compression_level);
+		int result = LZ4_compress_fast(uncompressed.data(), compressed.data() + header_size, uncompressed.size(), payload_capacity, p__compression_level);
 		if (result == 0) ABORT("Failed to compress buffer - aborting from compression thread");
 		was_written = result;
 		was_read = uncompressed.size();
@@ -288,7 +289,7 @@ buffer file_writer::compress_chunk(buffer& uncompressed)
 	else // uncompressed
 	{
 		memcpy(compressed.data() + header_size, uncompressed.data(), uncompressed.size());
-		was_written = compressed.size();
+		was_written = uncompressed.size();
 		was_read = uncompressed.size();
 	}
 	uncompressed.release();

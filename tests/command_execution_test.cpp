@@ -301,6 +301,7 @@ static void execute_copy_buffer()
 	assert(global_output_rewrite_queue.empty());
 	assert(descriptor_buffer_payloads.empty());
 
+	clear_simulator_commands(cmdbuffer_data);
 	allocator.destroy();
 }
 
@@ -445,6 +446,7 @@ struct compute_shader_fixture
 
 	~compute_shader_fixture()
 	{
+		clear_simulator_commands(cmdbuffer_data);
 		allocator.destroy();
 	}
 
@@ -650,7 +652,7 @@ static void execute_compute_shader_mutable_descriptor_buffer()
 	index_to_VkPipelineLayout.resize(1);
 	index_to_VkPipelineLayout.set(0, pipeline_layout);
 
-	fixture.cmdbuffer_data.commands.clear();
+	clear_simulator_commands(fixture.cmdbuffer_data);
 	add_bind_compute_pipeline(fixture.cmdbuffer_data);
 	add_descriptor_buffer_commands(fixture.cmdbuffer_data, descriptor_buffer_address, pipeline_layout);
 	add_dispatch(fixture.cmdbuffer_data, make_source(12));
@@ -717,7 +719,7 @@ static void execute_compute_shader_descriptor_buffer_array()
 	index_to_VkPipelineLayout.resize(1);
 	index_to_VkPipelineLayout.set(0, pipeline_layout);
 
-	fixture.cmdbuffer_data.commands.clear();
+	clear_simulator_commands(fixture.cmdbuffer_data);
 	add_descriptor_buffer_commands(fixture.cmdbuffer_data, descriptor_buffer_address, pipeline_layout);
 
 	const bool executed = execute_commands(fixture.data);
@@ -784,7 +786,7 @@ static void execute_compute_shader_mixed_mutable_descriptor_buffer_array()
 	index_to_VkPipelineLayout.resize(1);
 	index_to_VkPipelineLayout.set(0, pipeline_layout);
 
-	fixture.cmdbuffer_data.commands.clear();
+	clear_simulator_commands(fixture.cmdbuffer_data);
 	add_descriptor_buffer_commands(fixture.cmdbuffer_data, descriptor_buffer_address, pipeline_layout);
 
 	const bool executed = execute_commands(fixture.data);
@@ -855,7 +857,7 @@ static void execute_compute_shader_mutable_descriptor_buffer_array_boundary()
 	index_to_VkPipelineLayout.resize(1);
 	index_to_VkPipelineLayout.set(0, pipeline_layout);
 
-	fixture.cmdbuffer_data.commands.clear();
+	clear_simulator_commands(fixture.cmdbuffer_data);
 	add_descriptor_buffer_commands(fixture.cmdbuffer_data, descriptor_buffer_address, pipeline_layout);
 
 	const bool executed = execute_commands(fixture.data);
@@ -915,7 +917,7 @@ static void execute_compute_shader_descriptor_buffer_array_fallback()
 	index_to_VkPipelineLayout.resize(1);
 	index_to_VkPipelineLayout.set(0, pipeline_layout);
 
-	fixture.cmdbuffer_data.commands.clear();
+	clear_simulator_commands(fixture.cmdbuffer_data);
 	add_descriptor_buffer_commands(fixture.cmdbuffer_data, descriptor_buffer_address, pipeline_layout);
 
 	const bool executed = execute_commands(fixture.data);
@@ -1065,6 +1067,7 @@ static void execute_compute_shader_copy_provenance()
 	assert(global_output_rewrite_queue.empty());
 	assert(descriptor_buffer_payloads.empty());
 
+	clear_simulator_commands(cmdbuffer_data);
 	allocator.destroy();
 }
 
@@ -1163,6 +1166,7 @@ static void execute_compute_shader_bda_unbound_input()
 		free_marked_offsets(entry.markings);
 	}
 
+	clear_simulator_commands(cmdbuffer_data);
 	allocator.destroy();
 }
 
@@ -1268,6 +1272,7 @@ static void execute_compute_shader_bda_composite_array()
 	}
 	assert(descriptor_buffer_payloads.empty());
 	for (address_rewrite& entry : global_output_rewrite_queue) free_marked_offsets(entry.markings);
+	clear_simulator_commands(cmdbuffer_data);
 	allocator.destroy();
 }
 
@@ -1394,6 +1399,7 @@ static void execute_compute_shader_bda_copied_address_chain()
 		free_marked_offsets(entry.markings);
 	}
 
+	clear_simulator_commands(cmdbuffer_data);
 	allocator.destroy();
 }
 
@@ -1516,6 +1522,7 @@ static void execute_compute_shader_bda_two_lane_output_provenance()
 		free_marked_offsets(entry.markings);
 	}
 
+	clear_simulator_commands(cmdbuffer_data);
 	allocator.destroy();
 }
 
@@ -1693,6 +1700,8 @@ static void execute_compute_shader_bda_interleave_copied_address_provenance()
 		free_marked_offsets(entry.markings);
 	}
 
+	clear_simulator_commands(interleave_cmdbuffer_data);
+	clear_simulator_commands(output_cmdbuffer_data);
 	allocator.destroy();
 }
 

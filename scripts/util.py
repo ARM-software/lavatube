@@ -2414,6 +2414,9 @@ def savefunc(name, node, target, header):
 			z.do('if (retval == VK_SUCCESS || retval == VK_SUBOPTIMAL_KHR) writer.push_thread_barriers();')
 		else:
 			z.do('writer.push_thread_barriers();')
+	if name == 'vkDestroyInstance':
+		# Its post callback may finalize the trace and delete every file writer.
+		z.do('writer.end_packet();')
 	if name in vk.trace_post_calls: # hard-coded post handling, must be last
 		if retval != 'void':
 			if name in vk.trace_post_tool_calls:
@@ -2436,7 +2439,8 @@ def savefunc(name, node, target, header):
 	elif name == 'vkBeginCommandBuffer': # special case for above, need to add the level param
 		z.do('special_vkBeginCommandBuffer(commandBuffer, pBeginInfo, commandbuffer_data->level);')
 
-	z.do('writer.end_packet();')
+	if name != 'vkDestroyInstance':
+		z.do('writer.end_packet();')
 
 	if retval != 'void':
 		z.do('// -- Return --')
