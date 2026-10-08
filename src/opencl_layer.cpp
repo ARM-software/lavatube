@@ -22,6 +22,7 @@ static cl_int CL_API_CALL trace_clGetPlatformIDs(cl_uint num_entries, cl_platfor
 
 	const uint_fast64_t call = state.platform_id_calls.fetch_add(1, std::memory_order_relaxed) + 1;
 	DLOG("OpenCL layer intercepted clGetPlatformIDs call %lu", (unsigned long)call);
+	(void)call;
 	const cl_int result = state.target_dispatch.clGetPlatformIDs(num_entries, platforms, num_platforms);
 
 	const cl_uint returned_num_platforms = result == CL_SUCCESS && num_platforms ? *num_platforms : 0;
@@ -104,6 +105,7 @@ static cl_int CL_API_CALL trace_clGetDeviceIDs(cl_platform_id platform, cl_devic
 
 	const uint_fast64_t call = state.device_id_calls.fetch_add(1, std::memory_order_relaxed) + 1;
 	DLOG("OpenCL layer intercepted clGetDeviceIDs call %lu", (unsigned long)call);
+	(void)call;
 	const cl_int result = state.target_dispatch.clGetDeviceIDs(
 		platform, device_type, num_entries, devices, num_devices);
 	const cl_uint returned_num_devices = result == CL_SUCCESS && num_devices ? *num_devices : 0;

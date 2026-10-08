@@ -6,6 +6,14 @@
 
 #include <CL/cl_layer.h>
 
+#pragma GCC diagnostic ignored "-Wunused-variable"
+#pragma GCC diagnostic ignored "-Wunused-function"
+#if (__clang_major__ > 12) || (!defined(__llvm__) && defined(__GNUC__))
+#pragma GCC diagnostic ignored "-Wunused-but-set-variable"
+#endif
+#ifndef __clang__
+#endif
+
 static cl_int CL_API_CALL fake_clGetPlatformIDs(cl_uint num_entries, cl_platform_id* platforms,
 	cl_uint* num_platforms)
 {
