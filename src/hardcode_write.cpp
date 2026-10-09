@@ -2843,6 +2843,7 @@ VKAPI_ATTR void VKAPI_CALL trace_vkSyncBufferTRACETOOLTEST(VkDevice device, VkBu
 	(void)write_header("vkSyncBufferTRACETOOLTEST", VKSYNCBUFFERTRACETOOLTEST);
 	writer.write_handle(device_data);
 	writer.write_handle(buffer_data);
+	writer.end_packet();
 }
 
 VKAPI_ATTR void VKAPI_CALL trace_vkSyncBufferTRACETOOLTEST_output(VkDevice device, VkBuffer buffer)
@@ -2850,6 +2851,7 @@ VKAPI_ATTR void VKAPI_CALL trace_vkSyncBufferTRACETOOLTEST_output(VkDevice devic
 	lava_file_writer& writer = write_header("vkSyncBufferTRACETOOLTEST", VKSYNCBUFFERTRACETOOLTEST);
 	writer.write_handle(writer.parent->records.VkDevice_index.at(device));
 	writer.write_handle(writer.parent->records.VkBuffer_index.at(buffer));
+	writer.end_packet();
 }
 
 VKAPI_ATTR void VKAPI_CALL trace_vkFrameBoundaryANDROID(VkDevice device, VkSemaphore semaphore, VkImage image)
