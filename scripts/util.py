@@ -632,7 +632,7 @@ class parameter(spec.base_parameter):
 				z.decl(self.type + '*', self.name)
 				z.do('%s = reader.read_handle(DEBUGPARAM("%s"));' % (tmpname, self.type))
 				if self.type == 'VkDeviceMemory':
-					z.do('*%s = reader.is_replay() ? VK_NULL_HANDLE : fake_handle<VkDeviceMemory>(%s);' % (varname, tmpname))
+					z.do('*%s = (reader.is_replay() || %s == CONTAINER_NULL_VALUE) ? VK_NULL_HANDLE : fake_handle<VkDeviceMemory>(%s);' % (varname, tmpname, tmpname))
 				else:
 					z.do('*%s = index_to_%s.at(%s);' % (varname, self.type, tmpname))
 			else:
@@ -650,7 +650,7 @@ class parameter(spec.base_parameter):
 					z.brace_end()
 					z.do('else %s = selected_physical_device;' % varname)
 				elif self.type == 'VkDeviceMemory':
-					z.do('%s = reader.is_replay() ? VK_NULL_HANDLE : fake_handle<VkDeviceMemory>(%s);' % (varname, tmpname))
+					z.do('%s = (reader.is_replay() || %s == CONTAINER_NULL_VALUE) ? VK_NULL_HANDLE : fake_handle<VkDeviceMemory>(%s);' % (varname, tmpname, tmpname))
 				elif self.type != 'VkDeviceMemory' and (not self.funcname in vk.ignore_on_read or self.type == 'VkDevice'):
 					z.do('%s = index_to_%s.at(%s);' % (varname, self.type, tmpname))
 				elif self.type != 'VkDeviceMemory':
