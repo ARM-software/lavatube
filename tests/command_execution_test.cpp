@@ -229,7 +229,7 @@ static void init_buffer(uint32_t index, VkDeviceSize size)
 	buffer.reqs.requirements.memoryTypeBits = 1;
 }
 
-static void execute_copy_buffer()
+static void execute_copy_buffer(bool aliased)
 {
 	constexpr VkDeviceSize buffer_size = 16;
 	constexpr VkDeviceSize src_offset = 2;
@@ -237,9 +237,21 @@ static void execute_copy_buffer()
 	constexpr VkDeviceSize copy_size = 4;
 
 	VkBuffer_index.clear();
-	VkBuffer_index.resize(2);
+	VkBuffer_index.resize(aliased ? 3 : 2);
 	init_buffer(0, buffer_size);
 	init_buffer(1, buffer_size);
+	if (aliased)
+	{
+		// A larger overlapping buffer keeps both smaller buffers in one allocation.
+		init_buffer(2, 128);
+		for (trackedbuffer& buffer : VkBuffer_index)
+		{
+			buffer.backing_index = 0;
+			buffer.req.size = buffer.size;
+		}
+		VkBuffer_index[0].offset = 32;
+		VkBuffer_index[1].offset = 80;
+	}
 
 	std::vector<trackedimage> images;
 	std::vector<trackedtensor> tensors;
@@ -248,13 +260,20 @@ static void execute_copy_buffer()
 	allocator.create(VK_NULL_HANDLE, VK_NULL_HANDLE, images, VkBuffer_index, tensors, sessions, 1, false);
 	allocator.add_trackedobject(0, 1, VkBuffer_index[0]);
 	allocator.add_trackedobject(0, 2, VkBuffer_index[1]);
+	if (aliased) allocator.add_trackedobject(0, 3, VkBuffer_index[2]);
 
 	suballoc_location src = allocator.find_buffer_memory(0);
 	suballoc_location dst = allocator.find_buffer_memory(1);
-	std::memset(src.memory, 0, src.size);
-	std::memset(dst.memory, 0, dst.size);
+	if (aliased)
+	{
+		assert(src.memory == dst.memory);
+		assert(src.offset == 32 && dst.offset == 80);
+		std::memset(allocator.find_buffer_memory(2).mapped, 0x5a, 128);
+	}
+	std::memset(src.mapped, 0, src.size);
+	std::memset(dst.mapped, 0, dst.size);
 	const char payload[] = { 'l', 'a', 'v', 'a' };
-	std::memcpy(reinterpret_cast<char*>(src.memory) + src_offset, payload, sizeof(payload));
+	std::memcpy(src.mapped + src_offset, payload, sizeof(payload));
 
 	const change_source source = make_source(7);
 	VkBuffer_index[0].source.register_source(src_offset, copy_size, source);
@@ -290,7 +309,7 @@ static void execute_copy_buffer()
 
 	const bool executed = execute_commands(data);
 	assert(executed);
-	assert(std::memcmp(reinterpret_cast<char*>(dst.memory) + dst_offset, payload, sizeof(payload)) == 0);
+	assert(std::memcmp(dst.mapped + dst_offset, payload, sizeof(payload)) == 0);
 	assert(data.stats.commands == 1);
 	assert(data.stats.execution_commands == 0);
 
@@ -302,6 +321,49 @@ static void execute_copy_buffer()
 	assert(descriptor_buffer_payloads.empty());
 
 	clear_simulator_commands(cmdbuffer_data);
+	if (aliased)
+	{
+		std::vector<char> expected(128, 0x5a);
+		std::memset(expected.data() + src.offset, 0, buffer_size);
+		std::memset(expected.data() + dst.offset, 0, buffer_size);
+		std::memcpy(expected.data() + src.offset + src_offset, payload, sizeof(payload));
+		std::memcpy(expected.data() + dst.offset + dst_offset, payload, sizeof(payload));
+		assert(std::memcmp(allocator.find_buffer_memory(2).mapped, expected.data(), expected.size()) == 0);
+
+		trackedcommand fill { VKCMDFILLBUFFER };
+		fill.source = make_source(8);
+		fill.data.fill_buffer.buffer_index = 0;
+		fill.data.fill_buffer.offset = 8;
+		fill.data.fill_buffer.size = VK_WHOLE_SIZE;
+		fill.data.fill_buffer.value = 0x12345678;
+		cmdbuffer_data.commands.push_back(fill);
+
+		trackedcommand update { VKCMDUPDATEBUFFER };
+		update.source = make_source(9);
+		update.data.update_buffer.buffer_index = 1;
+		update.data.update_buffer.offset = 12;
+		update.data.update_buffer.size = sizeof(payload);
+		update.data.update_buffer.values = static_cast<char*>(std::malloc(sizeof(payload)));
+		assert(update.data.update_buffer.values);
+		std::memcpy(update.data.update_buffer.values, payload, sizeof(payload));
+		cmdbuffer_data.commands.push_back(update);
+
+		const bool writes_executed = execute_commands(data);
+		assert(writes_executed);
+		for (VkDeviceSize offset = 8; offset < buffer_size; offset += sizeof(uint32_t))
+		{
+			std::memcpy(expected.data() + src.offset + offset, &fill.data.fill_buffer.value, sizeof(uint32_t));
+		}
+		std::memcpy(expected.data() + dst.offset + 12, payload, sizeof(payload));
+		assert(std::memcmp(allocator.find_buffer_memory(2).mapped, expected.data(), expected.size()) == 0);
+		const bool found_fill_source = VkBuffer_index[0].source.try_get_source(8, 8, copied_source);
+		assert(found_fill_source);
+		assert(same_source(copied_source, fill.source));
+		const bool found_update_source = VkBuffer_index[1].source.try_get_source(12, sizeof(payload), copied_source);
+		assert(found_update_source);
+		assert(same_source(copied_source, update.source));
+		clear_simulator_commands(cmdbuffer_data);
+	}
 	allocator.destroy();
 }
 
@@ -1727,7 +1789,8 @@ int main(int argc, char** argv)
 	}
 
 	execute_null();
-	execute_copy_buffer();
+	execute_copy_buffer(false);
+	execute_copy_buffer(true);
 	track_descriptor_set_layout_size();
 	execute_compute_shader();
 	execute_secondary_command_buffer();

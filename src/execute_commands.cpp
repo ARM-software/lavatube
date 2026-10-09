@@ -1763,7 +1763,7 @@ bool execute_commands(command_execution_data& data)
 				{
 					ABORT("vkCmdFillBuffer simulator range exceeds Buffer[%u] size", c.data.fill_buffer.buffer_index);
 				}
-				char* destination = (char*)sub.memory + c.data.fill_buffer.offset;
+				char* destination = sub.mapped + c.data.fill_buffer.offset;
 				for (VkDeviceSize offset = 0; offset < size; offset += sizeof(uint32_t))
 				{
 					memcpy(destination + offset, &c.data.fill_buffer.value, sizeof(uint32_t));
@@ -1781,7 +1781,7 @@ bool execute_commands(command_execution_data& data)
 				for (uint32_t i = 0; i < c.data.copy_buffer.regionCount; i++)
 				{
 					VkBufferCopy& r = c.data.copy_buffer.pRegions[i];
-					memcpy((char*)dst.memory + r.dstOffset, (char*)src.memory + r.srcOffset, r.size);
+					memcpy(dst.mapped + r.dstOffset, src.mapped + r.srcOffset, r.size);
 					dst_buffer.source.copy_sources(src_buffer.source, r.dstOffset, r.srcOffset, r.size);
 				}
 			}
@@ -1790,7 +1790,7 @@ bool execute_commands(command_execution_data& data)
 			{
 				suballoc_location sub = data.device_data.allocator->find_buffer_memory(c.data.update_buffer.buffer_index);
 				trackedbuffer& dst_buffer = VkBuffer_index.at(c.data.update_buffer.buffer_index);
-				memcpy((char*)sub.memory + c.data.update_buffer.offset, c.data.update_buffer.values, c.data.update_buffer.size);
+				memcpy(sub.mapped + c.data.update_buffer.offset, c.data.update_buffer.values, c.data.update_buffer.size);
 				dst_buffer.source.register_source(c.data.update_buffer.offset, c.data.update_buffer.size, c.source,
 					1, 0, dst_buffer.object_type, dst_buffer.index);
 			}
