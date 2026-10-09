@@ -355,11 +355,28 @@ void suballocator_private::prepare_alias_groups(uint32_t device_index, std::vect
 				group->capture_offset = first_obj->offset;
 				group->alignment = 1;
 				group->tiling = first_obj->tiling;
+				VkDeviceSize padding = 0;
+				// The first captured offset need not satisfy the strongest alignment in the group.
+				// Add leading padding while preserving every distance between aliased objects.
+				for (size_t i = first; i < last; i++)
+				{
+					const trackedobject* obj = objects.at(i);
+					const VkDeviceSize alignment = obj->reqs.requirements.alignment;
+					if (alignment > group->alignment)
+					{
+						group->alignment = alignment;
+						const VkDeviceSize remainder = (obj->offset - group->capture_offset) % alignment;
+						padding = remainder == 0 ? 0 : alignment - remainder;
+					}
+				}
 				bool have_requirements = false;
 				for (size_t i = first; i < last; i++)
 				{
 					trackedobject* obj = objects.at(i);
-					const VkDeviceSize relative_offset = obj->offset - group->capture_offset;
+					const VkDeviceSize capture_relative_offset = obj->offset - group->capture_offset;
+					if (capture_relative_offset > UINT64_MAX - padding)
+						SUBALLOC_ABORT(this, "Replay alias offset overflow for %s %u", pretty_print_VkObjectType(obj->object_type), obj->index);
+					const VkDeviceSize relative_offset = capture_relative_offset + padding;
 					const VkDeviceSize alignment = obj->reqs.requirements.alignment;
 					if (alignment == 0 || relative_offset % alignment != 0)
 					{
