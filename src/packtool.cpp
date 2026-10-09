@@ -276,6 +276,19 @@ static bool is_capture_flush_leftover_markings(const collected_markings_entry& e
 		&& strcmp(vulkan_get_function_name(entry.source.call_id), "vkFlushMappedMemoryRanges") == 0;
 }
 
+static bool is_checksum_markings(const collected_markings_entry& entry)
+{
+	if (entry.instrtype != PACKET_VULKAN_API_CALL || entry.source.call_id == UINT16_MAX) return false;
+	const char* name = vulkan_get_function_name(entry.source.call_id);
+	// Assertion markings normalize checksums; they do not mark an input update.
+	return strcmp(name, "vkAssertBufferARM") == 0 || strcmp(name, "vkAssertMemoryARM") == 0;
+}
+
+static bool is_ignored_comparison_markings(const collected_markings_entry& entry)
+{
+	return is_capture_flush_leftover_markings(entry) || is_checksum_markings(entry);
+}
+
 static std::string marking_type_string(VkMarkingTypeARM type)
 {
 	switch (type)
@@ -320,7 +333,7 @@ static std::string marking_subtype_string(VkMarkingTypeARM type, const VkMarking
 
 static void print_markings_entry(const collected_markings_entry& entry)
 {
-	const bool ignored = is_capture_flush_leftover_markings(entry);
+	const bool ignored = is_ignored_comparison_markings(entry);
 	auto print_line = [&](const std::string& line)
 	{
 		if (ignored) printf(MAKEGRAY("%s\n"), line.c_str());
@@ -328,7 +341,8 @@ static void print_markings_entry(const collected_markings_entry& entry)
 	};
 
 	std::string header = markings_location_string(entry);
-	if (ignored) header += " [ignored capture leftover]";
+	if (is_capture_flush_leftover_markings(entry)) header += " [ignored capture leftover]";
+	else if (is_checksum_markings(entry)) header += " [ignored checksum normalization]";
 	print_line(header);
 	if (entry.source.call_id != UINT16_MAX)
 	{
@@ -515,7 +529,7 @@ static std::vector<marking_coverage_location> collect_marking_coverage(const std
 	std::vector<collected_markings_entry> entries = collect_trace_markings(pack);
 	for (const collected_markings_entry& entry : entries)
 	{
-		if (is_capture_flush_leftover_markings(entry) || !entry.markings) continue;
+		if (is_ignored_comparison_markings(entry) || !entry.markings) continue;
 		if (entry.memory_index == CONTAINER_NULL_VALUE)
 		{
 			DIE("Cannot identify the memory object for markings at %s", markings_location_string(entry).c_str());
@@ -633,8 +647,8 @@ static markings_compare_result compare_packed_file_markings(const std::string& p
 	markings_compare_result result;
 	std::vector<collected_markings_entry> markings_a = collect_trace_markings(pack_a);
 	std::vector<collected_markings_entry> markings_b = collect_trace_markings(pack_b);
-	markings_a.erase(std::remove_if(markings_a.begin(), markings_a.end(), is_capture_flush_leftover_markings), markings_a.end());
-	markings_b.erase(std::remove_if(markings_b.begin(), markings_b.end(), is_capture_flush_leftover_markings), markings_b.end());
+	markings_a.erase(std::remove_if(markings_a.begin(), markings_a.end(), is_ignored_comparison_markings), markings_a.end());
+	markings_b.erase(std::remove_if(markings_b.begin(), markings_b.end(), is_ignored_comparison_markings), markings_b.end());
 	std::sort(markings_a.begin(), markings_a.end(), markings_entry_semantic_less);
 	std::sort(markings_b.begin(), markings_b.end(), markings_entry_semantic_less);
 
