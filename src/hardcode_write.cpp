@@ -368,18 +368,19 @@ static void trace_post_vkGetBufferMemoryRequirements(lava_file_writer& writer, V
 {
 	auto* buffer_data = writer.parent->records.VkBuffer_index.at(buffer);
 	buffer_data->req = *pMemoryRequirements; // if this is not set here, we'll request this info explicitly on bind
-	extend_bits(pMemoryRequirements);
+	if (writer.run) extend_bits(pMemoryRequirements);
 }
 
 static void trace_post_vkGetImageMemoryRequirements(lava_file_writer& writer, VkDevice device, VkImage image, VkMemoryRequirements* pMemoryRequirements)
 {
 	auto* image_data = writer.parent->records.VkImage_index.at(image);
 	image_data->req = *pMemoryRequirements; // if this is not set here, we'll request this info explicitly on bind
-	extend_bits(pMemoryRequirements);
+	if (writer.run) extend_bits(pMemoryRequirements);
 }
 
 static void inject_dedicated_allocation(lava_file_writer& writer, VkBaseOutStructure* pMemoryRequirements, bool image)
 {
+	if (!writer.run) return;
 	if ((p__dedicated_image == 0 && image) || (p__dedicated_buffer == 0 && !image)) return;
 
 	VkMemoryDedicatedRequirements* info = (VkMemoryDedicatedRequirements*)find_extension(pMemoryRequirements, VK_STRUCTURE_TYPE_MEMORY_DEDICATED_REQUIREMENTS);
