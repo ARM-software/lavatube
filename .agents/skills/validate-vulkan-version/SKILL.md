@@ -1,19 +1,26 @@
 ---
 name: validate-vulkan-version
-description: Validate the implementation and support in lavatube for a given Vulkan version
-metadata:
-  short-description: Validate lavatube's support for a Vulkan version
+description: Audit lavatube support for a specified core Vulkan version, including promotions and feature pruning.
 ---
 
-1. Check that we were told which Vulkan extension we are supposed to check. If this was not specified, ask.
-2. If you are not familiar with the extension, download the version summary from
-   `https://docs.vulkan.org/refpages/latest/refpages/source/<version>.html`, where `version` is the
-   version in the form `VK_VERSION_<major>_<minor>`, for example `VK_VERSION_1_4` for version 1.4.
-3. For each new command, check if we have an existing hardcoded KHR or EXT suffixed version of this
-   command, and are missing a forward from a promoted command (ie without the suffix). Check the two
-   files `src/hardcoded_read.cpp` (for replay) and `src/harcoded_write.cpp` (for capture). Also check
-   the file `scripts/vkconfig.py` for extension variants that are similarly missing a promoted variant.
-4. As above, for each new structure defined, check if we have an existing hardcoded KHR or EXT suffixed
-   version of it and are missing handling of the promoted variant. Look in the same files as for commands.
-5. Check that our feature pruning code handles this version of the standard. This is tracked within the
-   `tracking.json` file that we bake into the capture file container.
+# Validate a Vulkan version
+
+Use the core version named in the request or established context; ask only if it is missing or ambiguous. Review without
+compiling or running tests. Make fixes only when requested.
+
+Read `https://docs.vulkan.org/refpages/latest/refpages/source/VK_VERSION_<major>_<minor>.html` for the current version
+summary. Compare it with the vendored Vulkan registry and headers to identify checkout limitations.
+
+- Check new commands and structures for capture/replay serialization symmetry in `generated/*_auto.cpp` and manual
+  handling in `src/hardcode_read.cpp` and `src/hardcode_write.cpp`.
+- Check promoted KHR/EXT commands and structures in both directions: core aliases must reach the intended
+  implementation, and extension variants must retain equivalent handling. Inspect `scripts/vkconfig.py` as well as
+  manual code.
+- Follow feature recording and pruning through `scripts/lava.py` (`extra_tracked_structs`), `src/write.cpp`,
+  `src/hardcode_read.cpp`, and `external/tracetooltests/src/usagetracker/`. Check how required/removed features are
+  stored in trace metadata and applied during replay.
+- Locate version-specific tests in `tests/` and `external/tracetooltests`; distinguish missing coverage from proven
+  defects.
+
+If generated files are absent, report that limitation or use an isolated generation workspace. Report findings with
+source locations and identify any support that remains unverified at runtime.

@@ -1,90 +1,54 @@
-# Repository Guidelines
+# Lavatube repository guidance
 
-## Project Structure & Module Organization
-- `src/`: core tracer, replay, Vulkan layer code; headers live alongside implementations.
-- `tests/`: C++ regression and performance tests plus small generators (`gen_*`). Extend here when adding features.
-- `cmake/`: toolchain presets for platform cross-compilation
-- `scripts/`: Python code generators (e.g., `lava.py` generation). 
-- `doc/` holds design notes
-- `external/` tracks vendored deps
-- `traces/` can store sample trace files
-- `generated/` holds generated c++ files created by the python scripts
-- We use git with submodules, cmake and makefiles.
-- Use separate build directories (e.g. `build/` for debug or `build_release` for release)
-- Files and classes with `write` in the name are related to trace capture, while `read` is related to trace replay.
-- Vulkan headers: `external/tracetooltests/external/Vulkan-Headers/include/vulkan/` (do not use the system headers)
+## Code invariants
 
-## Coding Style & Naming Conventions
-- C++ with tab indentation and Allman braces (opening brace on a new line). Mirror existing spacing and logging patterns.
-- Names are generally lower_snake_case for functions/files; macros and constants stay uppercase.
-- Keep headers and implementations paired in `src/`; avoid introducing extra dependencies without CMake updates.
-- Do not modify generated files in `generated/` directly. First line in a generated file says which script generated it.
-- If there is an error in the app that we capture, we should be resistant to this and keep running if possible; but
-  if there are problems caused by our capturing code, we should fail as early as possible with a clear error message so we
-  can fix them, not try to work around them with defensive code.
-- Do not create new globals. If we need to track data betweeen commands, either use one of the tracked meta objects defined
-  in `src/lavatube.h` or create a new one. Each Vulkan object has a tracked meta-object that can be used to store data.
-  If there is no specialized trackable, then create a new one that inherits from `trackable` and then add it in
-  `trackable_type_map_general` in `scripts/vkconfig.py` for autogeneration.
-- Do not use lambdas, anonymous namespaces or throw new exceptions.
+- Use Vulkan headers in `external/tracetooltests/external/Vulkan-Headers/include/vulkan/`, not system headers.
+- Edit generators, not `generated/` files; their first line identifies the generator.
+- Use tabs and Allman braces for C++; follow surrounding naming and logging conventions. Do not introduce lambdas,
+  anonymous namespaces, or new exception throws.
+- Do not add globals. Store state carried between commands in tracked metadata in `src/lavatube.h`; register new
+  `trackable` subclasses in `trackable_type_map_general` in `scripts/vkconfig.py`.
+- Tolerate captured application errors when possible. Fail early with a clear diagnostic for defects in our code; do
+  not hide them with workarounds or overly defensive programming.
+- Keep thread state consistent throughout each packet. Prefer handing information to the owning thread for processing
+  before its next packet over modifying its state directly or adding mutexes. See
+  [Multithreading.md](doc/Multithreading.md) for threading changes and [MemoryManagement.md](doc/MemoryManagement.md)
+  for memory work.
+- File IO handles chunks; command processing handles packets. A chunk may contain multiple packets. Command IDs are
+  remapped through each trace's dictionary.
 
-## Testing Guidelines
-- Add new tests under `tests/` (see `container_test.cpp`, `tracing*.cpp` for patterns) and reuse helpers in `tests/common.*`.
-- Be aware that the full `ctest` test suite takes over 15 minutes.
+## Implementation entry points
 
-## Coding
-- Keep in mind that lavatube is multi-threaded. For more information on the multi-threaded design, see [Multithreading.md](doc/Multithreading.md).
-- For investigations into memory management, read [MemoryManagement.md](doc/MemoryManagement.md).
-- At the lowest level of file processing we handle chunks, at the higher level we process packets. One chunk may contain many packets.
-- We try to avoid using mutexes. Avoid modifying another thread's state directly, instead leave information for it be pick up and let it
-  modify itself before processing its next packet. This way we keep thread state consistent while processing a packet.
-- Each trace file contains a command dictionary that we remap on replay, so we do not need to worry about changing command ID numbers.
+`write`/`trace` means capture; `read`/`retrace` means replay.
 
-## Code reviews
-- Do not run compilation or tests as part of code reviews.
+* Capture - `src/filewriter.cpp`, `src/write.cpp`, `src/hardcode_write.cpp`; launch via `scripts/lava-capture.py`
+* Replay - `src/filereader.cpp`, `src/read.cpp`, `src/hardcode_read.cpp`, `src/replay.cpp`
+* Memory allocation / WSI - `src/suballocator.cpp` / `src/window.cpp`
+* Post-processing - `src/tool.cpp`, `src/postprocess.cpp`, `src/tool/`; callbacks named `postprocess_<name>`
+  registered with `CALLBACK`; draw-call generation in `scripts/util.py`
+* SPIR-V simulation - `src/execute_commands.cpp`, `external/spirv-simulator/`
 
-## Debugging
-- For troubleshooting, set `LAVATUBE_DEBUG` environment variable, value from 1 (some extra logging) to 3 (the most verbose).
-- Trace files are actually containers that contain other files. Some of these may contain useful information for debugging, and these
-  may be inspected with the `packtool` utility. If they are JSON format, they can be printed with `packtool print`. Example usage:
-  `build/packtool print limits.json build/vulkan_general.vk`
-- The contained file `limits.json` counts how many of each Vulkan object were created during the capture.
-- The contained file `tracking.json` contains immutable or accumulated meta-information for each Vulkan object.
-- The contained file `metadata.json` contains information on presented device capabilities (given by capture device) and requested
-  capabilities (as requested by the captured application or by our capture layer).
-- You can use `build/lava-print` or `build/lava-print-fast` to print out the packets/calls in a trace in NDJSON format.
-- You can use `build/lava-cli` with `build/lava-replay --service` to run the replay in interactive mode. The trace starts paused
-  and can now be stepped through or jumped forward into, then you can print calls or meta-information at the current position. See
-  `build/lava-cli --help` for more information. After each `lava-cli` command, all replay threads will be in a stable paused state.
-- Running `lava-replay --validate` may help find indications for an error. But real content often has many harmless validation warnings.
-- For output changes, `lava-print --add-checksums` can distinguish captured logical data (checksum is computed before replay address
-  translation) from replay-normalized data.
-- For replays that hang, try using the replay service with `lava-cli diagnose deadlock` and `lava-cli info threads`.
-- Running a trace file through the spirv-simulator may help with buffer device address, shader binding table and descriptor issues.
-  May try `lava-tool -S <input trace> <output trace>`. Beware that it may be slow - prefer a release build of `lava-tool`.
+Capture metadata lookup: `writer.parent->records.<type>_index.at(<native handle>)`. Replay and post-processing lookup:
+`<type>_index.at(<index>)`. Manual replay replacements use `retrace_<name>`; pre/post callbacks use `replay_pre_<name>`
+and `replay_post_<name>`.
 
-## Modifying capture functionality
-- Capture is often also called `write` or `trace` in the code.
-- Capture file IO code is in `src/filewriter.cpp` and higher-level code in `src/write.cpp`.
-- Manually implemented functions are found in `src/hardcode_write.cpp`
-- Capture is often initiated from the script `scripts/lava-capture.py`
-- Fetch metadata tracking objects with `writer.parent->records.<type>_index.at(<native handle>)`
+## Builds and validation
 
-## Modifying replay functionality (lava-replay)
-- Replay is often also called `read` or `retrace` in the code.
-- Replay file IO code is in `src/filereader.cpp` and higher-level code in `src/read.cpp`.
-- Manually implemented functions are found in `src/hardcode_read.cpp`. Replacement functions are called `retrace_<name>`.
-- Callbacks called before the function are called `replay_pre_<name>` and callbacks called after are called `replay_post_<name>`.
-- The memory suballocator is in `src/suballocator.cpp`
-- General window management (WSI) code is in `src/window.cpp`
-- The replay binary is built from `src/replay.cpp`
-- Fetch metadata tracking objects with `<type>_index.at(<index>)`
+- Use separate CMake build directories, such as `build/` and `build_release/`. Build setup is in [README.md](README.md).
+- Tests live in `tests/`; reuse `tests/common.*` and existing tracing/container patterns. The full CTest suite takes
+  over 15 minutes; choose checks appropriate to the change.
+- Do not compile or run tests as part of code reviews.
 
-## Modifying post-processing functionality (lava-tool)
-- The post-processing tool uses both capture and replay functionality (as described above).
-- The post-process binary is built from `src/tool.cpp` and most of its code is in callbacks called `postprocess_<name>`.
-  The `CALLBACK` macro is used to register callbacks.
-- Most post-process callback functions are in `src/postprocess.cpp`, but if they require tool context, they are in `src/tool`.
-  Some special callbacks eg for draw calls have hardcoded calls created in `scripts/util.py`.
-- SPIRV simulation is handled in `src/execute_commands.cpp`
-- Fetch metadata tracking objects with `<type>_index.at(<index>)`
+## Trace diagnostics
+
+- `LAVATUBE_DEBUG=1` through `3` increases logging.
+- Traces are containers. For example, `build/packtool print limits.json build/vulkan_general.vk` prints object counts.
+  `tracking.json` holds immutable/accumulated object metadata; `metadata.json` holds presented and requested
+  capabilities.
+- `build/lava-print-fast` prints calls as NDJSON. `lava-print --add-checksums` hashes logical captured data before
+  replay address translation.
+- `build/lava-replay --service` starts replay paused; use `build/lava-cli` to step, jump, or inspect state. Threads are
+  stably paused after each CLI command. For hangs, use `lava-cli diagnose deadlock` and `lava-cli info threads`.
+- `lava-replay --validate` can expose errors, though real content often produces harmless validation warnings.
+- `lava-tool -S <input trace> <output trace>` simulates shaders to investigate buffer device addresses, shader binding
+  tables, and descriptors. Prefer a release build; simulation can be slow.
