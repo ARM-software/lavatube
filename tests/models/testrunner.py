@@ -180,6 +180,8 @@ def run_agent(agent, port, model, trace, question, providers, debug_file):
 		'--base-url', base_url,
 		'--model', api_model,
 	]
+	if model.get('response_schema'):
+		command.append('--response-schema')
 	command += [
 		# Empty for providers without an auth field (e.g. local Ollama).
 		'--api-key', api_key_for(model, providers) or '',

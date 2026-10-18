@@ -52,3 +52,5 @@ and `replay_post_<name>`.
 - `lava-replay --validate` can expose errors, though real content often produces harmless validation warnings.
 - `lava-tool -S <input trace> <output trace>` simulates shaders to investigate buffer device addresses, shader binding
   tables, and descriptors. Prefer a release build; simulation can be slow.
+- After debugging is complete, if the target is in one of our submodules, consider if it could be beneficial to add the case
+  to `tests/models/scenarios.json` as a test scenario for `lava-agent`.

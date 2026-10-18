@@ -27,6 +27,7 @@
       "name": "Gemma 4 12B",
       "model_id": "gemma4:12b-16k",
       "type": "chat",
+      "response_schema": false,
       "pricing_per_mtok_usd": {
         "input": 0.0,
         "cached": 0.0,
@@ -38,6 +39,7 @@
       "name": "Mistral Large 3",
       "model_id": "mistral-large-2512",
       "type": "chat",
+      "response_schema": true,
       "pricing_per_mtok_usd": {
         "input": 0.5,
         "cached": 0.05,
@@ -49,6 +51,7 @@
       "name": "Mistral Medium 3.5",
       "model_id": "mistral-medium-2604",
       "type": "chat",
+      "response_schema": true,
       "pricing_per_mtok_usd": {
         "input": 1.5,
         "cached": 0.15,
@@ -60,6 +63,7 @@
       "name": "Mistral Small 4",
       "model_id": "mistral-small-2603",
       "type": "chat",
+      "response_schema": true,
       "pricing_per_mtok_usd": {
         "input": 0.15,
         "cached": 0.015,
@@ -81,6 +85,7 @@
       "name": "Ministral 3 14B",
       "model_id": "ministral-14b-2512",
       "type": "chat",
+      "response_schema": true,
       "pricing_per_mtok_usd": {
         "input": 0.2,
         "cached": 0.02,
@@ -92,6 +97,7 @@
       "name": "Ministral 3 8B",
       "model_id": "ministral-8b-2512",
       "type": "chat",
+      "response_schema": true,
       "pricing_per_mtok_usd": {
         "input": 0.15,
         "cached": 0.015,
@@ -103,6 +109,7 @@
       "name": "Ministral 3 3B",
       "model_id": "ministral-3b-2512",
       "type": "chat",
+      "response_schema": true,
       "pricing_per_mtok_usd": {
         "input": 0.1,
         "cached": 0.01,
@@ -114,6 +121,7 @@
       "name": "Z.ai GLM 5.2",
       "model_id": "glm-5-2",
       "type": "chat",
+      "response_schema": false,
       "pricing_per_mtok_usd": {
         "input": 1.4,
         "cached": 0.14,
@@ -125,6 +133,7 @@
       "name": "Codestral",
       "model_id": "codestral-2508",
       "type": "chat",
+      "response_schema": false,
       "pricing_per_mtok_usd": {
         "input": 0.3,
         "cached": 0.03,
@@ -137,6 +146,7 @@
       "model_id": "openai/gpt-oss-20b",
       "available": false,
       "type": "chat",
+      "response_schema": false,
       "pricing_per_mtok_usd": {
         "input": 0.02,
         "cached": 0.005,
@@ -156,6 +166,7 @@
       "model_id": "zai-org/GLM-5.2",
       "available": false,
       "type": "chat",
+      "response_schema": false,
       "pricing_per_mtok_usd": {
         "input": 0.9,
         "cached": 0.15,
@@ -167,6 +178,7 @@
       "name": "GLM 5.3 Flash",
       "model_id": "zai-org/GLM-5.3-Flash",
       "type": "chat",
+      "response_schema": false,
       "pricing_per_mtok_usd": {
         "input": 0.1,
         "cached": 0.0175,
@@ -178,6 +190,7 @@
       "name": "DeepSeek V4 Flash",
       "model_id": "deepseek-ai/DeepSeek-V4-Flash",
       "type": "chat",
+      "response_schema": false,
       "pricing_per_mtok_usd": {
         "input": 0.09,
         "cached": 0.015,
@@ -190,6 +203,7 @@
       "model_id": "openai/gpt-oss-120b",
       "available": false,
       "type": "chat",
+      "response_schema": false,
       "pricing_per_mtok_usd": {
         "input": 0.029,
         "cached": 0.01,
@@ -208,6 +222,7 @@
       "name": "Qwen 3.6 27B",
       "model_id": "Qwen/Qwen3.6-27B",
       "type": "chat",
+      "response_schema": false,
       "pricing_per_mtok_usd": {
         "input": 0.1,
         "cached": 0.04,
@@ -219,6 +234,7 @@
       "name": "Qwen 3.8 27B",
       "model_id": "Qwen/Qwen3.8-27B",
       "type": "chat",
+      "response_schema": false,
       "pricing_per_mtok_usd": {
         "input": 0.1,
         "cached": 0.04,
@@ -237,6 +253,7 @@
       "name": "Qwen 3.6 35B-A3B",
       "model_id": "Qwen/Qwen3.6-35B-A3B",
       "type": "chat",
+      "response_schema": false,
       "pricing_per_mtok_usd": {
         "input": 0.05,
         "cached": 0.025,
@@ -249,6 +266,7 @@
       "model_id": "google/gemma-4-31B-it",
       "available": false,
       "type": "chat",
+      "response_schema": false,
       "pricing_per_mtok_usd": {
         "input": 0.1,
         "cached": 0.04,
@@ -261,6 +279,7 @@
       "model_id": "google/gemma-4-26B-A4B-it",
       "available": false,
       "type": "chat",
+      "response_schema": false,
       "pricing_per_mtok_usd": {
         "input": 0.05,
         "cached": 0.025,
@@ -273,6 +292,7 @@
       "model_id": "google:gemma@4-31b",
       "available": true,
       "type": "chat",
+      "response_schema": false,
       "pricing_per_mtok_usd": {
         "input": 0.102,
         "cached": 0.012,
@@ -284,6 +304,7 @@
       "name": "GPT-6 Astra",
       "model_id": "gpt-6-astra",
       "type": "chat",
+      "response_schema": true,
       "pricing_per_mtok_usd": {
         "input": 10.0,
         "cached": 1.0,
@@ -314,6 +335,7 @@
       "name": "GPT-5.6 Sol",
       "model_id": "gpt-5.6-sol",
       "type": "chat",
+      "response_schema": true,
       "pricing_per_mtok_usd": {
         "input": 4.0,
         "cached": 0.4,
@@ -345,6 +367,7 @@
       "name": "GPT-5.6 Terra",
       "model_id": "gpt-5.6-terra",
       "type": "chat",
+      "response_schema": true,
       "pricing_per_mtok_usd": {
         "input": 2.0,
         "cached": 0.2,
@@ -376,6 +399,7 @@
       "name": "GPT-5.6 Luna",
       "model_id": "gpt-5.6-luna",
       "type": "chat",
+      "response_schema": true,
       "pricing_per_mtok_usd": {
         "input": 0.2,
         "cached": 0.02,

@@ -150,6 +150,69 @@ agent_runtime::http_response agent_runtime::post(const Json::Value& request_valu
 	return response;
 }
 
+static Json::Value agent_response_format_schema()
+{
+	Json::Value status;
+	status["type"] = "string";
+	status["enum"] = Json::Value(Json::arrayValue);
+	status["enum"].append("answered");
+	status["enum"].append("inconclusive");
+
+	Json::Value conclusion;
+	conclusion["type"] = "string";
+
+	Json::Value confidence;
+	confidence["type"] = "number";
+
+	Json::Value tool_id;
+	tool_id["type"] = "integer";
+
+	Json::Value inference;
+	inference["type"] = "string";
+
+	Json::Value item;
+	item["type"] = "object";
+	item["properties"]["tool_id"] = tool_id;
+	item["properties"]["inference"] = inference;
+	item["required"] = Json::Value(Json::arrayValue);
+	item["required"].append("tool_id");
+	item["required"].append("inference");
+	item["additionalProperties"] = false;
+
+	Json::Value evidence;
+	evidence["type"] = "array";
+	evidence["items"] = item;
+
+	Json::Value unresolved_item;
+	unresolved_item["type"] = "string";
+
+	Json::Value unresolved;
+	unresolved["type"] = "array";
+	unresolved["items"] = unresolved_item;
+
+	Json::Value schema;
+	schema["type"] = "object";
+	schema["properties"]["status"] = status;
+	schema["properties"]["conclusion"] = conclusion;
+	schema["properties"]["confidence"] = confidence;
+	schema["properties"]["evidence"] = evidence;
+	schema["properties"]["unresolved"] = unresolved;
+	schema["required"] = Json::Value(Json::arrayValue);
+	schema["required"].append("status");
+	schema["required"].append("conclusion");
+	schema["required"].append("confidence");
+	schema["required"].append("evidence");
+	schema["required"].append("unresolved");
+	schema["additionalProperties"] = false;
+
+	Json::Value format;
+	format["type"] = "json_schema";
+	format["json_schema"]["name"] = "investigation_result";
+	format["json_schema"]["strict"] = true;
+	format["json_schema"]["schema"] = schema;
+	return format;
+}
+
 Json::Value agent_runtime::request(const Json::Value& messages, bool with_tools) const
 {
 	Json::Value value;
@@ -159,7 +222,11 @@ Json::Value agent_runtime::request(const Json::Value& messages, bool with_tools)
 	{
 		value["tools"] = mTools.definitions();
 		value["tool_choice"] = "auto";
-		value["parallel_tool_calls"] = false;
+		value["parallel_tool_calls"] = true;
+	}
+	if (mOptions.response_schema)
+	{
+		value["response_format"] = agent_response_format_schema();
 	}
 	if (!mOptions.reasoning_effort.empty() && mOptions.reasoning_effort != "none")
 	{
@@ -261,24 +328,58 @@ Json::Value agent_runtime::bounded_tool_result(const agent_tool_result& result, 
 	return value;
 }
 
-bool agent_runtime::parse_final(const std::string& text, Json::Value& final, std::string& error) const
+static bool agent_parse_json_object(const std::string& text, Json::Value& final)
 {
-	std::string json = text;
-	const size_t first = json.find_first_not_of(" \t\r\n");
-	const size_t last = json.find_last_not_of(" \t\r\n");
-	if (first == std::string::npos) json.clear();
-	else json = json.substr(first, last - first + 1);
-	if (json.rfind("```json", 0) == 0 || json.rfind("```JSON", 0) == 0)
+	Json::Reader reader;
+	std::string trimmed = text;
+	const size_t first = trimmed.find_first_not_of(" \t\r\n");
+	const size_t last = trimmed.find_last_not_of(" \t\r\n");
+	if (first == std::string::npos) return false;
+	trimmed = trimmed.substr(first, last - first + 1);
+	if (reader.parse(trimmed, final, false) && final.isObject()) return true;
+
+	size_t fence_start = trimmed.rfind("```json");
+	const size_t upper_fence = trimmed.rfind("```JSON");
+	if (upper_fence != std::string::npos && (fence_start == std::string::npos || upper_fence > fence_start))
 	{
-		const size_t newline = json.find('\n');
-		const size_t fence = json.rfind("```");
-		if (newline != std::string::npos && fence != std::string::npos && fence > newline)
+		fence_start = upper_fence;
+	}
+	if (fence_start != std::string::npos)
+	{
+		const size_t newline = trimmed.find('\n', fence_start);
+		if (newline != std::string::npos)
 		{
-			json = json.substr(newline + 1, fence - newline - 1);
+			const size_t fence_end = trimmed.find("```", newline + 1);
+			if (fence_end != std::string::npos)
+			{
+				const std::string fenced = trimmed.substr(newline + 1, fence_end - newline - 1);
+				if (reader.parse(fenced, final, false) && final.isObject()) return true;
+			}
 		}
 	}
-	Json::Reader reader;
-	if (!reader.parse(json, final, false) || !final.isObject())
+
+	const size_t close = trimmed.rfind('}');
+	if (close != std::string::npos)
+	{
+		const size_t first_open = trimmed.find('{');
+		size_t open = first_open;
+		while (open != std::string::npos && open < close)
+		{
+			const std::string candidate = trimmed.substr(open, close - open + 1);
+			if (reader.parse(candidate, final, false) && final.isObject()
+			    && (open == first_open || final.isMember("status")))
+			{
+				return true;
+			}
+			open = trimmed.find('{', open + 1);
+		}
+	}
+	return false;
+}
+
+bool agent_runtime::parse_final(const std::string& text, Json::Value& final, std::string& error) const
+{
+	if (!agent_parse_json_object(text, final))
 	{
 		error = "Final model response is not a JSON object";
 		return false;

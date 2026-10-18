@@ -117,8 +117,8 @@ class AgentModelHandler(http.server.BaseHTTPRequestHandler):
 				tool_names = {tool['function']['name'] for tool in request['tools']}
 				if tool_names != EXPECTED_TOOLS:
 					raise RuntimeError('unexpected tool registry: %r' % tool_names)
-				if request.get('parallel_tool_calls') is not False:
-					raise RuntimeError('parallel tool calls were not disabled')
+				if request.get('parallel_tool_calls') is not True:
+					raise RuntimeError('parallel tool calls were not enabled')
 			else:
 				if 'tool_choice' in request or 'parallel_tool_calls' in request:
 					raise RuntimeError('tools-free request carried tool options: %r' % request.keys())
@@ -187,7 +187,7 @@ class AgentModelHandler(http.server.BaseHTTPRequestHandler):
 				}
 				response_output(self, {
 					'role': 'assistant',
-					'content': '```json\n' + json.dumps(final, separators=(',', ':')) + '\n```',
+					'content': 'Summary:\n\n```json\n' + json.dumps(final, separators=(',', ':')) + '\n```\n',
 				})
 				return
 			if self.__class__.mode == 'malformed_choice':
@@ -592,6 +592,10 @@ def main():
 					for request in AgentModelHandler.requests):
 				raise RuntimeError('deprecated reasoning object was sent: %r' % (
 					AgentModelHandler.requests,))
+			if any('response_format' in request
+					for request in AgentModelHandler.requests):
+				raise RuntimeError('response_format was sent without --response-schema: %r' % (
+					AgentModelHandler.requests,))
 			with open(debug_file, encoding='utf-8') as debug:
 				debug_events = [json.loads(line) for line in debug]
 			tool_events = [event for event in debug_events
@@ -615,7 +619,7 @@ def main():
 				[agent, '--service', '127.0.0.1:%d' % replay_port,
 				 '--base-url', 'http://127.0.0.1:%d/v1' % model_port,
 				 '--model', 'test-model', '--evidence-mode', 'digest',
-				 '-df', digest_debug_file,
+				 '--response-schema', '-df', digest_debug_file,
 				 trace, 'ask', 'Digest the evidence.'],
 				text=True,
 				stdout=subprocess.PIPE,
@@ -624,6 +628,12 @@ def main():
 			)
 			if digest.returncode != 0:
 				raise RuntimeError('digest-mode lava-agent failed: stdout=%r stderr=%r' % (digest.stdout, digest.stderr))
+			if any(request.get('response_format', {}).get('type') != 'json_schema'
+					or request['response_format'].get('json_schema', {}).get('name') != 'investigation_result'
+					or request['response_format']['json_schema'].get('strict') is not True
+					for request in AgentModelHandler.requests):
+				raise RuntimeError('response_format schema was not sent with --response-schema: %r' % (
+					AgentModelHandler.requests,))
 			digest_output = json.loads(digest.stdout)
 			if digest_output['status'] != 'answered':
 				raise RuntimeError('digest-mode run was not answered: %r' % digest_output)

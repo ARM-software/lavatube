@@ -34,6 +34,7 @@ static void agent_usage()
 	printf("--base-url URL         OpenAI-compatible API base (or LAVA_AGENT_BASE_URL)\n");
 	printf("--model MODEL          Local model name (or LAVA_AGENT_MODEL)\n");
 	printf("--reasoning-effort E   Model reasoning effort (or LAVA_AGENT_REASONING_EFFORT)\n");
+	printf("--response-schema      Send response_format JSON schema in model requests\n");
 	printf("--api-key KEY          API key, empty or none for no auth (or LAVA_AGENT_API_KEY, default ollama)\n");
 }
 
@@ -233,6 +234,7 @@ int main(int argc, char** argv)
 		else if (option == "--base-url" && index < argc) runtime_options.base_url = argv[index++];
 		else if (option == "--model" && index < argc) runtime_options.model = argv[index++];
 		else if (option == "--reasoning-effort" && index < argc) runtime_options.reasoning_effort = argv[index++];
+		else if (option == "--response-schema") runtime_options.response_schema = true;
 		else if (option == "--api-key" && index < argc)
 		{
 			runtime_options.api_key = argv[index++];

@@ -20,6 +20,7 @@ struct agent_runtime_options
 	uint32_t max_tool_calls = 32;
 	size_t max_output_bytes = 32768;
 	bool digest_evidence = false;
+	bool response_schema = false;
 	FILE* debug_file = nullptr;
 	bool verbose = false;
 };
