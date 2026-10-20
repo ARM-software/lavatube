@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
 """Run one model-sweep scenario against one model and dump the raw result.
 
-Usage: testrunner.py <scenario name> <model name> <output file>
+Usage: testrunner.py [options] <scenario name> <model name> <output file>
 
 The scenario name is a key in scenarios.json (e.g. 'mipmap') and the model
 name is a model_id in models.json (e.g. 'ministral-3b-2512').
+
+Options:
+  -re, --reasoning-effort LEVEL   Reasoning effort (default: from models.json, or low)
 
 Inputs (next to this script):
 * models.json    - the model matrix (see tests/models/models.json)
@@ -23,7 +26,6 @@ The agent's debug transcript is written next to the output file as
 model_response, tool_call, model_error); for budget_exhausted results it
 shows what the model was doing in its final rounds, which helps decide
 whether more budget or a higher reasoning level would have helped.
-Reasoning level is ignored for now (no --reasoning-effort is passed).
 
 Exit codes: 0 = agent finished (check the result's status field),
 1 = agent finished with an error result, 2 = runner-side failure.
@@ -167,19 +169,78 @@ def api_key_for(model, providers):
 	return value
 
 
-def run_agent(agent, port, model, trace, question, providers, debug_file):
+RESPONSE_TYPES = {
+	'text': 'text',
+	'free_text': 'text',
+	'free-text': 'text',
+	'api': 'api',
+	'api_name': 'api',
+	'api-name': 'api',
+	'integer': 'integer',
+	'int': 'integer',
+	'boolean': 'boolean',
+	'bool': 'boolean',
+}
+
+
+def normalize_response_type(value):
+	if value is None:
+		return 'text'
+	if isinstance(value, str) and value in RESPONSE_TYPES:
+		return RESPONSE_TYPES[value]
+	raise ValueError('invalid response_type %r (expected text, api, integer, or boolean)' % (value,))
+
+
+def validate_expected_answer(response_type, answer):
+	if response_type == 'text' or answer is None:
+		return
+	if response_type == 'boolean' and not isinstance(answer, bool):
+		raise ValueError('boolean scenario expected bool answer, got %r' % (answer,))
+	if response_type == 'integer' and (not isinstance(answer, int) or isinstance(answer, bool)):
+		raise ValueError('integer scenario expected int answer, got %r' % (answer,))
+	if response_type == 'api' and not isinstance(answer, str):
+		raise ValueError('api scenario expected str answer, got %r' % (answer,))
+
+
+def judge_result(result, response_type, expected):
+	if response_type == 'text' or expected is None:
+		return None, None
+	status = result.get('status')
+	if status != 'answered':
+		return 'fail', 'auto-judged (%s): status=%s, expected %r' % (response_type, status, expected)
+	conclusion = result.get('conclusion')
+	if response_type == 'boolean':
+		matched = isinstance(conclusion, bool) and conclusion is expected
+	elif response_type == 'integer':
+		matched = isinstance(conclusion, int) and not isinstance(conclusion, bool) and conclusion == expected
+	elif response_type == 'api':
+		matched = isinstance(conclusion, str) and isinstance(expected, str) and conclusion.strip() == expected.strip()
+	else:
+		return None, None
+	if matched:
+		return 'pass', 'auto-judged (%s): %r' % (response_type, conclusion)
+	return 'fail', 'auto-judged (%s): got %r, expected %r' % (response_type, conclusion, expected)
+
+
+def run_agent(agent, port, model, trace, question, providers, debug_file, response_type='text', reasoning_effort=None):
 	api_model = model['model_id']
 	provider = provider_for(model, providers)
 	base_url = model.get('base_url', provider.get('base_url'))
 	if not base_url:
 		raise RuntimeError('no base_url for provider %r or model %r' % (
 			model['provider'], model['model_id']))
+	effort = reasoning_effort if reasoning_effort is not None else model.get('reasoning_effort')
+	if effort in ('null', 'none', 'off', '', None):
+		effort = None
 	command = [
 		agent,
 		'--service', '127.0.0.1:%d' % port,
 		'--base-url', base_url,
 		'--model', api_model,
+		'--response-type', response_type,
 	]
+	if effort is not None:
+		command += ['--reasoning-effort', str(effort)]
 	if model.get('response_schema'):
 		command.append('--response-schema')
 	command += [
@@ -285,9 +346,9 @@ def error_envelope(message, context):
 	output = {
 		'schema_version': 1,
 		'status': 'error',
+		'evidence': [],
 		'conclusion': 'testrunner failed: ' + message,
 		'confidence': 0.0,
-		'evidence': [],
 		'unresolved': [message],
 		'usage': {'rounds': 0, 'calls': 0},
 	}
@@ -325,22 +386,41 @@ def main(argv=None):
 	if argv and argv[0] in ('-h', '--help'):
 		print(__doc__)
 		return 0
-	if len(argv) != 3:
-		usage_error('expected 3 arguments')
-	output_file = argv[2]
+	reasoning_effort = None
+	clean_argv = []
+	arg_index = 0
+	while arg_index < len(argv):
+		arg = argv[arg_index]
+		if arg in ('-re', '--reasoning-effort') and arg_index + 1 < len(argv):
+			reasoning_effort = argv[arg_index + 1]
+			arg_index += 2
+		elif arg.startswith('--reasoning-effort='):
+			reasoning_effort = arg.split('=', 1)[1]
+			arg_index += 1
+		else:
+			clean_argv.append(arg)
+			arg_index += 1
+	if len(clean_argv) != 3:
+		usage_error('expected 3 positional arguments')
+	output_file = clean_argv[2]
 	run_started = time.monotonic()
 
 	models_doc = load_json(MODELS_FILE)
 	scenarios = load_json(SCENARIOS_FILE)
-	if argv[0] not in scenarios:
-		usage_error('unknown scenario %r; available: %s' % (argv[0], ', '.join(scenarios.keys())))
-	scenario_name = argv[0]
+	if clean_argv[0] not in scenarios:
+		usage_error('unknown scenario %r; available: %s' % (clean_argv[0], ', '.join(scenarios.keys())))
+	scenario_name = clean_argv[0]
 	scenario = scenarios[scenario_name]
+	try:
+		response_type = normalize_response_type(scenario.get('response_type'))
+		validate_expected_answer(response_type, scenario.get('answer'))
+	except ValueError as error:
+		usage_error('scenario %s: %s' % (scenario_name, error))
 	models = models_doc['models']
-	model = next((item for item in models if item['model_id'] == argv[1]), None)
+	model = next((item for item in models if item['model_id'] == clean_argv[1]), None)
 	if model is None:
 		usage_error('unknown model %r; available: %s' % (
-			argv[1], ', '.join(item['model_id'] for item in models)))
+			clean_argv[1], ', '.join(item['model_id'] for item in models)))
 	if model.get('type') != 'chat':
 		usage_error('model %s (%s) is not a chat model' % (model['model_id'], model['name']))
 	if model.get('available') is False:
@@ -354,10 +434,18 @@ def main(argv=None):
 	agent = os.path.join(BUILD_DIR, 'lava-agent')
 	cli = os.path.join(BUILD_DIR, 'lava-cli')
 	providers = models_doc.get('providers', {})
+	if reasoning_effort is not None:
+		effort = None if reasoning_effort in ('null', 'none', 'off', '') else reasoning_effort
+	else:
+		effort = model.get('reasoning_effort')
+		if effort in ('null', 'none', 'off', ''):
+			effort = None
 	context = {
 		'scenario': scenario_name,
 		'model': model['name'],
 		'model_id': model['model_id'],
+		'response_type': response_type,
+		'reasoning_effort': effort,
 	}
 	debug_file = output_file + '.debug.jsonl'
 
@@ -378,13 +466,20 @@ def main(argv=None):
 		wait_for_paused(cli, port, replay_process, replay_output)
 		run_setup_steps(cli, port, scenario.get('setup', []))
 		agent_started = time.monotonic()
-		result, agent_rc = run_agent(agent, port, model, trace, scenario['question'], providers, debug_file)
+		result, agent_rc = run_agent(
+			agent, port, model, trace, scenario['question'], providers, debug_file,
+			response_type, effort)
 		agent_seconds = time.monotonic() - agent_started
 	except RuntimeError as error:
 		result = error_envelope(str(error), context)
 		result['runner']['debug_file'] = debug_file
 		result['runner']['wall_clock_seconds'] = round(time.monotonic() - run_started, 1)
 		result['runner']['replay_output'] = replay_tail(replay_output)
+		verdict, notes = judge_result(result, response_type, scenario.get('answer'))
+		if verdict is not None:
+			result['runner']['expected_answer'] = scenario['answer']
+			result['runner']['accepted'] = verdict
+			result['runner']['judge_notes'] = notes
 		write_output(output_file, result)
 		sys.stderr.write('testrunner: %s\n' % error)
 		return 2
@@ -396,12 +491,20 @@ def main(argv=None):
 	result['runner']['agent_seconds'] = round(agent_seconds, 1)
 	result['runner']['wall_clock_seconds'] = round(time.monotonic() - run_started, 1)
 	result['runner']['debug_file'] = debug_file
+	verdict, notes = judge_result(result, response_type, scenario.get('answer'))
+	if verdict is not None:
+		result['runner']['expected_answer'] = scenario['answer']
+		result['runner']['accepted'] = verdict
+		result['runner']['judge_notes'] = notes
 	apply_cost(result, model)
 	write_output(output_file, result)
 	if result.get('status') == 'budget_exhausted':
 		print_debug_digest(debug_file)
+	status_label = str(result.get('status'))
+	if verdict is not None:
+		status_label += ' [%s]' % verdict
 	print('%s x %s: %s (wall %.1fs, agent %.1fs) -> %s (debug: %s)' % (
-		scenario_name, model['name'], result.get('status'),
+		scenario_name, model['name'], status_label,
 		result['runner']['wall_clock_seconds'], result['runner']['agent_seconds'], output_file, debug_file))
 	return agent_rc
 

@@ -32,9 +32,12 @@ REPO_DIR = os.path.dirname(os.path.dirname(os.path.dirname(
 	os.path.abspath(__file__))))
 DEFAULT_RESULTS_DIR = os.path.join(REPO_DIR, 'results')
 MODELS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'models.json')
+SCENARIOS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'scenarios.json')
 
 sys.path.insert(0, os.path.join(REPO_DIR, 'external', 'tracetooltests', 'scripts'))
 import vulkan_spec
+
+from testrunner import judge_result, normalize_response_type
 
 FIELDNAMES = [
 	'scenario', 'model', 'model_id', 'provider', 'runset', 'run', 'status',
@@ -224,7 +227,21 @@ def result_key_for(results_dir, filename):
 	return dir_label + '/' + os.path.basename(filename)
 
 
-def parse_file(path, models, vk_names, results_dir):
+def auto_judge_doc(doc, scenario, scenarios):
+	runner = doc.get('runner') or {}
+	if runner.get('accepted') in ('pass', 'fail'):
+		return runner['accepted'], runner.get('judge_notes', '')
+	spec = scenarios.get(scenario) if isinstance(scenarios, dict) else None
+	if not isinstance(spec, dict):
+		return None, None
+	try:
+		response_type = normalize_response_type(spec.get('response_type'))
+	except ValueError:
+		return None, None
+	return judge_result(doc, response_type, spec.get('answer'))
+
+
+def parse_file(path, models, vk_names, results_dir, scenarios=None):
 	base = os.path.basename(path)
 	doc = json.load(open(path))
 	runner = doc.get('runner', {})
@@ -269,6 +286,9 @@ def parse_file(path, models, vk_names, results_dir):
 			('wall_clock_seconds', 'wall_seconds')):
 		if src in runner:
 			row[dst] = runner[src]
+	auto_verdict, auto_notes = auto_judge_doc(doc, scenario, scenarios)
+	row['_auto_accepted'] = auto_verdict
+	row['_auto_notes'] = auto_notes
 	row['_bad_tools'] = bad_tools
 	row['_bad_apis'] = bad_apis
 	row['_path'] = path
@@ -324,21 +344,38 @@ def write_csv(rows, csv_file):
 def rescan(models, results_dir):
 	csv_file = os.path.join(results_dir, 'results.csv')
 	vk_names = load_vulkan_names()
+	scenarios = {}
+	if os.path.exists(SCENARIOS_FILE):
+		with open(SCENARIOS_FILE, encoding='utf-8') as f:
+			scenarios = json.load(f)
 	rows = []
 	for path in sorted(glob.glob(os.path.join(results_dir, '*.json'))):
 		base = os.path.basename(path)
 		if base == 'results.json' or 'debug' in base:
 			continue
 		try:
-			rows.append(parse_file(path, models, vk_names, results_dir))
+			rows.append(parse_file(path, models, vk_names, results_dir, scenarios))
 		except (ValueError, KeyError, OSError) as e:
 			print('skipping %s: %s' % (base, e), file=sys.stderr)
 	rows = assign_runs(rows)
 	judged = load_judgements(csv_file)
 	stale = 0
+	today = datetime.date.today().isoformat()
 	for r in rows:
 		key = r['result_file']
 		old = judged.get(key) or judged.get(os.path.basename(key))
+		if old and old.get('accepted') in ('pass', 'fail') and old.get('judged_hash') == r['_hash']:
+			r['accepted'] = old.get('accepted', '')
+			r['judge_notes'] = old.get('judge_notes', '')
+			r['judged_at'] = old.get('judged_at', '')
+			r['judged_hash'] = old.get('judged_hash', '')
+			continue
+		if r.get('_auto_accepted') in ('pass', 'fail'):
+			r['accepted'] = r['_auto_accepted']
+			r['judge_notes'] = r.get('_auto_notes') or ''
+			r['judged_at'] = today
+			r['judged_hash'] = r['_hash']
+			continue
 		if not old:
 			r['accepted'] = ''
 			r['judge_notes'] = ''

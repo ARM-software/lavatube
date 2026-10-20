@@ -9,6 +9,14 @@
 #include "agent_tools.h"
 #include "llm_usage.h"
 
+enum class agent_response_type
+{
+	text,
+	api,
+	integer,
+	boolean,
+};
+
 struct agent_runtime_options
 {
 	std::string api_key;
@@ -21,6 +29,7 @@ struct agent_runtime_options
 	size_t max_output_bytes = 32768;
 	bool digest_evidence = false;
 	bool response_schema = false;
+	agent_response_type response_type = agent_response_type::text;
 	FILE* debug_file = nullptr;
 	bool verbose = false;
 };
@@ -52,7 +61,7 @@ private:
 
 	http_response post(const Json::Value& request, uint64_t remaining_milliseconds) const;
 	Json::Value request(const Json::Value& messages, bool with_tools) const;
-	Json::Value finish(const std::string& status, const std::string& conclusion,
+	Json::Value finish(const std::string& status, const Json::Value& conclusion,
 		double confidence, const Json::Value& unresolved, uint32_t rounds,
 		uint32_t calls, const Json::Value* model_evidence = nullptr) const;
 	bool parse_final(const std::string& text, Json::Value& final, std::string& error) const;

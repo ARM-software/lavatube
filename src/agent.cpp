@@ -35,7 +35,33 @@ static void agent_usage()
 	printf("--model MODEL          Local model name (or LAVA_AGENT_MODEL)\n");
 	printf("--reasoning-effort E   Model reasoning effort (or LAVA_AGENT_REASONING_EFFORT)\n");
 	printf("--response-schema      Send response_format JSON schema in model requests\n");
+	printf("--response-type TYPE   Expected conclusion type: text (default), api, integer, or boolean\n");
 	printf("--api-key KEY          API key, empty or none for no auth (or LAVA_AGENT_API_KEY, default ollama)\n");
+}
+
+static bool agent_parse_response_type(const std::string& text, agent_response_type& value)
+{
+	if (text == "text" || text == "free_text" || text == "free-text")
+	{
+		value = agent_response_type::text;
+		return true;
+	}
+	if (text == "api" || text == "api_name" || text == "api-name")
+	{
+		value = agent_response_type::api;
+		return true;
+	}
+	if (text == "integer" || text == "int")
+	{
+		value = agent_response_type::integer;
+		return true;
+	}
+	if (text == "boolean" || text == "bool")
+	{
+		value = agent_response_type::boolean;
+		return true;
+	}
+	return false;
 }
 
 static std::string agent_environment(const char* name, const char* fallback, bool allow_empty = false)
@@ -126,9 +152,9 @@ static Json::Value agent_error_envelope(const std::string& message)
 	Json::Value output;
 	output["schema_version"] = 1;
 	output["status"] = "error";
+	output["evidence"] = Json::Value(Json::arrayValue);
 	output["conclusion"] = message;
 	output["confidence"] = 0.0;
-	output["evidence"] = Json::Value(Json::arrayValue);
 	output["unresolved"] = Json::Value(Json::arrayValue);
 	output["unresolved"].append(message);
 	output["usage"]["rounds"] = 0;
@@ -169,6 +195,7 @@ int main(int argc, char** argv)
 	if (runtime_options.api_key == "none") runtime_options.api_key.clear();
 	runtime_options.model = agent_environment("LAVA_AGENT_MODEL", "gemma4:latest");
 	runtime_options.reasoning_effort = agent_environment("LAVA_AGENT_REASONING_EFFORT", "");
+	if (runtime_options.reasoning_effort == "none" || runtime_options.reasoning_effort == "null") runtime_options.reasoning_effort.clear();
 	agent_tools_options tool_options;
 	std::string debug_filename;
 	std::string error;
@@ -233,8 +260,19 @@ int main(int argc, char** argv)
 		}
 		else if (option == "--base-url" && index < argc) runtime_options.base_url = argv[index++];
 		else if (option == "--model" && index < argc) runtime_options.model = argv[index++];
-		else if (option == "--reasoning-effort" && index < argc) runtime_options.reasoning_effort = argv[index++];
+		else if (option == "--reasoning-effort" && index < argc)
+		{
+			runtime_options.reasoning_effort = argv[index++];
+			if (runtime_options.reasoning_effort == "none" || runtime_options.reasoning_effort == "null") runtime_options.reasoning_effort.clear();
+		}
 		else if (option == "--response-schema") runtime_options.response_schema = true;
+		else if (option == "--response-type" && index < argc)
+		{
+			if (!agent_parse_response_type(argv[index++], runtime_options.response_type))
+			{
+				error = "Invalid --response-type value (expected text, api, integer, or boolean)";
+			}
+		}
 		else if (option == "--api-key" && index < argc)
 		{
 			runtime_options.api_key = argv[index++];

@@ -23,16 +23,65 @@
   },
   "models": [
     {
-      "provider": "LocalOllama",
-      "name": "Gemma 4 12B",
-      "model_id": "gemma4:12b-16k",
+      "provider": "Local",
+      "name": "Gemma 4 E2B-IT-Q8",
+      "model_id": "gemma-4-e2b-it-q8_0-aa129d2f",
+      "type": "chat",
+      "pricing_per_mtok_usd": {
+        "input": 0.0,
+        "cached": 0.0,
+        "output": 0.0
+      },
+      "reasoning_effort": "low"
+    },
+    {
+      "provider": "Local",
+      "name": "Gemma 4 12B-IT-Q4_K_M (local)",
+      "model_id": "gemma-4-12b-it-q4_k_m-e9a883db",
+      "type": "chat",
+      "pricing_per_mtok_usd": {
+        "input": 0.0,
+        "cached": 0.0,
+        "output": 0.0
+      },
+      "reasoning_effort": "low"
+    },
+    {
+      "provider": "Local",
+      "name": "Qwen 3.5 8B-bf16",
+      "model_id": "qwen3.5-0.8b-bf16-28036dc5",
+      "type": "chat",
+      "pricing_per_mtok_usd": {
+        "input": 0.0,
+        "cached": 0.0,
+        "output": 0.0
+      },
+      "reasoning_effort": "low"
+    },
+    {
+      "provider": "Local",
+      "name": "Ministral 3 3B-Q8 (local)",
+      "model_id": "ministral-3-3b-instruct-2512-q8_0-7d6dacd2",
+      "type": "chat",
+      "pricing_per_mtok_usd": {
+        "input": 0.0,
+        "cached": 0.0,
+        "output": 0.0
+      },
+      "reasoning_effort": "low"
+    },
+    {
+      "provider": "Local",
+      "name": "DeepSeek R1 Distill Llama 8B-Q8 (local)",
+      "model_id": "deepseek-r1-distill-llama-8b-q8_0-d7d4d191",
       "type": "chat",
       "response_schema": false,
       "pricing_per_mtok_usd": {
         "input": 0.0,
         "cached": 0.0,
         "output": 0.0
-      }
+      },
+      "reasoning_effort": "low"
     },
     {
       "provider": "Mistral",
@@ -44,7 +93,8 @@
         "input": 0.5,
         "cached": 0.05,
         "output": 1.5
-      }
+      },
+      "reasoning_effort": null
     },
     {
       "provider": "Mistral",
@@ -56,7 +106,8 @@
         "input": 1.5,
         "cached": 0.15,
         "output": 7.5
-      }
+      },
+      "reasoning_effort": null
     },
     {
       "provider": "Mistral",
@@ -78,7 +129,8 @@
           "high",
           "xhigh"
         ]
-      }
+      },
+      "reasoning_effort": null
     },
     {
       "provider": "Mistral",
@@ -90,7 +142,8 @@
         "input": 0.2,
         "cached": 0.02,
         "output": 0.2
-      }
+      },
+      "reasoning_effort": null
     },
     {
       "provider": "Mistral",
@@ -102,7 +155,8 @@
         "input": 0.15,
         "cached": 0.015,
         "output": 0.15
-      }
+      },
+      "reasoning_effort": null
     },
     {
       "provider": "Mistral",
@@ -114,7 +168,8 @@
         "input": 0.1,
         "cached": 0.01,
         "output": 0.1
-      }
+      },
+      "reasoning_effort": null
     },
     {
       "provider": "Mistral",
@@ -126,7 +181,8 @@
         "input": 1.4,
         "cached": 0.14,
         "output": 4.4
-      }
+      },
+      "reasoning_effort": null
     },
     {
       "provider": "Mistral",
@@ -138,7 +194,8 @@
         "input": 0.3,
         "cached": 0.03,
         "output": 0.9
-      }
+      },
+      "reasoning_effort": null
     },
     {
       "provider": "Entrim",
@@ -158,7 +215,8 @@
           "medium",
           "high"
         ]
-      }
+      },
+      "reasoning_effort": "low"
     },
     {
       "provider": "Entrim",
@@ -171,7 +229,8 @@
         "input": 0.9,
         "cached": 0.15,
         "output": 3.0
-      }
+      },
+      "reasoning_effort": "low"
     },
     {
       "provider": "Entrim",
@@ -183,7 +242,8 @@
         "input": 0.1,
         "cached": 0.0175,
         "output": 0.35
-      }
+      },
+      "reasoning_effort": "low"
     },
     {
       "provider": "Entrim",
@@ -195,7 +255,8 @@
         "input": 0.09,
         "cached": 0.015,
         "output": 0.17
-      }
+      },
+      "reasoning_effort": "low"
     },
     {
       "provider": "Entrim",
@@ -215,7 +276,8 @@
           "medium",
           "high"
         ]
-      }
+      },
+      "reasoning_effort": "low"
     },
     {
       "provider": "Entrim",
@@ -227,7 +289,8 @@
         "input": 0.1,
         "cached": 0.04,
         "output": 0.4
-      }
+      },
+      "reasoning_effort": "low"
     },
     {
       "provider": "Entrim",
@@ -246,7 +309,8 @@
           "medium",
           "xhigh"
         ]
-      }
+      },
+      "reasoning_effort": "low"
     },
     {
       "provider": "Entrim",
@@ -258,7 +322,8 @@
         "input": 0.05,
         "cached": 0.025,
         "output": 0.25
-      }
+      },
+      "reasoning_effort": "low"
     },
     {
       "provider": "Entrim",
@@ -271,7 +336,8 @@
         "input": 0.1,
         "cached": 0.04,
         "output": 0.3
-      }
+      },
+      "reasoning_effort": "low"
     },
     {
       "provider": "Entrim",
@@ -284,7 +350,8 @@
         "input": 0.05,
         "cached": 0.025,
         "output": 0.25
-      }
+      },
+      "reasoning_effort": "low"
     },
     {
       "provider": "Runware",
@@ -297,7 +364,8 @@
         "input": 0.102,
         "cached": 0.012,
         "output": 0.297
-      }
+      },
+      "reasoning_effort": "low"
     },
     {
       "provider": "OpenAI",
@@ -328,7 +396,8 @@
           "xhigh",
           "max"
         ]
-      }
+      },
+      "reasoning_effort": "low"
     },
     {
       "provider": "OpenAI",
@@ -360,7 +429,8 @@
           "xhigh",
           "max"
         ]
-      }
+      },
+      "reasoning_effort": "low"
     },
     {
       "provider": "OpenAI",
@@ -392,7 +462,8 @@
           "xhigh",
           "max"
         ]
-      }
+      },
+      "reasoning_effort": "low"
     },
     {
       "provider": "OpenAI",
@@ -424,7 +495,8 @@
           "xhigh",
           "max"
         ]
-      }
+      },
+      "reasoning_effort": "low"
     }
   ]
 }

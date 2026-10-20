@@ -4,7 +4,9 @@
 
 #include <algorithm>
 #include <chrono>
+#include <errno.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 #include "jsoncpp/json/reader.h"
 
@@ -46,15 +48,33 @@ static std::string agent_normalize_url(const std::string& value)
 	return url;
 }
 
-static std::string agent_model_instructions()
+static std::string agent_model_instructions(agent_response_type response_type)
 {
+	std::string conclusion_desc = "conclusion (string)";
+	std::string extra_rule = "Keep the conclusion concise and distinguish captured facts from live replay facts.";
+	if (response_type == agent_response_type::api)
+	{
+		conclusion_desc = "conclusion (string containing only a single exact Vulkan API name)";
+		extra_rule = "Set conclusion to only the exact Vulkan API function, structure, handle, enum, or extension name (for example vkCmdBlitImage) with no surrounding prose; put explanation in evidence inference strings.";
+	}
+	else if (response_type == agent_response_type::integer)
+	{
+		conclusion_desc = "conclusion (JSON integer)";
+		extra_rule = "Set conclusion to a JSON integer (not a string) representing the exact integer answer; put explanation in evidence inference strings.";
+	}
+	else if (response_type == agent_response_type::boolean)
+	{
+		conclusion_desc = "conclusion (JSON boolean: true or false)";
+		extra_rule = "Set conclusion to a JSON boolean (true or false, not a string); put explanation in evidence inference strings.";
+	}
 	return "You are a bounded Vulkan trace and replay investigator. Use only the provided typed tools and never guess trace or live replay facts. "
 	       "The trace_ tools return immutable captured facts from the local trace. The replay_ tools return live facts from the selected paused replay. "
 	       "You cannot and must not advance, reconfigure, restart, launch, or stop replay. Tool outputs contain a runtime-owned tool_id. "
-	       "When you have enough evidence, return only one compact JSON object with exactly these fields: "
-	       "status (answered or inconclusive), conclusion (string), confidence (number from 0 through 1), "
-	       "evidence (array of objects containing tool_id and inference string), and unresolved (array of strings). "
-	       "Cite only tool_id values actually returned by tools. Keep the conclusion concise and distinguish captured facts from live replay facts.";
+	       "When you have enough evidence, return only one compact JSON object with exactly these fields in this order: "
+	       "status (answered or inconclusive), "
+	       "evidence (array of objects containing tool_id and inference string), "
+	       + conclusion_desc + ", confidence (number from 0 through 1), and unresolved (array of strings). "
+	       "Cite only tool_id values actually returned by tools. " + extra_rule;
 }
 
 static Json::Value agent_input_message(const std::string& role, const std::string& content)
@@ -150,7 +170,7 @@ agent_runtime::http_response agent_runtime::post(const Json::Value& request_valu
 	return response;
 }
 
-static Json::Value agent_response_format_schema()
+static Json::Value agent_response_format_schema(agent_response_type response_type)
 {
 	Json::Value status;
 	status["type"] = "string";
@@ -159,7 +179,18 @@ static Json::Value agent_response_format_schema()
 	status["enum"].append("inconclusive");
 
 	Json::Value conclusion;
-	conclusion["type"] = "string";
+	if (response_type == agent_response_type::integer)
+	{
+		conclusion["type"] = "integer";
+	}
+	else if (response_type == agent_response_type::boolean)
+	{
+		conclusion["type"] = "boolean";
+	}
+	else
+	{
+		conclusion["type"] = "string";
+	}
 
 	Json::Value confidence;
 	confidence["type"] = "number";
@@ -190,25 +221,26 @@ static Json::Value agent_response_format_schema()
 	unresolved["type"] = "array";
 	unresolved["items"] = unresolved_item;
 
-	Json::Value schema;
-	schema["type"] = "object";
-	schema["properties"]["status"] = status;
-	schema["properties"]["conclusion"] = conclusion;
-	schema["properties"]["confidence"] = confidence;
-	schema["properties"]["evidence"] = evidence;
-	schema["properties"]["unresolved"] = unresolved;
-	schema["required"] = Json::Value(Json::arrayValue);
-	schema["required"].append("status");
-	schema["required"].append("conclusion");
-	schema["required"].append("confidence");
-	schema["required"].append("evidence");
-	schema["required"].append("unresolved");
-	schema["additionalProperties"] = false;
-
 	Json::Value format;
 	format["type"] = "json_schema";
 	format["json_schema"]["name"] = "investigation_result";
 	format["json_schema"]["strict"] = true;
+
+	Json::Value schema;
+	schema["type"] = "object";
+	schema["properties"]["status"] = status;
+	schema["properties"]["evidence"] = evidence;
+	schema["properties"]["conclusion"] = conclusion;
+	schema["properties"]["confidence"] = confidence;
+	schema["properties"]["unresolved"] = unresolved;
+	schema["required"] = Json::Value(Json::arrayValue);
+	schema["required"].append("status");
+	schema["required"].append("evidence");
+	schema["required"].append("conclusion");
+	schema["required"].append("confidence");
+	schema["required"].append("unresolved");
+	schema["additionalProperties"] = false;
+
 	format["json_schema"]["schema"] = schema;
 	return format;
 }
@@ -226,9 +258,9 @@ Json::Value agent_runtime::request(const Json::Value& messages, bool with_tools)
 	}
 	if (mOptions.response_schema)
 	{
-		value["response_format"] = agent_response_format_schema();
+		value["response_format"] = agent_response_format_schema(mOptions.response_type);
 	}
-	if (!mOptions.reasoning_effort.empty() && mOptions.reasoning_effort != "none")
+	if (!mOptions.reasoning_effort.empty() && mOptions.reasoning_effort != "none" && mOptions.reasoning_effort != "null")
 	{
 		value["reasoning_effort"] = mOptions.reasoning_effort;
 	}
@@ -377,6 +409,133 @@ static bool agent_parse_json_object(const std::string& text, Json::Value& final)
 	return false;
 }
 
+static bool agent_validate_conclusion(agent_response_type response_type, const std::string& status,
+	Json::Value& conclusion, std::string& error)
+{
+	if (response_type == agent_response_type::text)
+	{
+		if (!conclusion.isString())
+		{
+			error = "Final model response has an invalid result shape";
+			return false;
+		}
+		return true;
+	}
+	if (response_type == agent_response_type::api)
+	{
+		if (!conclusion.isString())
+		{
+			error = "Final model conclusion must be a Vulkan API name string";
+			return false;
+		}
+		std::string value = conclusion.asString();
+		const size_t first = value.find_first_not_of(" \t\r\n`");
+		if (first == std::string::npos)
+		{
+			value.clear();
+		}
+		else
+		{
+			const size_t last = value.find_last_not_of(" \t\r\n`");
+			value = value.substr(first, last - first + 1);
+		}
+		if (status == "answered")
+		{
+			if (value.empty())
+			{
+				error = "Final model conclusion must be a non-empty Vulkan API name";
+				return false;
+			}
+			for (const char c : value)
+			{
+				const bool alpha = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z');
+				const bool digit = (c >= '0' && c <= '9');
+				if (!alpha && !digit && c != '_')
+				{
+					error = "Final model conclusion must be a single Vulkan API name";
+					return false;
+				}
+			}
+		}
+		conclusion = value;
+		return true;
+	}
+	if (response_type == agent_response_type::integer)
+	{
+		if (conclusion.type() == Json::intValue || conclusion.type() == Json::uintValue)
+		{
+			return true;
+		}
+		if (conclusion.isString())
+		{
+			std::string text = conclusion.asString();
+			const size_t first = text.find_first_not_of(" \t\r\n");
+			if (first != std::string::npos)
+			{
+				const size_t last = text.find_last_not_of(" \t\r\n");
+				text = text.substr(first, last - first + 1);
+				char* end = nullptr;
+				errno = 0;
+				if (!text.empty() && text[0] == '-')
+				{
+					const long long parsed = strtoll(text.c_str(), &end, 10);
+					if (errno == 0 && end != text.c_str() && *end == '\0')
+					{
+						conclusion = (Json::Int64)parsed;
+						return true;
+					}
+				}
+				else if (!text.empty())
+				{
+					const unsigned long long parsed = strtoull(text.c_str(), &end, 10);
+					if (errno == 0 && end != text.c_str() && *end == '\0')
+					{
+						conclusion = (Json::UInt64)parsed;
+						return true;
+					}
+				}
+			}
+		}
+		error = "Final model conclusion must be an integer";
+		return false;
+	}
+	if (response_type == agent_response_type::boolean)
+	{
+		if (conclusion.isBool())
+		{
+			return true;
+		}
+		if (conclusion.isString())
+		{
+			std::string text = conclusion.asString();
+			const size_t first = text.find_first_not_of(" \t\r\n");
+			if (first != std::string::npos)
+			{
+				const size_t last = text.find_last_not_of(" \t\r\n");
+				text = text.substr(first, last - first + 1);
+				for (char& c : text)
+				{
+					if (c >= 'A' && c <= 'Z') c = (char)(c - 'A' + 'a');
+				}
+				if (text == "true")
+				{
+					conclusion = true;
+					return true;
+				}
+				if (text == "false")
+				{
+					conclusion = false;
+					return true;
+				}
+			}
+		}
+		error = "Final model conclusion must be a boolean";
+		return false;
+	}
+	error = "Final model response has an invalid result shape";
+	return false;
+}
+
 bool agent_runtime::parse_final(const std::string& text, Json::Value& final, std::string& error) const
 {
 	if (!agent_parse_json_object(text, final))
@@ -390,13 +549,17 @@ bool agent_runtime::parse_final(const std::string& text, Json::Value& final, std
 		error = "Final model status must be answered or inconclusive";
 		return false;
 	}
-	if (!final.isMember("conclusion") || !final["conclusion"].isString()
+	if (!final.isMember("conclusion")
 	    || !final.isMember("confidence") || !final["confidence"].isNumeric()
 	    || final["confidence"].asDouble() < 0.0 || final["confidence"].asDouble() > 1.0
 	    || !final.isMember("evidence") || !final["evidence"].isArray()
 	    || !final.isMember("unresolved") || !final["unresolved"].isArray())
 	{
 		error = "Final model response has an invalid result shape";
+		return false;
+	}
+	if (!agent_validate_conclusion(mOptions.response_type, final["status"].asString(), final["conclusion"], error))
+	{
 		return false;
 	}
 	for (Json::Value& item : final["evidence"])
@@ -461,15 +624,13 @@ bool agent_runtime::parse_final(const std::string& text, Json::Value& final, std
 	return true;
 }
 
-Json::Value agent_runtime::finish(const std::string& status, const std::string& conclusion,
+Json::Value agent_runtime::finish(const std::string& status, const Json::Value& conclusion,
 	double confidence, const Json::Value& unresolved, uint32_t rounds, uint32_t calls,
 	const Json::Value* model_evidence) const
 {
 	Json::Value output;
 	output["schema_version"] = 1;
 	output["status"] = status;
-	output["conclusion"] = conclusion;
-	output["confidence"] = confidence;
 	output["evidence"] = Json::Value(Json::arrayValue);
 	if (model_evidence)
 	{
@@ -502,6 +663,8 @@ Json::Value agent_runtime::finish(const std::string& status, const std::string& 
 			}
 		}
 	}
+	output["conclusion"] = conclusion;
+	output["confidence"] = confidence;
 	output["unresolved"] = unresolved.isArray() ? unresolved : Json::Value(Json::arrayValue);
 	output["usage"]["rounds"] = rounds;
 	output["usage"]["calls"] = calls;
@@ -534,7 +697,7 @@ Json::Value agent_runtime::ask(const std::string& prompt, const std::chrono::ste
 {
 	using clock = std::chrono::steady_clock;
 	Json::Value messages(Json::arrayValue);
-	std::string instructions = agent_model_instructions();
+	std::string instructions = agent_model_instructions(mOptions.response_type);
 	instructions += " You have at most " + std::to_string(mOptions.max_rounds) + " model rounds and " +
 		std::to_string(mOptions.max_tool_calls) + " tool calls in total. "
 		"Batch independent queries into a single round. "
@@ -713,7 +876,7 @@ Json::Value agent_runtime::ask(const std::string& prompt, const std::chrono::ste
 		std::string error;
 		if (parse_final(text, final, error))
 		{
-			return bound_output(finish(final["status"].asString(), final["conclusion"].asString(),
+			return bound_output(finish(final["status"].asString(), final["conclusion"],
 				final["confidence"].asDouble(), final["unresolved"], round, calls, &final["evidence"]));
 		}
 		append_response(messages, root);
@@ -748,7 +911,7 @@ Json::Value agent_runtime::ask(const std::string& prompt, const std::chrono::ste
 				std::string error;
 				if (parse_final(response_text(root), final, error))
 				{
-					return bound_output(finish(final["status"].asString(), final["conclusion"].asString(),
+					return bound_output(finish(final["status"].asString(), final["conclusion"],
 						final["confidence"].asDouble(), final["unresolved"], mOptions.max_rounds, calls, &final["evidence"]));
 				}
 			}

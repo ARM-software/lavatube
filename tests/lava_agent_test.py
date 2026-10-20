@@ -308,6 +308,71 @@ class AgentModelHandler(http.server.BaseHTTPRequestHandler):
 					'content': json.dumps(final, separators=(',', ':')),
 				})
 				return
+			if self.__class__.mode == 'boolean_answer':
+				final = {
+					'status': 'answered',
+					'conclusion': True,
+					'confidence': 1.0,
+					'evidence': [],
+					'unresolved': [],
+				}
+				response_output(self, {
+					'role': 'assistant',
+					'content': json.dumps(final, separators=(',', ':')),
+				})
+				return
+			if self.__class__.mode == 'integer_answer':
+				if round_number == 1:
+					bad = {
+						'status': 'answered',
+						'conclusion': 'not an int',
+						'confidence': 1.0,
+						'evidence': [],
+						'unresolved': [],
+					}
+					response_output(self, {
+						'role': 'assistant',
+						'content': json.dumps(bad, separators=(',', ':')),
+					})
+					return
+				final = {
+					'status': 'answered',
+					'conclusion': 42,
+					'confidence': 1.0,
+					'evidence': [],
+					'unresolved': [],
+				}
+				response_output(self, {
+					'role': 'assistant',
+					'content': json.dumps(final, separators=(',', ':')),
+				})
+				return
+			if self.__class__.mode == 'api_answer':
+				if round_number == 1:
+					bad = {
+						'status': 'answered',
+						'conclusion': 'It uses vkCmdBlitImage.',
+						'confidence': 1.0,
+						'evidence': [],
+						'unresolved': [],
+					}
+					response_output(self, {
+						'role': 'assistant',
+						'content': json.dumps(bad, separators=(',', ':')),
+					})
+					return
+				final = {
+					'status': 'answered',
+					'conclusion': '`vkCmdBlitImage`',
+					'confidence': 1.0,
+					'evidence': [],
+					'unresolved': [],
+				}
+				response_output(self, {
+					'role': 'assistant',
+					'content': json.dumps(final, separators=(',', ':')),
+				})
+				return
 			if round_number == 1:
 				response_output(self, {
 					'role': 'assistant',
@@ -492,10 +557,22 @@ def main():
 	if help_result.returncode != 0 or '-s/--sandbox LEVEL' not in help_result.stdout:
 		raise RuntimeError('lava-agent help omitted sandboxing: %r %r' % (
 			help_result.stdout, help_result.stderr))
-	for option in ('--max-rounds', '--max-tool-calls', '--reasoning-effort'):
+	for option in ('--max-rounds', '--max-tool-calls', '--reasoning-effort', '--response-type'):
 		if option not in help_result.stdout:
 			raise RuntimeError('lava-agent help omitted %s: %r' % (
 				option, help_result.stdout))
+	invalid_response_type = subprocess.run(
+		[agent, '--response-type', 'bogus'],
+		text=True,
+		stdout=subprocess.PIPE,
+		stderr=subprocess.PIPE,
+		timeout=5,
+	)
+	invalid_output = json.loads(invalid_response_type.stdout)
+	if (invalid_response_type.returncode != 2 or invalid_output['status'] != 'error'
+			or 'Invalid --response-type value' not in invalid_output['conclusion']):
+		raise RuntimeError('invalid --response-type was accepted: %r %r' % (
+			invalid_response_type.stdout, invalid_response_type.stderr))
 	invalid_sandbox = subprocess.run(
 		[agent, '--sandbox', '0'],
 		text=True,
@@ -851,6 +928,77 @@ def main():
 				or 'choices[0].message' not in malformed_output['unresolved'][0]):
 			raise RuntimeError('malformed choice test failed: %r %r' % (
 				malformed_run.stdout, malformed_run.stderr))
+
+		AgentModelHandler.mode = 'boolean_answer'
+		AgentModelHandler.requests = []
+		bool_run = subprocess.run(
+			[agent, '--service', '127.0.0.1:%d' % replay_port,
+			 '--base-url', 'http://127.0.0.1:%d/v1' % model_port,
+			 '--model', 'test-model', '--response-schema', '--response-type', 'boolean',
+			 trace, 'ask', 'Boolean answer test.'],
+			text=True,
+			stdout=subprocess.PIPE,
+			stderr=subprocess.PIPE,
+			timeout=30,
+		)
+		bool_output = json.loads(bool_run.stdout)
+		bool_schema = AgentModelHandler.requests[0]['response_format']['json_schema']['schema']
+		bool_req = list(bool_schema['required'])
+		if (bool_run.returncode != 0
+				or bool_output['status'] != 'answered'
+				or bool_output['conclusion'] is not True
+				or bool_schema['properties']['conclusion']['type'] != 'boolean'
+				or bool_req.index('evidence') > bool_req.index('conclusion')
+				or 'JSON boolean' not in AgentModelHandler.requests[0]['messages'][0]['content']):
+			raise RuntimeError('boolean response-type test failed: %r %r' % (
+				bool_run.stdout, AgentModelHandler.requests))
+
+		AgentModelHandler.mode = 'integer_answer'
+		AgentModelHandler.requests = []
+		int_run = subprocess.run(
+			[agent, '--service', '127.0.0.1:%d' % replay_port,
+			 '--base-url', 'http://127.0.0.1:%d/v1' % model_port,
+			 '--model', 'test-model', '--response-schema', '--response-type', 'integer',
+			 trace, 'ask', 'Integer answer test.'],
+			text=True,
+			stdout=subprocess.PIPE,
+			stderr=subprocess.PIPE,
+			timeout=30,
+		)
+		int_output = json.loads(int_run.stdout)
+		int_schema = AgentModelHandler.requests[0]['response_format']['json_schema']['schema']
+		if (int_run.returncode != 0
+				or int_output['status'] != 'answered'
+				or int_output['conclusion'] != 42
+				or isinstance(int_output['conclusion'], bool)
+				or int_output['usage']['rounds'] != 2
+				or int_schema['properties']['conclusion']['type'] != 'integer'
+				or 'JSON integer' not in AgentModelHandler.requests[0]['messages'][0]['content']):
+			raise RuntimeError('integer response-type test failed: %r %r' % (
+				int_run.stdout, AgentModelHandler.requests))
+
+		AgentModelHandler.mode = 'api_answer'
+		AgentModelHandler.requests = []
+		api_run = subprocess.run(
+			[agent, '--service', '127.0.0.1:%d' % replay_port,
+			 '--base-url', 'http://127.0.0.1:%d/v1' % model_port,
+			 '--model', 'test-model', '--response-schema', '--response-type', 'api',
+			 trace, 'ask', 'API answer test.'],
+			text=True,
+			stdout=subprocess.PIPE,
+			stderr=subprocess.PIPE,
+			timeout=30,
+		)
+		api_output = json.loads(api_run.stdout)
+		api_schema = AgentModelHandler.requests[0]['response_format']['json_schema']['schema']
+		if (api_run.returncode != 0
+				or api_output['status'] != 'answered'
+				or api_output['conclusion'] != 'vkCmdBlitImage'
+				or api_output['usage']['rounds'] != 2
+				or api_schema['properties']['conclusion']['type'] != 'string'
+				or 'single exact Vulkan API name' not in AgentModelHandler.requests[0]['messages'][0]['content']):
+			raise RuntimeError('api response-type test failed: %r %r' % (
+				api_run.stdout, AgentModelHandler.requests))
 
 		if AgentModelHandler.failure is not None:
 			raise AgentModelHandler.failure
