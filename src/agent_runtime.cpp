@@ -7,6 +7,7 @@
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <thread>
 
 #include "jsoncpp/json/reader.h"
 
@@ -28,6 +29,45 @@ static size_t agent_curl_write(char* data, size_t size, size_t count, void* poin
 	const size_t bytes = size * count;
 	static_cast<std::string*>(pointer)->append(data, bytes);
 	return bytes;
+}
+
+static size_t agent_curl_header(char* buffer, size_t size, size_t nitems, void* userdata)
+{
+	const size_t total = size * nitems;
+	uint32_t* retry_after_seconds = reinterpret_cast<uint32_t*>(userdata);
+	if (!retry_after_seconds || total < 12) return total;
+	const char* prefix = "retry-after:";
+	const size_t prefix_len = 12;
+	if (total > prefix_len)
+	{
+		bool match = true;
+		for (size_t i = 0; i < prefix_len; i++)
+		{
+			if (tolower((unsigned char)buffer[i]) != prefix[i])
+			{
+				match = false;
+				break;
+			}
+		}
+		if (match)
+		{
+			size_t pos = prefix_len;
+			while (pos < total && (buffer[pos] == ' ' || buffer[pos] == '\t')) pos++;
+			uint32_t val = 0;
+			bool has_digits = false;
+			while (pos < total && buffer[pos] >= '0' && buffer[pos] <= '9')
+			{
+				val = val * 10 + (uint32_t)(buffer[pos] - '0');
+				has_digits = true;
+				pos++;
+			}
+			if (has_digits && val > 0)
+			{
+				*retry_after_seconds = val;
+			}
+		}
+	}
+	return total;
 }
 
 static std::string agent_normalize_url(const std::string& value)
@@ -131,43 +171,98 @@ agent_runtime::agent_runtime(const agent_runtime_options& options, const agent_t
 
 agent_runtime::http_response agent_runtime::post(const Json::Value& request_value, uint64_t remaining_milliseconds) const
 {
-	http_response response;
-	CURL* curl = curl_easy_init();
-	if (!curl)
+	using clock = std::chrono::steady_clock;
+	const clock::time_point deadline = clock::now() + std::chrono::milliseconds(remaining_milliseconds);
+	uint32_t attempt = 0;
+	const uint32_t max_attempts = 5;
+
+	while (true)
 	{
-		response.error = "curl_easy_init failed";
-		return response;
+		const clock::time_point now = clock::now();
+		if (now >= deadline)
+		{
+			http_response timeout_response;
+			timeout_response.timed_out = true;
+			timeout_response.error = "Timeout was reached";
+			return timeout_response;
+		}
+		const uint64_t current_remaining = (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(deadline - now).count();
+
+		http_response response;
+		CURL* curl = curl_easy_init();
+		if (!curl)
+		{
+			response.error = "curl_easy_init failed";
+			return response;
+		}
+		const std::string body = agent_json_compact(request_value);
+		struct curl_slist* headers = nullptr;
+		headers = curl_slist_append(headers, "Content-Type: application/json");
+		if (!mOptions.api_key.empty() && mOptions.api_key != "none")
+		{
+			const std::string authorization = "Authorization: Bearer " + mOptions.api_key;
+			headers = curl_slist_append(headers, authorization.c_str());
+		}
+		uint32_t retry_after_seconds = 0;
+		const std::string url = agent_normalize_url(mOptions.base_url);
+		curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+		curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+		curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body.c_str());
+		curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, (long)body.size());
+		curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, agent_curl_write);
+		curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response.body);
+		curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, agent_curl_header);
+		curl_easy_setopt(curl, CURLOPT_HEADERDATA, &retry_after_seconds);
+		curl_easy_setopt(curl, CURLOPT_USERAGENT, "lava-agent/0.0.2");
+		curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
+		curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT_MS, (long)std::min<uint64_t>(current_remaining, 10000));
+		curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, (long)std::min<uint64_t>(current_remaining, 60000));
+		const CURLcode code = curl_easy_perform(curl);
+		if (code != CURLE_OK)
+		{
+			response.timed_out = code == CURLE_OPERATION_TIMEDOUT;
+			response.error = curl_easy_strerror(code);
+		}
+		curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &response.code);
+		curl_slist_free_all(headers);
+		curl_easy_cleanup(curl);
+		response.ok = code == CURLE_OK && response.code >= 200 && response.code < 300;
+
+		const bool is_rate_limit_or_server_error = (response.code == 429 || response.code == 500
+			|| response.code == 502 || response.code == 503 || response.code == 504);
+		const bool is_retryable = is_rate_limit_or_server_error || response.timed_out;
+
+		if (response.ok || !is_retryable || attempt >= max_attempts)
+		{
+			return response;
+		}
+
+		attempt++;
+		uint32_t backoff_ms = retry_after_seconds > 0
+			? std::min<uint32_t>(retry_after_seconds, 15) * 1000
+			: std::min<uint32_t>(1000 * (1 << (attempt - 1)), 15000);
+
+		const clock::time_point now_after = clock::now();
+		if (now_after + std::chrono::milliseconds(backoff_ms + 5000) >= deadline)
+		{
+			return response;
+		}
+
+		if (mOptions.verbose)
+		{
+			if (response.timed_out)
+			{
+				fprintf(stderr, "lava-agent: Request timed out, retrying in %u ms (attempt %u/%u)...\n",
+					backoff_ms, attempt, max_attempts);
+			}
+			else
+			{
+				fprintf(stderr, "lava-agent: HTTP %ld, retrying in %u ms (attempt %u/%u)...\n",
+					response.code, backoff_ms, attempt, max_attempts);
+			}
+		}
+		std::this_thread::sleep_for(std::chrono::milliseconds(backoff_ms));
 	}
-	const std::string body = agent_json_compact(request_value);
-	struct curl_slist* headers = nullptr;
-	headers = curl_slist_append(headers, "Content-Type: application/json");
-	if (!mOptions.api_key.empty() && mOptions.api_key != "none")
-	{
-		const std::string authorization = "Authorization: Bearer " + mOptions.api_key;
-		headers = curl_slist_append(headers, authorization.c_str());
-	}
-	const std::string url = agent_normalize_url(mOptions.base_url);
-	curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
-	curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
-	curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body.c_str());
-	curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, (long)body.size());
-	curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, agent_curl_write);
-	curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response.body);
-	curl_easy_setopt(curl, CURLOPT_USERAGENT, "lava-agent/0.0.2");
-	curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
-	curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT_MS, (long)std::min<uint64_t>(remaining_milliseconds, 10000));
-	curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, (long)std::min<uint64_t>(remaining_milliseconds, LONG_MAX));
-	const CURLcode code = curl_easy_perform(curl);
-	if (code != CURLE_OK)
-	{
-		response.timed_out = code == CURLE_OPERATION_TIMEDOUT;
-		response.error = curl_easy_strerror(code);
-	}
-	curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &response.code);
-	curl_slist_free_all(headers);
-	curl_easy_cleanup(curl);
-	response.ok = code == CURLE_OK && response.code >= 200 && response.code < 300;
-	return response;
 }
 
 static Json::Value agent_response_format_schema(agent_response_type response_type)

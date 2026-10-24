@@ -247,14 +247,14 @@
     },
     {
       "provider": "Entrim",
-      "name": "DeepSeek V4 Flash",
-      "model_id": "deepseek-ai/DeepSeek-V4-Flash",
+      "name": "DeepSeek V4 Flash 1017",
+      "model_id": "deepseek-ai/DeepSeek-V4.1-Flash-1017",
       "type": "chat",
       "response_schema": false,
       "pricing_per_mtok_usd": {
-        "input": 0.09,
-        "cached": 0.015,
-        "output": 0.17
+        "input": 0.02,
+        "cached": 0.05,
+        "output": 0.6
       },
       "reasoning_effort": "low"
     },

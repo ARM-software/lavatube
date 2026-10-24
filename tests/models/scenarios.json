@@ -40,5 +40,33 @@
     "response_type": "boolean",
     "answer": false,
     "setup": []
+  },
+  "nested_commandbuffers": {
+    "trace_file": "build/vulkan_nested_commandbuffers.api",
+    "question": "Does this trace execute nested command buffers, where a secondary command buffer executes another command buffer?",
+    "response_type": "boolean",
+    "answer": true,
+    "setup": []
+  },
+  "dedicated_allocation": {
+    "trace_file": "build/vulkan_dedicated_memory.api",
+    "question": "Does this trace use dedicated memory allocation (VkMemoryDedicatedAllocateInfo) for any device memory allocation?",
+    "response_type": "boolean",
+    "answer": true,
+    "setup": []
+  },
+  "as_build_count": {
+    "trace_file": "build/vulkan_as_2.api",
+    "question": "How many acceleration structure objects (VkAccelerationStructureKHR) are created in this trace?",
+    "response_type": "integer",
+    "answer": 2,
+    "setup": []
+  },
+  "sync2_queue_submit": {
+    "trace_file": "build/vulkan_synchronization2.api",
+    "question": "What Vulkan API command performs queue submission in this trace file?",
+    "response_type": "api",
+    "answer": "vkQueueSubmit2KHR",
+    "setup": []
   }
 }

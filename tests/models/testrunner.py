@@ -214,7 +214,10 @@ def judge_result(result, response_type, expected):
 	elif response_type == 'integer':
 		matched = isinstance(conclusion, int) and not isinstance(conclusion, bool) and conclusion == expected
 	elif response_type == 'api':
-		matched = isinstance(conclusion, str) and isinstance(expected, str) and conclusion.strip() == expected.strip()
+		if isinstance(expected, (list, tuple, set)):
+			matched = isinstance(conclusion, str) and conclusion.strip() in [str(e).strip() for e in expected]
+		else:
+			matched = isinstance(conclusion, str) and isinstance(expected, str) and conclusion.strip() == expected.strip()
 	else:
 		return None, None
 	if matched:
