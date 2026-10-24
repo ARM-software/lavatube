@@ -299,6 +299,8 @@ def print_debug_digest(debug_file):
 						'failed': 0,
 						'final': not tool_calls,
 						'content': (message.get('content') or '')[:200],
+						'duration_ms': event.get('duration_ms'),
+						'ttfb_ms': event.get('ttfb_ms'),
 					}
 					rounds.append(current)
 				elif event.get('type') == 'tool_call' and current is not None:
@@ -315,8 +317,14 @@ def print_debug_digest(debug_file):
 		return
 	print('debug digest (%d model rounds, %s):' % (len(rounds), debug_file))
 	for index, round_ in enumerate(rounds, 1):
+		timing = ''
+		if round_.get('duration_ms') is not None:
+			if round_.get('ttfb_ms') is not None:
+				timing = ' [%dms, TTFB %dms]' % (round_['duration_ms'], round_['ttfb_ms'])
+			else:
+				timing = ' [%dms]' % round_['duration_ms']
 		if round_['final']:
-			note = 'final answer'
+			note = 'final answer' + timing
 			if round_['finish_reason'] == 'length':
 				note += ' [TRUNCATED: finish_reason=length]'
 			print('  round %d: %s' % (index, note))
@@ -329,7 +337,7 @@ def print_debug_digest(debug_file):
 				if len(part) > 70:
 					part = part[:67] + '...'
 				parts.append(part + (' [FAILED]' if failed else ''))
-			print('  round %d: tools: %s' % (index, ', '.join(parts) or '(none)'))
+			print('  round %d%s: tools: %s' % (index, timing, ', '.join(parts) or '(none)'))
 	total_calls = sum(len(round_['calls']) for round_ in rounds)
 	failed_calls = sum(round_['failed'] for round_ in rounds)
 	distinct_calls = set((name, args) for round_ in rounds for name, args, _ in round_['calls'])
@@ -494,6 +502,19 @@ def main(argv=None):
 	result['runner']['agent_seconds'] = round(agent_seconds, 1)
 	result['runner']['wall_clock_seconds'] = round(time.monotonic() - run_started, 1)
 	result['runner']['debug_file'] = debug_file
+	if os.path.exists(debug_file):
+		try:
+			ttfbs = []
+			with open(debug_file, encoding='utf-8') as df:
+				for line in df:
+					ev = json.loads(line)
+					if ev.get('type') == 'model_response' and isinstance(ev.get('ttfb_ms'), int):
+						ttfbs.append(ev['ttfb_ms'])
+			if ttfbs:
+				result['runner']['avg_ttfb_ms'] = round(sum(ttfbs) / len(ttfbs), 1)
+				result['runner']['max_ttfb_ms'] = max(ttfbs)
+		except Exception:
+			pass
 	verdict, notes = judge_result(result, response_type, scenario.get('answer'))
 	if verdict is not None:
 		result['runner']['expected_answer'] = scenario['answer']
@@ -506,9 +527,13 @@ def main(argv=None):
 	status_label = str(result.get('status'))
 	if verdict is not None:
 		status_label += ' [%s]' % verdict
-	print('%s x %s: %s (wall %.1fs, agent %.1fs) -> %s (debug: %s)' % (
+	ttfb_label = ''
+	if 'avg_ttfb_ms' in result['runner']:
+		ttfb_label = ', avg TTFB %.0fms' % result['runner']['avg_ttfb_ms']
+	print('%s x %s: %s (wall %.1fs, agent %.1fs%s) -> %s (debug: %s)' % (
 		scenario_name, model['name'], status_label,
-		result['runner']['wall_clock_seconds'], result['runner']['agent_seconds'], output_file, debug_file))
+		result['runner']['wall_clock_seconds'], result['runner']['agent_seconds'],
+		ttfb_label, output_file, debug_file))
 	return agent_rc
 
 

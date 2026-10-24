@@ -49,6 +49,8 @@ private:
 		long code = 0;
 		std::string body;
 		std::string error;
+		uint64_t ttfb_ms = 0;
+		uint64_t total_ms = 0;
 	};
 
 	struct tool_record
@@ -68,7 +70,8 @@ private:
 	std::string response_text(const Json::Value& response) const;
 	void append_response(Json::Value& messages, const Json::Value& response) const;
 	void debug_event(const std::string& type, const Json::Value& value,
-		uint64_t duration_milliseconds = UINT64_MAX) const;
+		uint64_t duration_milliseconds = UINT64_MAX,
+		uint64_t ttfb_milliseconds = UINT64_MAX) const;
 	void add_provider_usage(const Json::Value& response);
 	Json::Value bounded_tool_result(const agent_tool_result& result, size_t& total_bytes, bool& exhausted) const;
 	Json::Value bound_output(Json::Value output) const;

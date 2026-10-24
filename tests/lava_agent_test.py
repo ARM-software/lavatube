@@ -687,6 +687,10 @@ def main():
 					for event in tool_events + model_events):
 				raise RuntimeError('debug transcript omitted durations: %r' % (
 					debug_events,))
+			if any(not isinstance(event.get('ttfb_ms'), int)
+					for event in model_events):
+				raise RuntimeError('debug transcript omitted ttfb_ms: %r' % (
+					debug_events,))
 
 		AgentModelHandler.mode = 'normal'
 		AgentModelHandler.requests = []

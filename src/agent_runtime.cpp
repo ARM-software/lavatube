@@ -224,6 +224,16 @@ agent_runtime::http_response agent_runtime::post(const Json::Value& request_valu
 			response.error = curl_easy_strerror(code);
 		}
 		curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &response.code);
+		double ttfb_secs = 0.0;
+		if (curl_easy_getinfo(curl, CURLINFO_STARTTRANSFER_TIME, &ttfb_secs) == CURLE_OK && ttfb_secs >= 0.0)
+		{
+			response.ttfb_ms = (uint64_t)(ttfb_secs * 1000.0 + 0.5);
+		}
+		double total_secs = 0.0;
+		if (curl_easy_getinfo(curl, CURLINFO_TOTAL_TIME, &total_secs) == CURLE_OK && total_secs >= 0.0)
+		{
+			response.total_ms = (uint64_t)(total_secs * 1000.0 + 0.5);
+		}
 		curl_slist_free_all(headers);
 		curl_easy_cleanup(curl);
 		response.ok = code == CURLE_OK && response.code >= 200 && response.code < 300;
@@ -257,8 +267,16 @@ agent_runtime::http_response agent_runtime::post(const Json::Value& request_valu
 			}
 			else
 			{
-				fprintf(stderr, "lava-agent: HTTP %ld, retrying in %u ms (attempt %u/%u)...\n",
-					response.code, backoff_ms, attempt, max_attempts);
+				if (response.ttfb_ms > 0)
+				{
+					fprintf(stderr, "lava-agent: HTTP %ld (TTFB %llu ms), retrying in %u ms (attempt %u/%u)...\n",
+						response.code, (unsigned long long)response.ttfb_ms, backoff_ms, attempt, max_attempts);
+				}
+				else
+				{
+					fprintf(stderr, "lava-agent: HTTP %ld, retrying in %u ms (attempt %u/%u)...\n",
+						response.code, backoff_ms, attempt, max_attempts);
+				}
 			}
 		}
 		std::this_thread::sleep_for(std::chrono::milliseconds(backoff_ms));
@@ -363,13 +381,14 @@ Json::Value agent_runtime::request(const Json::Value& messages, bool with_tools)
 }
 
 void agent_runtime::debug_event(const std::string& type, const Json::Value& value,
-	uint64_t duration_milliseconds) const
+	uint64_t duration_milliseconds, uint64_t ttfb_milliseconds) const
 {
 	if (!mOptions.debug_file) return;
 	Json::Value event;
 	event["type"] = type;
 	event["value"] = value;
 	if (duration_milliseconds != UINT64_MAX) event["duration_ms"] = (Json::UInt64)duration_milliseconds;
+	if (ttfb_milliseconds != UINT64_MAX) event["ttfb_ms"] = (Json::UInt64)ttfb_milliseconds;
 	fprintf(mOptions.debug_file, "%s\n", agent_json_compact(event).c_str());
 	fflush(mOptions.debug_file);
 }
@@ -829,12 +848,17 @@ Json::Value agent_runtime::ask(const std::string& prompt, const std::chrono::ste
 		const http_response response = post(request_value, std::max<uint64_t>(remaining, 1));
 		const uint64_t model_milliseconds = (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(
 			clock::now() - model_started).count();
+		if (mOptions.verbose)
+		{
+			fprintf(stderr, "lava-agent: model round %u response received in %llu ms (TTFB: %llu ms)\n",
+				round, (unsigned long long)model_milliseconds, (unsigned long long)response.ttfb_ms);
+		}
 		if (!response.ok)
 		{
 			Json::Value event;
 			event["http_code"] = (Json::Int64)response.code;
 			event["error"] = response.error;
-			debug_event("model_error", event, model_milliseconds);
+			debug_event("model_error", event, model_milliseconds, response.ttfb_ms);
 			Json::Value unresolved(Json::arrayValue);
 			if (response.timed_out)
 			{
@@ -857,13 +881,13 @@ Json::Value agent_runtime::ask(const std::string& prompt, const std::chrono::ste
 			Json::Value event;
 			event["http_code"] = (Json::Int64)response.code;
 			event["error"] = "invalid response JSON";
-			debug_event("model_error", event, model_milliseconds);
+			debug_event("model_error", event, model_milliseconds, response.ttfb_ms);
 			Json::Value unresolved(Json::arrayValue);
 			unresolved.append("The model returned invalid response JSON.");
 			return bound_output(finish("error", "The local model response could not be parsed.", 0.0, unresolved, round, calls));
 		}
 		add_provider_usage(root);
-		debug_event("model_response", root, model_milliseconds);
+		debug_event("model_response", root, model_milliseconds, response.ttfb_ms);
 
 		if (!root.isMember("choices") || !root["choices"].isArray() || root["choices"].empty()
 		    || !root["choices"][0].isMember("message") || !root["choices"][0]["message"].isObject())
@@ -996,12 +1020,17 @@ Json::Value agent_runtime::ask(const std::string& prompt, const std::chrono::ste
 			const http_response response = post(salvage_request, std::max<uint64_t>(remaining, 1));
 			const uint64_t model_milliseconds = (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(
 				clock::now() - model_started).count();
+			if (mOptions.verbose)
+			{
+				fprintf(stderr, "lava-agent: salvage request completed in %llu ms (TTFB: %llu ms)\n",
+					(unsigned long long)model_milliseconds, (unsigned long long)response.ttfb_ms);
+			}
 			Json::Value root;
 			Json::Reader reader;
 			if (response.ok && reader.parse(response.body, root, false))
 			{
 				add_provider_usage(root);
-				debug_event("model_response", root, model_milliseconds);
+				debug_event("model_response", root, model_milliseconds, response.ttfb_ms);
 				Json::Value final;
 				std::string error;
 				if (parse_final(response_text(root), final, error))
@@ -1015,7 +1044,7 @@ Json::Value agent_runtime::ask(const std::string& prompt, const std::chrono::ste
 				Json::Value event;
 				event["http_code"] = (Json::Int64)response.code;
 				event["error"] = response.ok ? "invalid response JSON" : response.error;
-				debug_event("model_error", event, model_milliseconds);
+				debug_event("model_error", event, model_milliseconds, response.ttfb_ms);
 			}
 		}
 	}
