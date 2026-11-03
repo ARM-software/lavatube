@@ -217,7 +217,7 @@ uint8_t lava_file_reader::step()
 	current_packet_end = current_packet_start + current_packet_size;
 	current.packet_type = r;
 	current_packet_contains_shader_data = false;
-	if (r != PACKET_VULKAN_API_CALL && r != PACKET_OPENCL_API_CALL) current.call_id = UINT16_MAX;
+	if (r != PACKET_VULKAN_API_CALL && r != PACKET_OPENCL_API_CALL && r != PACKET_LITERT_LM_API_CALL) current.call_id = UINT16_MAX;
 	printed_current_packet = false;
 	print_packet_frame = current.frame;
 	if (is_isolated())
@@ -335,6 +335,205 @@ uint16_t lava_file_reader::read_opencl_apicall()
 	return apicall;
 }
 
+static std::string read_optional_string(lava_file_reader& reader)
+{
+	const char* value = reader.read_string();
+	return value ? std::string(value) : std::string();
+}
+
+static Json::Value handle_index_json(uint32_t index)
+{
+	if (index == CONTAINER_INVALID_INDEX || index == CONTAINER_NULL_VALUE) return Json::nullValue;
+	return Json::Value(index);
+}
+
+uint16_t lava_file_reader::read_litert_lm_apicall()
+{
+	const uint16_t apicall = parent->litert_lm_dictionary.at(read_uint16_t());
+	(void)read_uint32_t();
+	current.call_id = apicall;
+	current.packet_type = PACKET_LITERT_LM_API_CALL;
+	DLOG2("[t%02u f%u %06d] %s", current.thread, current.frame,
+	      (int)parent->thread_packet_numbers->at(current.thread).load(std::memory_order_relaxed) + 1,
+	      litert_lm_get_function_name(apicall));
+
+	litert_lm_api_packet& packet = current_litert_lm_packet;
+	packet.valid = true;
+	switch (apicall)
+	{
+	case LITERT_LM_litert_lm_set_min_log_level:
+		packet.log_level = read_int32_t();
+		packet.result = read_int32_t();
+		packet.has_result = true;
+		break;
+	case LITERT_LM_litert_lm_engine_settings_create:
+		packet.pointer_flags = read_uint8_t();
+		packet.model_path = read_optional_string(*this);
+		packet.backend_str = read_optional_string(*this);
+		packet.vision_backend_str = read_optional_string(*this);
+		packet.audio_backend_str = read_optional_string(*this);
+		packet.settings_index = read_uint32_t();
+		packet.result = read_int32_t();
+		packet.has_result = true;
+		break;
+	case LITERT_LM_litert_lm_engine_settings_delete:
+		packet.settings_index = read_uint32_t();
+		break;
+	case LITERT_LM_litert_lm_engine_create:
+		packet.pointer_flags = read_uint8_t();
+		packet.settings_index = read_uint32_t();
+		packet.engine_index = read_uint32_t();
+		packet.result = read_int32_t();
+		packet.has_result = true;
+		break;
+	case LITERT_LM_litert_lm_engine_delete:
+		packet.engine_index = read_uint32_t();
+		break;
+	case LITERT_LM_litert_lm_session_config_create:
+		packet.pointer_flags = read_uint8_t();
+		packet.config_index = read_uint32_t();
+		packet.result = read_int32_t();
+		packet.has_result = true;
+		break;
+	case LITERT_LM_litert_lm_session_config_set_max_output_tokens:
+		packet.config_index = read_uint32_t();
+		packet.max_output_tokens = read_int32_t();
+		packet.result = read_int32_t();
+		packet.has_result = true;
+		break;
+	case LITERT_LM_litert_lm_sampler_params_create:
+		packet.pointer_flags = read_uint8_t();
+		packet.sampler_type = read_int32_t();
+		packet.sampler_params_index = read_uint32_t();
+		packet.result = read_int32_t();
+		packet.has_result = true;
+		break;
+	case LITERT_LM_litert_lm_sampler_params_set_top_p:
+		packet.sampler_params_index = read_uint32_t();
+		packet.top_p = read_float();
+		packet.result = read_int32_t();
+		packet.has_result = true;
+		break;
+	case LITERT_LM_litert_lm_sampler_params_set_top_k:
+		packet.sampler_params_index = read_uint32_t();
+		packet.top_k = read_int32_t();
+		packet.result = read_int32_t();
+		packet.has_result = true;
+		break;
+	case LITERT_LM_litert_lm_sampler_params_set_temperature:
+		packet.sampler_params_index = read_uint32_t();
+		packet.temperature = read_float();
+		packet.result = read_int32_t();
+		packet.has_result = true;
+		break;
+	case LITERT_LM_litert_lm_sampler_params_set_seed:
+		packet.sampler_params_index = read_uint32_t();
+		packet.seed = read_int32_t();
+		packet.result = read_int32_t();
+		packet.has_result = true;
+		break;
+	case LITERT_LM_litert_lm_session_config_set_sampler_params:
+		packet.config_index = read_uint32_t();
+		packet.sampler_params_index = read_uint32_t();
+		packet.result = read_int32_t();
+		packet.has_result = true;
+		break;
+	case LITERT_LM_litert_lm_sampler_params_delete:
+		packet.sampler_params_index = read_uint32_t();
+		break;
+	case LITERT_LM_litert_lm_session_config_delete:
+		packet.config_index = read_uint32_t();
+		break;
+	case LITERT_LM_litert_lm_engine_create_session:
+		packet.pointer_flags = read_uint8_t();
+		packet.engine_index = read_uint32_t();
+		packet.config_index = read_uint32_t();
+		packet.session_index = read_uint32_t();
+		packet.result = read_int32_t();
+		packet.has_result = true;
+		break;
+	case LITERT_LM_litert_lm_session_delete:
+		packet.session_index = read_uint32_t();
+		break;
+	case LITERT_LM_litert_lm_input_data_create:
+	{
+		packet.pointer_flags = read_uint8_t();
+		packet.input_data_type = read_int32_t();
+		packet.data_size = read_uint64_t();
+		const uint32_t stored_data_size = read_uint32_t();
+		packet.data.resize(stored_data_size);
+		if (stored_data_size > 0) read_array(packet.data.data(), stored_data_size);
+		packet.input_data_index = read_uint32_t();
+		packet.result = read_int32_t();
+		packet.has_result = true;
+		break;
+	}
+	case LITERT_LM_litert_lm_input_data_delete:
+		packet.input_data_index = read_uint32_t();
+		break;
+	case LITERT_LM_litert_lm_session_generate_content:
+	{
+		packet.pointer_flags = read_uint8_t();
+		packet.session_index = read_uint32_t();
+		packet.num_inputs = read_uint64_t();
+		const uint32_t input_count = read_uint32_t();
+		packet.input_indices.resize(input_count);
+		for (uint32_t i = 0; i < input_count; i++)
+		{
+			packet.input_indices[i] = read_uint32_t();
+		}
+		packet.responses_index = read_uint32_t();
+		packet.result = read_int32_t();
+		packet.has_result = true;
+		break;
+	}
+	case LITERT_LM_litert_lm_session_run_prefill:
+	{
+		packet.pointer_flags = read_uint8_t();
+		packet.session_index = read_uint32_t();
+		packet.num_inputs = read_uint64_t();
+		const uint32_t input_count = read_uint32_t();
+		packet.input_indices.resize(input_count);
+		for (uint32_t i = 0; i < input_count; i++)
+		{
+			packet.input_indices[i] = read_uint32_t();
+		}
+		packet.result = read_int32_t();
+		packet.has_result = true;
+		break;
+	}
+	case LITERT_LM_litert_lm_session_run_decode:
+		packet.pointer_flags = read_uint8_t();
+		packet.session_index = read_uint32_t();
+		packet.responses_index = read_uint32_t();
+		packet.result = read_int32_t();
+		packet.has_result = true;
+		break;
+	case LITERT_LM_litert_lm_responses_delete:
+		packet.responses_index = read_uint32_t();
+		break;
+	case LITERT_LM_litert_lm_responses_get_num_candidates:
+		packet.pointer_flags = read_uint8_t();
+		packet.responses_index = read_uint32_t();
+		packet.num_candidates = read_uint64_t();
+		packet.result = read_int32_t();
+		packet.has_result = true;
+		break;
+	case LITERT_LM_litert_lm_responses_get_response_text_at:
+		packet.pointer_flags = read_uint8_t();
+		packet.responses_index = read_uint32_t();
+		packet.candidate_index = read_uint64_t();
+		packet.response_text = read_optional_string(*this);
+		packet.result = read_int32_t();
+		packet.has_result = true;
+		break;
+	default:
+		ABORT("LiteRT-LM packet decoder does not support %s", litert_lm_get_function_name(apicall));
+	}
+	api_call_count++;
+	return apicall;
+}
+
 Json::Value cli_params_base_json(const callback_context& cb)
 {
 	cb.params_attachment_index = 0;
@@ -395,6 +594,7 @@ static Json::Value params_packet_json(const callback_context& cb)
 	Json::Value params;
 	const output_update_packet& update = cb.reader.current_update_packet;
 	const opencl_api_packet& opencl = cb.reader.current_opencl_packet;
+	const litert_lm_api_packet& litert_lm = cb.reader.current_litert_lm_packet;
 	if (opencl.valid)
 	{
 		if (cb.reader.current.call_id == OPENCL_clGetPlatformIDs)
@@ -438,6 +638,135 @@ static Json::Value params_packet_json(const callback_context& cb)
 			else params["num_devices"] = Json::nullValue;
 		}
 		params["result"] = opencl.result;
+	}
+	else if (litert_lm.valid)
+	{
+		switch (cb.reader.current.call_id)
+		{
+		case LITERT_LM_litert_lm_set_min_log_level:
+			params["level"] = litert_lm.log_level;
+			break;
+		case LITERT_LM_litert_lm_engine_settings_create:
+			params["model_path"] = (litert_lm.pointer_flags & 1) ? Json::Value(litert_lm.model_path) : Json::nullValue;
+			params["backend_str"] = (litert_lm.pointer_flags & 2) ? Json::Value(litert_lm.backend_str) : Json::nullValue;
+			params["vision_backend_str"] = (litert_lm.pointer_flags & 4) ? Json::Value(litert_lm.vision_backend_str) : Json::nullValue;
+			params["audio_backend_str"] = (litert_lm.pointer_flags & 8) ? Json::Value(litert_lm.audio_backend_str) : Json::nullValue;
+			params["out_settings"] = (litert_lm.pointer_flags & 16) ? handle_index_json(litert_lm.settings_index) : Json::nullValue;
+			break;
+		case LITERT_LM_litert_lm_engine_settings_delete:
+			params["settings"] = handle_index_json(litert_lm.settings_index);
+			break;
+		case LITERT_LM_litert_lm_engine_create:
+			params["settings"] = handle_index_json(litert_lm.settings_index);
+			params["out_engine"] = (litert_lm.pointer_flags & 2) ? handle_index_json(litert_lm.engine_index) : Json::nullValue;
+			break;
+		case LITERT_LM_litert_lm_engine_delete:
+			params["engine"] = handle_index_json(litert_lm.engine_index);
+			break;
+		case LITERT_LM_litert_lm_session_config_create:
+			params["out_config"] = (litert_lm.pointer_flags & 1) ? handle_index_json(litert_lm.config_index) : Json::nullValue;
+			break;
+		case LITERT_LM_litert_lm_session_config_set_max_output_tokens:
+			params["config"] = handle_index_json(litert_lm.config_index);
+			params["max_output_tokens"] = litert_lm.max_output_tokens;
+			break;
+		case LITERT_LM_litert_lm_sampler_params_create:
+			params["type"] = litert_lm.sampler_type;
+			params["out_params"] = (litert_lm.pointer_flags & 1) ? handle_index_json(litert_lm.sampler_params_index) : Json::nullValue;
+			break;
+		case LITERT_LM_litert_lm_sampler_params_set_top_p:
+			params["params"] = handle_index_json(litert_lm.sampler_params_index);
+			params["top_p"] = litert_lm.top_p;
+			break;
+		case LITERT_LM_litert_lm_sampler_params_set_top_k:
+			params["params"] = handle_index_json(litert_lm.sampler_params_index);
+			params["top_k"] = litert_lm.top_k;
+			break;
+		case LITERT_LM_litert_lm_sampler_params_set_temperature:
+			params["params"] = handle_index_json(litert_lm.sampler_params_index);
+			params["temperature"] = litert_lm.temperature;
+			break;
+		case LITERT_LM_litert_lm_sampler_params_set_seed:
+			params["params"] = handle_index_json(litert_lm.sampler_params_index);
+			params["seed"] = litert_lm.seed;
+			break;
+		case LITERT_LM_litert_lm_session_config_set_sampler_params:
+			params["config"] = handle_index_json(litert_lm.config_index);
+			params["sampler_params"] = handle_index_json(litert_lm.sampler_params_index);
+			break;
+		case LITERT_LM_litert_lm_sampler_params_delete:
+			params["params"] = handle_index_json(litert_lm.sampler_params_index);
+			break;
+		case LITERT_LM_litert_lm_session_config_delete:
+			params["config"] = handle_index_json(litert_lm.config_index);
+			break;
+		case LITERT_LM_litert_lm_engine_create_session:
+			params["engine"] = handle_index_json(litert_lm.engine_index);
+			params["config"] = handle_index_json(litert_lm.config_index);
+			params["out_session"] = (litert_lm.pointer_flags & 4) ? handle_index_json(litert_lm.session_index) : Json::nullValue;
+			break;
+		case LITERT_LM_litert_lm_session_delete:
+			params["session"] = handle_index_json(litert_lm.session_index);
+			break;
+		case LITERT_LM_litert_lm_input_data_create:
+			params["type"] = litert_lm.input_data_type;
+			params["size"] = (Json::UInt64)litert_lm.data_size;
+			if ((litert_lm.pointer_flags & 1) && litert_lm.input_data_type == 0)
+			{
+				params["text"] = std::string((const char*)litert_lm.data.data(), litert_lm.data.size());
+			}
+			params["out_input_data"] = (litert_lm.pointer_flags & 2) ? handle_index_json(litert_lm.input_data_index) : Json::nullValue;
+			break;
+		case LITERT_LM_litert_lm_input_data_delete:
+			params["input_data"] = handle_index_json(litert_lm.input_data_index);
+			break;
+		case LITERT_LM_litert_lm_session_generate_content:
+			params["session"] = handle_index_json(litert_lm.session_index);
+			params["num_inputs"] = (Json::UInt64)litert_lm.num_inputs;
+			if (litert_lm.pointer_flags & 2)
+			{
+				params["inputs"] = Json::arrayValue;
+				for (uint32_t index : litert_lm.input_indices) params["inputs"].append(handle_index_json(index));
+			}
+			else
+			{
+				params["inputs"] = Json::nullValue;
+			}
+			params["out_responses"] = (litert_lm.pointer_flags & 4) ? handle_index_json(litert_lm.responses_index) : Json::nullValue;
+			break;
+		case LITERT_LM_litert_lm_session_run_prefill:
+			params["session"] = handle_index_json(litert_lm.session_index);
+			params["num_inputs"] = (Json::UInt64)litert_lm.num_inputs;
+			if (litert_lm.pointer_flags & 2)
+			{
+				params["inputs"] = Json::arrayValue;
+				for (uint32_t index : litert_lm.input_indices) params["inputs"].append(handle_index_json(index));
+			}
+			else
+			{
+				params["inputs"] = Json::nullValue;
+			}
+			break;
+		case LITERT_LM_litert_lm_session_run_decode:
+			params["session"] = handle_index_json(litert_lm.session_index);
+			params["out_responses"] = (litert_lm.pointer_flags & 2) ? handle_index_json(litert_lm.responses_index) : Json::nullValue;
+			break;
+		case LITERT_LM_litert_lm_responses_delete:
+			params["responses"] = handle_index_json(litert_lm.responses_index);
+			break;
+		case LITERT_LM_litert_lm_responses_get_num_candidates:
+			params["responses"] = handle_index_json(litert_lm.responses_index);
+			params["out_num_candidates"] = (litert_lm.pointer_flags & 2) ? Json::Value((Json::UInt64)litert_lm.num_candidates) : Json::nullValue;
+			break;
+		case LITERT_LM_litert_lm_responses_get_response_text_at:
+			params["responses"] = handle_index_json(litert_lm.responses_index);
+			params["index"] = (Json::UInt64)litert_lm.candidate_index;
+			params["out_text"] = (litert_lm.pointer_flags & 2) ? Json::Value(litert_lm.response_text) : Json::nullValue;
+			break;
+		default:
+			break;
+		}
+		if (litert_lm.has_result) params["result"] = litert_lm.result;
 	}
 	else if (update.valid)
 	{
@@ -807,6 +1136,12 @@ void lava_reader::init_metadata(const std::string& path)
 		if (opencl_index != UINT16_MAX)
 		{
 			opencl_dictionary[trace_index] = opencl_index;
+			continue;
+		}
+		const uint16_t litert_lm_index = litert_lm_get_function_id(funcname.c_str());
+		if (litert_lm_index != UINT16_MAX)
+		{
+			litert_lm_dictionary[trace_index] = litert_lm_index;
 			continue;
 		}
 		const uint16_t retrace_index = retrace_getid(funcname.c_str()); // new index

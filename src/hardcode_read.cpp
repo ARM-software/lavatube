@@ -6783,6 +6783,7 @@ void switchboard_packet(uint8_t instrtype, lava_file_reader& reader)
 {
 	reader.current_update_packet.clear();
 	reader.current_opencl_packet.clear();
+	reader.current_litert_lm_packet.clear();
 	if (instrtype == PACKET_VULKAN_API_CALL)
 	{
 		reader.read_vulkan_apicall();
@@ -6790,6 +6791,10 @@ void switchboard_packet(uint8_t instrtype, lava_file_reader& reader)
 	else if (instrtype == PACKET_OPENCL_API_CALL)
 	{
 		reader.read_opencl_apicall();
+	}
+	else if (instrtype == PACKET_LITERT_LM_API_CALL)
+	{
+		reader.read_litert_lm_apicall();
 	}
 	else if (instrtype == PACKET_THREAD_BARRIER)
 	{

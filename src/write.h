@@ -130,6 +130,36 @@ struct opencl_layer_runtime_state
 	std::atomic_bool initialized { false };
 };
 
+struct trackedlitertlmsettings : trackable
+{
+	std::string model_name;
+	std::string backend;
+};
+
+struct trackedlitertlmengine : trackable
+{
+	uint32_t settings_index = CONTAINER_INVALID_INDEX;
+};
+
+struct trackedlitertlmsession : trackable
+{
+	uint32_t engine_index = CONTAINER_INVALID_INDEX;
+	uint32_t config_index = CONTAINER_INVALID_INDEX;
+};
+
+struct litert_lm_layer_runtime_state
+{
+	trace_remap<LiteRtLmEngineSettings*, trackedlitertlmsettings> settings_index;
+	trace_remap<LiteRtLmEngine*, trackedlitertlmengine> engine_index;
+	trace_remap<LiteRtLmSessionConfig*, trackable> session_config_index;
+	trace_remap<LiteRtLmSamplerParams*, trackable> sampler_params_index;
+	trace_remap<LiteRtLmSession*, trackedlitertlmsession> session_index;
+	trace_remap<LiteRtLmInputData*, trackable> input_data_index;
+	trace_remap<LiteRtLmResponses*, trackable> responses_index;
+	std::atomic_uint_fast64_t api_calls { 0 };
+	std::atomic_uint_fast32_t active_engines { 0 };
+};
+
 /// Per-thread controller
 class lava_file_writer : public file_writer
 {
@@ -252,6 +282,7 @@ public:
 	std::atomic_uint_fast32_t active_vulkan_instances { 0 };
 	trace_records records;
 	opencl_layer_runtime_state opencl_layer;
+	litert_lm_layer_runtime_state litert_lm_layer;
 	bool run = true;
 	bool write_output = false;
 	// Importers use tracing callbacks to create a new trace and need their normal synchronization behavior.

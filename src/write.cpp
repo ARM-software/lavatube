@@ -505,6 +505,7 @@ void lava_writer::serialize()
 	assert(!mPath.empty());
 	const bool has_opencl_calls = opencl_layer.platform_id_calls.load(std::memory_order_relaxed) != 0
 		|| opencl_layer.device_id_calls.load(std::memory_order_relaxed) != 0;
+	const bool has_litert_lm_calls = litert_lm_layer.api_calls.load(std::memory_order_relaxed) != 0;
 
 	// write dictionary to JSON file
 	std::string dict_path = mPath + "/dictionary.json";
@@ -518,6 +519,13 @@ void lava_writer::serialize()
 		for (const auto& pair : opencl_function_table())
 		{
 			jd[pair.first] = (unsigned)(OPENCL_DICTIONARY_BASE + pair.second);
+		}
+	}
+	if (has_litert_lm_calls)
+	{
+		for (const auto& pair : litert_lm_function_table())
+		{
+			jd[pair.first] = (unsigned)(LITERT_LM_DICTIONARY_BASE + pair.second);
 		}
 	}
 	write_json(dict_path, jd);
@@ -595,6 +603,16 @@ void lava_writer::serialize()
 		limits["cl_platform_id"] = opencl_layer.platform_index.size();
 		limits["cl_device_id"] = opencl_layer.device_index.size();
 	}
+	if (has_litert_lm_calls)
+	{
+		limits["LiteRtLmEngineSettings"] = litert_lm_layer.settings_index.size();
+		limits["LiteRtLmEngine"] = litert_lm_layer.engine_index.size();
+		limits["LiteRtLmSessionConfig"] = litert_lm_layer.session_config_index.size();
+		limits["LiteRtLmSamplerParams"] = litert_lm_layer.sampler_params_index.size();
+		limits["LiteRtLmSession"] = litert_lm_layer.session_index.size();
+		limits["LiteRtLmInputData"] = litert_lm_layer.input_data_index.size();
+		limits["LiteRtLmResponses"] = litert_lm_layer.responses_index.size();
+	}
 	write_json(mPath + "/limits.json", limits);
 
 	// write out tracking info for each object
@@ -620,6 +638,81 @@ void lava_writer::serialize()
 			tracking["cl_device_id"].append(value);
 		}
 	}
+	if (litert_lm_layer.settings_index.size())
+	{
+		tracking["LiteRtLmEngineSettings"] = Json::arrayValue;
+		for (const trackedlitertlmsettings* data : litert_lm_layer.settings_index.iterate())
+		{
+			Json::Value value = trackable_json(data);
+			value["index"] = data->index;
+			if (!data->model_name.empty()) value["model_name"] = data->model_name;
+			if (!data->backend.empty()) value["backend"] = data->backend;
+			tracking["LiteRtLmEngineSettings"].append(value);
+		}
+	}
+	if (litert_lm_layer.engine_index.size())
+	{
+		tracking["LiteRtLmEngine"] = Json::arrayValue;
+		for (const trackedlitertlmengine* data : litert_lm_layer.engine_index.iterate())
+		{
+			Json::Value value = trackable_json(data);
+			value["index"] = data->index;
+			value["settings_index"] = data->settings_index;
+			tracking["LiteRtLmEngine"].append(value);
+		}
+	}
+	if (litert_lm_layer.session_config_index.size())
+	{
+		tracking["LiteRtLmSessionConfig"] = Json::arrayValue;
+		for (const trackable* data : litert_lm_layer.session_config_index.iterate())
+		{
+			Json::Value value = trackable_json(data);
+			value["index"] = data->index;
+			tracking["LiteRtLmSessionConfig"].append(value);
+		}
+	}
+	if (litert_lm_layer.sampler_params_index.size())
+	{
+		tracking["LiteRtLmSamplerParams"] = Json::arrayValue;
+		for (const trackable* data : litert_lm_layer.sampler_params_index.iterate())
+		{
+			Json::Value value = trackable_json(data);
+			value["index"] = data->index;
+			tracking["LiteRtLmSamplerParams"].append(value);
+		}
+	}
+	if (litert_lm_layer.session_index.size())
+	{
+		tracking["LiteRtLmSession"] = Json::arrayValue;
+		for (const trackedlitertlmsession* data : litert_lm_layer.session_index.iterate())
+		{
+			Json::Value value = trackable_json(data);
+			value["index"] = data->index;
+			value["engine_index"] = data->engine_index;
+			value["config_index"] = data->config_index;
+			tracking["LiteRtLmSession"].append(value);
+		}
+	}
+	if (litert_lm_layer.input_data_index.size())
+	{
+		tracking["LiteRtLmInputData"] = Json::arrayValue;
+		for (const trackable* data : litert_lm_layer.input_data_index.iterate())
+		{
+			Json::Value value = trackable_json(data);
+			value["index"] = data->index;
+			tracking["LiteRtLmInputData"].append(value);
+		}
+	}
+	if (litert_lm_layer.responses_index.size())
+	{
+		tracking["LiteRtLmResponses"] = Json::arrayValue;
+		for (const trackable* data : litert_lm_layer.responses_index.iterate())
+		{
+			Json::Value value = trackable_json(data);
+			value["index"] = data->index;
+			tracking["LiteRtLmResponses"].append(value);
+		}
+	}
 	if (write_output)
 	{
 		merge_tracking_field(tracking, mInputTracking, "updates");
@@ -634,7 +727,8 @@ bool lava_writer::claim_finalization()
 	lava::lock_guard lock(frame_mutex);
 	if (!should_serialize || finalization_claimed
 	    || active_vulkan_instances.load(std::memory_order_acquire) != 0
-	    || opencl_layer.initialized.load(std::memory_order_acquire))
+	    || opencl_layer.initialized.load(std::memory_order_acquire)
+	    || litert_lm_layer.active_engines.load(std::memory_order_acquire) != 0)
 	{
 		return false;
 	}
@@ -674,7 +768,8 @@ void lava_writer::finish()
 	{
 		if (p__delete_empty_trace && records.VkDevice_index.size() == 0
 		    && opencl_layer.platform_id_calls.load(std::memory_order_relaxed) == 0
-		    && opencl_layer.device_id_calls.load(std::memory_order_relaxed) == 0)
+		    && opencl_layer.device_id_calls.load(std::memory_order_relaxed) == 0
+		    && litert_lm_layer.api_calls.load(std::memory_order_relaxed) == 0)
 		{
 			ILOG("No device was created; deleting empty trace %s", mPack.c_str());
 			erase_directory(mPath);
@@ -692,6 +787,15 @@ void lava_writer::finish()
 	opencl_layer.platform_id_calls.store(0, std::memory_order_relaxed);
 	opencl_layer.device_id_calls.store(0, std::memory_order_relaxed);
 	opencl_layer.known_platform_count.store(UINT32_MAX, std::memory_order_relaxed);
+	litert_lm_layer.settings_index.clear();
+	litert_lm_layer.engine_index.clear();
+	litert_lm_layer.session_config_index.clear();
+	litert_lm_layer.sampler_params_index.clear();
+	litert_lm_layer.session_index.clear();
+	litert_lm_layer.input_data_index.clear();
+	litert_lm_layer.responses_index.clear();
+	litert_lm_layer.api_calls.store(0, std::memory_order_relaxed);
+	litert_lm_layer.active_engines.store(0, std::memory_order_relaxed);
 	global_frame.exchange(0);
 	tid = -1;
 	preserve_output_handle_indices = true;

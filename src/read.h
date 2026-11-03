@@ -144,6 +144,74 @@ struct opencl_api_packet
 	}
 };
 
+struct litert_lm_api_packet
+{
+	bool valid = false;
+	uint8_t pointer_flags = 0;
+	int32_t log_level = 0;
+	std::string model_path;
+	std::string backend_str;
+	std::string vision_backend_str;
+	std::string audio_backend_str;
+	uint32_t settings_index = CONTAINER_INVALID_INDEX;
+	uint32_t engine_index = CONTAINER_INVALID_INDEX;
+	uint32_t config_index = CONTAINER_INVALID_INDEX;
+	uint32_t sampler_params_index = CONTAINER_INVALID_INDEX;
+	uint32_t session_index = CONTAINER_INVALID_INDEX;
+	uint32_t input_data_index = CONTAINER_INVALID_INDEX;
+	uint32_t responses_index = CONTAINER_INVALID_INDEX;
+	int32_t max_output_tokens = 0;
+	int32_t sampler_type = 0;
+	float top_p = 0.0f;
+	int32_t top_k = 0;
+	float temperature = 0.0f;
+	int32_t seed = 0;
+	int32_t input_data_type = 0;
+	uint64_t data_size = 0;
+	std::vector<uint8_t> data;
+	uint64_t num_inputs = 0;
+	std::vector<uint32_t> input_indices;
+	uint64_t num_candidates = 0;
+	uint64_t candidate_index = 0;
+	std::string response_text;
+	bool has_result = false;
+	int32_t result = 0;
+
+	void clear()
+	{
+		valid = false;
+		pointer_flags = 0;
+		log_level = 0;
+		model_path.clear();
+		backend_str.clear();
+		vision_backend_str.clear();
+		audio_backend_str.clear();
+		settings_index = CONTAINER_INVALID_INDEX;
+		engine_index = CONTAINER_INVALID_INDEX;
+		config_index = CONTAINER_INVALID_INDEX;
+		sampler_params_index = CONTAINER_INVALID_INDEX;
+		session_index = CONTAINER_INVALID_INDEX;
+		input_data_index = CONTAINER_INVALID_INDEX;
+		responses_index = CONTAINER_INVALID_INDEX;
+		max_output_tokens = 0;
+		sampler_type = 0;
+		top_p = 0.0f;
+		top_k = 0;
+		temperature = 0.0f;
+		seed = 0;
+		input_data_type = 0;
+		data_size = 0;
+		data.clear();
+		num_inputs = 0;
+		input_indices.clear();
+		num_candidates = 0;
+		candidate_index = 0;
+		response_text.clear();
+		has_result = false;
+		result = 0;
+	}
+};
+
 struct print_packet_selector
 {
 	uint32_t packet = UINT32_MAX;
@@ -268,6 +336,7 @@ public:
 	// The dictionary is read from a JSON file and then mapped from their to our function ids.
 	std::unordered_map<uint16_t, uint16_t> vulkan_dictionary;
 	std::unordered_map<uint16_t, uint16_t> opencl_dictionary;
+	std::unordered_map<uint16_t, uint16_t> litert_lm_dictionary;
 
 	/// Select whether we replay Vulkan calls, process the trace statefully without Vulkan, or
 	/// decode isolated packets without maintaining replay state. Duplicated into the file reader.
@@ -448,6 +517,7 @@ public:
 	const std::vector<unsigned>& barrier_packet_indices() const { return current_barrier_packet_indices; }
 	uint16_t read_vulkan_apicall();
 	uint16_t read_opencl_apicall();
+	uint16_t read_litert_lm_apicall();
 
 	bool start_measurement_on_thread_entry() const
 	{
@@ -575,6 +645,7 @@ public:
 	std::list<address_rewrite> rewrite_queue;
 	output_update_packet current_update_packet;
 	opencl_api_packet current_opencl_packet;
+	litert_lm_api_packet current_litert_lm_packet;
 	bool current_packet_contains_shader_data = false;
 
 	change_source current;
