@@ -1,0 +1,6 @@
+LITERT_LM_C_API_1.0 {
+	global:
+		litert_lm_*;
+	local:
+		*;
+};

@@ -2675,9 +2675,163 @@ VKAPI_ATTR VkResult VKAPI_CALL trace_vkGetPhysicalDeviceToolProperties(VkPhysica
 	return retval;
 }
 
+static VKAPI_ATTR VkResult VKAPI_CALL passthrough_vkEnumerateInstanceLayerProperties(uint32_t* pPropertyCount, VkLayerProperties* pProperties)
+{
+#ifdef COMPILE_LAYER
+	if (pProperties == nullptr)
+	{
+		if (pPropertyCount) *pPropertyCount = 1;
+		return VK_SUCCESS;
+	}
+	if (pPropertyCount && *pPropertyCount >= 1)
+	{
+		memcpy(pProperties, &LAYER_PROPERTIES, sizeof(LAYER_PROPERTIES));
+		*pPropertyCount = 1;
+		return VK_SUCCESS;
+	}
+	return VK_INCOMPLETE;
+#else
+	return wrap_vkEnumerateInstanceLayerProperties(pPropertyCount, pProperties);
+#endif
+}
+
+static VKAPI_ATTR VkResult VKAPI_CALL passthrough_vkEnumerateInstanceExtensionProperties(const char* pLayerName, uint32_t* pPropertyCount, VkExtensionProperties* pProperties)
+{
+#ifdef COMPILE_LAYER
+	if (pLayerName != nullptr && strcmp(pLayerName, LAYER_PROPERTIES.layerName) == 0)
+	{
+		if (pPropertyCount) *pPropertyCount = 0;
+		return VK_SUCCESS;
+	}
+	return VK_ERROR_LAYER_NOT_PRESENT;
+#else
+	return wrap_vkEnumerateInstanceExtensionProperties(pLayerName, pPropertyCount, pProperties);
+#endif
+}
+
+static VKAPI_ATTR VkResult VKAPI_CALL passthrough_vkCreateInstance(const VkInstanceCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkInstance* pInstance)
+{
+#ifdef COMPILE_LAYER
+	VkLayerInstanceCreateInfo* layerCreateInfo = (VkLayerInstanceCreateInfo*)pCreateInfo->pNext;
+	while (layerCreateInfo && ((layerCreateInfo->sType != VK_STRUCTURE_TYPE_LOADER_INSTANCE_CREATE_INFO) || (layerCreateInfo->function != VK_LAYER_LINK_INFO)))
+	{
+		layerCreateInfo = (VkLayerInstanceCreateInfo*)layerCreateInfo->pNext;
+	}
+	if (layerCreateInfo == nullptr)
+	{
+		return VK_ERROR_INITIALIZATION_FAILED;
+	}
+	PFN_vkGetInstanceProcAddr gipa = layerCreateInfo->u.pLayerInfo->pfnNextGetInstanceProcAddr;
+	layerCreateInfo->u.pLayerInfo = layerCreateInfo->u.pLayerInfo->pNext;
+	PFN_vkCreateInstance createFunc = reinterpret_cast<PFN_vkCreateInstance>(gipa(VK_NULL_HANDLE, "vkCreateInstance"));
+	VkResult retval = createFunc(pCreateInfo, pAllocator, pInstance);
+	if (retval == VK_SUCCESS && pInstance && *pInstance != VK_NULL_HANDLE)
+	{
+		lava_writer& tracer = lava_writer::instance();
+		frame_mutex.lock();
+		tracer.litert_lm_layer.bypassed_instances[*pInstance] = gipa;
+		frame_mutex.unlock();
+	}
+	return retval;
+#else
+	return wrap_vkCreateInstance(pCreateInfo, pAllocator, pInstance);
+#endif
+}
+
+static VKAPI_ATTR void VKAPI_CALL passthrough_vkDestroyInstance(VkInstance instance, const VkAllocationCallbacks* pAllocator)
+{
+	if (instance == VK_NULL_HANDLE) return;
+	lava_writer& tracer = lava_writer::instance();
+	PFN_vkGetInstanceProcAddr gipa = nullptr;
+	frame_mutex.lock();
+	auto it = tracer.litert_lm_layer.bypassed_instances.find(instance);
+	if (it != tracer.litert_lm_layer.bypassed_instances.end())
+	{
+		gipa = it->second;
+		tracer.litert_lm_layer.bypassed_instances.erase(it);
+	}
+	frame_mutex.unlock();
+	if (gipa)
+	{
+		PFN_vkDestroyInstance destroyFunc = reinterpret_cast<PFN_vkDestroyInstance>(gipa(instance, "vkDestroyInstance"));
+		if (destroyFunc) destroyFunc(instance, pAllocator);
+	}
+}
+
+static VKAPI_ATTR VkResult VKAPI_CALL passthrough_vkCreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkDevice* pDevice)
+{
+#ifdef COMPILE_LAYER
+	VkLayerDeviceCreateInfo* layerCreateInfo = (VkLayerDeviceCreateInfo*)pCreateInfo->pNext;
+	while (layerCreateInfo && ((layerCreateInfo->sType != VK_STRUCTURE_TYPE_LOADER_DEVICE_CREATE_INFO) || (layerCreateInfo->function != VK_LAYER_LINK_INFO)))
+	{
+		layerCreateInfo = (VkLayerDeviceCreateInfo*)layerCreateInfo->pNext;
+	}
+	if (layerCreateInfo == nullptr)
+	{
+		return VK_ERROR_INITIALIZATION_FAILED;
+	}
+	PFN_vkGetInstanceProcAddr gipa = layerCreateInfo->u.pLayerInfo->pfnNextGetInstanceProcAddr;
+	PFN_vkGetDeviceProcAddr gdpa = layerCreateInfo->u.pLayerInfo->pfnNextGetDeviceProcAddr;
+	layerCreateInfo->u.pLayerInfo = layerCreateInfo->u.pLayerInfo->pNext;
+	PFN_vkCreateDevice createFunc = reinterpret_cast<PFN_vkCreateDevice>(gipa(VK_NULL_HANDLE, "vkCreateDevice"));
+	VkResult retval = createFunc(physicalDevice, pCreateInfo, pAllocator, pDevice);
+	if (retval == VK_SUCCESS && pDevice && *pDevice != VK_NULL_HANDLE)
+	{
+		lava_writer& tracer = lava_writer::instance();
+		frame_mutex.lock();
+		tracer.litert_lm_layer.bypassed_devices[*pDevice] = gdpa;
+		frame_mutex.unlock();
+	}
+	return retval;
+#else
+	return wrap_vkCreateDevice(physicalDevice, pCreateInfo, pAllocator, pDevice);
+#endif
+}
+
+static VKAPI_ATTR void VKAPI_CALL passthrough_vkDestroyDevice(VkDevice device, const VkAllocationCallbacks* pAllocator)
+{
+	if (device == VK_NULL_HANDLE) return;
+	lava_writer& tracer = lava_writer::instance();
+	PFN_vkGetDeviceProcAddr gdpa = nullptr;
+	frame_mutex.lock();
+	auto it = tracer.litert_lm_layer.bypassed_devices.find(device);
+	if (it != tracer.litert_lm_layer.bypassed_devices.end())
+	{
+		gdpa = it->second;
+		tracer.litert_lm_layer.bypassed_devices.erase(it);
+	}
+	frame_mutex.unlock();
+	if (gdpa)
+	{
+		PFN_vkDestroyDevice destroyFunc = reinterpret_cast<PFN_vkDestroyDevice>(gdpa(device, "vkDestroyDevice"));
+		if (destroyFunc) destroyFunc(device, pAllocator);
+	}
+}
+
 VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL trace_vkGetDeviceProcAddr(VkDevice device, const char* pName)
 {
 	lava_writer& tracer = lava_writer::instance();
+	PFN_vkGetDeviceProcAddr bypassed_gdpa = nullptr;
+	if (device != VK_NULL_HANDLE)
+	{
+		frame_mutex.lock();
+		auto it = tracer.litert_lm_layer.bypassed_devices.find(device);
+		if (it != tracer.litert_lm_layer.bypassed_devices.end())
+		{
+			bypassed_gdpa = it->second;
+		}
+		frame_mutex.unlock();
+	}
+	if (bypassed_gdpa != nullptr || tracer.litert_lm_layer.active_call_depth.load(std::memory_order_acquire) > 0)
+	{
+		if (strcmp(pName, "vkGetDeviceProcAddr") == 0) return reinterpret_cast<PFN_vkVoidFunction>(trace_vkGetDeviceProcAddr);
+		if (strcmp(pName, "vkDestroyDevice") == 0) return reinterpret_cast<PFN_vkVoidFunction>(passthrough_vkDestroyDevice);
+		if (bypassed_gdpa != nullptr)
+		{
+			return bypassed_gdpa(device, pName);
+		}
+		return nullptr;
+	}
 	lava_file_writer& writer = tracer.file_writer();
 	DLOG2("Not tracing vkGetDeviceProcAddr(device, %s)", pName);
 	return writer.parent->records.trace_getcall(pName);
@@ -2686,13 +2840,44 @@ VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL trace_vkGetDeviceProcAddr(VkDevice devi
 VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL trace_vkGetInstanceProcAddr(VkInstance instance, const char* pName)
 {
 	lava_writer& tracer = lava_writer::instance();
+	PFN_vkGetInstanceProcAddr bypassed_gipa = nullptr;
+	if (instance != VK_NULL_HANDLE)
+	{
+		frame_mutex.lock();
+		auto it = tracer.litert_lm_layer.bypassed_instances.find(instance);
+		if (it != tracer.litert_lm_layer.bypassed_instances.end())
+		{
+			bypassed_gipa = it->second;
+		}
+		frame_mutex.unlock();
+	}
+	if (bypassed_gipa != nullptr || tracer.litert_lm_layer.active_call_depth.load(std::memory_order_acquire) > 0)
+	{
+		if (strcmp(pName, "vkGetInstanceProcAddr") == 0) return reinterpret_cast<PFN_vkVoidFunction>(trace_vkGetInstanceProcAddr);
+		if (strcmp(pName, "vkGetDeviceProcAddr") == 0) return reinterpret_cast<PFN_vkVoidFunction>(trace_vkGetDeviceProcAddr);
+		if (strcmp(pName, "vkCreateInstance") == 0) return reinterpret_cast<PFN_vkVoidFunction>(passthrough_vkCreateInstance);
+		if (strcmp(pName, "vkDestroyInstance") == 0) return reinterpret_cast<PFN_vkVoidFunction>(passthrough_vkDestroyInstance);
+		if (strcmp(pName, "vkCreateDevice") == 0) return reinterpret_cast<PFN_vkVoidFunction>(passthrough_vkCreateDevice);
+		if (strcmp(pName, "vkDestroyDevice") == 0) return reinterpret_cast<PFN_vkVoidFunction>(passthrough_vkDestroyDevice);
+		if (strcmp(pName, "vkEnumerateInstanceLayerProperties") == 0) return reinterpret_cast<PFN_vkVoidFunction>(passthrough_vkEnumerateInstanceLayerProperties);
+		if (strcmp(pName, "vkEnumerateInstanceExtensionProperties") == 0) return reinterpret_cast<PFN_vkVoidFunction>(passthrough_vkEnumerateInstanceExtensionProperties);
+		if (bypassed_gipa != nullptr)
+		{
+			return bypassed_gipa(instance, pName);
+		}
+		if (strcmp(pName, "vkEnumerateInstanceVersion") == 0 && wrap_vkEnumerateInstanceVersion != nullptr)
+		{
+			return reinterpret_cast<PFN_vkVoidFunction>(wrap_vkEnumerateInstanceVersion);
+		}
+		return nullptr;
+	}
 	lava_file_writer& writer = tracer.file_writer();
 	DLOG2("Not tracing vkGetInstanceProcAddr(instance, %s)", pName);
 	return writer.parent->records.trace_getcall(pName);
 }
 
 // "must never call down the chain" and must be accessibly directly through dlsym
-VKAPI_ATTR VkResult vkNegotiateLoaderLayerInterfaceVersion(VkNegotiateLayerInterface *pVersionStruct)
+EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkNegotiateLoaderLayerInterfaceVersion(VkNegotiateLayerInterface *pVersionStruct)
 {
 	DLOG("Negotiating layer version - loader wants version %d\n", (int)pVersionStruct->loaderLayerInterfaceVersion);
 	assert(pVersionStruct->sType == LAYER_NEGOTIATE_INTERFACE_STRUCT);

@@ -95,7 +95,7 @@ extern uint_fast8_t p__dedicated_image;
 extern uint_fast8_t p__cpu;
 extern uint_fast8_t p__gpu;
 extern int_fast8_t p__device;
-extern uint_fast8_t p__debug_level;
+extern EXPORT uint_fast8_t p__debug_level;
 extern uint_fast8_t p__validation;
 extern uint_fast8_t p__swapchains;
 extern uint_fast8_t p__noscreen;
@@ -110,7 +110,7 @@ extern uint_fast8_t p__custom_allocator;
 extern uint_fast8_t p__no_anisotropy;
 extern uint_fast8_t p__delay_fence_success_frames;
 extern uint64_t p__delay_fence_success_timeout_threshold;
-extern FILE* p__debug_destination;
+extern EXPORT FILE* p__debug_destination;
 extern int p__chunksize;
 extern uint_fast8_t p__external_memory;
 extern uint_fast8_t p__disable_multithread_writeout;
@@ -237,7 +237,7 @@ static __attribute__((pure)) inline uint32_t adler32(unsigned char *data, size_t
 	return (b << 16) | a;
 }
 
-std::string get_trace_path(const std::string& base);
+EXPORT std::string get_trace_path(const std::string& base);
 
 static __attribute__((pure)) inline uint64_t gettime()
 {

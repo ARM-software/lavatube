@@ -300,6 +300,7 @@ add_custom_command(
 	${SRC_ROOT}/generated/vk_wrapper_auto.cpp ${SRC_ROOT}/generated/write_resource_auto.cpp ${SRC_ROOT}/generated/write_resource_auto.h
 	${SRC_ROOT}/generated/opencl_auto.cpp ${SRC_ROOT}/generated/opencl_auto.h
 	${SRC_ROOT}/generated/litert_lm_auto.cpp ${SRC_ROOT}/generated/litert_lm_auto.h
+	${SRC_ROOT}/generated/litert_lm_passthrough_auto.cpp
     COMMAND rm -f scripts/vulkan_spec.pyc # fix checkouts broken when this file's source moved
     COMMAND mkdir -p generated
     COMMAND ${PYTHON_EXECUTABLE} ${SRC_ROOT}/scripts/struct.py
@@ -344,6 +345,27 @@ add_custom_command(TARGET VkLayer_lavatube POST_BUILD COMMAND ${CMAKE_COMMAND} -
 add_dependencies(VkLayer_lavatube sync_generated)
 install(FILES ${CMAKE_BINARY_DIR}/implicit_layer.d/VkLayer_lavatube.json ${CMAKE_BINARY_DIR}/implicit_layer.d/libVkLayer_lavatube.so DESTINATION implicit_layer.d)
 install(PROGRAMS scripts/lava-capture.py TYPE BIN)
+
+find_path(LITERT_LM_INCLUDE_DIR NAMES c/engine.h litert-lm/engine.h engine.h
+	HINTS /opt/litert-lm/include $ENV{LITERT_LM_ROOT}/include
+)
+
+if (LITERT_LM_INCLUDE_DIR)
+	add_library(litert-lm SHARED
+		${PROJECT_SOURCE_DIR}/src/litert_lm_layer.cpp
+		${PROJECT_SOURCE_DIR}/generated/litert_lm_auto.cpp
+		${PROJECT_SOURCE_DIR}/generated/litert_lm_passthrough_auto.cpp
+	)
+	target_include_directories(litert-lm PRIVATE ${COMMON_INCLUDE} ${LITERT_LM_INCLUDE_DIR})
+	target_link_libraries(litert-lm PRIVATE VkLayer_lavatube ${CMAKE_DL_LIBS})
+	target_compile_options(litert-lm PRIVATE ${COMMON_FLAGS})
+	target_link_options(litert-lm PRIVATE "-Wl,--version-script=${PROJECT_SOURCE_DIR}/src/litert_lm_layer.map")
+	set_target_properties(litert-lm PROPERTIES LINK_DEPENDS ${PROJECT_SOURCE_DIR}/src/litert_lm_layer.map)
+	target_compile_definitions(litert-lm PUBLIC COMPILE_LAYER)
+	add_dependencies(litert-lm sync_generated)
+	add_custom_command(TARGET litert-lm POST_BUILD COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:litert-lm> ${CMAKE_BINARY_DIR}/implicit_layer.d/liblitert-lm.so)
+	install(FILES ${CMAKE_BINARY_DIR}/implicit_layer.d/liblitert-lm.so DESTINATION implicit_layer.d)
+endif()
 
 # --- unit tests ---
 

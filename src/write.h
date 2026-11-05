@@ -28,7 +28,7 @@
 /// A global to make static thread analysis easier. This MUST be the first variable constructed, or
 /// we will have trouble on destruction. Also never assume this variable is safe during program
 /// termination _except_ inside write.cpp
-extern lava::mutex frame_mutex;
+extern EXPORT lava::mutex frame_mutex;
 
 struct framedata
 {
@@ -111,7 +111,7 @@ struct trace_metadata
 
 class lava_writer;
 
-void trace_finalize_if_inactive();
+EXPORT void trace_finalize_if_inactive();
 
 struct trackedcldevice : trackable
 {
@@ -149,6 +149,8 @@ struct trackedlitertlmsession : trackable
 
 struct litert_lm_layer_runtime_state
 {
+	litert_lm_dispatch_table target_dispatch = {};
+	void* library_handle = nullptr;
 	trace_remap<LiteRtLmEngineSettings*, trackedlitertlmsettings> settings_index;
 	trace_remap<LiteRtLmEngine*, trackedlitertlmengine> engine_index;
 	trace_remap<LiteRtLmSessionConfig*, trackable> session_config_index;
@@ -156,12 +158,33 @@ struct litert_lm_layer_runtime_state
 	trace_remap<LiteRtLmSession*, trackedlitertlmsession> session_index;
 	trace_remap<LiteRtLmInputData*, trackable> input_data_index;
 	trace_remap<LiteRtLmResponses*, trackable> responses_index;
+	std::unordered_map<VkInstance, PFN_vkGetInstanceProcAddr> bypassed_instances;
+	std::unordered_map<VkDevice, PFN_vkGetDeviceProcAddr> bypassed_devices;
 	std::atomic_uint_fast64_t api_calls { 0 };
 	std::atomic_uint_fast32_t active_engines { 0 };
+	std::atomic_uint_fast32_t active_call_depth { 0 };
+	std::atomic_bool initialized { false };
 };
 
+struct litert_lm_call_guard
+{
+	litert_lm_layer_runtime_state& state;
+
+	litert_lm_call_guard(litert_lm_layer_runtime_state& _state) : state(_state)
+	{
+		state.active_call_depth.fetch_add(1, std::memory_order_acquire);
+	}
+
+	~litert_lm_call_guard()
+	{
+		state.active_call_depth.fetch_sub(1, std::memory_order_release);
+	}
+};
+
+void ensure_litert_lm_dispatch(litert_lm_layer_runtime_state& state);
+
 /// Per-thread controller
-class lava_file_writer : public file_writer
+class EXPORT lava_file_writer : public file_writer
 {
 	lava_file_writer(const lava_file_writer&) = delete;
 	lava_file_writer& operator=(const lava_file_writer&)= delete;
@@ -243,7 +266,7 @@ private:
 };
 
 /// Top level singleton instance for the tracer.
-class lava_writer
+class EXPORT lava_writer
 {
 public:
 	lava_writer();

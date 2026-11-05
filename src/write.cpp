@@ -794,8 +794,11 @@ void lava_writer::finish()
 	litert_lm_layer.session_index.clear();
 	litert_lm_layer.input_data_index.clear();
 	litert_lm_layer.responses_index.clear();
+	litert_lm_layer.bypassed_instances.clear();
+	litert_lm_layer.bypassed_devices.clear();
 	litert_lm_layer.api_calls.store(0, std::memory_order_relaxed);
 	litert_lm_layer.active_engines.store(0, std::memory_order_relaxed);
+	litert_lm_layer.active_call_depth.store(0, std::memory_order_relaxed);
 	global_frame.exchange(0);
 	tid = -1;
 	preserve_output_handle_indices = true;

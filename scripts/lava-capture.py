@@ -128,6 +128,10 @@ if __name__ == '__main__':
 		os.environ['OPENCL_LAYERS'] = opencl_layer + os.pathsep + os.environ['OPENCL_LAYERS']
 	else:
 		os.environ['OPENCL_LAYERS'] = opencl_layer
+	if 'LD_LIBRARY_PATH' in os.environ and os.environ['LD_LIBRARY_PATH']:
+		os.environ['LD_LIBRARY_PATH'] = capture_layer_path + os.pathsep + os.environ['LD_LIBRARY_PATH']
+	else:
+		os.environ['LD_LIBRARY_PATH'] = capture_layer_path
 	if args.nomp:
 		os.environ['LAVATUBE_DISABLE_MULTITHREADED_WRITEOUT'] = '1'
 		os.environ['LAVATUBE_DISABLE_MULTITHREADED_COMPRESS'] = '1'
@@ -145,6 +149,7 @@ if __name__ == '__main__':
 	PrintEnvVar('VK_INSTANCE_LAYERS')
 	PrintEnvVar('VK_LAYER_PATH')
 	PrintEnvVar('OPENCL_LAYERS')
+	PrintEnvVar('LD_LIBRARY_PATH')
 	PrintEnvVar('LAVATUBE_GPU')
 	PrintEnvVar('LAVATUBE_DEDICATED_BUFFER')
 	PrintEnvVar('LAVATUBE_DEDICATED_IMAGE')

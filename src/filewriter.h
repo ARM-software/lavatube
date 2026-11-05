@@ -11,7 +11,7 @@
 #include "lavamutex.h"
 #include "util.h"
 
-class file_writer
+class EXPORT file_writer
 {
 	file_writer(const file_writer&) = delete;
 	file_writer& operator=(const file_writer&)= delete;
