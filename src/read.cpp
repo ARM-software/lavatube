@@ -15,6 +15,7 @@
 #include "util_auto.h"
 #include "suballocator.h"
 #include "markings.h"
+#include "litert_lm_replay.h"
 
 /// Mutex to enforce additional external synchronization
 lava::mutex sync_mutex;
@@ -530,6 +531,10 @@ uint16_t lava_file_reader::read_litert_lm_apicall()
 	default:
 		ABORT("LiteRT-LM packet decoder does not support %s", litert_lm_get_function_name(apicall));
 	}
+	if (is_replay())
+	{
+		retrace_litert_lm_apicall(*this);
+	}
 	api_call_count++;
 	return apicall;
 }
@@ -917,6 +922,11 @@ void print_params_packet(callback_context& cb)
 
 lava_reader::~lava_reader()
 {
+	if (litert_lm_replay)
+	{
+		delete litert_lm_replay;
+		litert_lm_replay = nullptr;
+	}
 	delete thread_packet_numbers;
 	for (auto& t : thread_streams)
 	{

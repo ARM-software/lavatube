@@ -1007,6 +1007,9 @@ void usage()
 	printf("--presentation mode    Use this Vulkan presentation mode [immediate, mailbox, fifo, fifo_relaxed]\n");
 	printf("--swapchain-images num Use this number of swapchain images\n");
 	printf("--heap size            Set the suballocator minimum heap size\n");
+	printf("LiteRT-LM specific options:\n");
+	printf("--litert-model-path p  Path or directory to LiteRT-LM model file\n");
+	printf("--litert-backend b     Override LiteRT-LM backend (e.g. cpu or gpu)\n");
 	exit(-1);
 }
 
@@ -2139,6 +2142,18 @@ int lava_replay_main(int argc, char **argv)
 		else if (match(argv[i], "-B", "--blackhole", remaining))
 		{
 			p__blackhole = 1;
+		}
+		else if (match(argv[i], nullptr, "--litert-model-path", remaining))
+		{
+			if (remaining < 1) usage();
+			remaining--;
+			p__litert_model_path = argv[++i];
+		}
+		else if (match(argv[i], nullptr, "--litert-backend", remaining))
+		{
+			if (remaining < 1) usage();
+			remaining--;
+			p__litert_backend = argv[++i];
 		}
 		else if (match(argv[i], nullptr, "--screenshots", remaining))
 		{

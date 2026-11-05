@@ -23,6 +23,7 @@
 #include "replay_screenshot.h"
 
 class lava_file_reader;
+struct litert_lm_replay_state;
 using lava_replay_func = void (*)(lava_file_reader&);
 
 enum class cli_step_mode : uint8_t
@@ -337,6 +338,7 @@ public:
 	std::unordered_map<uint16_t, uint16_t> vulkan_dictionary;
 	std::unordered_map<uint16_t, uint16_t> opencl_dictionary;
 	std::unordered_map<uint16_t, uint16_t> litert_lm_dictionary;
+	litert_lm_replay_state* litert_lm_replay = nullptr;
 
 	/// Select whether we replay Vulkan calls, process the trace statefully without Vulkan, or
 	/// decode isolated packets without maintaining replay state. Duplicated into the file reader.

@@ -283,6 +283,8 @@ set(LAVATUBE_SRC
     ${PROJECT_SOURCE_DIR}/src/execute_commands.h
     ${PROJECT_SOURCE_DIR}/src/helpers_read.cpp
     ${PROJECT_SOURCE_DIR}/src/helpers_read.h
+    ${PROJECT_SOURCE_DIR}/src/litert_lm_replay.cpp
+    ${PROJECT_SOURCE_DIR}/src/litert_lm_replay.h
 
     ${PROJECT_SOURCE_DIR}/generated/read_auto.cpp
     ${PROJECT_SOURCE_DIR}/generated/read_auto.h
@@ -365,6 +367,33 @@ if (LITERT_LM_INCLUDE_DIR)
 	add_dependencies(litert-lm sync_generated)
 	add_custom_command(TARGET litert-lm POST_BUILD COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:litert-lm> ${CMAKE_BINARY_DIR}/implicit_layer.d/liblitert-lm.so)
 	install(FILES ${CMAKE_BINARY_DIR}/implicit_layer.d/liblitert-lm.so DESTINATION implicit_layer.d)
+
+	if (TARGET vulkan_llm_pingpong)
+		add_lavatube_test(layer_test_llm_pingpong
+			COMMAND ${PYTHON_EXECUTABLE} ${PROJECT_SOURCE_DIR}/scripts/lava-capture.py
+				--capture-layer ${CMAKE_CURRENT_BINARY_DIR}/implicit_layer.d
+				-o ${CMAKE_CURRENT_BINARY_DIR}/vulkan_llm_pingpong
+				$<TARGET_FILE:vulkan_llm_pingpong> -f 3 -s 42
+		)
+		set_tests_properties(layer_test_llm_pingpong PROPERTIES
+			FIXTURES_SETUP llm_pingpong
+			SKIP_RETURN_CODE 77
+		)
+		add_lavatube_test(layer_test_llm_pingpong_replay
+			COMMAND $<TARGET_FILE:lava-replay> --skip-missing-input ${CMAKE_CURRENT_BINARY_DIR}/vulkan_llm_pingpong.api
+		)
+		set_tests_properties(layer_test_llm_pingpong_replay PROPERTIES
+			FIXTURES_REQUIRED llm_pingpong
+			SKIP_RETURN_CODE 77
+		)
+		add_lavatube_test(layer_test_llm_pingpong_replay_cpu
+			COMMAND $<TARGET_FILE:lava-replay> --skip-missing-input --litert-backend cpu ${CMAKE_CURRENT_BINARY_DIR}/vulkan_llm_pingpong.api
+		)
+		set_tests_properties(layer_test_llm_pingpong_replay_cpu PROPERTIES
+			FIXTURES_REQUIRED llm_pingpong
+			SKIP_RETURN_CODE 77
+		)
+	endif()
 endif()
 
 # --- unit tests ---

@@ -105,6 +105,8 @@ extern VkPresentModeKHR p__realpresentmode;
 extern uint_fast8_t p__realimages;
 extern const char* p__save_pipelinecache;
 extern const char* p__load_pipelinecache;
+extern const char* p__litert_model_path;
+extern const char* p__litert_backend;
 extern uint_fast8_t p__dedicated_allocation;
 extern uint_fast8_t p__custom_allocator;
 extern uint_fast8_t p__no_anisotropy;
