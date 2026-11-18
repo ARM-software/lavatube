@@ -372,6 +372,9 @@ public:
 	/// Whether we should abort on less serious errors or just warn
 	bool validate = false;
 
+	/// Compare captured LiteRT-LM output and statuses with replay.
+	bool litert_verify_output = false;
+
 	/// Whether we should run the spirv simulator
 	bool simulate = false;
 

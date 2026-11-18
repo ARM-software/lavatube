@@ -1513,6 +1513,13 @@ target_include_directories(litert_lm_model_test PRIVATE ${SRC_ROOT}/src)
 target_compile_options(litert_lm_model_test PRIVATE ${COMMON_FLAGS})
 add_lavatube_test(litert_lm_model_test COMMAND litert_lm_model_test)
 
+add_executable(litert_lm_verification_test tests/litert_lm_verification.cpp)
+target_include_directories(litert_lm_verification_test ${COMMON_INCLUDE})
+target_link_libraries(litert_lm_verification_test ${COMMON_LIBRARIES} lavatube)
+target_compile_options(litert_lm_verification_test PRIVATE ${COMMON_FLAGS})
+add_dependencies(litert_lm_verification_test sync_generated)
+add_lavatube_test(litert_lm_verification_test COMMAND litert_lm_verification_test)
+
 function(litert_layer_test test_name test_exe backend)
 	set(TRACE_FILE ${CMAKE_CURRENT_BINARY_DIR}/litert_${test_name}.api)
 	add_lavatube_test(litert_layer_test_${test_name} COMMAND
@@ -1525,8 +1532,14 @@ function(litert_layer_test test_name test_exe backend)
 		SKIP_RETURN_CODE 77
 		LABELS litert
 	)
+	set(LITERT_REPLAY_COMMAND $<TARGET_FILE:lava-replay> ${TRACE_FILE})
+	if(test_exe STREQUAL "litert_minimal")
+		set(LITERT_REPLAY_COMMAND ${CMAKE_COMMAND}
+			-DREPLAY=$<TARGET_FILE:lava-replay> -DTRACE=${TRACE_FILE}
+			-P ${PROJECT_SOURCE_DIR}/tests/litert_replay_statistics.cmake)
+	endif()
 	add_lavatube_test(litert_layer_test_${test_name}_replay COMMAND
-		${RUN_IF_EXISTS} ${TRACE_FILE} $<TARGET_FILE:lava-replay> ${TRACE_FILE})
+		${RUN_IF_EXISTS} ${TRACE_FILE} ${LITERT_REPLAY_COMMAND})
 	set_tests_properties(litert_layer_test_${test_name}_replay PROPERTIES
 		FIXTURES_REQUIRED litert_${test_name}
 		ENVIRONMENT "LAVATUBE_LITERT_LM_LIB=${LITERT_LM_LIBRARY};${LITERT_TEST_ARGUMENTS}"

@@ -985,6 +985,18 @@ void lava_reader::finalize()
 	out["readahead_workers_time"] = worker;
 	out["api_runners_time"] = runner;
 	out["process_time"] = process_time;
+	if (is_replay() && litert_lm_replay)
+	{
+		const Json::Value sessions = litert_lm_replay->report_statistics();
+		if (!sessions.empty()) out["litert_lm"]["sessions"] = sessions;
+	}
+	if (is_replay() && litert_verify_output)
+	{
+		litert_lm_replay_state empty;
+		Json::Value verification = (litert_lm_replay ? litert_lm_replay : &empty)->report_verification();
+		if (verification["status"].asString() != "passed") exit_status.store(1, std::memory_order_relaxed);
+		out["litert_lm"]["verification"] = verification;
+	}
 	if (out_fptr)
 	{
 		write_json(out_fptr, out);

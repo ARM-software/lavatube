@@ -1009,6 +1009,7 @@ void usage()
 	printf("--heap size            Set the suballocator minimum heap size\n");
 	printf("LiteRT-LM specific options:\n");
 	printf("--litert-model-path p  Path or directory to LiteRT-LM model file\n");
+	printf("--litert-verify-output Compare LiteRT-LM output and statuses with capture\n");
 	printf("--litert-backend b     Override LiteRT-LM backend (e.g. cpu or gpu)\n");
 	exit(-1);
 }
@@ -2149,6 +2150,10 @@ int lava_replay_main(int argc, char **argv)
 			remaining--;
 			p__litert_model_path = argv[++i];
 		}
+		else if (match(argv[i], nullptr, "--litert-verify-output", remaining))
+		{
+			replayer.litert_verify_output = true;
+		}
 		else if (match(argv[i], nullptr, "--litert-backend", remaining))
 		{
 			if (remaining < 1) usage();
@@ -2222,6 +2227,7 @@ int lava_replay_main(int argc, char **argv)
 	if (screenshot_prefix_set && screenshot_ranges.empty()) DIE("The --screenshot-prefix option requires --screenshots");
 	if (!screenshot_ranges.empty() && !p__virtualswap) DIE("The --screenshots option currently only supports the virtual/offscreen swapchain path");
 	if (!screenshot_ranges.empty() && p__blackhole) DIE("The --screenshots option cannot be used together with --blackhole");
+	if (replayer.litert_verify_output && p__blackhole) DIE("The --litert-verify-output option cannot be used together with --blackhole");
 	if (service && infodump) DIE("The --service option cannot be used together with --info");
 
 	if (filename.empty())

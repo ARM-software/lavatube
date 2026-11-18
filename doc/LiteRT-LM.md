@@ -1,10 +1,53 @@
 # LiteRT-LM
 
-Lavatube has experimental support for Google's LiteRT-LM API, specifically
-its C API and any other API that in turn uses the C API. It captures the
-tokenized input to the prefill stage, which means on replay we exercise
-both prefill and decode stages. You need to use the same model for both
-capture and replay.
+Lavatube has experimental capture and replay support for selected LiteRT-LM C
+session APIs, including wrappers that invoke those intercepted functions. It
+captures input data and generation calls. For text generation, replay repeats
+tokenization, prefill, and decode using LiteRT-LM. Capture and replay require
+the same model. Conversation and embedding APIs are not currently captured.
+
+## Replay statistics
+
+Replay automatically enables LiteRT-LM benchmarking and prints session metrics
+when replay finishes: prefill and decode speeds, token counts, engine
+initialization time, and time to first token. Multiple prefill or decode turns
+are reported separately. Time to first token excludes engine initialization.
+These are runtime measurements of the replayed workload. Vulkan-only traces
+produce no LiteRT-LM statistics.
+
+Available metrics are also saved in `lavaresults.json` under
+`litert_lm.sessions`. Each session has its index, `init_time_seconds`,
+`time_to_first_token_seconds`, and separate `prefill` and `decode` arrays
+containing `tokens` and `tokens_per_second` for each measurement. Sessions with
+unavailable metrics are omitted, and the `litert_lm` section is absent when no
+metrics are available.
+
+## Output verification
+
+Use `lava-replay --litert-verify-output trace.api` to compare replay with the
+captured LiteRT-LM response text, candidate counts, and API return statuses.
+Verification preserves the captured sampler, temperature, seed, and inputs.
+For exact comparisons, use the same model, runtime, and backend under controlled
+conditions. A fixed seed alone does not guarantee identical output across
+hardware or runtime versions.
+
+Capture stores response text and candidate counts when the application reads
+them through the intercepted session response APIs. Verification checks those
+recorded reads; it does not collect output the application never requested.
+Text comparisons are byte-for-byte and report the first differing byte, with
+the call, session, response, and candidate identifiers where available.
+
+Replay finishes and writes `lavaresults.json` even if verification finds
+mismatches. The `litert_lm.verification` object contains `status` (`passed`,
+`failed`, or `no_output`), `statuses_checked`, `candidate_counts_checked`,
+`responses_checked`, `unavailable_checks`, and a `mismatches` array with failure
+details. Replay returns a nonzero exit status for a mismatch, unavailable
+checks, or no response text to verify. Without the option, replay does not
+compare output or add verification results. The option cannot be combined with
+`--blackhole`.
+
+The minimal LiteRT-LM CTest replay enables verification alongside performance
+checks. Its capture defaults to temperature zero and a fixed seed.
 
 ## LiteRT-LM model identification
 
