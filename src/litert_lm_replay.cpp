@@ -122,84 +122,6 @@ static void ensure_litert_lm_replay(litert_lm_replay_state* state)
 	state->initialized = true;
 }
 
-static std::string resolve_litert_model_path(const std::string& recorded_path)
-{
-	std::string base = recorded_path;
-	const char* slash = strrchr(base.c_str(), '/');
-	const char* backslash = strrchr(base.c_str(), '\\');
-	if (slash && backslash)
-	{
-		base = (slash > backslash ? slash : backslash) + 1;
-	}
-	else if (slash)
-	{
-		base = slash + 1;
-	}
-	else if (backslash)
-	{
-		base = backslash + 1;
-	}
-
-	const char* override_path = p__litert_model_path ? p__litert_model_path : getenv("LITERT_MODEL_PATH");
-	if (override_path && *override_path)
-	{
-		struct stat st;
-		if (stat(override_path, &st) == 0)
-		{
-			if (S_ISDIR(st.st_mode))
-			{
-				std::string candidate = std::string(override_path) + "/" + base;
-				if (access(candidate.c_str(), R_OK) == 0)
-				{
-					return candidate;
-				}
-			}
-			else
-			{
-				return std::string(override_path);
-			}
-		}
-	}
-
-	if (access(base.c_str(), R_OK) == 0)
-	{
-		return base;
-	}
-
-	const char* home = getenv("HOME");
-	if (home && *home)
-	{
-		std::string candidate = std::string(home) + "/.litert-lm/models/" + base;
-		if (access(candidate.c_str(), R_OK) == 0)
-		{
-			return candidate;
-		}
-	}
-
-	{
-		std::string candidate = "/opt/litert-lm/models/" + base;
-		if (access(candidate.c_str(), R_OK) == 0)
-		{
-			return candidate;
-		}
-	}
-
-	{
-		std::string candidate = "/home/per/LiteRT-LM/runtime/testdata/" + base;
-		if (access(candidate.c_str(), R_OK) == 0)
-		{
-			return candidate;
-		}
-	}
-
-	if (access(recorded_path.c_str(), R_OK) == 0)
-	{
-		return recorded_path;
-	}
-
-	ABORT("LiteRT-LM model '%s' not found. Specify location using --litert-model-path or LITERT_MODEL_PATH", base.c_str());
-	return std::string();
-}
 
 void retrace_litert_lm_apicall(lava_file_reader& reader)
 {
@@ -230,7 +152,13 @@ void retrace_litert_lm_apicall(lava_file_reader& reader)
 	}
 	case LITERT_LM_litert_lm_engine_settings_create:
 	{
-		std::string model_path = resolve_litert_model_path(packet.model_path);
+		std::string model_path;
+		std::string model_error;
+		const char* override_path = p__litert_model_path ? p__litert_model_path : getenv("LITERT_MODEL_PATH");
+		if (!find_litert_lm_model(packet.model_path, packet.model_identity, override_path, model_path, model_error))
+		{
+			ABORT("%s", model_error.c_str());
+		}
 		const char* backend = p__litert_backend ? p__litert_backend : getenv("LITERT_BACKEND");
 		if (!backend || !*backend)
 		{

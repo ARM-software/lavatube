@@ -2,6 +2,7 @@
 
 #pragma once
 
+#include "litert_lm_model.h"
 #include <assert.h>
 #include <atomic>
 #include <thread>
@@ -133,6 +134,7 @@ struct opencl_layer_runtime_state
 struct trackedlitertlmsettings : trackable
 {
 	std::string model_name;
+	litert_lm_model_identity model_identity;
 	std::string backend;
 };
 
@@ -162,6 +164,7 @@ struct litert_lm_layer_runtime_state
 	std::unordered_map<VkDevice, PFN_vkGetDeviceProcAddr> bypassed_devices;
 	std::atomic_uint_fast64_t api_calls { 0 };
 	std::atomic_uint_fast32_t active_engines { 0 };
+	std::atomic_uint_fast32_t active_settings { 0 };
 	std::atomic_uint_fast32_t active_call_depth { 0 };
 	std::atomic_bool initialized { false };
 };

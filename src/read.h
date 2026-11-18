@@ -2,6 +2,7 @@
 
 #pragma once
 
+#include "litert_lm_model.h"
 #include <assert.h>
 #include <algorithm>
 #include <atomic>
@@ -151,6 +152,7 @@ struct litert_lm_api_packet
 	uint8_t pointer_flags = 0;
 	int32_t log_level = 0;
 	std::string model_path;
+	litert_lm_model_identity model_identity;
 	std::string backend_str;
 	std::string vision_backend_str;
 	std::string audio_backend_str;
@@ -184,6 +186,7 @@ struct litert_lm_api_packet
 		pointer_flags = 0;
 		log_level = 0;
 		model_path.clear();
+		model_identity = {};
 		backend_str.clear();
 		vision_backend_str.clear();
 		audio_backend_str.clear();

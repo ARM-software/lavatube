@@ -646,6 +646,10 @@ void lava_writer::serialize()
 			Json::Value value = trackable_json(data);
 			value["index"] = data->index;
 			if (!data->model_name.empty()) value["model_name"] = data->model_name;
+			value["model_id"] = data->model_identity.model_id;
+			value["model_uuid"] = data->model_identity.uuid;
+			value["model_size"] = Json::UInt64(data->model_identity.size);
+			value["model_fingerprint"] = data->model_identity.fingerprint;
 			if (!data->backend.empty()) value["backend"] = data->backend;
 			tracking["LiteRtLmEngineSettings"].append(value);
 		}
@@ -728,7 +732,8 @@ bool lava_writer::claim_finalization()
 	if (!should_serialize || finalization_claimed
 	    || active_vulkan_instances.load(std::memory_order_acquire) != 0
 	    || opencl_layer.initialized.load(std::memory_order_acquire)
-	    || litert_lm_layer.active_engines.load(std::memory_order_acquire) != 0)
+	    || litert_lm_layer.active_engines.load(std::memory_order_acquire) != 0
+	    || litert_lm_layer.active_settings.load(std::memory_order_acquire) != 0)
 	{
 		return false;
 	}
@@ -798,6 +803,7 @@ void lava_writer::finish()
 	litert_lm_layer.bypassed_devices.clear();
 	litert_lm_layer.api_calls.store(0, std::memory_order_relaxed);
 	litert_lm_layer.active_engines.store(0, std::memory_order_relaxed);
+	litert_lm_layer.active_settings.store(0, std::memory_order_relaxed);
 	litert_lm_layer.active_call_depth.store(0, std::memory_order_relaxed);
 	global_frame.exchange(0);
 	tid = -1;

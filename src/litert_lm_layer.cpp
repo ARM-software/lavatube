@@ -75,7 +75,7 @@ static lava_file_writer& begin_litert_lm_packet(lava_writer& instance, litert_lm
 	lava_file_writer& writer = instance.file_writer();
 	writer.begin_packet(PACKET_LITERT_LM_API_CALL);
 	writer.write_uint16_t(LITERT_LM_DICTIONARY_BASE + function_id);
-	writer.write_uint32_t(0);
+	writer.write_uint32_t(1); // LiteRT-LM packet format version, including model identity.
 	writer.current.call_id = function_id;
 	writer.current.frame = instance.global_frame.load(std::memory_order_relaxed);
 	state.api_calls.fetch_add(1, std::memory_order_relaxed);
@@ -139,15 +139,24 @@ extern "C" EXPORT LiteRtLmStatusCode litert_lm_engine_settings_create(
 	}
 
 	const std::string basename = model_basename(model_path);
+	litert_lm_model_identity model_identity;
+	if (result == kLiteRtLmStatusOk && model_path && !inspect_litert_lm_model(model_path, model_identity))
+	{
+		// Settings creation can succeed before the runtime validates the file.
+		// Preserve application errors; replay will reject an unverifiable model.
+		ELOG("Cannot identify LiteRT-LM model '%s': unreadable or invalid model header; replay cannot verify this model", model_path);
+	}
 	uint32_t settings_index = out_settings ? CONTAINER_NULL_VALUE : CONTAINER_INVALID_INDEX;
 	if (result == 0 && out_settings && *out_settings)
 	{
 		lava::lock_guard lock(frame_mutex);
 		trackedlitertlmsettings* data = state.settings_index.add(*out_settings, writer.current);
 		data->model_name = basename;
+		data->model_identity = model_identity;
 		if (backend_str) data->backend = backend_str;
 		data->enter_created();
 		settings_index = data->index;
+		state.active_settings.fetch_add(1, std::memory_order_acq_rel);
 	}
 
 	uint8_t pointer_flags = 0;
@@ -159,6 +168,10 @@ extern "C" EXPORT LiteRtLmStatusCode litert_lm_engine_settings_create(
 
 	writer.write_uint8_t(pointer_flags);
 	writer.write_string(model_path ? basename.c_str() : nullptr);
+	writer.write_string(model_identity.model_id.c_str());
+	writer.write_string(model_identity.uuid.c_str());
+	writer.write_uint64_t(model_identity.size);
+	writer.write_string(model_identity.fingerprint.c_str());
 	writer.write_string(backend_str);
 	writer.write_string(vision_backend_str);
 	writer.write_string(audio_backend_str);
@@ -176,8 +189,10 @@ extern "C" EXPORT void litert_lm_engine_settings_delete(LiteRtLmEngineSettings* 
 
 	lava_file_writer& writer = begin_litert_lm_packet(instance, state, LITERT_LM_litert_lm_engine_settings_delete);
 	uint32_t settings_index = CONTAINER_NULL_VALUE;
+	bool was_active = false;
 	{
 		lava::lock_guard lock(frame_mutex);
+		was_active = settings && state.settings_index.contains(settings);
 		settings_index = destroy_litert_lm_handle(state.settings_index, settings, writer.current);
 	}
 	{
@@ -186,6 +201,15 @@ extern "C" EXPORT void litert_lm_engine_settings_delete(LiteRtLmEngineSettings* 
 	}
 	writer.write_uint32_t(settings_index);
 	writer.end_packet();
+	if (was_active)
+	{
+		const uint_fast32_t previous = state.active_settings.fetch_sub(1, std::memory_order_acq_rel);
+		assert(previous > 0);
+		if (previous == 1)
+		{
+			trace_finalize_if_inactive();
+		}
+	}
 }
 
 extern "C" EXPORT LiteRtLmStatusCode litert_lm_engine_create(

@@ -50,6 +50,7 @@ HEADER_FILES = [
 
 def find_include_dir():
 	candidates = [
+		os.environ.get("LITERT_LM_INCLUDE_DIR", ""),
 		os.environ.get("LITERT_LM_ROOT", "") + "/include",
 		"/opt/litert-lm/include",
 		os.path.join(ROOT, "external", "litert-lm", "include"),

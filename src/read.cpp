@@ -351,7 +351,11 @@ static Json::Value handle_index_json(uint32_t index)
 uint16_t lava_file_reader::read_litert_lm_apicall()
 {
 	const uint16_t apicall = parent->litert_lm_dictionary.at(read_uint16_t());
-	(void)read_uint32_t();
+	const uint32_t version = read_uint32_t();
+	if (version != 1)
+	{
+		ABORT("Unsupported LiteRT-LM packet version %u; recapture with model identification enabled", version);
+	}
 	current.call_id = apicall;
 	current.packet_type = PACKET_LITERT_LM_API_CALL;
 	DLOG2("[t%02u f%u %06d] %s", current.thread, current.frame,
@@ -370,6 +374,10 @@ uint16_t lava_file_reader::read_litert_lm_apicall()
 	case LITERT_LM_litert_lm_engine_settings_create:
 		packet.pointer_flags = read_uint8_t();
 		packet.model_path = read_optional_string(*this);
+		packet.model_identity.model_id = read_optional_string(*this);
+		packet.model_identity.uuid = read_optional_string(*this);
+		packet.model_identity.size = read_uint64_t();
+		packet.model_identity.fingerprint = read_optional_string(*this);
 		packet.backend_str = read_optional_string(*this);
 		packet.vision_backend_str = read_optional_string(*this);
 		packet.audio_backend_str = read_optional_string(*this);
@@ -653,6 +661,10 @@ static Json::Value params_packet_json(const callback_context& cb)
 			break;
 		case LITERT_LM_litert_lm_engine_settings_create:
 			params["model_path"] = (litert_lm.pointer_flags & 1) ? Json::Value(litert_lm.model_path) : Json::nullValue;
+			params["model_id"] = litert_lm.model_identity.model_id;
+			params["model_uuid"] = litert_lm.model_identity.uuid;
+			params["model_size"] = Json::UInt64(litert_lm.model_identity.size);
+			params["model_fingerprint"] = litert_lm.model_identity.fingerprint;
 			params["backend_str"] = (litert_lm.pointer_flags & 2) ? Json::Value(litert_lm.backend_str) : Json::nullValue;
 			params["vision_backend_str"] = (litert_lm.pointer_flags & 4) ? Json::Value(litert_lm.vision_backend_str) : Json::nullValue;
 			params["audio_backend_str"] = (litert_lm.pointer_flags & 8) ? Json::Value(litert_lm.audio_backend_str) : Json::nullValue;
