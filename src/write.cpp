@@ -612,6 +612,10 @@ void lava_writer::serialize()
 		limits["LiteRtLmSession"] = litert_lm_layer.session_index.size();
 		limits["LiteRtLmInputData"] = litert_lm_layer.input_data_index.size();
 		limits["LiteRtLmResponses"] = litert_lm_layer.responses_index.size();
+		limits["LiteRtLmConversationConfig"] = litert_lm_layer.conversation_config_index.size();
+		limits["LiteRtLmConversationOptionalArgs"] = litert_lm_layer.conversation_optional_args_index.size();
+		limits["LiteRtLmConversation"] = litert_lm_layer.conversation_index.size();
+		limits["LiteRtLmJsonResponse"] = litert_lm_layer.json_response_index.size();
 	}
 	write_json(mPath + "/limits.json", limits);
 
@@ -717,6 +721,50 @@ void lava_writer::serialize()
 			tracking["LiteRtLmResponses"].append(value);
 		}
 	}
+	if (litert_lm_layer.conversation_config_index.size())
+	{
+		tracking["LiteRtLmConversationConfig"] = Json::arrayValue;
+		for (const trackable* data : litert_lm_layer.conversation_config_index.iterate())
+		{
+			Json::Value value = trackable_json(data);
+			value["index"] = data->index;
+			tracking["LiteRtLmConversationConfig"].append(value);
+		}
+	}
+
+	if (litert_lm_layer.conversation_optional_args_index.size())
+	{
+		tracking["LiteRtLmConversationOptionalArgs"] = Json::arrayValue;
+		for (const trackable* data : litert_lm_layer.conversation_optional_args_index.iterate())
+		{
+			Json::Value value = trackable_json(data);
+			value["index"] = data->index;
+			tracking["LiteRtLmConversationOptionalArgs"].append(value);
+		}
+	}
+
+	if (litert_lm_layer.conversation_index.size())
+	{
+		tracking["LiteRtLmConversation"] = Json::arrayValue;
+		for (const trackable* data : litert_lm_layer.conversation_index.iterate())
+		{
+			Json::Value value = trackable_json(data);
+			value["index"] = data->index;
+			tracking["LiteRtLmConversation"].append(value);
+		}
+	}
+
+	if (litert_lm_layer.json_response_index.size())
+	{
+		tracking["LiteRtLmJsonResponse"] = Json::arrayValue;
+		for (const trackable* data : litert_lm_layer.json_response_index.iterate())
+		{
+			Json::Value value = trackable_json(data);
+			value["index"] = data->index;
+			tracking["LiteRtLmJsonResponse"].append(value);
+		}
+	}
+
 	if (write_output)
 	{
 		merge_tracking_field(tracking, mInputTracking, "updates");
@@ -799,6 +847,10 @@ void lava_writer::finish()
 	litert_lm_layer.session_index.clear();
 	litert_lm_layer.input_data_index.clear();
 	litert_lm_layer.responses_index.clear();
+	litert_lm_layer.conversation_config_index.clear();
+	litert_lm_layer.conversation_optional_args_index.clear();
+	litert_lm_layer.conversation_index.clear();
+	litert_lm_layer.json_response_index.clear();
 	litert_lm_layer.bypassed_instances.clear();
 	litert_lm_layer.bypassed_devices.clear();
 	litert_lm_layer.api_calls.store(0, std::memory_order_relaxed);

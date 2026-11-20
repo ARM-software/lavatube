@@ -160,6 +160,10 @@ struct litert_lm_layer_runtime_state
 	trace_remap<LiteRtLmSession*, trackedlitertlmsession> session_index;
 	trace_remap<LiteRtLmInputData*, trackable> input_data_index;
 	trace_remap<LiteRtLmResponses*, trackable> responses_index;
+	trace_remap<LiteRtLmConversationConfig*, trackable> conversation_config_index;
+	trace_remap<LiteRtLmConversationOptionalArgs*, trackable> conversation_optional_args_index;
+	trace_remap<LiteRtLmConversation*, trackable> conversation_index;
+	trace_remap<LiteRtLmJsonResponse*, trackable> json_response_index;
 	std::unordered_map<VkInstance, PFN_vkGetInstanceProcAddr> bypassed_instances;
 	std::unordered_map<VkDevice, PFN_vkGetDeviceProcAddr> bypassed_devices;
 	std::atomic_uint_fast64_t api_calls { 0 };

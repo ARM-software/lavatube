@@ -4,6 +4,8 @@ import os
 import re
 import sys
 
+import litert_lm_conversation
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 HEADER_PATH = os.path.join(ROOT, "generated", "litert_lm_auto.h")
@@ -108,7 +110,7 @@ def discover_functions():
 				"ret_type": ret_type,
 				"params": params,
 				"raw_params": raw_params,
-				"tracked": name in TRACKED_COMMANDS,
+				"tracked": name in TRACKED_COMMANDS or name[len("litert_lm_"):] in litert_lm_conversation.COMMANDS,
 			})
 	return funcs
 
@@ -260,6 +262,7 @@ def main():
 	write_header(funcs)
 	write_source(funcs)
 	write_passthrough(funcs)
+	litert_lm_conversation.generate(ROOT, funcs)
 	print(f"Generated LiteRT-LM code: {len(funcs)} functions ({len([f for f in funcs if f['tracked']])} tracked, {len([f for f in funcs if not f['tracked']])} passthrough).")
 
 

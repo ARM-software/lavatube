@@ -6,6 +6,7 @@
 #include <cstring>
 #include <dlfcn.h>
 
+#include "jsoncpp/json/writer.h"
 #include "write.h"
 #include "litert_lm_auto.h"
 
@@ -910,3 +911,5 @@ extern "C" EXPORT LiteRtLmStatusCode litert_lm_responses_get_response_text_at(
 	writer.end_packet();
 	return result;
 }
+
+#include "litert_lm_conversation_write.inc"

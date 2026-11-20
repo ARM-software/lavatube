@@ -1,10 +1,14 @@
 #!/bin/sh
 # Keep skipped captures from leaving a partial trace for the replay fixture.
+# An empty layer argument lets a capture launcher configure its own interception.
 trace=$1
 layer=$2
 shift 2
 rm -f "$trace"
-LD_PRELOAD="$layer${LD_PRELOAD:+:$LD_PRELOAD}" "$@"
+if [ -n "$layer" ]; then
+	export LD_PRELOAD="$layer${LD_PRELOAD:+:$LD_PRELOAD}"
+fi
+"$@"
 result=$?
 if [ "$result" -eq 77 ]; then
 	rm -f "$trace"

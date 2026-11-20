@@ -536,6 +536,7 @@ uint16_t lava_file_reader::read_litert_lm_apicall()
 		packet.result = read_int32_t();
 		packet.has_result = true;
 		break;
+#include "litert_lm_conversation_read.inc"
 	default:
 		ABORT("LiteRT-LM packet decoder does not support %s", litert_lm_get_function_name(apicall));
 	}
@@ -780,6 +781,7 @@ static Json::Value params_packet_json(const callback_context& cb)
 			params["index"] = (Json::UInt64)litert_lm.candidate_index;
 			params["out_text"] = (litert_lm.pointer_flags & 2) ? Json::Value(litert_lm.response_text) : Json::nullValue;
 			break;
+#include "litert_lm_conversation_print.inc"
 		default:
 			break;
 		}
@@ -989,6 +991,9 @@ void lava_reader::finalize()
 	{
 		const Json::Value sessions = litert_lm_replay->report_statistics();
 		if (!sessions.empty()) out["litert_lm"]["sessions"] = sessions;
+		const Json::Value conversations = litert_lm_replay->report_statistics(true);
+		if (!conversations.empty()) out["litert_lm"]["conversations"] = conversations;
+		out["litert_lm"]["outputs"] = litert_lm_replay->outputs;
 	}
 	if (is_replay() && litert_verify_output)
 	{

@@ -305,6 +305,8 @@ add_custom_command(
 	${SRC_ROOT}/generated/opencl_auto.cpp ${SRC_ROOT}/generated/opencl_auto.h
 	${SRC_ROOT}/generated/litert_lm_auto.cpp ${SRC_ROOT}/generated/litert_lm_auto.h
 	${SRC_ROOT}/generated/litert_lm_passthrough_auto.cpp
+	${SRC_ROOT}/generated/litert_lm_conversation_write.inc ${SRC_ROOT}/generated/litert_lm_conversation_read.inc
+	${SRC_ROOT}/generated/litert_lm_conversation_replay.inc ${SRC_ROOT}/generated/litert_lm_conversation_print.inc
     COMMAND rm -f scripts/vulkan_spec.pyc # fix checkouts broken when this file's source moved
     COMMAND mkdir -p generated
     COMMAND ${PYTHON_EXECUTABLE} ${SRC_ROOT}/scripts/struct.py
@@ -320,7 +322,7 @@ add_custom_command(
 	${SRC_ROOT}/scripts/util.py ${SRC_ROOT}/scripts/vk_wrapper.py ${SRC_ROOT}/scripts/vkconfig.py
 	${SRC_ROOT}/scripts/opencl.py ${SRC_ROOT}/external/tracetooltests/scripts/opencl_spec.py
 	${SRC_ROOT}/external/tracetooltests/external/OpenCL-Docs/xml/cl.xml
-	${SRC_ROOT}/scripts/litert_lm.py
+	${SRC_ROOT}/scripts/litert_lm.py ${SRC_ROOT}/scripts/litert_lm_conversation.py
 )
 
 # The below is necessary to inform cmake that we should not run the above once per target
@@ -359,6 +361,8 @@ if (LITERT_LM_INCLUDE_DIR)
 	add_library(litert-lm SHARED
 		${PROJECT_SOURCE_DIR}/src/litert_lm_layer.cpp
 		${PROJECT_SOURCE_DIR}/src/litert_lm_model.cpp
+		${PROJECT_SOURCE_DIR}/external/jsoncpp/src/lib_json/json_writer.cpp
+		${PROJECT_SOURCE_DIR}/external/jsoncpp/src/lib_json/json_value.cpp
 		${PROJECT_SOURCE_DIR}/generated/litert_lm_auto.cpp
 		${PROJECT_SOURCE_DIR}/generated/litert_lm_passthrough_auto.cpp
 	)
@@ -374,27 +378,38 @@ if (LITERT_LM_INCLUDE_DIR)
 
 	if (TARGET vulkan_llm_pingpong)
 		add_lavatube_test(layer_test_llm_pingpong
-			COMMAND ${PYTHON_EXECUTABLE} ${PROJECT_SOURCE_DIR}/scripts/lava-capture.py
+			COMMAND sh ${PROJECT_SOURCE_DIR}/tests/litert_capture.sh
+				${CMAKE_CURRENT_BINARY_DIR}/vulkan_llm_pingpong.api ""
+				${PYTHON_EXECUTABLE} ${PROJECT_SOURCE_DIR}/scripts/lava-capture.py
 				--capture-layer ${CMAKE_CURRENT_BINARY_DIR}/implicit_layer.d
 				-o ${CMAKE_CURRENT_BINARY_DIR}/vulkan_llm_pingpong
-				$<TARGET_FILE:vulkan_llm_pingpong> -f 3 -s 42
+				$<TARGET_FILE:vulkan_llm_pingpong> -f 60 -s 42
 		)
 		set_tests_properties(layer_test_llm_pingpong PROPERTIES
 			FIXTURES_SETUP llm_pingpong
+			ENVIRONMENT "LAVATUBE_LITERT_LM_LIB=${LITERT_LM_LIBRARY};${LITERT_TEST_ARGUMENTS}"
 			SKIP_RETURN_CODE 77
 		)
 		add_lavatube_test(layer_test_llm_pingpong_replay
-			COMMAND $<TARGET_FILE:lava-replay> --skip-missing-input ${CMAKE_CURRENT_BINARY_DIR}/vulkan_llm_pingpong.api
+			COMMAND ${RUN_IF_EXISTS} ${CMAKE_CURRENT_BINARY_DIR}/vulkan_llm_pingpong.api
+				${CMAKE_COMMAND} -DREPLAY=$<TARGET_FILE:lava-replay>
+				-DTRACE=${CMAKE_CURRENT_BINARY_DIR}/vulkan_llm_pingpong.api
+				-P ${PROJECT_SOURCE_DIR}/tests/litert_pingpong_replay.cmake
 		)
 		set_tests_properties(layer_test_llm_pingpong_replay PROPERTIES
 			FIXTURES_REQUIRED llm_pingpong
+			ENVIRONMENT "LAVATUBE_LITERT_LM_LIB=${LITERT_LM_LIBRARY};${LITERT_TEST_ARGUMENTS}"
 			SKIP_RETURN_CODE 77
 		)
 		add_lavatube_test(layer_test_llm_pingpong_replay_cpu
-			COMMAND $<TARGET_FILE:lava-replay> --skip-missing-input --litert-backend cpu ${CMAKE_CURRENT_BINARY_DIR}/vulkan_llm_pingpong.api
+			COMMAND ${RUN_IF_EXISTS} ${CMAKE_CURRENT_BINARY_DIR}/vulkan_llm_pingpong.api
+				${CMAKE_COMMAND} -DREPLAY=$<TARGET_FILE:lava-replay> -DBACKEND=cpu
+				-DTRACE=${CMAKE_CURRENT_BINARY_DIR}/vulkan_llm_pingpong.api
+				-P ${PROJECT_SOURCE_DIR}/tests/litert_pingpong_replay.cmake
 		)
 		set_tests_properties(layer_test_llm_pingpong_replay_cpu PROPERTIES
 			FIXTURES_REQUIRED llm_pingpong
+			ENVIRONMENT "LAVATUBE_LITERT_LM_LIB=${LITERT_LM_LIBRARY};${LITERT_TEST_ARGUMENTS}"
 			SKIP_RETURN_CODE 77
 		)
 	endif()

@@ -13,6 +13,47 @@
 #include "read.h"
 #include "util.h"
 
+template<typename T>
+static T* litert_lm_replay_handle(const std::unordered_map<uint32_t, T*>& handles, const Json::Value& index)
+{
+	if (index.isNull()) return nullptr;
+	const auto found = handles.find(index.asUInt());
+	return found == handles.end() ? nullptr : found->second;
+}
+
+void litert_lm_replay_state::record_output(lava_file_reader& reader, std::optional<LiteRtLmStatusCode> status, const char* text)
+{
+	const litert_lm_api_packet& packet = reader.current_litert_lm_packet;
+	Json::Value output;
+	output["call"] = litert_lm_get_function_name(reader.current.call_id);
+	output["thread"] = reader.current.thread;
+	output["packet"] = reader.current.packet;
+	output["session_index"] = Json::nullValue;
+	auto it = response_sessions.find(packet.responses_index);
+	if (it != response_sessions.end()) output["session_index"] = it->second;
+	output["responses_index"] = packet.responses_index;
+	output["candidate_index"] = Json::UInt64(packet.candidate_index);
+	output["output_requested"] = bool(packet.pointer_flags & 2);
+	output["captured"]["status"] = packet.has_result ? Json::Value(packet.result) : Json::nullValue;
+	output["captured"]["text"] = (packet.has_result && packet.result == 0 && (packet.pointer_flags & 2)) ? Json::Value(packet.response_text) : Json::nullValue;
+	output["replayed"]["status"] = status ? Json::Value(int32_t(*status)) : Json::nullValue;
+	output["replayed"]["text"] = (status && *status == 0 && text) ? Json::Value(text) : Json::nullValue;
+	if (reader.current.call_id == LITERT_LM_litert_lm_json_response_get_string)
+	{
+		output.removeMember("session_index");
+		output.removeMember("responses_index");
+		output.removeMember("candidate_index");
+		output["format"] = "conversation_json";
+		output["captured"]["text"] = (packet.has_result && packet.result == 0 && (packet.pointer_flags & 2)) ? packet.conversation_parameters["out_json"] : Json::nullValue;
+		const uint32_t response = packet.conversation_parameters["response"].asUInt();
+		output["json_response_index"] = response;
+		output["conversation_index"] = Json::nullValue;
+		const auto conversation = json_response_conversations.find(response);
+		if (conversation != json_response_conversations.end()) output["conversation_index"] = conversation->second;
+	}
+	outputs.append(output);
+}
+
 void litert_lm_replay_state::record_mismatch(lava_file_reader& reader, Json::Value failure)
 {
 	const litert_lm_api_packet& packet = reader.current_litert_lm_packet;
@@ -30,6 +71,13 @@ void litert_lm_replay_state::record_mismatch(lava_file_reader& reader, Json::Val
 	if (reader.current.call_id == LITERT_LM_litert_lm_responses_get_response_text_at)
 	{
 		failure["candidate_index"] = Json::UInt64(packet.candidate_index);
+	}
+	if (reader.current.call_id == LITERT_LM_litert_lm_json_response_get_string)
+	{
+		const uint32_t response = packet.conversation_parameters["response"].asUInt();
+		failure["json_response_index"] = response;
+		const auto conversation = json_response_conversations.find(response);
+		if (conversation != json_response_conversations.end()) failure["conversation_index"] = conversation->second;
 	}
 	ELOG("LiteRT-LM verification mismatch: %s, thread %u packet %u, session %u response %u candidate %llu (%s)",
 	     litert_lm_get_function_name(reader.current.call_id), reader.current.thread, reader.current.packet,
@@ -96,11 +144,11 @@ Json::Value litert_lm_replay_state::report_verification()
 	return result;
 }
 
-void litert_lm_replay_state::collect_statistics(uint32_t index, LiteRtLmSession* session)
+void litert_lm_replay_state::collect_statistics(uint32_t index, LiteRtLmSession* session, LiteRtLmConversation* conversation)
 {
-	litert_lm_session_statistics& stats = statistics[index];
+	litert_lm_session_statistics& stats = conversation ? conversation_statistics[index] : statistics[index];
 	stats = {};
-	if (!dispatch.session_get_benchmark_info || !dispatch.benchmark_info_delete
+	if ((conversation ? !dispatch.conversation_get_benchmark_info : !dispatch.session_get_benchmark_info) || !dispatch.benchmark_info_delete
 	    || !dispatch.benchmark_info_get_total_init_time_in_second || !dispatch.benchmark_info_get_time_to_first_token
 	    || !dispatch.benchmark_info_get_num_prefill_turns || !dispatch.benchmark_info_get_num_decode_turns
 	    || !dispatch.benchmark_info_get_prefill_token_count_at || !dispatch.benchmark_info_get_decode_token_count_at
@@ -109,7 +157,7 @@ void litert_lm_replay_state::collect_statistics(uint32_t index, LiteRtLmSession*
 		return;
 	}
 	LiteRtLmBenchmarkInfo* info = nullptr;
-	stats.status = dispatch.session_get_benchmark_info(session, &info);
+	stats.status = conversation ? dispatch.conversation_get_benchmark_info(conversation, &info) : dispatch.session_get_benchmark_info(session, &info);
 	if (stats.status != 0 || !info)
 	{
 		if (stats.status == 0) stats.status = -1;
@@ -138,26 +186,34 @@ void litert_lm_replay_state::collect_statistics(uint32_t index, LiteRtLmSession*
 	dispatch.benchmark_info_delete(info);
 }
 
-Json::Value litert_lm_replay_state::report_statistics()
+Json::Value litert_lm_replay_state::report_statistics(bool conversations)
 {
 	lava::lock_guard lock(mutex);
 	Json::Value sessions(Json::arrayValue);
-	for (const auto& pair : session_map) collect_statistics(pair.first, pair.second);
-	if (statistics.empty())
+	if (conversations)
+	{
+		for (const auto& pair : conversation_map) collect_statistics(pair.first, nullptr, pair.second);
+	}
+	else
+	{
+		for (const auto& pair : session_map) collect_statistics(pair.first, pair.second);
+	}
+	const auto& measurements = conversations ? conversation_statistics : statistics;
+	if (measurements.empty() && !conversations)
 	{
 		ILOG("LiteRT-LM replay statistics: no session metrics available");
 	}
-	for (const auto& pair : statistics)
+	for (const auto& pair : measurements)
 	{
 		const litert_lm_session_statistics& stats = pair.second;
-		ILOG("LiteRT-LM replay statistics (session %u):", pair.first);
+		ILOG("LiteRT-LM replay statistics (%s %u):", conversations ? "conversation" : "session", pair.first);
 		if (stats.status != 0)
 		{
 			ILOG("Benchmark metrics unavailable (status %d)", stats.status);
 			continue;
 		}
 		Json::Value session;
-		session["session_index"] = pair.first;
+		session[conversations ? "conversation_index" : "session_index"] = pair.first;
 		session["init_time_seconds"] = stats.init_time;
 		session["time_to_first_token_seconds"] = stats.time_to_first_token;
 		session["prefill"] = Json::arrayValue;
@@ -198,6 +254,27 @@ Json::Value litert_lm_replay_state::report_statistics()
 litert_lm_replay_state::~litert_lm_replay_state()
 {
 	lava::lock_guard lock(mutex);
+	for (auto& pair : json_response_map)
+	{
+		if (pair.second && dispatch.json_response_delete) dispatch.json_response_delete(pair.second);
+	}
+	json_response_map.clear();
+	for (auto& pair : conversation_map)
+	{
+		if (pair.second && dispatch.conversation_delete) dispatch.conversation_delete(pair.second);
+	}
+	conversation_map.clear();
+	for (auto& pair : conversation_optional_args_map)
+	{
+		if (pair.second && dispatch.conversation_optional_args_delete) dispatch.conversation_optional_args_delete(pair.second);
+	}
+	conversation_optional_args_map.clear();
+	for (auto& pair : conversation_config_map)
+	{
+		if (pair.second && dispatch.conversation_config_delete) dispatch.conversation_config_delete(pair.second);
+	}
+	conversation_config_map.clear();
+
 	for (auto& pair : responses_map)
 	{
 		if (pair.second && dispatch.responses_delete)
@@ -416,6 +493,13 @@ void retrace_litert_lm_apicall(lava_file_reader& reader)
 		}
 		LiteRtLmStatusCode status = state->dispatch.engine_create(settings, &engine);
 		replay_status = status;
+		// A captured initialization failure may be followed by a CPU fallback.
+		// Keep that control flow even if an overridden backend now succeeds.
+		if (packet.has_result && packet.result != 0)
+		{
+			if (status == 0 && engine) state->dispatch.engine_delete(engine);
+			break;
+		}
 		if (status != 0 && parent->litert_verify_output) break;
 		if (status != 0 || !engine)
 		{
@@ -616,6 +700,10 @@ void retrace_litert_lm_apicall(lava_file_reader& reader)
 	}
 	case LITERT_LM_litert_lm_session_generate_content:
 	{
+		if (packet.responses_index != CONTAINER_INVALID_INDEX && packet.responses_index != CONTAINER_NULL_VALUE)
+		{
+			state->response_sessions[packet.responses_index] = packet.session_index;
+		}
 		LiteRtLmSession* session = nullptr;
 		auto it = state->session_map.find(packet.session_index);
 		if (it != state->session_map.end())
@@ -644,7 +732,6 @@ void retrace_litert_lm_apicall(lava_file_reader& reader)
 			ABORT("litert_lm_session_generate_content failed with status %d", (int)status);
 		}
 		state->responses_map[packet.responses_index] = responses;
-		state->response_sessions[packet.responses_index] = packet.session_index;
 		break;
 	}
 	case LITERT_LM_litert_lm_session_run_prefill:
@@ -678,6 +765,10 @@ void retrace_litert_lm_apicall(lava_file_reader& reader)
 	}
 	case LITERT_LM_litert_lm_session_run_decode:
 	{
+		if (packet.responses_index != CONTAINER_INVALID_INDEX && packet.responses_index != CONTAINER_NULL_VALUE)
+		{
+			state->response_sessions[packet.responses_index] = packet.session_index;
+		}
 		LiteRtLmSession* session = nullptr;
 		auto it = state->session_map.find(packet.session_index);
 		if (it != state->session_map.end())
@@ -694,7 +785,6 @@ void retrace_litert_lm_apicall(lava_file_reader& reader)
 			ABORT("litert_lm_session_run_decode failed with status %d", (int)status);
 		}
 		state->responses_map[packet.responses_index] = responses;
-		state->response_sessions[packet.responses_index] = packet.session_index;
 		break;
 	}
 	case LITERT_LM_litert_lm_responses_delete:
@@ -728,10 +818,10 @@ void retrace_litert_lm_apicall(lava_file_reader& reader)
 	}
 	case LITERT_LM_litert_lm_responses_get_response_text_at:
 	{
+		const char* text = nullptr;
 		auto it = state->responses_map.find(packet.responses_index);
 		if (state->dispatch.responses_get_response_text_at && (it != state->responses_map.end() || parent->litert_verify_output))
 		{
-			const char* text = nullptr;
 			replay_status = state->dispatch.responses_get_response_text_at(
 				it != state->responses_map.end() ? it->second : nullptr,
 				packet.candidate_index, (packet.pointer_flags & 2) ? &text : nullptr);
@@ -742,8 +832,10 @@ void retrace_litert_lm_apicall(lava_file_reader& reader)
 			}
 			if (text) ILOG("LiteRT-LM replay generated response: %s", text);
 		}
+		state->record_output(reader, replay_status, text);
 		break;
 	}
+#include "litert_lm_conversation_replay.inc"
 	default:
 		break;
 	}

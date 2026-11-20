@@ -148,6 +148,7 @@ struct opencl_api_packet
 
 struct litert_lm_api_packet
 {
+	Json::Value conversation_parameters;
 	bool valid = false;
 	uint8_t pointer_flags = 0;
 	int32_t log_level = 0;
@@ -185,6 +186,7 @@ struct litert_lm_api_packet
 		valid = false;
 		pointer_flags = 0;
 		log_level = 0;
+		conversation_parameters = Json::nullValue;
 		model_path.clear();
 		model_identity = {};
 		backend_str.clear();
