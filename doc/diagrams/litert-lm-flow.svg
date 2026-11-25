@@ -1,0 +1,110 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080">
+<defs>
+ <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#52647A"/></marker>
+ <marker id="blue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#2458C6"/></marker>
+</defs>
+<rect width="1920" height="1080" fill="#FFFFFF"/>
+
+<text x="60" y="65" font-family="DejaVu Sans, sans-serif" font-size="20" fill="#2458C6" font-weight="700" text-anchor="start">LAVATUBE  /  EXPERIMENTAL LITERT-LM SUPPORT</text>
+<text x="60" y="125" font-family="DejaVu Sans, sans-serif" font-size="46" fill="#14283F" font-weight="700" text-anchor="start">Capture the request. Re-run the inference.</text>
+<text x="60" y="165" font-family="DejaVu Sans, sans-serif" font-size="26" fill="#52647A" font-weight="400" text-anchor="start">Text generation is recorded at the LiteRT-LM C API boundary.</text>
+<text x="60" y="224" font-family="DejaVu Sans, sans-serif" font-size="23" fill="#2458C6" font-weight="700" text-anchor="start">01  CAPTURE</text>
+<rect x="60" y="255" width="220" height="150" rx="18" fill="#F4F7FB" stroke="#D7E0EB" stroke-width="2"/>
+<text x="82" y="295" font-family="DejaVu Sans, sans-serif" font-size="26" fill="#14283F" font-weight="700" text-anchor="start">Application</text>
+<text x="82" y="332" font-family="DejaVu Sans, sans-serif" font-size="22" fill="#52647A" font-weight="400" text-anchor="start">Prompt text +</text>
+<text x="82" y="361" font-family="DejaVu Sans, sans-serif" font-size="22" fill="#52647A" font-weight="400" text-anchor="start">generation settings</text>
+<rect x="325" y="255" width="350" height="150" rx="18" fill="#EDF3FF" stroke="#ADC3EF" stroke-width="2"/>
+<text x="347" y="295" font-family="DejaVu Sans, sans-serif" font-size="26" fill="#2458C6" font-weight="700" text-anchor="start">Lavatube API shim</text>
+<text x="347" y="332" font-family="DejaVu Sans, sans-serif" font-size="22" fill="#52647A" font-weight="400" text-anchor="start">Records supported calls</text>
+<text x="347" y="361" font-family="DejaVu Sans, sans-serif" font-size="22" fill="#52647A" font-weight="400" text-anchor="start">Forwards to real runtime</text>
+<path d="M 280 330 H 325" fill="none" stroke="#52647A" stroke-width="3" stroke-linejoin="round"/>
+<polygon points="325.0,330.0 313.0,324.0 313.0,336.0" fill="#52647A"/>
+<path d="M 675 330 H 735" fill="none" stroke="#52647A" stroke-width="3" stroke-linejoin="round"/>
+<polygon points="735.0,330.0 723.0,324.0 723.0,336.0" fill="#52647A"/>
+<rect x="735" y="210" width="1125" height="260" rx="22" fill="#F0FAF9" stroke="#B6DEDA" stroke-width="2"/>
+<text x="755" y="245" font-family="DejaVu Sans, sans-serif" font-size="23" fill="#087F83" font-weight="700" text-anchor="start">LiteRT-LM runtime  •  executes normally</text>
+<rect x="755" y="268" width="235" height="123" rx="18" fill="#FFFFFF" stroke="#B6DEDA" stroke-width="2"/>
+<text x="777" y="308" font-family="DejaVu Sans, sans-serif" font-size="26" fill="#087F83" font-weight="700" text-anchor="start">Tokenize</text>
+<text x="777" y="345" font-family="DejaVu Sans, sans-serif" font-size="22" fill="#52647A" font-weight="400" text-anchor="start">Text → token IDs</text>
+<path d="M 990 329 H 1030" fill="none" stroke="#52647A" stroke-width="3" stroke-linejoin="round"/>
+<polygon points="1030.0,329.0 1018.0,323.0 1018.0,335.0" fill="#52647A"/>
+<rect x="1030" y="268" width="235" height="123" rx="18" fill="#FFFFFF" stroke="#B6DEDA" stroke-width="2"/>
+<text x="1052" y="308" font-family="DejaVu Sans, sans-serif" font-size="26" fill="#087F83" font-weight="700" text-anchor="start">Prefill</text>
+<text x="1052" y="345" font-family="DejaVu Sans, sans-serif" font-size="22" fill="#52647A" font-weight="400" text-anchor="start">Prompt tokens →</text>
+<text x="1052" y="374" font-family="DejaVu Sans, sans-serif" font-size="22" fill="#52647A" font-weight="400" text-anchor="start">KV cache</text>
+<path d="M 1265 329 H 1305" fill="none" stroke="#52647A" stroke-width="3" stroke-linejoin="round"/>
+<polygon points="1305.0,329.0 1293.0,323.0 1293.0,335.0" fill="#52647A"/>
+<rect x="1305" y="268" width="235" height="123" rx="18" fill="#FFFFFF" stroke="#B6DEDA" stroke-width="2"/>
+<text x="1327" y="308" font-family="DejaVu Sans, sans-serif" font-size="26" fill="#087F83" font-weight="700" text-anchor="start">Decode</text>
+<text x="1327" y="345" font-family="DejaVu Sans, sans-serif" font-size="22" fill="#52647A" font-weight="400" text-anchor="start">Generate tokens</text>
+<text x="1327" y="374" font-family="DejaVu Sans, sans-serif" font-size="22" fill="#52647A" font-weight="400" text-anchor="start">Update KV cache</text>
+<path d="M 1540 329 H 1580" fill="none" stroke="#52647A" stroke-width="3" stroke-linejoin="round"/>
+<polygon points="1580.0,329.0 1568.0,323.0 1568.0,335.0" fill="#52647A"/>
+<rect x="1580" y="268" width="235" height="123" rx="18" fill="#FFFFFF" stroke="#B6DEDA" stroke-width="2"/>
+<text x="1602" y="308" font-family="DejaVu Sans, sans-serif" font-size="26" fill="#087F83" font-weight="700" text-anchor="start">Detokenize</text>
+<text x="1602" y="345" font-family="DejaVu Sans, sans-serif" font-size="22" fill="#52647A" font-weight="400" text-anchor="start">Token IDs → text</text>
+<path d="M 1517 391 V 418 H 1330 V 391" fill="none" stroke="#52647A" stroke-width="3" stroke-linejoin="round"/>
+<polygon points="1330.0,391.0 1324.0,403.0 1336.0,403.0" fill="#52647A"/>
+<text x="1420" y="444" font-family="DejaVu Sans, sans-serif" font-size="18" fill="#087F83" font-weight="400" text-anchor="middle">repeat until stop</text>
+<text x="755" y="442" font-family="DejaVu Sans, sans-serif" font-size="20" fill="#087F83" font-weight="400" text-anchor="start">Internal GPU Vulkan calls bypass capture</text>
+<path d="M 500 405 V 495" fill="none" stroke="#2458C6" stroke-width="3" stroke-linejoin="round"/>
+<polygon points="500.0,495.0 506.0,483.0 494.0,483.0" fill="#2458C6"/>
+<text x="520" y="455" font-family="DejaVu Sans, sans-serif" font-size="20" fill="#2458C6" font-weight="400" text-anchor="start">write</text>
+<rect x="325" y="495" width="1040" height="145" rx="20" fill="#EDF3FF" stroke="#ADC3EF" stroke-width="2"/>
+<text x="350" y="532" font-family="DejaVu Sans, sans-serif" font-size="25" fill="#2458C6" font-weight="700" text-anchor="start">TRACE  /  high-level API packets</text>
+<text x="350" y="568" font-family="DejaVu Sans, sans-serif" font-size="24" fill="#14283F" font-weight="400" text-anchor="start">Inputs &amp; messages  •  settings &amp; seed  •  generation calls</text>
+<text x="350" y="604" font-family="DejaVu Sans, sans-serif" font-size="23" fill="#52647A" font-weight="400" text-anchor="start">Response reads &amp; statuses  •  model identity (weights stay external)</text>
+<rect x="1420" y="495" width="440" height="145" rx="18" fill="#F7F2FC" stroke="#D6C5EB" stroke-width="2"/>
+<text x="1442" y="535" font-family="DejaVu Sans, sans-serif" font-size="26" fill="#7650AE" font-weight="700" text-anchor="start">Same model file</text>
+<text x="1442" y="572" font-family="DejaVu Sans, sans-serif" font-size="22" fill="#52647A" font-weight="400" text-anchor="start">Loaded for capture and replay</text>
+<text x="1442" y="601" font-family="DejaVu Sans, sans-serif" font-size="22" fill="#52647A" font-weight="400" text-anchor="start">Replay can select CPU or GPU</text>
+<path d="M 1640 495 V 460" fill="none" stroke="#7650AE" stroke-width="3" stroke-linejoin="round" stroke-dasharray="8 7"/>
+<polygon points="1640.0,460.0 1634.0,472.0 1646.0,472.0" fill="#7650AE"/>
+<path d="M 1640 640 V 705" fill="none" stroke="#7650AE" stroke-width="3" stroke-linejoin="round" stroke-dasharray="8 7"/>
+<polygon points="1640.0,705.0 1646.0,693.0 1634.0,693.0" fill="#7650AE"/>
+<text x="60" y="703" font-family="DejaVu Sans, sans-serif" font-size="23" fill="#2458C6" font-weight="700" text-anchor="start">02  REPLAY</text>
+<rect x="60" y="750" width="220" height="150" rx="18" fill="#F4F7FB" stroke="#D7E0EB" stroke-width="2"/>
+<text x="82" y="790" font-family="DejaVu Sans, sans-serif" font-size="26" fill="#14283F" font-weight="700" text-anchor="start">lava-replay</text>
+<text x="82" y="827" font-family="DejaVu Sans, sans-serif" font-size="22" fill="#52647A" font-weight="400" text-anchor="start">Reads trace</text>
+<text x="82" y="856" font-family="DejaVu Sans, sans-serif" font-size="22" fill="#52647A" font-weight="400" text-anchor="start">Recreates objects</text>
+<rect x="325" y="750" width="350" height="150" rx="18" fill="#EDF3FF" stroke="#ADC3EF" stroke-width="2"/>
+<text x="347" y="790" font-family="DejaVu Sans, sans-serif" font-size="26" fill="#2458C6" font-weight="700" text-anchor="start">Replay dispatcher</text>
+<text x="347" y="827" font-family="DejaVu Sans, sans-serif" font-size="22" fill="#52647A" font-weight="400" text-anchor="start">Reissues recorded calls</text>
+<text x="347" y="856" font-family="DejaVu Sans, sans-serif" font-size="22" fill="#52647A" font-weight="400" text-anchor="start">with captured inputs</text>
+<path d="M 280 825 H 325" fill="none" stroke="#52647A" stroke-width="3" stroke-linejoin="round"/>
+<polygon points="325.0,825.0 313.0,819.0 313.0,831.0" fill="#52647A"/>
+<path d="M 500 640 V 750" fill="none" stroke="#2458C6" stroke-width="3" stroke-linejoin="round"/>
+<polygon points="500.0,750.0 506.0,738.0 494.0,738.0" fill="#2458C6"/>
+<text x="520" y="697" font-family="DejaVu Sans, sans-serif" font-size="20" fill="#2458C6" font-weight="400" text-anchor="start">read</text>
+<path d="M 675 825 H 735" fill="none" stroke="#52647A" stroke-width="3" stroke-linejoin="round"/>
+<polygon points="735.0,825.0 723.0,819.0 723.0,831.0" fill="#52647A"/>
+<rect x="735" y="705" width="1125" height="260" rx="22" fill="#F0FAF9" stroke="#B6DEDA" stroke-width="2"/>
+<text x="755" y="740" font-family="DejaVu Sans, sans-serif" font-size="23" fill="#087F83" font-weight="700" text-anchor="start">LiteRT-LM runtime  •  executes again</text>
+<rect x="755" y="763" width="235" height="123" rx="18" fill="#FFFFFF" stroke="#B6DEDA" stroke-width="2"/>
+<text x="777" y="803" font-family="DejaVu Sans, sans-serif" font-size="26" fill="#087F83" font-weight="700" text-anchor="start">Tokenize</text>
+<text x="777" y="840" font-family="DejaVu Sans, sans-serif" font-size="22" fill="#52647A" font-weight="400" text-anchor="start">Text → token IDs</text>
+<path d="M 990 824 H 1030" fill="none" stroke="#52647A" stroke-width="3" stroke-linejoin="round"/>
+<polygon points="1030.0,824.0 1018.0,818.0 1018.0,830.0" fill="#52647A"/>
+<rect x="1030" y="763" width="235" height="123" rx="18" fill="#FFFFFF" stroke="#B6DEDA" stroke-width="2"/>
+<text x="1052" y="803" font-family="DejaVu Sans, sans-serif" font-size="26" fill="#087F83" font-weight="700" text-anchor="start">Prefill</text>
+<text x="1052" y="840" font-family="DejaVu Sans, sans-serif" font-size="22" fill="#52647A" font-weight="400" text-anchor="start">Prompt tokens →</text>
+<text x="1052" y="869" font-family="DejaVu Sans, sans-serif" font-size="22" fill="#52647A" font-weight="400" text-anchor="start">KV cache</text>
+<path d="M 1265 824 H 1305" fill="none" stroke="#52647A" stroke-width="3" stroke-linejoin="round"/>
+<polygon points="1305.0,824.0 1293.0,818.0 1293.0,830.0" fill="#52647A"/>
+<rect x="1305" y="763" width="235" height="123" rx="18" fill="#FFFFFF" stroke="#B6DEDA" stroke-width="2"/>
+<text x="1327" y="803" font-family="DejaVu Sans, sans-serif" font-size="26" fill="#087F83" font-weight="700" text-anchor="start">Decode</text>
+<text x="1327" y="840" font-family="DejaVu Sans, sans-serif" font-size="22" fill="#52647A" font-weight="400" text-anchor="start">Generate tokens</text>
+<text x="1327" y="869" font-family="DejaVu Sans, sans-serif" font-size="22" fill="#52647A" font-weight="400" text-anchor="start">Update KV cache</text>
+<path d="M 1540 824 H 1580" fill="none" stroke="#52647A" stroke-width="3" stroke-linejoin="round"/>
+<polygon points="1580.0,824.0 1568.0,818.0 1568.0,830.0" fill="#52647A"/>
+<rect x="1580" y="763" width="235" height="123" rx="18" fill="#FFFFFF" stroke="#B6DEDA" stroke-width="2"/>
+<text x="1602" y="803" font-family="DejaVu Sans, sans-serif" font-size="26" fill="#087F83" font-weight="700" text-anchor="start">Detokenize</text>
+<text x="1602" y="840" font-family="DejaVu Sans, sans-serif" font-size="22" fill="#52647A" font-weight="400" text-anchor="start">Token IDs → text</text>
+<path d="M 1517 886 V 913 H 1330 V 886" fill="none" stroke="#52647A" stroke-width="3" stroke-linejoin="round"/>
+<polygon points="1330.0,886.0 1324.0,898.0 1336.0,898.0" fill="#52647A"/>
+<text x="1420" y="939" font-family="DejaVu Sans, sans-serif" font-size="18" fill="#087F83" font-weight="400" text-anchor="middle">repeat until stop</text>
+<text x="755" y="937" font-family="DejaVu Sans, sans-serif" font-size="20" fill="#087F83" font-weight="400" text-anchor="start">Rebuilds tokens + KV cache</text>
+<rect x="60" y="989" width="1800" height="64" rx="12" fill="#F4F7FB" stroke="#F4F7FB" stroke-width="2"/>
+<text x="82" y="1029" font-family="DejaVu Sans, sans-serif" font-size="21" fill="#2458C6" font-weight="700" text-anchor="start">REPLAY RESULTS</text>
+<text x="325" y="1029" font-family="DejaVu Sans, sans-serif" font-size="23" fill="#14283F" font-weight="400" text-anchor="start">Generated text + prefill/decode metrics → lavaresults.json; optional exact output verification</text>
+</svg>
